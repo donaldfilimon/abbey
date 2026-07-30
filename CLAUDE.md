@@ -72,6 +72,7 @@ Key modules (`src/`):
 | `platform.rs` | host OS matrix + threads + GPU/NPU/TPU detect (not accelerator runtime) |
 | `surfaces.rs` | vision/cot/runtime honesty (viewer + matrix; weights/engine/host OOS) |
 | `deferred.rs` | OOS honesty pack — lora/weights/accel/shell/host (+ `abbey oos` index) |
+| `host.rs` | portable PATH/PATHEXT lookup, argv clamp, install/state path helpers |
 | `memory/` (`mod.rs`, `sqlite.rs`, `wdbx.rs`) | `MemoryStore` trait, shared reflect/validation, backend dispatch; add new backends here and they work everywhere |
 | `hybrid_loop.rs` | two-stage Gemma→Max run; stages linked by `correlation` in the route log |
 | `wdbx_bridge.rs` | `abbey wdbx` — passthrough to `abi wdbx`, plus in-process `stats`/`checkpoint` |

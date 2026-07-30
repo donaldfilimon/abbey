@@ -66,7 +66,21 @@ pub fn surface_matrix() -> &'static [SurfaceSupport] {
             linux: true,
             macos: true,
             windows: true,
-            note: "platform-specific allowlist entries",
+            note: "real executables only; execute --confirm",
+        },
+        SurfaceSupport {
+            name: "learn review/stats + PATH peers",
+            linux: true,
+            macos: true,
+            windows: true,
+            note: "PATHEXT-aware which_bin on Windows",
+        },
+        SurfaceSupport {
+            name: "syntax highlight + claims/oos honesty",
+            linux: true,
+            macos: true,
+            windows: true,
+            note: "syntect ANSI when TTY",
         },
         SurfaceSupport {
             name: "voice I/O (say + Speech)",
@@ -90,6 +104,18 @@ pub fn surface_matrix() -> &'static [SurfaceSupport] {
             note: "Out of scope — detect-only via `abbey platform`",
         },
     ]
+}
+
+/// Whether this surface is marked supported on the current host OS.
+pub fn surface_on_this_host(s: &SurfaceSupport) -> bool {
+    match std::env::consts::OS {
+        "linux" => s.linux,
+        "macos" => s.macos,
+        "windows" => s.windows,
+        // other Unix (freebsd, …) → treat like linux portable set
+        _ if std::env::consts::FAMILY == "unix" => s.linux,
+        _ => false,
+    }
 }
 
 pub fn thread_budget() -> usize {
@@ -191,6 +217,23 @@ pub fn detect_accelerators() -> Vec<AcceleratorHint> {
         }
     }
 
+    // Windows: dxdiag presence as a weak GPU-stack hint when no vendor tool found
+    #[cfg(target_os = "windows")]
+    {
+        if out.iter().all(|h| h.kind != "GPU") {
+            if let Some(p) = which("dxdiag") {
+                out.push(AcceleratorHint {
+                    kind: "GPU",
+                    status: "host",
+                    detail: format!(
+                        "dxdiag present ({}) — vendor tool not on PATH; Abbey does not run DX kernels",
+                        p.display()
+                    ),
+                });
+            }
+        }
+    }
+
     // Google TPU tooling / devices (best-effort)
     if let Some(p) = which("tpu-info").or_else(|| which("ctpu")) {
         out.push(AcceleratorHint {
@@ -235,24 +278,36 @@ pub fn print_platform() -> Result<i32> {
     let family = std::env::consts::FAMILY;
     let threads = thread_budget();
     let jobs = default_subagent_jobs();
+    let here = match os {
+        "linux" => "linux",
+        "macos" => "macos",
+        "windows" => "windows",
+        _ if family == "unix" => "unix≈linux",
+        _ => os,
+    };
 
     println!("abbey platform — host targets + compute inventory");
-    println!("os:        {os}  arch: {arch}  family: {family}");
+    println!("os:        {os}  arch: {arch}  family: {family}  (this host → {here})");
     println!("threads:   {threads} (std::thread::available_parallelism)");
     println!("subagents: default --jobs {jobs} (override ABBEY_SUBAGENT_JOBS)");
+    println!(
+        "argv:      {} bytes/prompt clamp",
+        crate::host::max_prompt_argv_bytes()
+    );
     println!();
     println!("primary targets (portable Abbey surfaces):");
     println!(
-        "  {:<44} {:^5} {:^5} {:^7}  note",
-        "surface", "linux", "macos", "windows"
+        "  {:<44} {:^5} {:^5} {:^7} {:^4}  note",
+        "surface", "linux", "macos", "windows", "here"
     );
     for s in surface_matrix() {
         println!(
-            "  {:<44} {:^5} {:^5} {:^7}  {}",
+            "  {:<44} {:^5} {:^5} {:^7} {:^4}  {}",
             s.name,
             mark(s.linux),
             mark(s.macos),
             mark(s.windows),
+            mark(surface_on_this_host(s)),
             s.note
         );
     }
@@ -265,7 +320,22 @@ pub fn print_platform() -> Result<i32> {
     println!(
         "honesty: GPU/NPU/TPU compilation, training, and inference inside Abbey \
          are Out of scope (`abbey claims oos`). Multi-threading = subagent jobs, \
-         not accelerator kernels. Voice/fm remain macOS-only."
+         not accelerator kernels. Voice/fm remain macOS-only.\n\
+         paths:   abbey platform paths"
+    );
+    Ok(0)
+}
+
+pub fn print_paths() -> Result<i32> {
+    println!("abbey platform paths — resolved locations on this host\n");
+    let state = crate::state::AbbeyState::load()?;
+    let cfg = crate::config::AbbeyConfig::config_path();
+    for line in crate::host::path_report_lines(&state.state_dir, &cfg) {
+        println!("  {line}");
+    }
+    println!(
+        "\nnote: set ABBEY_STATE_DIR / ABBEY_CONFIG / ABBEY_AGENT to override.\n\
+         install: ./install.sh (Unix) · .\\install.ps1 (Windows)"
     );
     Ok(0)
 }
@@ -295,9 +365,11 @@ pub fn dispatch(args: &[String]) -> Result<i32> {
         Some("compute") | Some("accel") | Some("gpu") | Some("npu") | Some("tpu") => {
             print_compute()
         }
+        Some("paths") | Some("path") | Some("where") => print_paths(),
         Some("threads") | Some("jobs") => {
             println!("threads: {}", thread_budget());
             println!("subagent_jobs_default: {}", default_subagent_jobs());
+            println!("argv_clamp_bytes: {}", crate::host::max_prompt_argv_bytes());
             Ok(0)
         }
         Some("refuse") | Some("runtime") | Some("kernels") => crate::claims::refuse("npu"),
@@ -308,7 +380,8 @@ pub fn dispatch(args: &[String]) -> Result<i32> {
                  usage:\n\
                    abbey platform              # full matrix + accelerators\n\
                    abbey platform compute      # threads + GPU/NPU/TPU detect\n\
-                   abbey platform threads      # parallelism only\n\
+                   abbey platform paths        # state/config/agent locations\n\
+                   abbey platform threads      # parallelism + argv clamp\n\
                    abbey platform refuse       # OOS: Abbey accelerator runtime\n\
                  \n\
                  aliases: abbey compute · abbey accel\n\
@@ -318,7 +391,7 @@ pub fn dispatch(args: &[String]) -> Result<i32> {
         }
         Some(other) => {
             anyhow::bail!(
-                "unknown platform subcommand `{other}` — try: status|compute|threads|refuse"
+                "unknown platform subcommand `{other}` — try: status|compute|paths|threads|refuse"
             );
         }
     }
@@ -367,5 +440,18 @@ mod tests {
     #[test]
     fn detect_returns_at_least_one_row() {
         assert!(!detect_accelerators().is_empty());
+    }
+
+    #[test]
+    fn this_host_marks_core_when_on_primary_os() {
+        let core = surface_matrix()
+            .iter()
+            .find(|s| s.name.starts_with("CLI core"))
+            .unwrap();
+        match std::env::consts::OS {
+            "linux" | "macos" | "windows" => assert!(surface_on_this_host(core)),
+            _ if std::env::consts::FAMILY == "unix" => assert!(surface_on_this_host(core)),
+            _ => {}
+        }
     }
 }

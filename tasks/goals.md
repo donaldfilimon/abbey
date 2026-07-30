@@ -151,3 +151,11 @@ Hardened Current substitutes the OOS pack points at: `learn` status embeds train
 curation counts; `review`/`stats` show provenance + ready (prov+conf≥0.9); top-level
 `learn-review`/`learn-stats` aliases. `abbey os` / `allowlist` print the policy panel by
 default; execute still requires `--confirm`; off-list denied. Unrestricted shell stays OOS.
+
+## Cross-platform host support
+status: done
+
+PATHEXT-aware `which_bin`, Windows agent/install candidate paths, platform-aware argv
+clamp (CreateProcess-safe), Windows OS allowlist of real executables, `abbey platform
+paths` + this-host matrix column, `install.ps1`, softer `check.sh` cross-target smoke when
+targets are already installed. Voice/fm remain macOS-only; accelerator runtimes stay OOS.

@@ -49,6 +49,7 @@ Status key: **Current** = shipped · **Proposed** = designed, not claimed live �
 | `platform` | Host OS/arch matrix, thread budget, GPU/NPU/TPU detect (report-only) |
 | `surfaces` | Vision/CoT/runtime honesty — viewer + matrix; weights/engine/host stay OOS |
 | `deferred` | OOS honesty pack — `oos`/`lora`/`weights`/`accel`/`shell`/`host` (refuse, no impl) |
+| `host` | portable `which_bin` (PATHEXT), argv budgets, install/state path report |
 | `learn` | Self-learn capture/digest/review/stats |
 | `os_control` | Cross-platform OS policy |
 | `parallel` | Thin alias → `subagents` (default Max/Gemma/Aviva) |

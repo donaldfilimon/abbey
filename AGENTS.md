@@ -41,6 +41,7 @@ src/highlight.rs     syntect fence/file ANSI (auto on -p)
 src/subagents.rs     multi-lane + local peer agents
 src/claims.rs        Current/Proposed/OOS gate + refuse
 src/platform.rs      host OS/threads + GPU/NPU/TPU detect
+src/host.rs          portable PATH/PATHEXT + argv clamp + install paths
 src/surfaces.rs      vision/cot/runtime honesty surfaces
 src/learn.rs os_control.rs parallel.rs inventory.rs
 src/tui/              7-tab ratatui
@@ -76,7 +77,7 @@ CLI: `abbey claims` · `abbey claims proposed|oos` · `abbey claims refuse embed
 | Parallel lanes (Max/Gemma/Aviva) | ✓ | | |
 | Multi-subagent fan-out (`subagents` / synthesize) | ✓ | | |
 | Local distributed peer agents (PATH CLIs) | ✓ | | multi-node agent mesh |
-| linux/macos/windows primary host targets (portable surfaces) | ✓ | | voice/fm macOS-only |
+| linux/macos/windows primary host targets (portable surfaces) | ✓ | | voice/fm macOS-only; see `platform paths` |
 | Multi-threaded subagent fan-out (`--jobs`) | ✓ | | GPU kernels |
 | WDBX cross-process lock (Unix + Windows via fs2) | ✓ | | |
 | GPU/NPU/TPU host detection (`abbey platform`) | ✓ | | accelerator runtime in Abbey |

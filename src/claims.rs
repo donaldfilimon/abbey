@@ -107,8 +107,8 @@ pub const CLAIMS: &[Claim] = &[
     Claim {
         name: "linux/macos/windows/unix primary host targets (portable surfaces)",
         status: Status::Current,
-        note: "CLI/TUI/sqlite/WDBX-lock/subagents/os-allowlist; voice+fm stay macOS-only",
-        instead: Some("abbey platform"),
+        note: "CLI/TUI/sqlite/WDBX-lock/subagents/os-allowlist; PATHEXT which_bin; voice+fm macOS-only",
+        instead: Some("abbey platform · abbey platform paths"),
     },
     Claim {
         name: "multi-threaded subagent fan-out (--jobs)",

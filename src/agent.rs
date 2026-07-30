@@ -165,18 +165,12 @@ pub fn resolve_agent() -> Result<PathBuf> {
     }
     let home = dirs::home_dir().context("HOME")?;
     let backend = AgentBackend::from_env();
-    let candidates: Vec<PathBuf> = match backend {
-        AgentBackend::Grok => vec![
-            home.join(".grok/bin/grok"),
-            home.join(".local/bin/grok"),
-            PathBuf::from("/opt/homebrew/bin/grok"),
-        ],
-        AgentBackend::Cursor => vec![
-            home.join(".local/bin/cursor-agent"),
-            home.join(".local/bin/agent"),
-        ],
-        AgentBackend::Fm => vec![PathBuf::from("/usr/bin/fm")],
+    let key = match backend {
+        AgentBackend::Grok => "grok",
+        AgentBackend::Cursor => "cursor",
+        AgentBackend::Fm => "fm",
     };
+    let candidates = crate::host::agent_candidate_paths(key, &home);
     for c in &candidates {
         if !c.is_file() {
             continue;
@@ -223,24 +217,7 @@ fn fs_readlink(path: &Path) -> Result<String> {
     Ok(std::fs::read_link(path)?.to_string_lossy().into_owned())
 }
 
-/// First matching executable on `PATH`.
-pub fn which_bin(bin: &str) -> Option<PathBuf> {
-    let path = std::env::var_os("PATH")?;
-    for dir in std::env::split_paths(&path) {
-        let p = dir.join(bin);
-        if p.is_file() {
-            return Some(p);
-        }
-    }
-    None
-}
-
-/// Soft ceiling for a single prompt argv string.
-///
-/// macOS `ARG_MAX` is typically 256KiB–1MiB and includes the environment.
-/// Huge `please-fix` captures (or pasted logs) as one trailing argv used to
-/// yield `Argument list too long (os error 7)` and abort the hand-off.
-pub const MAX_PROMPT_ARGV_BYTES: usize = 96 * 1024;
+pub use crate::host::{max_prompt_argv_bytes, which_bin};
 
 /// Truncate `s` on a UTF-8 boundary so its byte length is ≤ `max_bytes`.
 pub fn truncate_utf8_bytes(s: &str, max_bytes: usize) -> String {
@@ -270,18 +247,23 @@ pub fn truncate_utf8_bytes(s: &str, max_bytes: usize) -> String {
 
 /// Clamp every trailing prompt string so the child argv stays under the OS limit.
 pub fn clamp_prompt_args(prompt_and_rest: &[String]) -> Vec<String> {
+    let cap = max_prompt_argv_bytes();
     prompt_and_rest
         .iter()
-        .map(|s| truncate_utf8_bytes(s, MAX_PROMPT_ARGV_BYTES))
+        .map(|s| truncate_utf8_bytes(s, cap))
         .collect()
 }
 
 fn map_exec_err(err: std::io::Error, agent_path: &Path) -> anyhow::Error {
-    // E2BIG — Darwin/Linux typically use errno 7.
-    if err.raw_os_error() == Some(7) {
+    let cap = max_prompt_argv_bytes();
+    // E2BIG — Darwin/Linux typically use errno 7; Windows CreateProcess uses other codes.
+    let too_long = err.raw_os_error() == Some(7)
+        || err.kind() == std::io::ErrorKind::InvalidInput
+        || err.to_string().to_ascii_lowercase().contains("too long");
+    if too_long {
         return anyhow::anyhow!(
-            "exec {}: Argument list too long (os error 7).\n\
-             Abbey clamps prompts to {MAX_PROMPT_ARGV_BYTES} bytes; if this still \
+            "exec {}: argument list / command line too long ({err}).\n\
+             Abbey clamps prompts to {cap} bytes on this host; if this still \
              fires, shrink CURSOR_AGENT_COMPLETED_PATH / please-fix input or unset \
              oversized environment variables.",
             agent_path.display()
@@ -743,17 +725,19 @@ mod tests {
 
     #[test]
     fn truncate_utf8_bytes_respects_char_boundaries_and_cap() {
-        let s = "a".repeat(MAX_PROMPT_ARGV_BYTES + 50_000);
-        let out = truncate_utf8_bytes(&s, MAX_PROMPT_ARGV_BYTES);
-        assert!(out.len() <= MAX_PROMPT_ARGV_BYTES);
+        let cap = max_prompt_argv_bytes();
+        let s = "a".repeat(cap + 50_000);
+        let out = truncate_utf8_bytes(&s, cap);
+        assert!(out.len() <= cap);
         assert!(out.contains("truncated for OS argv limit"));
     }
 
     #[test]
     fn clamp_prompt_args_caps_each_trailing_string() {
-        let huge = "x".repeat(MAX_PROMPT_ARGV_BYTES + 10_000);
+        let cap = max_prompt_argv_bytes();
+        let huge = "x".repeat(cap + 10_000);
         let argv = clamp_prompt_args(&[huge, "ok".into()]);
-        assert!(argv[0].len() <= MAX_PROMPT_ARGV_BYTES);
+        assert!(argv[0].len() <= cap);
         assert_eq!(argv[1], "ok");
     }
 
@@ -761,11 +745,12 @@ mod tests {
     fn build_args_clamps_a_please_fix_sized_prompt() {
         let mut cfg = maximal_cursor_config();
         cfg.backend = AgentBackend::Cursor;
-        let huge = "y".repeat(MAX_PROMPT_ARGV_BYTES + 80_000);
+        let cap = max_prompt_argv_bytes();
+        let huge = "y".repeat(cap + 80_000);
         let argv = cfg.build_args(None, &[huge]);
         let last = argv.last().expect("prompt");
         assert!(
-            last.len() <= MAX_PROMPT_ARGV_BYTES,
+            last.len() <= cap,
             "prompt argv still too long: {}",
             last.len()
         );

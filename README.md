@@ -19,7 +19,8 @@ cd ~/abbey
 ./install.sh
 # or:
 cargo build --release
-install -m 755 target/release/abbey ~/.local/bin/abbey
+./install.sh          # Unix/macOS → ~/.local/bin/abbey
+# Windows:  powershell -File .\install.ps1  → %LOCALAPPDATA%\abbey\bin\abbey.exe
 ```
 
 Requires: **Rust nightly** (`rust-toolchain.toml`), **cursor-agent** on PATH.

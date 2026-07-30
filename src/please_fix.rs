@@ -1,6 +1,6 @@
 //! Shared "please fix last failure" prompt construction.
 
-use crate::agent::{MAX_PROMPT_ARGV_BYTES, truncate_utf8_bytes};
+use crate::agent::{max_prompt_argv_bytes, truncate_utf8_bytes};
 use anyhow::{Result, bail};
 use std::io::{self, IsTerminal, Read};
 use std::path::PathBuf;
@@ -120,11 +120,9 @@ fn summarize_capture(body: &str) -> String {
 }
 
 pub fn build_prompt(explicit: &[String]) -> Result<String> {
+    let cap = max_prompt_argv_bytes();
     if !explicit.is_empty() {
-        return Ok(truncate_utf8_bytes(
-            &explicit.join(" "),
-            MAX_PROMPT_ARGV_BYTES,
-        ));
+        return Ok(truncate_utf8_bytes(&explicit.join(" "), cap));
     }
     if let Ok(path) = std::env::var("CURSOR_AGENT_COMPLETED_PATH") {
         if let Ok(text) = std::fs::read_to_string(&path) {
@@ -143,7 +141,7 @@ pub fn build_prompt(explicit: &[String]) -> Result<String> {
                     &format!(
                         "I just ran the command: \"{cmd}\", which exited with code {code}. The output was:\n\n{out}\n\nPlease help me fix it."
                     ),
-                    MAX_PROMPT_ARGV_BYTES,
+                    cap,
                 ));
             }
         }
@@ -155,7 +153,7 @@ pub fn build_prompt(explicit: &[String]) -> Result<String> {
             let body = summarize_capture(buf.trim());
             return Ok(truncate_utf8_bytes(
                 &format!("Please fix this failure:\n\n{body}"),
-                MAX_PROMPT_ARGV_BYTES,
+                cap,
             ));
         }
     }
@@ -175,7 +173,7 @@ pub fn build_prompt(explicit: &[String]) -> Result<String> {
 pub fn build_prompt_soft(explicit: &str) -> String {
     let t = explicit.trim();
     if !t.is_empty() {
-        return truncate_utf8_bytes(t, MAX_PROMPT_ARGV_BYTES);
+        return truncate_utf8_bytes(t, max_prompt_argv_bytes());
     }
     match build_prompt(&[]) {
         Ok(p) => p,

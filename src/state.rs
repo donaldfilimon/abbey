@@ -29,8 +29,11 @@ impl AbbeyState {
         let state_dir = std::env::var_os("ABBEY_STATE_DIR")
             .map(PathBuf::from)
             .or_else(|| {
+                // Prefer XDG/state (Unix) or platform state dir; on Windows
+                // `dirs::data_local_dir` is the usual per-user app data root.
                 dirs::state_dir()
                     .map(|d| d.join("abbey"))
+                    .or_else(|| dirs::data_local_dir().map(|d| d.join("abbey")))
                     .or_else(|| dirs::home_dir().map(|h| h.join(".local/state/abbey")))
             })
             .context("cannot resolve ABBEY_STATE_DIR")?;

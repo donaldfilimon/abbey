@@ -10,8 +10,10 @@
 
 ```bash
 ./check.sh          # fmt + clippy -D warnings + test, for BOTH feature sets
-./install.sh        # release binary → ~/.local/bin/abbey
+./install.sh        # Unix/macOS → ~/.local/bin/abbey
+.\install.ps1       # Windows → %LOCALAPPDATA%\abbey\bin\abbey.exe
 abbey doctor        # build stamp + persona/role/memory/os honesty
+abbey platform paths
 ```
 
 `check.sh` runs clippy/test twice: default features, then `--features wdbx`. A bare
@@ -25,8 +27,11 @@ abbey doctor        # build stamp + persona/role/memory/os honesty
 |--------|-----------------------------------|-------|
 | Linux | ✓ | primary |
 | macOS | ✓ | + voice · `fm` |
-| Windows | ✓ | WDBX lock via `fs2` / LockFileEx |
+| Windows | ✓ | PATHEXT `which_bin`; WDBX `fs2` LockFileEx; tighter argv clamp |
 | other Unix | ✓ | same as Linux portable set |
+
+Windows OS allowlist is real System32 tools only (`whoami`, `hostname`, `where`,
+`systeminfo`) — not cmd builtins. Install via `install.ps1`.
 
 Accelerator **host detection** (`abbey platform compute`) is Current. GPU/NPU/TPU
 **runtimes inside Abbey** are Out of scope — see `abbey claims oos`.

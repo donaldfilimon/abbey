@@ -2,18 +2,23 @@
 //!
 //! Policy mirrors ABI's claim-honest gate: whitelist only, no shell strings.
 //! Unrestricted / autonomous OS is Out of scope (`abbey shell refuse`).
+//!
+//! Allowlists are real executables only (no shell builtins like Windows `cd`/`dir`).
 
 use anyhow::{Result, bail};
 use std::process::Command;
 
-/// Commands allowed on all platforms (basename match).
-const ALLOWED_COMMON: &[&str] = &["whoami", "hostname", "echo", "date", "uname"];
+/// Portable commands that exist as real binaries on both Unix and Windows.
+const ALLOWED_COMMON: &[&str] = &["whoami", "hostname"];
 
 #[cfg(unix)]
-const ALLOWED_UNIX: &[&str] = &["pwd", "ls", "true", "false", "env", "id", "uptime"];
+const ALLOWED_UNIX: &[&str] = &[
+    "echo", "date", "uname", "pwd", "ls", "true", "false", "env", "id", "uptime",
+];
 
+/// Windows System32 tools only — not cmd.exe builtins (`cd`, `dir`, `echo`, `ver`).
 #[cfg(windows)]
-const ALLOWED_WIN: &[&str] = &["cd", "dir", "ver", "where", "set"];
+const ALLOWED_WIN: &[&str] = &["where", "systeminfo"];
 
 pub fn allowed_names() -> Vec<&'static str> {
     let mut v = ALLOWED_COMMON.to_vec();
@@ -30,7 +35,6 @@ pub fn is_allowed(cmd: &str) -> bool {
         .and_then(|s| s.to_str())
         .unwrap_or(cmd)
         .to_ascii_lowercase();
-    // Strip .exe on Windows
     let base = base.trim_end_matches(".exe");
     allowed_names().contains(&base)
 }
@@ -85,7 +89,7 @@ pub fn print_policy(verbose_help: bool) -> Result<i32> {
     println!("  refuse                         OOS: unrestricted shell");
     println!();
     println!("backend: local whitelist (abi agent os when abi on PATH + prefer_abi)");
-    println!("rule:    execute always needs --confirm; no shell strings");
+    println!("rule:    execute always needs --confirm; real executables only (no shell strings)");
     println!("refuse:  abbey shell refuse · abbey claims refuse shell · abbey os refuse");
     if verbose_help {
         println!(
@@ -137,7 +141,9 @@ fn local_os(args: &[String]) -> Result<i32> {
             if !is_allowed(cmd) {
                 bail!("denied: `{cmd}` is not on the OS-control allowlist");
             }
-            let out = Command::new(cmd).args(&rest[1..]).output()?;
+            // Resolve via PATH so Windows finds whoami.exe without an absolute path.
+            let bin = crate::agent::which_bin(cmd).unwrap_or_else(|| std::path::PathBuf::from(cmd));
+            let out = Command::new(&bin).args(&rest[1..]).output()?;
             let stdout = String::from_utf8_lossy(&out.stdout);
             let stderr = String::from_utf8_lossy(&out.stderr);
             print!("{stdout}");
@@ -159,6 +165,23 @@ mod tests {
         assert!(is_allowed("whoami"));
         assert!(!is_allowed("rm"));
         assert!(!is_allowed("curl"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_allowlist_excludes_cmd_builtins() {
+        assert!(!is_allowed("cd"));
+        assert!(!is_allowed("dir"));
+        assert!(!is_allowed("echo"));
+        assert!(is_allowed("where"));
+        assert!(is_allowed("whoami.exe"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unix_allowlist_has_uname() {
+        assert!(is_allowed("uname"));
+        assert!(is_allowed("ls"));
     }
 
     #[test]

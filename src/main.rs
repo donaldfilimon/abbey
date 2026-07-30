@@ -12,6 +12,7 @@ mod doctor;
 mod generate;
 mod gitops;
 mod highlight;
+mod host;
 mod hybrid_loop;
 mod init;
 mod inventory;
