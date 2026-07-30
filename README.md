@@ -72,7 +72,9 @@ fall back to SQLite — and say so in `abbey doctor`. It never silently pretends
 Concurrent `abbey` processes are safe on both backends: SQLite via its own file locking, WDBX
 via an `flock(2)` guard Abbey holds for the store's lifetime (`abi-wdbx` itself has no
 cross-process locking — without the guard, simultaneous writers corrupt the WAL beyond
-recovery). The guard is Unix-only.
+recovery). `abbey wdbx` passthroughs aimed at Abbey's own store take the same lock, so the
+bridge can't route around it. Caveats: the guard is **Unix-only**, and it does not extend to
+an `abi` invoked directly by you against the same store.
 
 ## Honest limits
 
@@ -83,6 +85,10 @@ recovery). The guard is Unix-only.
 - The WDBX backend uses the KV space; vector/embedding search through WDBX is not wired yet.
 - The WDBX cross-process lock is `#[cfg(unix)]`; on non-Unix targets concurrent processes are
   unprotected.
+- Under WDBX lock contention a run's background STM/activity write is dropped silently (it is
+  best-effort by design). Explicit `abbey memory`/`abbey learn` writes surface the error.
+- The TUI memory panel opens the store with a 250 ms timeout so a redraw never stalls; a
+  locked store shows `unavailable: …` rather than reporting an empty store.
 - Personas, worker roles, and provenance memory are **rolling out** — see `tasks/goals.md`; do not assume local Gemma/Qwen weights.
 - `/cost` is **N/A** (use Cursor account dashboard).
 - Full MCP/plugin UIs pass through to cursor-agent when available.

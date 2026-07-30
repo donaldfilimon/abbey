@@ -6,10 +6,11 @@ mod wdbx;
 
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 pub use sqlite::SqliteMemory;
 #[cfg(feature = "wdbx")]
-pub use wdbx::WdbxMemory;
+pub use wdbx::{WdbxMemory, lock_store_dir};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoryRecord {
@@ -72,13 +73,28 @@ pub struct ReflectReport {
 /// otherwise it falls back to SQLite rather than failing a session, and
 /// [`backend_status`] reports why.
 pub fn open_backend(state_dir: &Path, backend: &str) -> anyhow::Result<Box<dyn MemoryStore>> {
+    open_backend_with_timeout(state_dir, backend, DEFAULT_LOCK_TIMEOUT)
+}
+
+/// How long a WDBX open waits for another process's lock before giving up.
+pub const DEFAULT_LOCK_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Interactive read-only callers (the TUI redraw) must not stall for ten seconds
+/// on a lock, so they pass something short and report the failure instead.
+pub fn open_backend_with_timeout(
+    state_dir: &Path,
+    backend: &str,
+    timeout: Duration,
+) -> anyhow::Result<Box<dyn MemoryStore>> {
+    let _ = timeout; // only the wdbx backend can block
     match resolved_backend(backend) {
         Backend::Sqlite => Ok(Box::new(SqliteMemory::open(
             &SqliteMemory::path_for_state_dir(state_dir),
         )?)),
         #[cfg(feature = "wdbx")]
-        Backend::Wdbx => Ok(Box::new(WdbxMemory::open(
+        Backend::Wdbx => Ok(Box::new(WdbxMemory::open_with_timeout(
             &WdbxMemory::path_for_state_dir(state_dir),
+            timeout,
         )?)),
     }
 }

@@ -26,6 +26,9 @@
       Verified live against a locally built `abi-cli`: `query`, `db verify`, `compute info`,
       exit-code propagation, and a cross-check that `abi` reads the same 40 records the
       in-process backend wrote
+- [x] Cross-process safety extends to the bridge: an `abbey wdbx` passthrough aimed at Abbey's
+      own store takes the same lock, so Abbey's own CLI can't route around its guard. TUI
+      redraw opens with a 250 ms timeout and reports `unavailable:` instead of "empty"
 - [x] Cross-process safety: `flock(2)` on `<store>/abbey.lock` held for the handle's life.
       Without it 20 concurrent `abbey` processes interleaved WAL appends and left the store
       **permanently unreadable** (CRC mismatch, every later open failed); with it 40/40

@@ -90,29 +90,37 @@ impl App {
             .unwrap_or_default()
             .memory_backend;
         let mut lines = vec![memory::backend_status(&self.state.state_dir, &backend)];
-        if let Ok(mem) = memory::open_backend(&self.state.state_dir, &backend) {
-            for layer in ["stm", "ltm", "activity", "train_candidate"] {
-                let n = mem
-                    .filter(Some(layer), None, 500)
-                    .map(|v| v.len())
-                    .unwrap_or(0);
-                lines.push(format!("{layer:<16} {n}"));
-            }
-            if let Ok(report) = mem.reflect() {
-                lines.push(format!(
-                    "reflect low={} dups={} superseded={}",
-                    report.low_confidence.len(),
-                    report.duplicate_summaries.len(),
-                    report.superseded.len()
-                ));
-            }
-            if let Ok(prefs) = mem.filter(Some("ltm"), Some("preference"), 10) {
-                for p in prefs.into_iter().take(5) {
-                    lines.push(format!("pref: {}", p.summary));
+        // Redraw path: never block the render loop on another process's lock.
+        let opened = memory::open_backend_with_timeout(
+            &self.state.state_dir,
+            &backend,
+            Duration::from_millis(250),
+        );
+        match opened {
+            Ok(mem) => {
+                for layer in ["stm", "ltm", "activity", "train_candidate"] {
+                    let n = mem
+                        .filter(Some(layer), None, 500)
+                        .map(|v| v.len())
+                        .unwrap_or(0);
+                    lines.push(format!("{layer:<16} {n}"));
+                }
+                if let Ok(report) = mem.reflect() {
+                    lines.push(format!(
+                        "reflect low={} dups={} superseded={}",
+                        report.low_confidence.len(),
+                        report.duplicate_summaries.len(),
+                        report.superseded.len()
+                    ));
+                }
+                if let Ok(prefs) = mem.filter(Some("ltm"), Some("preference"), 10) {
+                    for p in prefs.into_iter().take(5) {
+                        lines.push(format!("pref: {}", p.summary));
+                    }
                 }
             }
-        } else {
-            lines.push("(open failed or empty)".into());
+            // A locked or broken store is not an empty one — say which.
+            Err(e) => lines.push(format!("unavailable: {e}")),
         }
         lines.push("CLI: abbey learn correction|preference|digest".into());
         self.memory_lines = lines;

@@ -88,11 +88,39 @@ pub fn run(state: &AbbeyState, args: &[String]) -> Result<i32> {
         return run_in_process(state, &args[0]);
     }
 
-    run_with_bin(
-        config::resolve_abi_bin(&cfg),
-        args,
-        &abbey_store_base(&state.state_dir),
-    )
+    let base = abbey_store_base(&state.state_dir);
+
+    // `abi` knows nothing about Abbey's flock, so a passthrough aimed at Abbey's
+    // own store would be exactly the unguarded concurrent access the lock exists
+    // to prevent. Hold it for the subprocess's lifetime. (Without the `wdbx`
+    // feature Abbey has no store of its own, so there is nothing to coordinate.)
+    #[cfg(feature = "wdbx")]
+    let _own_store_guard = if targets_abbey_store(args, &base) {
+        Some(crate::memory::lock_store_dir(
+            &state.state_dir.join("wdbx"),
+            std::time::Duration::from_secs(10),
+        )?)
+    } else {
+        None
+    };
+
+    run_with_bin(config::resolve_abi_bin(&cfg), args, &base)
+}
+
+/// Whether this passthrough would read or mutate Abbey's own WDBX store.
+///
+/// Over-locking is harmless; under-locking is the risk, so a bare `query` (which
+/// gets the default injected) and any exact reference to Abbey's base path or its
+/// directory all count.
+#[cfg(feature = "wdbx")]
+fn targets_abbey_store(args: &[String], base: &Path) -> bool {
+    if args.first().is_some_and(|a| a == "query") && !has_positional(&args[1..]) {
+        return true;
+    }
+    let base_str = base.display().to_string();
+    let dir_str = base.parent().map(|p| p.display().to_string());
+    args.iter()
+        .any(|a| *a == base_str || Some(a.as_str()) == dir_str.as_deref())
 }
 
 #[cfg(feature = "wdbx")]

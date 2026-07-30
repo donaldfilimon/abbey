@@ -121,6 +121,13 @@ impl WdbxMemory {
     }
 }
 
+/// Lock a store directory without opening it — used to hold Abbey's lock across
+/// an `abi wdbx` subprocess that would otherwise ignore it.
+pub fn lock_store_dir(dir: &Path, timeout: Duration) -> Result<File> {
+    std::fs::create_dir_all(dir)?;
+    lock_exclusive(&dir.join("abbey.lock"), timeout)
+}
+
 /// Take an exclusive advisory lock, retrying until `timeout` elapses.
 #[cfg(unix)]
 fn lock_exclusive(path: &Path, timeout: Duration) -> Result<File> {
@@ -332,6 +339,31 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The TUI redraw calls `open_backend_with_timeout`; if a short timeout were
+    /// ignored, a locked store would freeze the render loop for the full default.
+    #[test]
+    #[cfg(unix)]
+    fn a_short_timeout_fails_fast_instead_of_waiting_the_default() {
+        let state_dir = tmp("fastfail");
+        let held = WdbxMemory::open(&WdbxMemory::path_for_state_dir(&state_dir)).unwrap();
+
+        let start = Instant::now();
+        let result = crate::memory::open_backend_with_timeout(
+            &state_dir,
+            "wdbx",
+            Duration::from_millis(100),
+        );
+        let elapsed = start.elapsed();
+
+        assert!(result.is_err(), "a locked store must not open");
+        assert!(
+            elapsed < Duration::from_secs(2),
+            "short timeout was ignored: waited {elapsed:?}"
+        );
+        drop(held);
+        let _ = std::fs::remove_dir_all(&state_dir);
     }
 
     #[test]
