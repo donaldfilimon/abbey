@@ -358,6 +358,44 @@ mod map_tests {
         assert!(certain.z > unsure.z, "confidence lifts within a layer");
     }
 
+    /// `hours_since` parses a fixed format and silently yields 0.0 on drift, so
+    /// the recency axis needs an explicit test with controlled timestamps.
+    #[test]
+    fn recency_axis_increases_with_age() {
+        let stamp = |ago_hours: i64| {
+            (chrono::Utc::now() - chrono::Duration::hours(ago_hours))
+                .format("%Y-%m-%dT%H:%M:%SZ")
+                .to_string()
+        };
+        let mut now = rec("now", "t", "ltm", 0.5);
+        now.timestamp = stamp(0);
+        let mut yesterday = rec("yesterday", "t", "ltm", 0.5);
+        yesterday.timestamp = stamp(24);
+        let mut last_year = rec("last year", "t", "ltm", 0.5);
+        last_year.timestamp = stamp(24 * 365);
+
+        let (y0, y1, y2) = (
+            coordinates(&now).y,
+            coordinates(&yesterday).y,
+            coordinates(&last_year).y,
+        );
+        assert!(
+            y0 < y1 && y1 < y2,
+            "older memories sit further out: {y0} {y1} {y2}"
+        );
+        assert!(
+            y2 - y1 < y1 - y0 + 10.0,
+            "log compression keeps old memories from running away"
+        );
+    }
+
+    #[test]
+    fn unparseable_timestamp_does_not_panic() {
+        let mut r = rec("broken", "t", "ltm", 0.5);
+        r.timestamp = "not-a-timestamp".into();
+        assert_eq!(coordinates(&r).y, 0.0, "drift degrades to 0, not a crash");
+    }
+
     #[test]
     fn placement_is_deterministic_across_calls() {
         let r = rec("stable", "guitar", "ltm", 0.8);

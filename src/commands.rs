@@ -1,7 +1,7 @@
 //! Clap subcommand dispatch.
 
 use crate::actions::{RunSpec, fork_prompt, run_agent, run_commit, run_pr, run_review};
-use crate::agent::{AgentConfig, run_resilient};
+use crate::agent::{AgentBackend, AgentConfig, run_resilient};
 use crate::build_info;
 use crate::cli::{Cli, Commands, MemoryCmd, Shell};
 use crate::config;
@@ -26,6 +26,18 @@ use anyhow::Result;
 use clap::CommandFactory;
 use clap_complete::{Shell as ClapShell, generate};
 use std::io;
+
+/// `fm` is a local one-shot generator: it has no account, no chat picker and no
+/// MCP surface. Forwarding these verbs to it prints an opaque `fm` usage error
+/// and (worse) exited 0, so refuse them explicitly instead.
+fn unsupported_on_device(verb: &str) -> Result<i32> {
+    eprintln!(
+        "abbey: `{verb}` is not applicable under the on-device backend (ABBEY_BACKEND=fm).\n\
+         The Apple Foundation Models CLI has no account, session list, or MCP surface.\n\
+         Unset ABBEY_BACKEND to use cursor-agent."
+    );
+    Ok(2)
+}
 
 pub fn run_cli(cli: Cli, state: AbbeyState, mut cfg: AgentConfig) -> Result<i32> {
     match cli.command {
@@ -243,26 +255,45 @@ pub fn run_cli(cli: Cli, state: AbbeyState, mut cfg: AgentConfig) -> Result<i32>
             Ok(0)
         }
         Some(Commands::Status) => {
+            if cfg.backend == AgentBackend::Fm {
+                return unsupported_on_device("status");
+            }
             let st = cfg.passthrough(&["status".into()])?;
             Ok(st.code().unwrap_or(1))
         }
         Some(Commands::Models) => {
+            if cfg.backend == AgentBackend::Fm {
+                print!("{}", cfg.list_models_text()?);
+                return Ok(0);
+            }
             let st = cfg.passthrough(&["models".into()])?;
             Ok(st.code().unwrap_or(1))
         }
         Some(Commands::Ls) => {
+            if cfg.backend == AgentBackend::Fm {
+                return unsupported_on_device("ls");
+            }
             let st = cfg.passthrough(&["ls".into()])?;
             Ok(st.code().unwrap_or(1))
         }
         Some(Commands::Login) => {
+            if cfg.backend == AgentBackend::Fm {
+                return unsupported_on_device("login");
+            }
             let st = cfg.passthrough(&["login".into()])?;
             Ok(st.code().unwrap_or(1))
         }
         Some(Commands::Logout) => {
+            if cfg.backend == AgentBackend::Fm {
+                return unsupported_on_device("logout");
+            }
             let st = cfg.passthrough(&["logout".into()])?;
             Ok(st.code().unwrap_or(1))
         }
         Some(Commands::Mcp { args }) => {
+            if cfg.backend == AgentBackend::Fm {
+                return unsupported_on_device("mcp");
+            }
             let mut a = vec!["mcp".into()];
             a.extend(args);
             let st = cfg.passthrough(&a)?;

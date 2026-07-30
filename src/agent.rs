@@ -479,6 +479,13 @@ pub fn run_resilient(
     }
 
     let code = st.code().unwrap_or(1);
+    // The retry exists because a server-side chat can go stale. `fm` has no
+    // server: a non-zero exit is a real failure (bad argument, unavailable
+    // model), and retrying would silently abandon the transcript and burn a new
+    // chat on every invocation.
+    if cfg.backend == AgentBackend::Fm {
+        return Ok(code);
+    }
     eprintln!("abbey: resume of {chat} failed (exit {code}); creating a new chat…");
     let id = cfg.create_chat()?;
     state.save_chat(&id)?;

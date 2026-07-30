@@ -78,6 +78,13 @@
       `system|pcc`). **Consequence: under `fm` the Max/Gemma split is prompt-only**
 - [x] ask/plan → `--instructions`; `fm_availability` parses de-coloured stdout because
       `fm available` exits non-zero even when the on-device model works
+- [x] Interactive (non-`-p`) path verified: `abbey --no-tui "…"` exits 0 and leaves exactly
+      one transcript — no chat burned per invocation
+- [x] Account/session verbs (`status`/`ls`/`login`/`logout`/`mcp`) refuse honestly with
+      exit 2 instead of forwarding to `fm` and printing an opaque usage error *with exit 0*;
+      `models` lists `system`/`pcc` locally
+- [x] `run_resilient` no longer retries-with-a-new-chat under `fm`: that retry exists for
+      stale *server* sessions, and `fm` has no server — a non-zero exit is a real failure
 
 ### Slice 2 — WDBX as a 3-D memory map (done)
 - [x] `coordinates()` places each memory at topic × recency × consolidation; pure and
@@ -88,6 +95,8 @@
 - [x] `abbey memory put --tag <subject>` — without it every record collapsed into one
       column, which made the topic axis useless. Untagged records now sit in a visible
       `(untagged)` column rather than being hash-scattered into fake topics
+- [x] Recency axis tested with controlled timestamps (it was degenerate at 0.00 in every
+      hand test because the records were seconds old), plus a drift case that must not panic
 - [ ] Axes are deterministic, **not** a learned embedding space — Abbey has no embedder.
       Semantic placement stays Proposed
 
