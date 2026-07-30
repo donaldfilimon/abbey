@@ -84,6 +84,19 @@ pub fn classify_task(input: &str) -> TaskClass {
         "diagram",
         "picture",
         "ocr",
+        "video",
+        "clip",
+        "frame",
+        "recording",
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".webp",
+        ".gif",
+        ".mp4",
+        ".mov",
+        ".mkv",
+        ".webm",
     ]
     .iter()
     .any(|k| lower.contains(k));
@@ -245,6 +258,22 @@ mod tests {
         assert_eq!(classify_task("describe this screenshot"), TaskClass::Visual);
         assert_eq!(
             route_decision("describe this screenshot", None).primary,
+            WorkerRole::Gemma
+        );
+    }
+
+    #[test]
+    fn video_and_media_path_select_gemma() {
+        assert_eq!(
+            classify_task("summarize this video clip"),
+            TaskClass::Visual
+        );
+        assert_eq!(
+            route_decision("look at ./demo.mp4", None).primary,
+            WorkerRole::Gemma
+        );
+        assert_eq!(
+            route_decision("ocr this shot.png", None).primary,
             WorkerRole::Gemma
         );
     }

@@ -128,6 +128,21 @@ pub const SLASH_CATALOG: &[SlashCmd] = &[
         kind: SlashKind::Agent,
     },
     SlashCmd {
+        name: "image",
+        help: "Attach image path + prompt (workspace read; no local vision)",
+        kind: SlashKind::Agent,
+    },
+    SlashCmd {
+        name: "video",
+        help: "Attach video path + prompt (workspace read; no local vision)",
+        kind: SlashKind::Agent,
+    },
+    SlashCmd {
+        name: "think",
+        help: "Set thinking model: /think low|medium|high|xhigh|max",
+        kind: SlashKind::Local,
+    },
+    SlashCmd {
         name: "memory",
         help: "Chat history, or: /memory search <q>",
         kind: SlashKind::Local,

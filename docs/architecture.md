@@ -40,6 +40,7 @@ Status key: **Current** = shipped · **Proposed** = designed, not claimed live �
 | `hybrid_loop` | Two-stage Gemma→Max run, correlated in the route log |
 | `wdbx_bridge` | `abbey wdbx` — `abi wdbx` passthrough + in-process `stats`/`checkpoint` |
 | `please_fix` | Last-failure prompt; capture summarizer (argv-safe) |
+| `media` | Image/video path attach → `--add-dir` + prompt note (no local vision) |
 | `learn` | Self-learn capture/digest/review/stats |
 | `os_control` | Cross-platform OS policy |
 | `parallel` | Multi-lane fan-out |
@@ -76,6 +77,8 @@ Status key: **Current** = shipped · **Proposed** = designed, not claimed live �
 - 3-D memory map (`abbey memory map` / `near`) on both memory backends; mirrored into
   WDBX `SpatialRecord`s under `--features wdbx`
 - Prompt argv clamp + please-fix capture summarizer (avoids E2BIG on cursor-agent)
+- Media path attach (`--image`/`--video`/`/image`/`/video`) + thinking aliases
+  (`--thinking`/`/think`) + `--approve-mcps` tool passthrough
 
 ## Proposed (not Current)
 

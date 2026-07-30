@@ -130,3 +130,10 @@ Buildable residuals closed 2026-07-30; Proposed/OOS stay deferred above.
 - [x] Docs/clap/TUI/doctor honesty (map preview Current; learn review/stats; routing audit)
 - [x] please-fix: keep cargo `Running` / rustc `error[` / `warning:`; drop only agent chrome
 - [x] JSONL roundtrip + learn route-payload unit tests
+
+## Media / thinking / tools (Current via cursor-agent)
+
+- [x] `media` module: path resolve, `--add-dir`, prompt note (no pixel encode / local vision)
+- [x] CLI `--image`/`--video`/`--media`/`--thinking`/`--approve-mcps`
+- [x] Slash `/image` `/video` `/think`; prompt-token media discovery; video keywords → Gemma
+- [x] Doctor + docs honesty: tools = passthrough; thinking = model alias; media = workspace paths

@@ -10,12 +10,13 @@ use crate::gitops;
 use crate::init;
 use crate::inventory;
 use crate::learn;
+use crate::media::{self, MediaAttach, MediaKind};
 use crate::models::resolve_model;
 use crate::os_control;
 use crate::parallel;
 use crate::please_fix;
 use crate::route_log;
-use crate::session::{compact_history, open_memory};
+use crate::session::{apply_media_attach, compact_history, open_memory};
 use crate::slash;
 use crate::state::AbbeyState;
 use anyhow::{Result, bail};
@@ -122,6 +123,42 @@ pub fn dispatch_slash(input: &str, state: &AbbeyState, cfg: &mut AgentConfig) ->
                 bail!("/gemma needs a prompt");
             }
             run_agent(cfg, state, &rest_prompt(rest), RunSpec::gemma())
+        }
+        "image" | "video" => {
+            let mut parts = rest.split_whitespace();
+            let path = parts
+                .next()
+                .ok_or_else(|| anyhow::anyhow!("/{cmd} <path> [prompt…]"))?;
+            let forced = if cmd == "video" {
+                Some(MediaKind::Video)
+            } else {
+                Some(MediaKind::Image)
+            };
+            let pair = media::resolve_media_path(path, forced)?;
+            let mut attach = MediaAttach::default();
+            attach.extend_paths([pair]);
+            apply_media_attach(cfg, &attach);
+            let prompt_rest: Vec<String> = parts.map(String::from).collect();
+            let prompt = if prompt_rest.is_empty() {
+                vec!["Describe the attached media and note anything actionable.".into()]
+            } else {
+                prompt_rest
+            };
+            run_agent(cfg, state, &prompt, RunSpec::gemma())
+        }
+        "think" | "thinking" => {
+            if rest.is_empty() {
+                println!("usage: /think low|medium|high|xhigh|max");
+                println!("current model: {}", cfg.model);
+                println!("note: thinking = Cursor model id alias, not Abbey CoT UI");
+                return Ok(0);
+            }
+            let level = rest.split_whitespace().next().unwrap_or(rest);
+            let m = resolve_model(&format!("fable-thinking-{level}"));
+            state.save_model(&m)?;
+            cfg.model = m.clone();
+            println!("{m}");
+            Ok(0)
         }
         "skills" => {
             inventory::print_skills()?;

@@ -52,6 +52,20 @@ Routing decisions record **confidence**, **alternate**, and **fallback** on `rou
 
 ---
 
+## Media, thinking, and tools
+
+| Surface | Status |
+| --- | --- |
+| `--image` / `--video` / `--media` · `/image` · `/video` | **Current** — resolve path, `--add-dir` parent, prompt note; **no pixel encode** |
+| Prompt-token paths (`./shot.png`) | **Current** — auto-discover + Gemma preference |
+| Local vision / video weights | **Out of scope** |
+| `--thinking <level>` · `/think` | **Current** — Cursor `*-thinking-*` model aliases (not Abbey CoT UI) |
+| Tools during a run | **Current via cursor-agent** (`--print` has tool access; `--approve-mcps`) |
+| `abbey mcp` / `/mcp` · skills/plugins inventory | **Current** passthrough / discovery |
+| Tools under `ABBEY_BACKEND=fm` | **N/A** — MCP/account verbs refuse |
+
+---
+
 ## Memory & self-learn
 
 | Layer | Status |

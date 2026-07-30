@@ -5,6 +5,7 @@ use crate::cli::{Cli, ExecMode};
 use crate::config;
 use crate::hybrid_loop::{self, STAGE_IMPLEMENT, STAGE_INTERPRET};
 use crate::learn;
+use crate::media;
 use crate::memory::{self, MemoryRecord, MemoryStore};
 use crate::models::resolve_model;
 use crate::persona;
@@ -17,7 +18,9 @@ use anyhow::{Result, bail};
 pub fn apply_global_flags(cli: &Cli, state: &AbbeyState, cfg: &mut AgentConfig) -> Result<()> {
     // `fm` keeps conversations in transcript files under the state dir.
     cfg.transcript_dir = Some(state.state_dir.join("fm"));
-    if let Some(m) = &cli.model {
+    if let Some(level) = &cli.thinking {
+        cfg.model = resolve_model(&format!("fable-thinking-{level}"));
+    } else if let Some(m) = &cli.model {
         cfg.model = resolve_model(m);
     } else {
         cfg.model = state.read_model();
@@ -65,12 +68,32 @@ pub fn apply_global_flags(cli: &Cli, state: &AbbeyState, cfg: &mut AgentConfig) 
     if cli.debug {
         cfg.extra_args.push("--debug".into());
     }
+    if cli.approve_mcps {
+        cfg.extra_args.push("--approve-mcps".into());
+    }
     if let Some(n) = cli.max_turns {
         // cursor-agent may ignore unknown flags; keep for Grok-parity surface
         cfg.extra_args.push("--max-turns".into());
         cfg.extra_args.push(n.to_string());
     }
+
+    let attach = media::collect(&cli.images, &cli.videos, &cli.media)?;
+    apply_media_attach(cfg, &attach);
     Ok(())
+}
+
+/// Apply a media attach set onto the agent config (add-dir + prompt note).
+pub fn apply_media_attach(cfg: &mut AgentConfig, attach: &media::MediaAttach) {
+    if attach.is_empty() {
+        return;
+    }
+    attach.apply_add_dirs(cfg);
+    let note = attach.prompt_note();
+    cfg.media_note = Some(match cfg.media_note.take() {
+        Some(prev) => format!("{prev}{note}"),
+        None => note,
+    });
+    cfg.media_prefers_gemma = true;
 }
 
 /// Open the configured memory backend (sqlite by default; wdbx under `--features wdbx`).
@@ -132,14 +155,23 @@ pub fn hybrid_run(
     prompt: &[String],
     role_override: Option<WorkerRole>,
 ) -> Result<i32> {
-    let joined = prompt.join(" ");
+    // Prompt-token media paths (e.g. `abbey describe ./shot.png`) → add-dir + note.
+    let discovered = media::discover_in_prompt(prompt);
+    apply_media_attach(cfg, &discovered);
+
+    let joined = match &cfg.media_note {
+        Some(note) => format!("{note}{}", prompt.join(" ")),
+        None => prompt.join(" "),
+    };
     let abbey_cfg = config::AbbeyConfig::load().unwrap_or_default();
 
     let persona = persona::select_persona(&joined);
-    let decision = roles::route_decision(
-        &joined,
-        role_override.or_else(|| WorkerRole::parse(&abbey_cfg.default_role)),
-    );
+    let role_override = match role_override {
+        Some(r) => Some(r),
+        None if cfg.media_prefers_gemma => Some(WorkerRole::Gemma),
+        None => WorkerRole::parse(&abbey_cfg.default_role),
+    };
+    let decision = roles::route_decision(&joined, role_override);
     let role = decision.primary;
     let model_alias = match role {
         WorkerRole::Gemma => abbey_cfg.roles.gemma.as_str(),
@@ -162,7 +194,7 @@ pub fn hybrid_run(
         role.label(),
         decision.class
     );
-    let rec = route_log::RouteRecord::new(
+    let mut rec = route_log::RouteRecord::new(
         state.cwd.display().to_string(),
         persona.label(),
         role.label(),
@@ -174,6 +206,12 @@ pub fn hybrid_run(
         decision.alternate.map(|r| r.label().to_string()),
         decision.fallback,
     );
+    if cfg.media_prefers_gemma {
+        rec.tools.push("media".into());
+    }
+    if cfg.extra_args.iter().any(|a| a == "--approve-mcps") {
+        rec.tools.push("mcp".into());
+    }
     let _ = route_log::append_route_record(&state.state_dir, &rec);
     record_activity(state, persona, role, &joined, &cfg.model);
 
@@ -188,10 +226,19 @@ pub fn hybrid_loop_run(
     max_model: &str,
     gemma_model: &str,
 ) -> Result<i32> {
-    let user = prompt.join(" ");
+    // Allow `abbey hybrid-loop describe ./ui.png` to attach paths like hybrid_run.
+    let discovered = media::discover_in_prompt(prompt);
+    // hybrid_loop takes &AgentConfig — clone to apply add-dirs for both stages.
+    let mut cfg_media = cfg.clone();
+    apply_media_attach(&mut cfg_media, &discovered);
+    let user = match &cfg_media.media_note {
+        Some(note) => format!("{note}{}", prompt.join(" ")),
+        None => prompt.join(" "),
+    };
     if user.trim().is_empty() {
         bail!("usage: abbey hybrid-loop <prompt…>");
     }
+    let cfg = &cfg_media;
 
     let correlation = uuid::Uuid::new_v4().to_string();
     let cwd = state.cwd.display().to_string();

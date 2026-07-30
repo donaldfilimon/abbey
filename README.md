@@ -105,6 +105,24 @@ tab shows a short map preview; use the CLI for the full map.
 auto-run a second agent when confidence is low. Prefer `hybrid-loop` or `/gemma`
 when the alternate is Gemma.
 
+## Media, thinking, and tools
+
+Abbey does **not** embed pixels or run local vision weights. It attaches paths so
+**cursor-agent** can read them from the workspace:
+
+```bash
+abbey --image ./shot.png "what is wrong with this UI?"
+abbey --video ./demo.mov "summarize the flow"
+abbey /image ./shot.png describe the layout
+abbey --thinking high "refactor the router carefully"
+abbey --approve-mcps "use my MCP tools to check status"
+abbey mcp list
+```
+
+- `/think low|medium|high|xhigh|max` sets a Cursor `*-thinking-*` model id (not an Abbey chain-of-thought UI).
+- Prompt tokens that look like media paths (`./a.png`, `clip.mp4`) are auto-discovered.
+- Under `ABBEY_BACKEND=fm`, MCP/account verbs refuse; media notes are still text paths only.
+
 ## Memory backends
 
 SQLite is the default. The in-process WDBX backend (`abi-wdbx` `DurableStore`) is real but

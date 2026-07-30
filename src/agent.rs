@@ -35,6 +35,10 @@ pub struct AgentConfig {
     /// Where `fm` conversation transcripts live (`fm` has no server-side chat
     /// ids, so Abbey maps its own chat id onto a transcript file).
     pub transcript_dir: Option<PathBuf>,
+    /// Absolute media paths noted into the prompt (not pixel payloads).
+    pub media_note: Option<String>,
+    /// Prefer Gemma role when media was attached (cursor binding, not local vision).
+    pub media_prefers_gemma: bool,
 }
 
 impl Default for AgentConfig {
@@ -56,6 +60,8 @@ impl Default for AgentConfig {
             extra_args: Vec::new(),
             backend: AgentBackend::from_env(),
             transcript_dir: None,
+            media_note: None,
+            media_prefers_gemma: false,
         }
     }
 }
@@ -578,6 +584,8 @@ mod tests {
             extra_args: vec!["--debug".into(), "--max-turns".into(), "7".into()],
             backend: AgentBackend::Fm,
             transcript_dir: None,
+            media_note: None,
+            media_prefers_gemma: false,
         }
     }
 

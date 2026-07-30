@@ -287,6 +287,15 @@ pub fn cmd_doctor(state: &AbbeyState, cfg: &AgentConfig) -> Result<i32> {
     let _ = output::println(
         "learn:      review|stats for train_candidate provenance (LoRA out of scope)",
     );
+    let _ = output::println(
+        "media:      --image/--video/--media or /image|/video attach paths (workspace read; no local vision)",
+    );
+    let _ = output::println(
+        "thinking:   --thinking <level> or /think → Cursor *-thinking-* model ids (not Abbey CoT UI)",
+    );
+    let _ = output::println(
+        "tools/mcp:  abbey mcp … + --approve-mcps passthrough; skills/plugins inventory; OS allowlist",
+    );
     let _ = output::println(memory::backend_status(
         &state.state_dir,
         &abbey_cfg.memory_backend,

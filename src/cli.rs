@@ -66,6 +66,26 @@ pub struct Cli {
     #[arg(long = "add-dir", global = true)]
     pub add_dirs: Vec<PathBuf>,
 
+    /// Attach an image path for the agent to read (not encoded by Abbey)
+    #[arg(long = "image", global = true, value_name = "PATH")]
+    pub images: Vec<PathBuf>,
+
+    /// Attach a video path for the agent to read (not encoded by Abbey)
+    #[arg(long = "video", global = true, value_name = "PATH")]
+    pub videos: Vec<PathBuf>,
+
+    /// Attach image or video by extension (same as --image/--video)
+    #[arg(long = "media", global = true, value_name = "PATH")]
+    pub media: Vec<PathBuf>,
+
+    /// Forward `--approve-mcps` so cursor-agent auto-approves MCP tool servers
+    #[arg(long = "approve-mcps", global = true)]
+    pub approve_mcps: bool,
+
+    /// Thinking effort alias → `-m fable-thinking-<level>` (Cursor model id)
+    #[arg(long = "thinking", global = true, value_name = "LEVEL")]
+    pub thinking: Option<String>,
+
     /// Sandbox: enabled|disabled
     #[arg(long = "sandbox", global = true)]
     pub sandbox: Option<String>,

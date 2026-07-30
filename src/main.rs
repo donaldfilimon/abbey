@@ -12,6 +12,7 @@ mod hybrid_loop;
 mod init;
 mod inventory;
 mod learn;
+mod media;
 mod memory;
 mod models;
 mod os_control;
