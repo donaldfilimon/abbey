@@ -6,6 +6,7 @@ use crate::config;
 use crate::doctor::{
     cmd_debug, cmd_doctor, cmd_init, cmd_persona, cmd_role, print_config, print_permissions,
 };
+use crate::generate::{self, GenKind};
 use crate::gitops;
 use crate::init;
 use crate::inventory;
@@ -160,6 +161,31 @@ pub fn dispatch_slash(input: &str, state: &AbbeyState, cfg: &mut AgentConfig) ->
             println!("{m}");
             Ok(0)
         }
+        "imagine" => {
+            let args = parse_imagine_slash(rest)?;
+            generate::run_generate(
+                cfg,
+                state,
+                GenKind::Image,
+                &args.prompt,
+                args.out,
+                args.aspect.as_deref(),
+                args.edit,
+            )
+        }
+        "gen-video" => {
+            if rest.is_empty() {
+                bail!("/gen-video <description…>");
+            }
+            let (out, prompt) = parse_out_and_prompt(rest);
+            generate::run_generate(cfg, state, GenKind::Video, &prompt, out, None, None)
+        }
+        "reason" => {
+            if rest.is_empty() {
+                bail!("/reason <task…>");
+            }
+            generate::run_reason(cfg, state, &rest_prompt(rest), None)
+        }
         "skills" => {
             inventory::print_skills()?;
             Ok(0)
@@ -272,4 +298,51 @@ pub fn dispatch_slash(input: &str, state: &AbbeyState, cfg: &mut AgentConfig) ->
             Ok(2)
         }
     }
+}
+
+struct ImagineSlashArgs {
+    out: Option<std::path::PathBuf>,
+    aspect: Option<String>,
+    edit: Option<std::path::PathBuf>,
+    prompt: Vec<String>,
+}
+
+fn parse_out_and_prompt(rest: &str) -> (Option<std::path::PathBuf>, Vec<String>) {
+    let mut out = None;
+    let mut prompt = Vec::new();
+    for tok in rest.split_whitespace() {
+        if let Some(path) = tok.strip_prefix("--out=") {
+            out = Some(std::path::PathBuf::from(path));
+        } else {
+            prompt.push(tok.to_string());
+        }
+    }
+    (out, prompt)
+}
+
+fn parse_imagine_slash(rest: &str) -> Result<ImagineSlashArgs> {
+    if rest.trim().is_empty() {
+        bail!("/imagine [--out=PATH] [--aspect=R] [--edit=PATH] <description…>");
+    }
+    let mut args = ImagineSlashArgs {
+        out: None,
+        aspect: None,
+        edit: None,
+        prompt: Vec::new(),
+    };
+    for tok in rest.split_whitespace() {
+        if let Some(path) = tok.strip_prefix("--out=") {
+            args.out = Some(std::path::PathBuf::from(path));
+        } else if let Some(a) = tok.strip_prefix("--aspect=") {
+            args.aspect = Some(a.to_string());
+        } else if let Some(path) = tok.strip_prefix("--edit=") {
+            args.edit = Some(std::path::PathBuf::from(path));
+        } else {
+            args.prompt.push(tok.to_string());
+        }
+    }
+    if args.prompt.is_empty() {
+        bail!("/imagine needs a description");
+    }
+    Ok(args)
 }

@@ -291,7 +291,10 @@ pub fn cmd_doctor(state: &AbbeyState, cfg: &AgentConfig) -> Result<i32> {
         "media:      --image/--video/--media or /image|/video attach paths (workspace read; no local vision)",
     );
     let _ = output::println(
-        "thinking:   --thinking <level> or /think → Cursor *-thinking-* model ids (not Abbey CoT UI)",
+        "generate:   abbey imagine|generate video|/imagine|/gen-video via cursor-agent tools (not local models)",
+    );
+    let _ = output::println(
+        "reasoning:  abbey reason|/reason + --thinking|/think → Cursor *-thinking-* (structured wrap)",
     );
     let _ = output::println(
         "tools/mcp:  abbey mcp … + --approve-mcps passthrough; skills/plugins inventory; OS allowlist",

@@ -143,6 +143,21 @@ pub const SLASH_CATALOG: &[SlashCmd] = &[
         kind: SlashKind::Local,
     },
     SlashCmd {
+        name: "imagine",
+        help: "Generate image via agent tools: /imagine [--out=p] <desc>",
+        kind: SlashKind::Agent,
+    },
+    SlashCmd {
+        name: "gen-video",
+        help: "Generate video via agent tools (best-effort): /gen-video <desc>",
+        kind: SlashKind::Agent,
+    },
+    SlashCmd {
+        name: "reason",
+        help: "Structured reasoning with thinking model: /reason <task>",
+        kind: SlashKind::Agent,
+    },
+    SlashCmd {
         name: "memory",
         help: "Chat history, or: /memory search <q>",
         kind: SlashKind::Local,

@@ -71,3 +71,11 @@ Path-attach media (`--image`/`--video`/`/image`/`/video`), thinking aliases
 (`--thinking`/`/think` → Cursor model ids), and MCP/tool passthrough
 (`abbey mcp`, `--approve-mcps`). No local vision weights; no Abbey-owned CoT UI;
 tools remain cursor-agent's during a run.
+
+## Image/video generation and reasoning
+status: done
+
+Agent-orchestrated `imagine` / `generate video` (cursor-agent or MCP tools write
+files; Abbey has no local gen model) and `reason` (thinking model + structured
+wrap). Video is best-effort and fails honestly without a video tool. `fm`
+refuses generation.

@@ -7,6 +7,7 @@ mod cli;
 mod commands;
 mod config;
 mod doctor;
+mod generate;
 mod gitops;
 mod hybrid_loop;
 mod init;

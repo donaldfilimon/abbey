@@ -41,6 +41,7 @@ Status key: **Current** = shipped · **Proposed** = designed, not claimed live �
 | `wdbx_bridge` | `abbey wdbx` — `abi wdbx` passthrough + in-process `stats`/`checkpoint` |
 | `please_fix` | Last-failure prompt; capture summarizer (argv-safe) |
 | `media` | Image/video path attach → `--add-dir` + prompt note (no local vision) |
+| `generate` | Imagine/video gen prompts + structured `reason` (via cursor-agent tools) |
 | `learn` | Self-learn capture/digest/review/stats |
 | `os_control` | Cross-platform OS policy |
 | `parallel` | Multi-lane fan-out |
@@ -79,6 +80,8 @@ Status key: **Current** = shipped · **Proposed** = designed, not claimed live �
 - Prompt argv clamp + please-fix capture summarizer (avoids E2BIG on cursor-agent)
 - Media path attach (`--image`/`--video`/`/image`/`/video`) + thinking aliases
   (`--thinking`/`/think`) + `--approve-mcps` tool passthrough
+- Agent-orchestrated generation: `abbey imagine` / `generate video` / `reason`
+  (no local image/video/LoRA weights)
 
 ## Proposed (not Current)
 

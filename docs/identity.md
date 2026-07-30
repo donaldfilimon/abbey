@@ -58,11 +58,13 @@ Routing decisions record **confidence**, **alternate**, and **fallback** on `rou
 | --- | --- |
 | `--image` / `--video` / `--media` · `/image` · `/video` | **Current** — resolve path, `--add-dir` parent, prompt note; **no pixel encode** |
 | Prompt-token paths (`./shot.png`) | **Current** — auto-discover + Gemma preference |
-| Local vision / video weights | **Out of scope** |
-| `--thinking <level>` · `/think` | **Current** — Cursor `*-thinking-*` model aliases (not Abbey CoT UI) |
+| `abbey imagine` · `generate image` · `/imagine` | **Current** — agent-orchestrated image gen/edit (depends on cursor-agent/MCP tools) |
+| `abbey generate video` · `/gen-video` | **Current (best-effort)** — same pattern; fails honestly if no video tool |
+| Local vision / video / generation weights | **Out of scope** |
+| `--thinking <level>` · `/think` · `abbey reason` · `/reason` | **Current** — Cursor `*-thinking-*` + structured reasoning wrap (not Abbey CoT UI) |
 | Tools during a run | **Current via cursor-agent** (`--print` has tool access; `--approve-mcps`) |
 | `abbey mcp` / `/mcp` · skills/plugins inventory | **Current** passthrough / discovery |
-| Tools under `ABBEY_BACKEND=fm` | **N/A** — MCP/account verbs refuse |
+| Tools / generation under `ABBEY_BACKEND=fm` | **N/A** — refuse with exit 2 |
 
 ---
 

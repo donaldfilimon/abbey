@@ -277,6 +277,34 @@ pub enum Commands {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         prompt: Vec<String>,
     },
+    /// Generate an image via cursor-agent tools (not a local vision model)
+    #[command(visible_alias = "gen-image")]
+    Imagine {
+        /// Output path (default: ./abbey-gen-<timestamp>.png)
+        #[arg(long, value_name = "PATH")]
+        out: Option<PathBuf>,
+        /// Aspect ratio hint: 1:1 · 16:9 · 9:16 · 4:3 · 3:4 · auto
+        #[arg(long)]
+        aspect: Option<String>,
+        /// Edit an existing image instead of generating from scratch
+        #[arg(long = "edit", value_name = "PATH")]
+        edit: Option<PathBuf>,
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        prompt: Vec<String>,
+    },
+    /// Generate media via cursor-agent tools (`image` | `video`)
+    Generate {
+        #[command(subcommand)]
+        cmd: GenerateCmd,
+    },
+    /// Structured reasoning with a Cursor thinking model
+    Reason {
+        /// Thinking effort: low|medium|high|xhigh|max (default xhigh)
+        #[arg(long = "thinking", value_name = "LEVEL")]
+        thinking: Option<String>,
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        prompt: Vec<String>,
+    },
     /// Self-learn: correction|preference|routes|digest|export|review|stats (LoRA out of scope)
     Learn {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
@@ -335,6 +363,28 @@ pub enum Commands {
     /// Pass-through to cursor-agent
     #[command(external_subcommand)]
     External(Vec<String>),
+}
+
+#[derive(Debug, Clone, Subcommand)]
+pub enum GenerateCmd {
+    /// Image generation / edit (same as `abbey imagine`)
+    Image {
+        #[arg(long, value_name = "PATH")]
+        out: Option<PathBuf>,
+        #[arg(long)]
+        aspect: Option<String>,
+        #[arg(long = "edit", value_name = "PATH")]
+        edit: Option<PathBuf>,
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        prompt: Vec<String>,
+    },
+    /// Video generation (best-effort; requires an agent/MCP video tool)
+    Video {
+        #[arg(long, value_name = "PATH")]
+        out: Option<PathBuf>,
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        prompt: Vec<String>,
+    },
 }
 
 #[derive(Debug, Clone, Subcommand)]

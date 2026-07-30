@@ -3,12 +3,13 @@
 use crate::actions::{RunSpec, fork_prompt, run_agent, run_commit, run_pr, run_review};
 use crate::agent::{AgentConfig, run_resilient};
 use crate::build_info;
-use crate::cli::{Cli, Commands, MemoryCmd, Shell};
+use crate::cli::{Cli, Commands, GenerateCmd, MemoryCmd, Shell};
 use crate::config;
 use crate::doctor::{
     cmd_debug, cmd_doctor, cmd_init, cmd_memory_store, cmd_persona, cmd_role, print_config,
     print_permissions,
 };
+use crate::generate::{self, GenKind};
 use crate::gitops;
 use crate::inventory;
 use crate::learn;
@@ -198,6 +199,42 @@ pub fn run_cli(cli: Cli, state: AbbeyState, mut cfg: AgentConfig) -> Result<i32>
         Some(Commands::Wdbx { args }) => wdbx_bridge::run(&state, &args),
         Some(Commands::HybridLoop { prompt }) => {
             run_agent(&mut cfg, &state, &prompt, RunSpec::hybrid_loop())
+        }
+        Some(Commands::Imagine {
+            out,
+            aspect,
+            edit,
+            prompt,
+        }) => generate::run_generate(
+            &mut cfg,
+            &state,
+            GenKind::Image,
+            &prompt,
+            out,
+            aspect.as_deref(),
+            edit,
+        ),
+        Some(Commands::Generate { cmd }) => match cmd {
+            GenerateCmd::Image {
+                out,
+                aspect,
+                edit,
+                prompt,
+            } => generate::run_generate(
+                &mut cfg,
+                &state,
+                GenKind::Image,
+                &prompt,
+                out,
+                aspect.as_deref(),
+                edit,
+            ),
+            GenerateCmd::Video { out, prompt } => {
+                generate::run_generate(&mut cfg, &state, GenKind::Video, &prompt, out, None, None)
+            }
+        },
+        Some(Commands::Reason { thinking, prompt }) => {
+            generate::run_reason(&mut cfg, &state, &prompt, thinking.as_deref())
         }
         Some(Commands::Os { args }) => os_control::run_os(&args, true),
         Some(Commands::Learn { args }) => learn::dispatch(&state, &args),

@@ -79,7 +79,8 @@ See [docs/architecture.md](docs/architecture.md). Personas via `abi-ai`; Max/Gem
 | 3-D memory map (topic × recency × consolidation) | ✓ | | |
 | please-fix capture summarizer + argv clamp | ✓ | | |
 | Media path attach (`--image`/`--video`/`/image`) | ✓ | | local vision weights |
-| Thinking aliases (`--thinking`/`/think` → Cursor ids) | ✓ | | Abbey-owned CoT UI |
+| Image/video generation via agent tools (`imagine`/`generate`) | ✓ | | local gen weights |
+| Thinking aliases + `reason` structured wrap | ✓ | | Abbey-owned CoT UI |
 | MCP/tools passthrough (`mcp`, `--approve-mcps`) | ✓ | | Abbey tool runtime |
 | Semantic/learned memory embedding space | | ✓ | |
 | Multi-node · multi-GPU · shared compute | | ✓ | |

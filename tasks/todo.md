@@ -137,3 +137,9 @@ Buildable residuals closed 2026-07-30; Proposed/OOS stay deferred above.
 - [x] CLI `--image`/`--video`/`--media`/`--thinking`/`--approve-mcps`
 - [x] Slash `/image` `/video` `/think`; prompt-token media discovery; video keywords → Gemma
 - [x] Doctor + docs honesty: tools = passthrough; thinking = model alias; media = workspace paths
+
+## Generation + reasoning (agent-orchestrated)
+
+- [x] `abbey imagine` / `generate image|video` / `/imagine` `/gen-video` — prompt + out path via agent tools
+- [x] `abbey reason` / `/reason` — Cursor thinking model + structured reasoning wrap
+- [x] Refuse generation under `ABBEY_BACKEND=fm`; docs/claims stay honest (no local gen weights)

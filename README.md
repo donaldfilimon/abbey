@@ -105,23 +105,35 @@ tab shows a short map preview; use the CLI for the full map.
 auto-run a second agent when confidence is low. Prefer `hybrid-loop` or `/gemma`
 when the alternate is Gemma.
 
-## Media, thinking, and tools
+## Media, thinking, generation, and tools
 
-Abbey does **not** embed pixels or run local vision weights. It attaches paths so
-**cursor-agent** can read them from the workspace:
+Abbey does **not** embed pixels or ship local vision/generation weights. Attach and
+generate both go through **cursor-agent** (and any MCP image/video tools it has):
 
 ```bash
+# Attach (read)
 abbey --image ./shot.png "what is wrong with this UI?"
-abbey --video ./demo.mov "summarize the flow"
 abbey /image ./shot.png describe the layout
-abbey --thinking high "refactor the router carefully"
+
+# Generate (write via agent tools)
+abbey imagine "a fox reading in a candlelit library" --aspect 16:9 --out ./fox.png
+abbey imagine --edit ./fox.png "make it dawn" --out ./fox-dawn.png
+abbey generate video "short timelapse of a city skyline" --out ./sky.mp4
+abbey /imagine --out=./mark.png abbey logo mark, simple
+
+# Reason (Cursor thinking model + structured wrap)
+abbey reason "should we split session.rs further?"
+abbey --thinking xhigh "…"
+abbey /reason compare sqlite vs wdbx for this workload
+
+# Tools
 abbey --approve-mcps "use my MCP tools to check status"
 abbey mcp list
 ```
 
-- `/think low|medium|high|xhigh|max` sets a Cursor `*-thinking-*` model id (not an Abbey chain-of-thought UI).
-- Prompt tokens that look like media paths (`./a.png`, `clip.mp4`) are auto-discovered.
-- Under `ABBEY_BACKEND=fm`, MCP/account verbs refuse; media notes are still text paths only.
+- Generation fails honestly if the agent has no image/video tool — Abbey does not fake files.
+- `/think` sets a Cursor `*-thinking-*` model id; `/reason` also applies a structured reasoning wrap.
+- Under `ABBEY_BACKEND=fm`, MCP/account/generation verbs refuse (exit 2).
 
 ## Memory backends
 

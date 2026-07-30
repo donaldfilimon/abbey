@@ -63,6 +63,7 @@ Key modules (`src/`):
 | `persona.rs` / `roles.rs` / `route_log.rs` | hybrid routing spine (`route_decision` → conf/alt/fb on JSONL) |
 | `please_fix.rs` | last-failure prompt + capture summarizer (argv-safe) |
 | `media.rs` | image/video path attach → `--add-dir` + prompt note (no local vision) |
+| `generate.rs` | `imagine` / `generate video` / `reason` via cursor-agent tools (no local models) |
 | `memory/` (`mod.rs`, `sqlite.rs`, `wdbx.rs`) | `MemoryStore` trait, shared reflect/validation, backend dispatch; add new backends here and they work everywhere |
 | `hybrid_loop.rs` | two-stage Gemma→Max run; stages linked by `correlation` in the route log |
 | `wdbx_bridge.rs` | `abbey wdbx` — passthrough to `abi wdbx`, plus in-process `stats`/`checkpoint` |
