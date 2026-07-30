@@ -201,17 +201,15 @@ pub fn detect_accelerators() -> Vec<AcceleratorHint> {
     }
     #[cfg(unix)]
     {
-        if std::path::Path::new("/dev/accel0").exists()
-            || std::path::Path::new("/dev/vfio").is_dir()
+        if (std::path::Path::new("/dev/accel0").exists()
+            || std::path::Path::new("/dev/vfio").is_dir())
+            && out.iter().all(|h| h.kind != "TPU")
         {
-            if out.iter().all(|h| h.kind != "TPU") {
-                out.push(AcceleratorHint {
-                    kind: "TPU",
-                    status: "host",
-                    detail: "accel/vfio device nodes seen — not claimed as Abbey TPU runtime"
-                        .into(),
-                });
-            }
+            out.push(AcceleratorHint {
+                kind: "TPU",
+                status: "host",
+                detail: "accel/vfio device nodes seen — not claimed as Abbey TPU runtime".into(),
+            });
         }
     }
 
