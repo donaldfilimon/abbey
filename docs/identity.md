@@ -69,6 +69,8 @@ Routing decisions record **confidence**, **alternate**, and **fallback** on `rou
 | Tools / generation under `ABBEY_BACKEND=fm` | **N/A** — refuse with exit 2 |
 | `abbey voice` / `speak` / `listen` / `ask` | **Current (macOS)** — Premium/Enhanced `say` TTS + on-device Speech STT |
 | Cloud TTS/STT subscriptions · local neural voice weights | **Out of scope** (use System Settings downloads for Premium voices) |
+| Auto code highlighting (`-p`/print fences · `abbey highlight`) | **Current** — syntect ANSI on TTY; `NO_COLOR` / `ABBEY_HIGHLIGHT=0` off |
+| Full markdown renderer / LSP semantic highlight | **Out of scope** |
 
 ---
 

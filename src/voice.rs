@@ -436,7 +436,11 @@ pub fn ask(
     eprint!("{err}");
     let reply = out.trim();
     if !reply.is_empty() {
-        println!("{reply}");
+        let needs_nl = !reply.ends_with('\n');
+        crate::highlight::emit_agent_stdout(reply);
+        if needs_nl {
+            println!();
+        }
         let _ = speak(reply, None, None, None)?;
     }
     Ok(st.code().unwrap_or(1))

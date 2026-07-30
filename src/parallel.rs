@@ -113,7 +113,8 @@ pub fn print_merged(results: &[LaneResult]) {
             r.name, r.model, r.exit
         );
         if !r.stdout.trim().is_empty() {
-            println!("{}", r.stdout.trim_end());
+            crate::highlight::emit_agent_stdout(r.stdout.trim_end());
+            println!();
         }
         if !r.stderr.trim().is_empty() {
             eprintln!("{}", r.stderr.trim_end());

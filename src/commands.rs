@@ -11,10 +11,12 @@ use crate::doctor::{
 };
 use crate::generate::{self, GenKind};
 use crate::gitops;
+use crate::highlight;
 use crate::inventory;
 use crate::learn;
 use crate::models::{alias_table, resolve_model};
 use crate::os_control;
+use crate::output;
 use crate::parallel;
 use crate::please_fix;
 use crate::protocols;
@@ -68,14 +70,20 @@ pub fn run_cli(cli: Cli, state: AbbeyState, mut cfg: AgentConfig) -> Result<i32>
             cfg.print = true;
             let chat = state.read_chat();
             let (st, out, err) = cfg.run_capture(chat.as_deref(), &prompt)?;
-            print!("{out}");
             eprint!("{err}");
+            highlight::emit_agent_stdout(&out);
             Ok(st.code().unwrap_or(1))
         }
         Some(Commands::Diff { staged }) => {
-            println!("{}", gitops::diff_text(staged)?);
+            let text = gitops::diff_text(staged)?;
+            if highlight::enabled() {
+                let _ = output::print(highlight::colorize_code(&text, Some("diff"), None));
+            } else {
+                print!("{text}");
+            }
             Ok(0)
         }
+        Some(Commands::Highlight { args }) => highlight::dispatch(&args),
         Some(Commands::Review { staged, note }) => {
             run_review(&mut cfg, &state, staged, &note, false)
         }

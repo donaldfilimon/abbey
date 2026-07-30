@@ -374,6 +374,12 @@ pub enum Commands {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
+    /// Syntax-highlight a file or stdin (auto on -p/print fences when TTY)
+    #[command(visible_alias = "hl")]
+    Highlight {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
     /// Plugin management
     Plugin {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]

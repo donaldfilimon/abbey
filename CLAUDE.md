@@ -66,6 +66,7 @@ Key modules (`src/`):
 | `generate.rs` | `imagine` / `generate video` / `reason` via cursor-agent tools (no local models) |
 | `voice.rs` | macOS Premium/Enhanced TTS + on-device STT (`scripts/abbey-stt.swift`) |
 | `protocols.rs` | MCP config inventory + ACP peer discovery/launch (not a host runtime) |
+| `highlight.rs` | syntect ANSI for fenced code on `-p`/print + `abbey highlight` |
 | `memory/` (`mod.rs`, `sqlite.rs`, `wdbx.rs`) | `MemoryStore` trait, shared reflect/validation, backend dispatch; add new backends here and they work everywhere |
 | `hybrid_loop.rs` | two-stage Gemma→Max run; stages linked by `correlation` in the route log |
 | `wdbx_bridge.rs` | `abbey wdbx` — passthrough to `abi wdbx`, plus in-process `stats`/`checkpoint` |

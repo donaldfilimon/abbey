@@ -107,8 +107,8 @@ pub fn run_commit(cfg: &mut AgentConfig, state: &AbbeyState) -> Result<i32> {
     let prompt = build_commit_prompt()?;
     let chat = state.read_chat();
     let (st, out, err) = cfg.run_capture(chat.as_deref(), &[prompt])?;
-    print!("{out}");
     eprint!("{err}");
+    crate::highlight::emit_agent_stdout(&out);
     Ok(st.code().unwrap_or(1))
 }
 

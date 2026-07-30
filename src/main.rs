@@ -9,6 +9,7 @@ mod config;
 mod doctor;
 mod generate;
 mod gitops;
+mod highlight;
 mod hybrid_loop;
 mod init;
 mod inventory;

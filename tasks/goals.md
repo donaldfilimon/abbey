@@ -95,3 +95,11 @@ Config inventory for MCP (`abbey mcp status` over standard mcp.json paths) plus
 cursor-agent management passthrough; ACP peer discovery/launch for gemini and
 opencode. Abbey remains a client-side CLI — not an MCP host or ACP host. Tool
 execution during runs stays inside cursor-agent (`--approve-mcps`).
+
+## Auto code highlighting
+status: done
+
+syntect ANSI colour for markdown fences on captured `-p`/print/commit/hybrid-loop
+output when stdout is a TTY; `abbey highlight` / `/highlight` for files and stdin;
+`abbey diff` highlighted. Off via `NO_COLOR` or `ABBEY_HIGHLIGHT=0`. Not a full
+markdown renderer or LSP semantic highlight.

@@ -37,6 +37,7 @@ src/memory/          trait + sqlite + wdbx (feature-gated) + map
 src/hybrid_loop.rs   Gemma interpret → Max implement, correlated
 src/wdbx_bridge.rs   `abbey wdbx` → `abi wdbx` passthrough
 src/please_fix.rs   last-failure prompt + capture summarizer
+src/highlight.rs     syntect fence/file ANSI (auto on -p)
 src/learn.rs os_control.rs parallel.rs inventory.rs
 src/tui/              7-tab ratatui
 src/init/ gitops.rs agent.rs models.rs state.rs config.rs
@@ -85,6 +86,7 @@ See [docs/architecture.md](docs/architecture.md). Personas via `abi-ai`; Max/Gem
 | MCP config inventory + cursor-agent mcp mgmt | ✓ | | Abbey as MCP host |
 | ACP peer inventory / launch (`acp run`) | ✓ | | Abbey as ACP host |
 | MCP/tools during a run (`--approve-mcps`) | ✓ | | Abbey tool runtime |
+| Auto code highlighting (fences on `-p`/print · `abbey highlight`) | ✓ | | full markdown UI / LSP |
 | Semantic/learned memory embedding space | | ✓ | |
 | Multi-node · multi-GPU · shared compute | | ✓ | |
 | NPU/TPU compilation & learning | | | ✓ |

@@ -44,6 +44,7 @@ Status key: **Current** = shipped Â· **Proposed** = designed, not claimed live Â
 | `generate` | Imagine/video gen prompts + structured `reason` (via cursor-agent tools) |
 | `voice` | macOS Premium/Enhanced TTS (`say`) + on-device STT (`scripts/abbey-stt.swift`) |
 | `protocols` | MCP config inventory + ACP peer discovery/launch (not a host runtime) |
+| `highlight` | syntect fence/file ANSI colour for `-p`/print/commit/diff (TTY; not a markdown UI) |
 | `learn` | Self-learn capture/digest/review/stats |
 | `os_control` | Cross-platform OS policy |
 | `parallel` | Multi-lane fan-out |
@@ -86,6 +87,8 @@ Status key: **Current** = shipped Â· **Proposed** = designed, not claimed live Â
   (no local image/video/LoRA weights)
 - High-quality macOS voice I/O: `abbey voice speak|listen|ask` (Premium/Enhanced
   `say` voices + on-device Speech STT; not a cloud TTS subscription)
+- Auto code highlighting: syntect ANSI on markdown fences for `-p`/print/commit/
+  hybrid-loop/parallel when stdout is a TTY; `abbey highlight` for files/stdin
 - MCP/ACP surfaces: `abbey mcp status` reads `mcp.json` files; `abbey mcp list|â€¦`
   passthrough to cursor-agent; `abbey acp list|run` discovers/launches ACP peers.
   Abbey is not an MCP or ACP host.

@@ -140,6 +140,12 @@ abbey speak "build finished"                 # best installed voice
 abbey voice speak -v "Zoe (Premium)" -o ./note.m4a "ship it"
 abbey voice listen --seconds 5               # on-device Speech STT
 abbey voice ask --seconds 6                  # listen → agent → speak
+
+# Syntax highlight (auto on -p/print/commit fences when TTY)
+abbey highlight src/main.rs
+abbey highlight --lang rust -
+abbey -p "show me a rust hello world"   # fenced blocks colourised
+ABBEY_HIGHLIGHT=0 abbey -p "…"          # disable
 ```
 
 - Generation fails honestly if the agent has no image/video tool — Abbey does not fake files.

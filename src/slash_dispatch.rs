@@ -76,7 +76,16 @@ pub fn dispatch_slash(input: &str, state: &AbbeyState, cfg: &mut AgentConfig) ->
         }
         "diff" => {
             let staged = rest.contains("staged") || rest.contains("--staged");
-            println!("{}", gitops::diff_text(staged)?);
+            let text = gitops::diff_text(staged)?;
+            if crate::highlight::enabled() {
+                let _ = crate::output::print(crate::highlight::colorize_code(
+                    &text,
+                    Some("diff"),
+                    None,
+                ));
+            } else {
+                print!("{text}");
+            }
             Ok(0)
         }
         "init" => {
@@ -275,6 +284,10 @@ pub fn dispatch_slash(input: &str, state: &AbbeyState, cfg: &mut AgentConfig) ->
         "acp" => {
             let args: Vec<String> = rest.split_whitespace().map(String::from).collect();
             protocols::dispatch_acp(&args)
+        }
+        "highlight" | "hl" => {
+            let args: Vec<String> = rest.split_whitespace().map(String::from).collect();
+            crate::highlight::dispatch(&args)
         }
         "plan" => {
             let prompt = if rest.is_empty() {

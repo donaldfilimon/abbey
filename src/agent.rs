@@ -517,16 +517,18 @@ pub fn run_resilient(
     fresh: bool,
     prompt_and_rest: &[String],
 ) -> Result<i32> {
+    // Headless `--print` without a structured format: capture then colourise
+    // fenced code. Inherited stdio stays for interactive sessions and JSON.
+    let highlight_print = cfg.print && cfg.output_format.is_none() && crate::highlight::enabled();
+
     if fresh || cfg.no_resume {
         if fresh {
             let id = cfg.create_chat()?;
             state.save_chat(&id)?;
             eprintln!("abbey: new chat {id}");
-            let st = cfg.run_interactive(Some(&id), prompt_and_rest)?;
-            return Ok(st.code().unwrap_or(1));
+            return run_once(cfg, Some(&id), prompt_and_rest, highlight_print);
         }
-        let st = cfg.run_interactive(None, prompt_and_rest)?;
-        return Ok(st.code().unwrap_or(1));
+        return run_once(cfg, None, prompt_and_rest, highlight_print);
     }
 
     let chat = if let Some(id) = state.read_chat() {
@@ -538,13 +540,12 @@ pub fn run_resilient(
         id
     };
 
-    let st = cfg.run_interactive(Some(&chat), prompt_and_rest)?;
-    if st.success() {
+    let code = run_once(cfg, Some(&chat), prompt_and_rest, highlight_print)?;
+    if code == 0 {
         state.save_chat(&chat)?;
         return Ok(0);
     }
 
-    let code = st.code().unwrap_or(1);
     // The retry exists because a server-side chat can go stale. `fm` has no
     // server: a non-zero exit is a real failure (bad argument, unavailable
     // model), and retrying would silently abandon the transcript and burn a new
@@ -556,7 +557,22 @@ pub fn run_resilient(
     let id = cfg.create_chat()?;
     state.save_chat(&id)?;
     eprintln!("abbey: new chat {id}");
-    let st = cfg.run_interactive(Some(&id), prompt_and_rest)?;
+    run_once(cfg, Some(&id), prompt_and_rest, highlight_print)
+}
+
+fn run_once(
+    cfg: &AgentConfig,
+    resume_id: Option<&str>,
+    prompt_and_rest: &[String],
+    highlight_print: bool,
+) -> Result<i32> {
+    if highlight_print {
+        let (st, out, err) = cfg.run_capture(resume_id, prompt_and_rest)?;
+        eprint!("{err}");
+        crate::highlight::emit_agent_stdout(&out);
+        return Ok(st.code().unwrap_or(1));
+    }
+    let st = cfg.run_interactive(resume_id, prompt_and_rest)?;
     Ok(st.code().unwrap_or(1))
 }
 

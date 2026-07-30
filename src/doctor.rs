@@ -316,6 +316,7 @@ pub fn cmd_doctor(state: &AbbeyState, cfg: &AgentConfig) -> Result<i32> {
     let _ = output::println(format!(
         "acp peers:  {acp_n} ACP-capable binary(ies) on PATH"
     ));
+    let _ = output::println(crate::highlight::status_line());
     #[cfg(target_os = "macos")]
     {
         let _ = output::println(

@@ -289,7 +289,8 @@ pub fn hybrid_loop_run(
         "===== stage:interpret role:gemma model:{} =====",
         g_cfg.model
     );
-    println!("{}", interpretation.trim_end());
+    crate::highlight::emit_agent_stdout(interpretation.trim_end());
+    println!();
 
     // ---- stage 2: Max implements ----
     let mut m_cfg = cfg.clone();
@@ -320,7 +321,8 @@ pub fn hybrid_loop_run(
         "\n===== stage:implement role:max model:{} =====",
         m_cfg.model
     );
-    println!("{}", implementation.trim_end());
+    crate::highlight::emit_agent_stdout(implementation.trim_end());
+    println!();
     println!("\n===== route link =====");
     println!("correlation {correlation} — `abbey routes --correlation` shows both stages");
 

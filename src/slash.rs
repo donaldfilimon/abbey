@@ -54,7 +54,12 @@ pub const SLASH_CATALOG: &[SlashCmd] = &[
     },
     SlashCmd {
         name: "diff",
-        help: "Show git diff (working tree)",
+        help: "Show git diff (working tree; highlighted on TTY)",
+        kind: SlashKind::Local,
+    },
+    SlashCmd {
+        name: "highlight",
+        help: "Syntax-colour file/stdin: /highlight [--lang LANG] [file|-]",
         kind: SlashKind::Local,
     },
     SlashCmd {
