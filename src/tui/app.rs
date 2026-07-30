@@ -81,7 +81,11 @@ impl App {
         let mut lines = persona::persona_status_lines("");
         lines.extend(roles::role_status_lines(&ac.roles.max, &ac.roles.gemma));
         lines.push(format!("default_role: {}", ac.default_role));
-        lines.push("Tip: /max · /gemma · /persona aviva · /parallel …".into());
+        lines.push(
+            "routing: route_decision → route.jsonl (alt/fb audit only; no auto second agent)"
+                .into(),
+        );
+        lines.push("Tip: /max · /gemma · /routes · hybrid-loop · /persona aviva".into());
         self.persona_lines = lines;
     }
 
@@ -143,7 +147,7 @@ impl App {
             // A locked or broken store is not an empty one — say which.
             Err(e) => lines.push(format!("unavailable: {e}")),
         }
-        lines.push("CLI: abbey learn correction|preference|digest".into());
+        lines.push("CLI: abbey learn correction|preference|digest|review|stats".into());
         self.memory_lines = lines;
     }
 

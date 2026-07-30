@@ -47,6 +47,15 @@ pub fn implement_prompt(user: &str, interpretation: &str) -> String {
     format!("{note}\n\n{}", implement_body(user, interpretation))
 }
 
+/// Paired role recorded as alternate for a hybrid-loop stage (audit only).
+fn paired_alternate(stage: &str) -> Option<String> {
+    match stage {
+        STAGE_INTERPRET => Some(WorkerRole::Max.label().into()),
+        STAGE_IMPLEMENT => Some(WorkerRole::Gemma.label().into()),
+        _ => None,
+    }
+}
+
 /// Append one stage's route record under a shared correlation id.
 pub fn log_stage(
     state_dir: &Path,
@@ -63,9 +72,13 @@ pub fn log_stage(
         role.label(),
         model,
         format!("hybrid-loop stage={stage}"),
-        0.8,
+        0.85,
     )
-    .in_stage(correlation, stage);
+    .in_stage(correlation, stage)
+    .with_routing(
+        paired_alternate(stage),
+        Some("hybrid-loop paired stage (audit only)".into()),
+    );
     route_log::append_route_record(state_dir, &rec)
 }
 
@@ -110,8 +123,16 @@ mod tests {
         assert_eq!(linked.len(), 2, "both stages are linked by correlation");
         assert_eq!(linked[0].stage.as_deref(), Some(STAGE_INTERPRET));
         assert_eq!(linked[0].role, "gemma");
+        assert_eq!(linked[0].alternate.as_deref(), Some("max"));
         assert_eq!(linked[1].stage.as_deref(), Some(STAGE_IMPLEMENT));
         assert_eq!(linked[1].role, "max");
+        assert_eq!(linked[1].alternate.as_deref(), Some("gemma"));
+        assert!(
+            linked[0]
+                .fallback
+                .as_deref()
+                .is_some_and(|s| s.contains("hybrid-loop"))
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }

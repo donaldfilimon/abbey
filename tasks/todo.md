@@ -121,3 +121,12 @@ Buildable residuals closed 2026-07-30; Proposed/OOS stay deferred above.
 - [x] `abbey learn review` / `abbey learn stats` for train_candidate provenance curation
       (export remains; LoRA stays Out of scope)
 - [x] Keep memory backend replaceable; **do not** add CouchDB/Python as a second stack
+
+## Current-scope polish (post-d74e941)
+
+- [x] Shared `format_route_line` for CLI + slash `/routes` (conf · stage · alt · fb)
+- [x] `hybrid_loop::log_stage` records paired alternate + fallback on correlated stages
+- [x] `learn_from_routes` preserves confidence/alternate/fallback in activity payload
+- [x] Docs/clap/TUI/doctor honesty (map preview Current; learn review/stats; routing audit)
+- [x] please-fix: keep cargo `Running` / rustc `error[` / `warning:`; drop only agent chrome
+- [x] JSONL roundtrip + learn route-payload unit tests

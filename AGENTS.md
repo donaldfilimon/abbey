@@ -33,12 +33,13 @@ src/session.rs        hybrid_run + flags
 src/doctor.rs         doctor / persona / memory helpers
 src/prompts.rs        review/commit prompts
 src/persona.rs roles.rs route_log.rs
-src/memory/          trait + sqlite + wdbx (feature-gated) backends
+src/memory/          trait + sqlite + wdbx (feature-gated) + map
 src/hybrid_loop.rs   Gemma interpret → Max implement, correlated
 src/wdbx_bridge.rs   `abbey wdbx` → `abi wdbx` passthrough
-src/ learn.rs os_control.rs parallel.rs inventory.rs
+src/please_fix.rs   last-failure prompt + capture summarizer
+src/learn.rs os_control.rs parallel.rs inventory.rs
 src/tui/              7-tab ratatui
-src/init.rs gitops.rs agent.rs models.rs state.rs config.rs
+src/init/ gitops.rs agent.rs models.rs state.rs config.rs
 docs/                 identity · architecture · production
 tasks/                goals + todo
 ```
@@ -72,8 +73,11 @@ See [docs/architecture.md](docs/architecture.md). Personas via `abi-ai`; Max/Gem
 | WDBX in-process (feature `wdbx`, **off by default**) | ✓ | | |
 | WDBX CLI bridge (`abbey wdbx` → `abi wdbx`) | ✓ (needs a real `abi` binary) | | |
 | Hybrid loop (Gemma interpret → Max implement) | ✓ | | |
+| Route confidence / alternate / fallback (audit only) | ✓ | | |
+| `learn review` / `stats` (train_candidate curation) | ✓ | | |
 | On-device backend (`ABBEY_BACKEND=fm`, macOS 26+) | ✓ | | |
 | 3-D memory map (topic × recency × consolidation) | ✓ | | |
+| please-fix capture summarizer + argv clamp | ✓ | | |
 | Semantic/learned memory embedding space | | ✓ | |
 | Multi-node · multi-GPU · shared compute | | ✓ | |
 | NPU/TPU compilation & learning | | | ✓ |

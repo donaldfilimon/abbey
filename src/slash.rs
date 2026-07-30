@@ -134,7 +134,7 @@ pub const SLASH_CATALOG: &[SlashCmd] = &[
     },
     SlashCmd {
         name: "routes",
-        help: "Recent hybrid routing records",
+        help: "Recent routes (conf · stage · alt · fb)",
         kind: SlashKind::Local,
     },
     SlashCmd {

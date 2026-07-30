@@ -107,11 +107,7 @@ pub fn dispatch_slash(input: &str, state: &AbbeyState, cfg: &mut AgentConfig) ->
         "routes" => {
             let n: usize = rest.parse().unwrap_or(10);
             for r in route_log::recent_routes(&state.state_dir, n)? {
-                let alt = r.alternate.as_deref().unwrap_or("-");
-                println!(
-                    "{}\t{}\t{}\t{}\t{:.2}\talt={}\t{}",
-                    r.ts, r.persona, r.role, r.model, r.confidence, alt, r.reason
-                );
+                println!("{}", route_log::format_route_line(&r));
             }
             Ok(0)
         }

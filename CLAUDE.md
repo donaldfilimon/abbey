@@ -60,11 +60,12 @@ Key modules (`src/`):
 | `commands.rs` | clap subcommand match → actions |
 | `slash.rs` / `slash_dispatch.rs` | slash catalog + shared handler → actions |
 | `session.rs` | global flag application, `hybrid_run`, history compaction |
-| `persona.rs` / `roles.rs` / `route_log.rs` | the hybrid routing spine (persona × role × logged route) |
+| `persona.rs` / `roles.rs` / `route_log.rs` | hybrid routing spine (`route_decision` → conf/alt/fb on JSONL) |
+| `please_fix.rs` | last-failure prompt + capture summarizer (argv-safe) |
 | `memory/` (`mod.rs`, `sqlite.rs`, `wdbx.rs`) | `MemoryStore` trait, shared reflect/validation, backend dispatch; add new backends here and they work everywhere |
 | `hybrid_loop.rs` | two-stage Gemma→Max run; stages linked by `correlation` in the route log |
 | `wdbx_bridge.rs` | `abbey wdbx` — passthrough to `abi wdbx`, plus in-process `stats`/`checkpoint` |
-| `learn.rs` | self-learn capture/digest into `train_candidate` |
+| `learn.rs` | self-learn capture/digest/review/stats into `train_candidate` |
 | `os_control.rs` | cross-platform OS allowlist policy |
 | `parallel.rs` | multi-lane fan-out (Max/Gemma/Aviva) |
 | `inventory.rs` | skills/plugins/peer-agent-tool discovery |

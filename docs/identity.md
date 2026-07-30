@@ -47,6 +47,9 @@ The two roles compose in `abbey hybrid-loop` (**Current**): Gemma interprets the
 Max implements against that interpretation, and Abi's route log links both stages under one
 correlation id (`abbey routes --correlation <id>`).
 
+Routing decisions record **confidence**, **alternate**, and **fallback** on `route.jsonl`
+(**Current**, audit only — Abbey does not auto-reinvoke a second agent).
+
 ---
 
 ## Memory & self-learn
@@ -54,9 +57,10 @@ correlation id (`abbey routes --correlation <id>`).
 | Layer | Status |
 | --- | --- |
 | SQLite STM/LTM/activity/train_candidate | **Current** (`src/memory/sqlite.rs`, default) |
-| `abbey learn` correction/preference/routes/digest | **Current** |
+| `abbey learn` correction/preference/routes/digest/export | **Current** |
+| `abbey learn` review/stats (train_candidate provenance) | **Current** — curation only; LoRA **out of scope** |
 | WDBX DurableStore in-process | **Current behind `--features wdbx`** (off by default, `src/memory/wdbx.rs`; `flock`-guarded) |
-| 3-D memory map (topic × recency × consolidation) | **Current** — deterministic axes, both backends |
+| 3-D memory map (topic × recency × consolidation) | **Current** — deterministic axes, both backends; TUI Memory tab preview |
 | Learned/semantic memory embedding | **Proposed** — Abbey has no embedder |
 | `abi wdbx` CLI bridge when `abi` is a real binary on PATH | **Current** (doctor reports availability honestly) |
 

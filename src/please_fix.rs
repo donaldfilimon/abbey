@@ -9,6 +9,10 @@ use std::path::PathBuf;
 const MAX_CAPTURE_BYTES: usize = 24 * 1024;
 
 /// Lines that are agent/TUI chrome, not failure signal.
+///
+/// Do **not** treat bare `running `/`using `/`reading ` as noise — cargo lines
+/// like `Running unittests` are useful context. Agent chrome is matched more
+/// tightly (braille spinners, Working/Thinking token lines, tip chrome).
 fn is_noise_line(line: &str) -> bool {
     let t = line.trim();
     if t.is_empty() {
@@ -19,15 +23,14 @@ fn is_noise_line(line: &str) -> bool {
         || lower.contains(" tokens") && (lower.contains("working") || lower.contains("thinking"))
         || matches!(
             t.chars().next(),
-            Some('⠀' | '⠠' | '⠰' | '⠘' | '⠸' | '⠌' | '⠐' | '⠈')
+            Some('⠀' | '⠠' | '⠰' | '⠘' | '⠨' | '⠌' | '⠐' | '⠈')
         )
         || lower == "working"
         || lower == "thinking"
         || lower.starts_with("loading conversation")
         || lower.starts_with("used ")
-        || lower.starts_with("using ")
-        || lower.starts_with("reading ")
-        || lower.starts_with("running ")
+        || (lower.starts_with("using ") && lower.contains("tool"))
+        || (lower.starts_with("reading ") && (lower.contains("…") || lower.ends_with(".md)")))
         || lower.starts_with("→ /")
         || lower.starts_with("/model ")
         || lower.starts_with("available models")
@@ -54,6 +57,8 @@ fn summarize_capture(body: &str) -> String {
             || lower.contains("argument list too long")
             || lower.contains("e2big")
             || lower.contains("exit code")
+            || lower.contains("warning:")
+            || lower.contains("error[")
             || line.trim_start().starts_with("abbey:");
         if looks_like_signal {
             signal.push(line);
@@ -232,5 +237,22 @@ Auto\n";
         let out = summarize_capture(body);
         // Fallback may still contain noise, but must not panic and must be capped.
         assert!(out.len() <= MAX_CAPTURE_BYTES);
+    }
+
+    #[test]
+    fn summarize_keeps_rustc_error_and_cargo_running() {
+        let body = "\
+Working\n\
+Thinking  12 tokens\n\
+Running unittests src/main.rs\n\
+error[E0425]: cannot find value `foo` in this scope\n\
+warning: unused import: `std::io`\n\
+Tip: Hit shift+tab to enable Plan Mode\n";
+        let out = summarize_capture(body);
+        assert!(out.contains("error[E0425]"), "{out}");
+        assert!(out.contains("warning: unused import"), "{out}");
+        assert!(out.contains("Running unittests"), "{out}");
+        assert!(!out.contains("Tip: Hit shift+tab"));
+        assert!(!out.contains("Thinking  12 tokens"));
     }
 }

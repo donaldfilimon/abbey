@@ -257,7 +257,7 @@ pub enum Commands {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         prompt: Vec<String>,
     },
-    /// Self-learn: corrections, preferences, route digest, export
+    /// Self-learn: correction|preference|routes|digest|export|review|stats (LoRA out of scope)
     Learn {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,

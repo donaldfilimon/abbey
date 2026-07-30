@@ -281,6 +281,12 @@ pub fn cmd_doctor(state: &AbbeyState, cfg: &AgentConfig) -> Result<i32> {
     for line in roles::role_status_lines(&abbey_cfg.roles.max, &abbey_cfg.roles.gemma) {
         let _ = output::println(line);
     }
+    let _ = output::println(
+        "routing:    confidence/alternate/fallback on route.jsonl (audit only — no auto second agent)",
+    );
+    let _ = output::println(
+        "learn:      review|stats for train_candidate provenance (LoRA out of scope)",
+    );
     let _ = output::println(memory::backend_status(
         &state.state_dir,
         &abbey_cfg.memory_backend,

@@ -42,7 +42,9 @@ abbey init --print        # preview only
 abbey init --agent        # local scan, then refine with cursor-agent
 abbey doctor
 abbey hybrid-loop "add a dark mode toggle"   # Gemma interprets → Max implements
-abbey routes --correlation <id>              # both stages of one hybrid-loop run
+abbey routes --correlation <id>              # both stages (conf · alt · fb)
+abbey learn review                           # train_candidate provenance curation
+abbey learn stats
 abbey wdbx query                             # → `abi wdbx query <abbey store> --json`
 abbey wdbx stats                             # in-process (needs --features wdbx)
 abbey completion zsh > ~/.zsh/completions/_abbey_clap
@@ -53,7 +55,8 @@ abbey completion zsh > ~/.zsh/completions/_abbey_clap
 ```text
 /help  /plan  /ask  /diff  /review  /security-review
 /commit  /pr  /init [--force|--print|--agent]  /branch name
-/clear  /compact  /model fable  /memory  /skills  /permissions  /doctor
+/clear  /compact  /model fable  /memory  /routes  /skills  /permissions  /doctor
+/learn correction|preference|routes|digest|review|stats
 ```
 
 ## Backends
@@ -92,7 +95,15 @@ Tag your memories — untagged ones share one visible `(untagged)` column. Under
 the same map.
 
 This is a **deterministic layout, not a learned embedding space** — Abbey has no
-embedder, and calling the distances semantic would overstate them.
+embedder, and calling the distances semantic would overstate them. The TUI Memory
+tab shows a short map preview; use the CLI for the full map.
+
+## Routing audit
+
+`abbey routes` / `/routes` print persona, role, model, **confidence**, stage,
+**alternate**, and **fallback**. These fields are audit-only — Abbey does not
+auto-run a second agent when confidence is low. Prefer `hybrid-loop` or `/gemma`
+when the alternate is Gemma.
 
 ## Memory backends
 
@@ -127,7 +138,8 @@ an `abi` invoked directly by you against the same store.
   best-effort by design). Explicit `abbey memory`/`abbey learn` writes surface the error.
 - The TUI memory panel opens the store with a 250 ms timeout so a redraw never stalls; a
   locked store shows `unavailable: …` rather than reporting an empty store.
-- Personas, worker roles, and provenance memory are **rolling out** — see `tasks/goals.md`; do not assume local Gemma/Qwen weights.
+- Personas, Max/Gemma bindings, memory, hybrid-loop, fm, and the 3-D map are **Current** — do not assume local Gemma/Qwen weights or LoRA.
+- `abbey learn review`/`stats` curate `train_candidate` provenance; they are not a trainer.
 - `/cost` is **N/A** (use Cursor account dashboard).
 - Full MCP/plugin UIs pass through to cursor-agent when available.
 - Worktree isolation depends on cursor-agent `--worktree`.
@@ -137,19 +149,25 @@ an `abi` invoked directly by you against the same store.
 
 ```
 src/
-  main.rs         CLI dispatch + slash
+  main.rs         thin entry (<200 lines)
+  actions.rs      canonical RunSpec → run_agent
   cli.rs          clap surface
   slash.rs        slash catalog
-  init.rs         /init project scan → AGENTS.md
+  session.rs      hybrid_run + hybrid_loop_run
+  roles.rs        route_decision (conf/alt/fb)
+  route_log.rs    route.jsonl audit
+  init/           /init project scan → AGENTS.md
   gitops.rs       local git helpers
-  agent.rs        cursor-agent invoke
-  memory/         trait + sqlite · wdbx (feature-gated)
+  agent.rs        cursor · grok · fm executors
+  memory/         trait + sqlite · wdbx (feature-gated) + map
   hybrid_loop.rs  Gemma interpret → Max implement
   wdbx_bridge.rs  abbey wdbx → abi wdbx
-  please_fix.rs  last-failure prompt
+  please_fix.rs  last-failure prompt + capture summarizer
+  learn.rs        self-learn + review/stats
   models.rs       model aliases
   state.rs        per-cwd chats
-  tui/            ratatui app
+  tui/            7-tab ratatui app
 tasks/            goals + todo board
+docs/             identity · architecture · production
 tests/
 ```

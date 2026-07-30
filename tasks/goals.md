@@ -59,3 +59,7 @@ fm/3-D map remain as before.
 **Residuals stay Proposed / Out of scope (not laundered):** semantic embedding
 space; multi-node / NPU-TPU learning; autonomous OS; local weights / LoRA;
 CouchDB/Python second memory stack. Claims gate in AGENTS.md stays binding.
+
+**Polish (2026-07-30):** CLI/slash route line parity via `format_route_line`;
+hybrid-loop stages record paired alt/fb; learn routes keep routing fields;
+docs/doctor/TUI honesty; please-fix keeps cargo/rustc signal.

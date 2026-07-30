@@ -54,10 +54,18 @@ abbey doctor        # build stamp + persona/role/memory/os honesty
 - Unique stamp: `ABBEY_BUILD_STAMP` from `build.rs` (git short hash + target + profile + time)
 - Surface: `abbey doctor`, `abbey agents`
 
+## API docs
+
+```bash
+cargo doc --no-deps --document-private-items
+# open: target/doc/abbey/index.html  (or $CARGO_TARGET_DIR/doc/abbey/)
+```
+
 ## Checklist before tagging a release
 
 - [ ] `./check.sh` green
-- [ ] `abbey doctor` shows expected stamp/persona/role/memory lines
+- [ ] `abbey doctor` shows expected stamp/persona/role/memory/routing/learn lines
 - [ ] `docs/architecture.md` + `docs/identity.md` claims match code
 - [ ] `AGENTS.md` claims gate updated
 - [ ] `./install.sh` installs runnable binary
+- [ ] `cargo doc --no-deps --document-private-items` builds

@@ -41,6 +41,18 @@ pub fn capture_correction(
     Ok(id)
 }
 
+/// Activity payload for one route record (confidence / alt / fb preserved).
+fn route_activity_payload(r: &route_log::RouteRecord) -> String {
+    format!(
+        "{}\nreason={}\nconfidence={:.2}\nalternate={}\nfallback={}",
+        r.cwd,
+        r.reason,
+        r.confidence,
+        r.alternate.as_deref().unwrap_or("-"),
+        r.fallback.as_deref().unwrap_or("-"),
+    )
+}
+
 /// Promote recent high-signal route records into activity/LTM digest.
 pub fn learn_from_routes(state: &AbbeyState, n: usize) -> Result<usize> {
     let mem = open_mem(state)?;
@@ -49,7 +61,7 @@ pub fn learn_from_routes(state: &AbbeyState, n: usize) -> Result<usize> {
     for r in routes {
         let mut rec = MemoryRecord::new_stm(
             format!("route {}/{} → {}", r.persona, r.role, r.model),
-            format!("{}\nreason={}", r.cwd, r.reason),
+            route_activity_payload(&r),
         );
         rec.source_type = "route".into();
         rec.retention = "activity".into();
@@ -267,4 +279,61 @@ pub fn preference_context(state_dir: &Path, limit: usize) -> String {
         out.push('\n');
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::route_log::RouteRecord;
+    use std::fs;
+    use std::path::PathBuf;
+
+    fn temp_state(tag: &str) -> AbbeyState {
+        let state_dir =
+            std::env::temp_dir().join(format!("abbey-learn-{tag}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&state_dir);
+        fs::create_dir_all(&state_dir).unwrap();
+        let cwd_dir = state_dir.join("by-cwd");
+        fs::create_dir_all(&cwd_dir).unwrap();
+        AbbeyState {
+            chat_file: state_dir.join("chat-id"),
+            model_file: state_dir.join("model"),
+            history_file: state_dir.join("history.log"),
+            cwd_dir,
+            per_cwd: false,
+            cwd: PathBuf::from("."),
+            state_dir,
+        }
+    }
+
+    #[test]
+    fn learn_from_routes_keeps_alternate_and_fallback() {
+        // Force SQLite so the test is independent of the user's config.toml.
+        unsafe { std::env::set_var("ABBEY_MEMORY_BACKEND", "sqlite") };
+        let state = temp_state("routes");
+        let rec = RouteRecord::new(".", "abbey", "max", "fable", "hybrid", 0.7)
+            .with_routing(Some("gemma".into()), Some("prefer hybrid-loop".into()));
+        route_log::append_route_record(&state.state_dir, &rec).unwrap();
+        let n = learn_from_routes(&state, 5).unwrap();
+        assert_eq!(n, 1);
+        let mem = memory::open_backend(&state.state_dir, "sqlite").unwrap();
+        let rows = mem
+            .filter(Some("activity"), Some("self-learn"), 10)
+            .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].payload.contains("alternate=gemma"));
+        assert!(rows[0].payload.contains("fallback=prefer hybrid-loop"));
+        assert!(rows[0].payload.contains("confidence=0.70"));
+        let _ = fs::remove_dir_all(&state.state_dir);
+    }
+
+    #[test]
+    fn route_activity_payload_includes_routing_fields() {
+        let r = RouteRecord::new(".", "abbey", "max", "fable", "other", 0.55)
+            .with_routing(Some("gemma".into()), Some("low conf".into()));
+        let p = route_activity_payload(&r);
+        assert!(p.contains("alternate=gemma"));
+        assert!(p.contains("fallback=low conf"));
+        assert!(p.contains("confidence=0.55"));
+    }
 }

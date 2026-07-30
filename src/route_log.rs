@@ -115,6 +115,22 @@ pub fn recent_routes(state_dir: &Path, n: usize) -> Result<Vec<RouteRecord>> {
     Ok(out)
 }
 
+/// One-line display for CLI / slash — keeps both surfaces in lockstep.
+pub fn format_route_line(r: &RouteRecord) -> String {
+    format!(
+        "{}\t{}\t{}\t{}\t{:.2}\t{}\talt={}\tfb={}\t{}",
+        r.ts,
+        r.persona,
+        r.role,
+        r.model,
+        r.confidence,
+        r.stage.as_deref().unwrap_or("-"),
+        r.alternate.as_deref().unwrap_or("-"),
+        r.fallback.as_deref().unwrap_or("-"),
+        r.reason
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -129,6 +145,22 @@ mod tests {
         let got = recent_routes(&dir, 5).unwrap();
         assert_eq!(got.len(), 1);
         assert_eq!(got[0].role, "max");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn alternate_and_fallback_survive_jsonl_roundtrip() {
+        let dir = std::env::temp_dir().join(format!("abbey-route-alt-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let rec = RouteRecord::new(".", "abbey", "max", "fable", "hybrid", 0.7)
+            .with_routing(Some("gemma".into()), Some("prefer hybrid-loop".into()));
+        append_route_record(&dir, &rec).unwrap();
+        let got = recent_routes(&dir, 1).unwrap();
+        assert_eq!(got[0].alternate.as_deref(), Some("gemma"));
+        assert_eq!(got[0].fallback.as_deref(), Some("prefer hybrid-loop"));
+        assert!(format_route_line(&got[0]).contains("alt=gemma"));
+        assert!(format_route_line(&got[0]).contains("fb=prefer hybrid-loop"));
         let _ = fs::remove_dir_all(&dir);
     }
 }
