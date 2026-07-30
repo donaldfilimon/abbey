@@ -1,6 +1,6 @@
 //! Session orchestration: flags, hybrid persona/role run, history compact.
 
-use crate::agent::{AgentConfig, Worktree, run_resilient};
+use crate::agent::{AgentBackend, AgentConfig, Worktree, run_resilient};
 use crate::cli::{Cli, ExecMode};
 use crate::config;
 use crate::learn;
@@ -13,6 +13,8 @@ use crate::state::AbbeyState;
 use anyhow::Result;
 
 pub fn apply_global_flags(cli: &Cli, state: &AbbeyState, cfg: &mut AgentConfig) -> Result<()> {
+    // `fm` keeps conversations in transcript files under the state dir.
+    cfg.transcript_dir = Some(state.state_dir.join("fm"));
     if let Some(m) = &cli.model {
         cfg.model = resolve_model(m);
     } else {
@@ -102,8 +104,14 @@ pub fn hybrid_run(
             }
         }
     };
-    // Only override model when user didn't set -m / ABBEY_MODEL explicitly this run
-    if std::env::var("ABBEY_MODEL").is_err() && cfg.model == state.read_model() {
+    // Only override model when user didn't set -m / ABBEY_MODEL explicitly this run.
+    // Never under `fm`: its vocabulary is system|pcc, so injecting a cursor-agent
+    // id here would hand the backend an argument it rejects. Under `fm` the role
+    // distinction is carried by the prompt alone.
+    if cfg.backend != AgentBackend::Fm
+        && std::env::var("ABBEY_MODEL").is_err()
+        && cfg.model == state.read_model()
+    {
         cfg.model = resolve_model(model_alias);
     }
 

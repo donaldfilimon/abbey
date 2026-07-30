@@ -30,6 +30,11 @@ pub struct AgentConfig {
     pub add_dirs: Vec<PathBuf>,
     pub sandbox: Option<String>,
     pub extra_args: Vec<String>,
+    /// Which executor grammar `build_args` speaks.
+    pub backend: AgentBackend,
+    /// Where `fm` conversation transcripts live (`fm` has no server-side chat
+    /// ids, so Abbey maps its own chat id onto a transcript file).
+    pub transcript_dir: Option<PathBuf>,
 }
 
 impl Default for AgentConfig {
@@ -49,6 +54,8 @@ impl Default for AgentConfig {
             add_dirs: Vec::new(),
             sandbox: None,
             extra_args: Vec::new(),
+            backend: AgentBackend::from_env(),
+            transcript_dir: None,
         }
     }
 }
@@ -66,6 +73,8 @@ fn env_flag(name: &str, default: bool) -> bool {
 pub enum AgentBackend {
     Cursor,
     Grok,
+    /// Apple Foundation Models CLI (`fm`) — on-device, no network, no third-party agent.
+    Fm,
 }
 
 impl AgentBackend {
@@ -76,6 +85,7 @@ impl AgentBackend {
             .as_str()
         {
             "grok" | "grok-build" | "xai" => Self::Grok,
+            "fm" | "apple" | "foundation" | "on-device" | "local" => Self::Fm,
             _ => Self::Cursor,
         }
     }
@@ -84,8 +94,51 @@ impl AgentBackend {
         match self {
             Self::Cursor => "cursor-agent",
             Self::Grok => "grok",
+            Self::Fm => "fm",
         }
     }
+
+    /// Whether this backend runs entirely on the local machine.
+    pub fn is_on_device(self) -> bool {
+        matches!(self, Self::Fm)
+    }
+}
+
+/// Map an Abbey model/alias onto `fm`'s two-model vocabulary (`system` | `pcc`).
+///
+/// Every cursor-agent id collapses to `system` (on-device) — Abbey's role
+/// bindings have no meaning here, so under `fm` the Max/Gemma distinction is
+/// carried by the prompt alone, not by the model.
+pub fn fm_model(requested: &str) -> &'static str {
+    let r = requested.trim().to_ascii_lowercase();
+    if r.contains("pcc") || r.contains("cloud") || r.contains("private") {
+        "pcc"
+    } else {
+        "system"
+    }
+}
+
+/// Strip ANSI SGR sequences — every `fm` subcommand colourizes its output, so
+/// probes must de-colour before matching.
+pub fn strip_ansi(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c != '\u{1b}' {
+            out.push(c);
+            continue;
+        }
+        // Consume "[ ... <final byte in @..~>"
+        if chars.next() != Some('[') {
+            continue;
+        }
+        for c in chars.by_ref() {
+            if ('\u{40}'..='\u{7e}').contains(&c) {
+                break;
+            }
+        }
+    }
+    out
 }
 
 pub fn resolve_agent() -> Result<PathBuf> {
@@ -107,6 +160,7 @@ pub fn resolve_agent() -> Result<PathBuf> {
             home.join(".local/bin/cursor-agent"),
             home.join(".local/bin/agent"),
         ],
+        AgentBackend::Fm => vec![PathBuf::from("/usr/bin/fm")],
     };
     for c in &candidates {
         if !c.is_file() {
@@ -133,6 +187,15 @@ pub fn resolve_agent() -> Result<PathBuf> {
             if let Some(path) = which_bin("grok") {
                 return Ok(path);
             }
+        }
+        AgentBackend::Fm => {
+            if let Some(path) = which_bin("fm") {
+                return Ok(path);
+            }
+            bail!(
+                "`fm` not found — the on-device backend needs the Apple Foundation Models \
+                 CLI (macOS 26+). Unset ABBEY_BACKEND=fm to use cursor-agent."
+            );
         }
     }
     bail!(
@@ -175,6 +238,15 @@ impl AgentConfig {
     }
 
     pub fn create_chat(&self) -> Result<String> {
+        // `fm` has no server and no chat ids — Abbey mints one locally and
+        // backs it with a transcript file.
+        if self.backend == AgentBackend::Fm {
+            let id = uuid::Uuid::new_v4().to_string();
+            if let Some(dir) = &self.transcript_dir {
+                std::fs::create_dir_all(dir)?;
+            }
+            return Ok(id);
+        }
         let out = Command::new(&self.agent_path)
             .arg("create-chat")
             .output()
@@ -192,7 +264,54 @@ impl AgentConfig {
         Ok(id)
     }
 
+    /// Transcript file backing one Abbey chat id under the `fm` backend.
+    pub fn fm_transcript_path(&self, chat_id: &str) -> Option<PathBuf> {
+        let dir = self.transcript_dir.as_ref()?;
+        Some(dir.join(format!("{chat_id}.transcript")))
+    }
+
+    /// `fm respond` argv. Deliberately built from scratch rather than filtered
+    /// from the cursor grammar: `fm` shares none of those flags, and a single
+    /// leaked `--force`/`--sandbox` would break the backend the first time a
+    /// user passed one.
+    fn build_args_fm(&self, resume_id: Option<&str>, prompt_and_rest: &[String]) -> Vec<String> {
+        let mut args = vec![
+            "respond".to_string(),
+            "--model".into(),
+            fm_model(&self.model).into(),
+        ];
+        if let Some(mode) = &self.mode {
+            // Abbey's ask/plan modes have no `fm` equivalent; express them as
+            // instructions so the behaviour survives the backend switch.
+            args.push("--instructions".into());
+            args.push(match mode.as_str() {
+                "ask" => "Answer the question. Do not modify files.".into(),
+                "plan" => "Produce a plan only. Do not write the implementation.".into(),
+                other => format!("Mode: {other}."),
+            });
+        }
+        if self.print {
+            // Streaming interleaves partial output; capture wants one clean body.
+            args.push("--no-stream".into());
+        }
+        if let Some(id) = resume_id.filter(|i| !i.is_empty()) {
+            if let Some(path) = self.fm_transcript_path(id) {
+                if path.is_file() {
+                    args.push("--resume".into());
+                    args.push(path.display().to_string());
+                }
+                args.push("--save-transcript".into());
+                args.push(path.display().to_string());
+            }
+        }
+        args.extend(prompt_and_rest.iter().cloned());
+        args
+    }
+
     pub fn build_args(&self, resume_id: Option<&str>, prompt_and_rest: &[String]) -> Vec<String> {
+        if self.backend == AgentBackend::Fm {
+            return self.build_args_fm(resume_id, prompt_and_rest);
+        }
         let mut args = Vec::new();
         args.push("--model".into());
         args.push(self.model.clone());
@@ -293,8 +412,35 @@ impl AgentConfig {
     }
 
     pub fn list_models_text(&self) -> Result<String> {
+        if self.backend == AgentBackend::Fm {
+            return Ok("system  on-device Apple Foundation Model\npcc     Apple Foundation Model on Private Cloud Compute\n".into());
+        }
         let out = Command::new(&self.agent_path).arg("models").output()?;
         Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+    }
+
+    /// Ask `fm` what it can actually serve.
+    ///
+    /// `fm available` prints an error about Private Cloud Compute *and*
+    /// "System model available" in the same run, and exits non-zero — so this
+    /// parses de-coloured stdout rather than trusting the exit code.
+    pub fn fm_availability(&self) -> String {
+        let Ok(out) = Command::new(&self.agent_path).arg("available").output() else {
+            return "fm: not runnable".into();
+        };
+        let text = strip_ansi(&format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        ));
+        let lower = text.to_ascii_lowercase();
+        let system = lower.contains("system model available");
+        let pcc = lower.contains("private cloud compute") && !lower.contains("not available");
+        format!(
+            "on-device system model: {} · private cloud compute: {}",
+            if system { "available" } else { "unavailable" },
+            if pcc { "available" } else { "unavailable" },
+        )
     }
 }
 
@@ -339,4 +485,136 @@ pub fn run_resilient(
     eprintln!("abbey: new chat {id}");
     let st = cfg.run_interactive(Some(&id), prompt_and_rest)?;
     Ok(st.code().unwrap_or(1))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A config with every cursor-agent knob turned on — the `fm` builder must
+    /// still emit only flags `fm respond` actually accepts.
+    fn maximal_cursor_config() -> AgentConfig {
+        AgentConfig {
+            agent_path: PathBuf::from("/usr/bin/fm"),
+            model: "claude-fable-5-thinking-high".into(),
+            auto_review: true,
+            trust: true,
+            force: true,
+            no_resume: true,
+            mode: Some("plan".into()),
+            print: true,
+            output_format: Some("json".into()),
+            worktree: Some(Worktree::Named("wt".into())),
+            workspace: Some(PathBuf::from("/ws")),
+            add_dirs: vec![PathBuf::from("/extra")],
+            sandbox: Some("enabled".into()),
+            extra_args: vec!["--debug".into(), "--max-turns".into(), "7".into()],
+            backend: AgentBackend::Fm,
+            transcript_dir: None,
+        }
+    }
+
+    #[test]
+    fn fm_argv_never_leaks_cursor_flags() {
+        let argv = maximal_cursor_config().build_args(None, &["hello".into()]);
+        // Every flag `fm respond` knows about.
+        let allowed = [
+            "respond",
+            "--model",
+            "system",
+            "pcc",
+            "--instructions",
+            "--no-stream",
+            "--resume",
+            "--save-transcript",
+            "hello",
+        ];
+        for a in &argv {
+            if a.starts_with("--") {
+                assert!(
+                    allowed.contains(&a.as_str()),
+                    "leaked non-fm flag {a:?} into argv {argv:?}"
+                );
+            }
+        }
+        for banned in [
+            "--auto-review",
+            "--trust",
+            "--force",
+            "--mode",
+            "--worktree",
+            "--workspace",
+            "--add-dir",
+            "--sandbox",
+            "--output-format",
+            "--print",
+            "--debug",
+            "--max-turns",
+        ] {
+            assert!(!argv.contains(&banned.to_string()), "{banned} leaked");
+        }
+    }
+
+    #[test]
+    fn fm_collapses_any_cursor_model_id_to_system() {
+        assert_eq!(fm_model("claude-fable-5-thinking-high"), "system");
+        assert_eq!(fm_model("composer-2.5"), "system");
+        assert_eq!(fm_model("auto"), "system");
+        assert_eq!(fm_model("pcc"), "pcc");
+        assert_eq!(fm_model("Private Cloud Compute"), "pcc");
+    }
+
+    #[test]
+    fn fm_mode_becomes_instructions() {
+        let mut cfg = maximal_cursor_config();
+        cfg.mode = Some("ask".into());
+        let argv = cfg.build_args(None, &["q".into()]);
+        let i = argv.iter().position(|a| a == "--instructions").unwrap();
+        assert!(argv[i + 1].contains("Do not modify files"));
+    }
+
+    #[test]
+    fn fm_resume_maps_a_chat_id_onto_a_transcript_file() {
+        let dir = std::env::temp_dir().join(format!("abbey-fm-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut cfg = maximal_cursor_config();
+        cfg.transcript_dir = Some(dir.clone());
+
+        // No transcript yet: save but do not resume from a file that isn't there.
+        let argv = cfg.build_args(Some("chat-1"), &["hi".into()]);
+        assert!(!argv.contains(&"--resume".to_string()));
+        let save = argv.iter().position(|a| a == "--save-transcript").unwrap();
+        assert!(argv[save + 1].ends_with("chat-1.transcript"));
+
+        // Once it exists, resume from it.
+        std::fs::write(dir.join("chat-1.transcript"), "{}").unwrap();
+        let argv = cfg.build_args(Some("chat-1"), &["hi".into()]);
+        let r = argv.iter().position(|a| a == "--resume").unwrap();
+        assert!(argv[r + 1].ends_with("chat-1.transcript"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn cursor_backend_argv_is_unchanged_by_the_fm_split() {
+        let mut cfg = maximal_cursor_config();
+        cfg.backend = AgentBackend::Cursor;
+        let argv = cfg.build_args(Some("abc"), &["hi".into()]);
+        for expected in [
+            "--auto-review",
+            "--trust",
+            "--force",
+            "--sandbox",
+            "--resume",
+        ] {
+            assert!(argv.contains(&expected.to_string()), "{expected} missing");
+        }
+    }
+
+    #[test]
+    fn strip_ansi_removes_fm_colour_codes() {
+        let coloured = "\u{1b}[38;2;255;107;128mError:\u{1b}[0m System model available";
+        assert_eq!(strip_ansi(coloured), "Error: System model available");
+    }
 }

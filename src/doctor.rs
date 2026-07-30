@@ -243,6 +243,21 @@ pub fn cmd_doctor(state: &AbbeyState, cfg: &AgentConfig) -> Result<i32> {
         &abbey_cfg.memory_backend,
     ));
     let _ = output::println(memory::feature_status());
+    let backend = agent::AgentBackend::from_env();
+    if backend.is_on_device() {
+        let _ = output::println(format!("on-device: {}", cfg.fm_availability()));
+        let _ =
+            output::println("on-device: no cursor-agent and no network required for generation");
+    } else {
+        let _ = output::println(format!(
+            "on-device: available via ABBEY_BACKEND=fm ({})",
+            if agent::which_bin("fm").is_some() {
+                "fm present"
+            } else {
+                "fm not installed — needs macOS 26+"
+            }
+        ));
+    }
     let _ = output::println(config::wdbx_cli_status(&abbey_cfg));
     let hist = state.history(5);
     if !hist.is_empty() {
