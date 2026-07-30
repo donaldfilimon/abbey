@@ -195,7 +195,8 @@ impl App {
             memory::feature_status(),
             config::wdbx_cli_status(&ac),
             "os-control: abbey os dry-run|execute --confirm (cross-platform allowlist)".into(),
-            "parallel:   abbey parallel <prompt> (Max+Gemma+Aviva lanes)".into(),
+            "subagents:  abbey subagents run --lanes max,reviewer [--peers gemini]".into(),
+            "parallel:   alias of subagents with Max+Gemma+Aviva defaults".into(),
             "learn:      abbey learn correction|preference|routes|digest|review|stats".into(),
         ]);
         self.doctor_lines = lines;

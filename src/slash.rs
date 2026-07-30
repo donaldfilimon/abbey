@@ -214,8 +214,13 @@ pub const SLASH_CATALOG: &[SlashCmd] = &[
     },
     SlashCmd {
         name: "parallel",
-        help: "Fan-out Max/Gemma/Aviva lanes",
+        help: "Fan-out Max/Gemma/Aviva (alias of /subagents)",
         kind: SlashKind::Agent,
+    },
+    SlashCmd {
+        name: "subagents",
+        help: "Multi-subagent + local peers: /subagents [list|run --lanes …]",
+        kind: SlashKind::Local,
     },
     SlashCmd {
         name: "permissions",

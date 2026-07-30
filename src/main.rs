@@ -30,6 +30,7 @@ mod session;
 mod slash;
 mod slash_dispatch;
 mod state;
+mod subagents;
 mod tui;
 mod voice;
 mod wdbx_bridge;

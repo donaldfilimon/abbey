@@ -47,7 +47,8 @@ Status key: **Current** = shipped · **Proposed** = designed, not claimed live �
 | `highlight` | syntect fence/file ANSI colour for `-p`/print/commit/diff (TTY; not a markdown UI) |
 | `learn` | Self-learn capture/digest/review/stats |
 | `os_control` | Cross-platform OS policy |
-| `parallel` | Multi-lane fan-out |
+| `parallel` | Thin alias → `subagents` (default Max/Gemma/Aviva) |
+| `subagents` | Named multi-subagent fan-out + local PATH peer CLIs + synthesize |
 | `inventory` | Skills/plugins/peer tools |
 | `config` / `build_info` | Config + unique build stamp |
 | `tui/` | tabs + app + ui (7-tab ratatui) |
@@ -70,7 +71,7 @@ Status key: **Current** = shipped · **Proposed** = designed, not claimed live �
 - Grok/Codex/Claude parity CLI + slash
 - Personas via abi-ai; Max/Gemma roles; route JSONL with confidence/alternate/fallback
 - SQLite memory + learn pipeline (`review`/`stats` for train_candidate provenance)
-- Parallel lanes; OS allowlist; skills/plugins inventory
+- Parallel / multi-subagent lanes; local peer CLIs; OS allowlist; skills/plugins inventory
 - Unique `ABBEY_BUILD_STAMP`; 7-tab TUI (Memory tab previews the 3-D map)
 - `/init` project scan → AGENTS.md
 - In-process `abi-wdbx` `DurableStore` memory backend — **behind `--features wdbx`, off by
@@ -89,6 +90,8 @@ Status key: **Current** = shipped · **Proposed** = designed, not claimed live �
   `say` voices + on-device Speech STT; not a cloud TTS subscription)
 - Auto code highlighting: syntect ANSI on markdown fences for `-p`/print/commit/
   hybrid-loop/parallel when stdout is a TTY; `abbey highlight` for files/stdin
+- Multi-subagent / local peers: `abbey subagents run --lanes max,reviewer
+  --peers gemini --synthesize` (same-host PATH CLIs; not multi-node)
 - MCP/ACP surfaces: `abbey mcp status` reads `mcp.json` files; `abbey mcp list|…`
   passthrough to cursor-agent; `abbey acp list|run` discovers/launches ACP peers.
   Abbey is not an MCP or ACP host.
@@ -105,4 +108,4 @@ Status key: **Current** = shipped · **Proposed** = designed, not claimed live �
   so concurrent processes are unprotected on non-Unix targets
 - Local Qwen 3.5 / Gemma 4 weights
 - LoRA / fine-tuning runners
-- Dedicated distributed agents
+- Multi-node distributed agent mesh (local PATH peer fan-out is Current via `subagents --peers`)

@@ -326,10 +326,16 @@ pub enum Commands {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Parallel Max/Gemma/Aviva lanes via cursor-agent --print
+    /// Parallel Max/Gemma/Aviva lanes (alias of `subagents run` defaults)
     Parallel {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         prompt: Vec<String>,
+    },
+    /// Multi-subagent fan-out + local peer agents (not multi-node)
+    #[command(visible_alias = "swarm", visible_alias = "distribute")]
+    Subagents {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
     },
     /// Discover peer agentic tools on PATH
     #[command(visible_alias = "tools")]

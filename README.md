@@ -42,6 +42,9 @@ abbey init --print        # preview only
 abbey init --agent        # local scan, then refine with cursor-agent
 abbey doctor
 abbey hybrid-loop "add a dark mode toggle"   # Gemma interprets → Max implements
+abbey subagents                              # catalog (abbey lanes + PATH peers)
+abbey subagents run --lanes max,reviewer --synthesize "harden auth"
+abbey parallel --peers gemini,claude "second opinions"   # local distributed peers
 abbey routes --correlation <id>              # both stages (conf · alt · fb)
 abbey learn review                           # train_candidate provenance curation
 abbey learn stats

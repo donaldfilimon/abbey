@@ -71,6 +71,9 @@ Routing decisions record **confidence**, **alternate**, and **fallback** on `rou
 | Cloud TTS/STT subscriptions · local neural voice weights | **Out of scope** (use System Settings downloads for Premium voices) |
 | Auto code highlighting (`-p`/print fences · `abbey highlight`) | **Current** — syntect ANSI on TTY; `NO_COLOR` / `ABBEY_HIGHLIGHT=0` off |
 | Full markdown renderer / LSP semantic highlight | **Out of scope** |
+| Multi-subagent fan-out (`abbey subagents` / `parallel`) | **Current** — named lanes + optional `--synthesize` |
+| Local distributed peers (`--peers gemini,claude,…`) | **Current** — PATH CLIs on this host |
+| Multi-node / multi-GPU agent mesh | **Proposed** (not Current) |
 
 ---
 

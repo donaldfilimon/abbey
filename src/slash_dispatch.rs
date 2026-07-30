@@ -257,6 +257,11 @@ pub fn dispatch_slash(input: &str, state: &AbbeyState, cfg: &mut AgentConfig) ->
                 &ac.roles.gemma,
             )
         }
+        "subagents" | "swarm" | "distribute" => {
+            let ac = config::AbbeyConfig::load().unwrap_or_default();
+            let args: Vec<String> = rest.split_whitespace().map(String::from).collect();
+            crate::subagents::dispatch(cfg, state, &args, &ac.roles.max, &ac.roles.gemma)
+        }
         "permissions" => {
             print_permissions(cfg);
             Ok(0)

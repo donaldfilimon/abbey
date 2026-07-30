@@ -103,3 +103,11 @@ syntect ANSI colour for markdown fences on captured `-p`/print/commit/hybrid-loo
 output when stdout is a TTY; `abbey highlight` / `/highlight` for files and stdin;
 `abbey diff` highlighted. Off via `NO_COLOR` or `ABBEY_HIGHLIGHT=0`. Not a full
 markdown renderer or LSP semantic highlight.
+
+## Multi-subagent and local distributed peers
+status: done
+
+`abbey subagents` catalog + `run --lanes/--peers/--jobs/--synthesize`. Abbey lanes
+(max/gemma/aviva/abbey/abi/reviewer/security/planner) via cursor-agent; peers
+(gemini/opencode/claude/codex) as same-host PATH CLIs. `parallel` remains the
+default-lane alias. Multi-node mesh stays Proposed.

@@ -38,6 +38,7 @@ src/hybrid_loop.rs   Gemma interpret → Max implement, correlated
 src/wdbx_bridge.rs   `abbey wdbx` → `abi wdbx` passthrough
 src/please_fix.rs   last-failure prompt + capture summarizer
 src/highlight.rs     syntect fence/file ANSI (auto on -p)
+src/subagents.rs     multi-lane + local peer agents
 src/learn.rs os_control.rs parallel.rs inventory.rs
 src/tui/              7-tab ratatui
 src/init/ gitops.rs agent.rs models.rs state.rs config.rs
@@ -66,7 +67,9 @@ See [docs/architecture.md](docs/architecture.md). Personas via `abi-ai`; Max/Gem
 | Persona Abbey/Aviva/Abi | ✓ | | |
 | Max/Gemma role bindings | ✓ | | local Qwen/Gemma weights |
 | SQLite memory + self-learn | ✓ | | |
-| Parallel lanes | ✓ | | distributed agents |
+| Parallel lanes (Max/Gemma/Aviva) | ✓ | | |
+| Multi-subagent fan-out (`subagents` / synthesize) | ✓ | | |
+| Local distributed peer agents (PATH CLIs) | ✓ | | multi-node agent mesh |
 | OS allowlist control | ✓ | | unrestricted shell |
 | Skills/plugins inventory | ✓ | | |
 | Unique build stamp | ✓ | | |

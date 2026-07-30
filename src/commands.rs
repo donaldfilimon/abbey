@@ -24,6 +24,7 @@ use crate::route_log;
 use crate::session::compact_history;
 use crate::slash;
 use crate::state::AbbeyState;
+use crate::subagents;
 use crate::voice;
 use crate::wdbx_bridge;
 use anyhow::Result;
@@ -274,6 +275,10 @@ pub fn run_cli(cli: Cli, state: AbbeyState, mut cfg: AgentConfig) -> Result<i32>
         Some(Commands::Parallel { prompt }) => {
             let ac = config::AbbeyConfig::load().unwrap_or_default();
             parallel::run_parallel_cli(&cfg, &state, &prompt, &ac.roles.max, &ac.roles.gemma)
+        }
+        Some(Commands::Subagents { args }) => {
+            let ac = config::AbbeyConfig::load().unwrap_or_default();
+            subagents::dispatch(&cfg, &state, &args, &ac.roles.max, &ac.roles.gemma)
         }
         Some(Commands::Agents) => {
             inventory::print_agent_tools();
