@@ -60,7 +60,11 @@ Routing decisions record **confidence**, **alternate**, and **fallback** on `rou
 | Prompt-token paths (`./shot.png`) | **Current** — auto-discover + Gemma preference |
 | `abbey imagine` · `generate image` · `/imagine` | **Current** — agent-orchestrated image gen/edit (depends on cursor-agent/MCP tools) |
 | `abbey generate video` · `/gen-video` | **Current (best-effort)** — same pattern; fails honestly if no video tool |
-| Local vision / video / generation weights | **Out of scope** |
+| Local vision / video / generation weights | **Out of scope** (`abbey vision refuse`) |
+| CoT transcript viewer (`abbey cot`) | **Current** — display/save of structured reason output |
+| Abbey-owned CoT engine / interactive CoT UI | **Out of scope** |
+| Tool responsibility matrix (`abbey runtime`) | **Current** — who executes what |
+| Abbey as tool runtime / MCP host | **Out of scope** |
 | `--thinking <level>` · `/think` · `abbey reason` · `/reason` | **Current** — Cursor `*-thinking-*` + structured reasoning wrap (not Abbey CoT UI) |
 | Tools during a run | **Current via cursor-agent** (`--print` has tool access; `--approve-mcps`) |
 | `abbey mcp` / `/mcp` config inventory + cursor-agent management | **Current** (not an MCP host runtime) |

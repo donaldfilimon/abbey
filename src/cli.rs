@@ -403,6 +403,22 @@ pub enum Commands {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
+    /// Vision/media honesty (path attach + agent gen; local weights OOS)
+    Vision {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+    /// CoT transcript viewer (not an Abbey CoT engine)
+    #[command(name = "cot")]
+    Cot {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+    /// Tool responsibility matrix (Abbey is not a tool runtime)
+    Runtime {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
     /// Plugin management
     Plugin {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]

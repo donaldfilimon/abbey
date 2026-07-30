@@ -64,6 +64,23 @@ pub fn dispatch_slash(input: &str, state: &AbbeyState, cfg: &mut AgentConfig) ->
             }
             crate::platform::dispatch(&args)
         }
+        "vision" => {
+            let args: Vec<String> = rest.split_whitespace().map(String::from).collect();
+            crate::surfaces::dispatch_vision(&args)
+        }
+        "cot" => {
+            let args: Vec<String> = rest.split_whitespace().map(String::from).collect();
+            if args.first().map(String::as_str) == Some("run") {
+                let prompt: Vec<String> = args.iter().skip(1).cloned().collect();
+                generate::run_reason(cfg, state, &prompt, None)
+            } else {
+                crate::surfaces::dispatch_cot(&args, state)
+            }
+        }
+        "runtime" => {
+            let args: Vec<String> = rest.split_whitespace().map(String::from).collect();
+            crate::surfaces::dispatch_runtime(&args)
+        }
         "doctor" | "debug" => {
             if cmd == "debug" {
                 cmd_debug(state, cfg)

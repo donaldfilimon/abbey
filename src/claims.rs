@@ -128,6 +128,18 @@ pub const CLAIMS: &[Claim] = &[
         note: "abbey platform compute — presence inventory, not Abbey accelerators",
         instead: Some("abbey platform · abbey compute"),
     },
+    Claim {
+        name: "CoT transcript viewer (`abbey cot`)",
+        status: Status::Current,
+        note: "saves/displays structured reason output — not an Abbey CoT engine",
+        instead: Some("abbey cot show|run · abbey reason"),
+    },
+    Claim {
+        name: "tool responsibility matrix (`abbey runtime`)",
+        status: Status::Current,
+        note: "documents who executes what; Abbey is not the tool host",
+        instead: Some("abbey runtime · --approve-mcps"),
+    },
     // —— Proposed ——
     Claim {
         name: "semantic / learned memory embedding space",
@@ -182,7 +194,13 @@ pub const CLAIMS: &[Claim] = &[
         name: "Abbey as MCP host / ACP host / tool runtime",
         status: Status::OutOfScope,
         note: "inventory + launch only; tools run inside cursor-agent during a turn",
-        instead: Some("abbey mcp|acp · --approve-mcps"),
+        instead: Some("abbey runtime · abbey mcp|acp · --approve-mcps"),
+    },
+    Claim {
+        name: "Abbey-owned chain-of-thought engine / interactive CoT UI",
+        status: Status::OutOfScope,
+        note: "reason uses Cursor thinking models; cot is a transcript viewer only",
+        instead: Some("abbey cot show · abbey reason"),
     },
     Claim {
         name: "fake cost / token accounting",
@@ -313,6 +331,14 @@ pub fn refuse(verb: &str) -> Result<i32> {
             "GPU/NPU/TPU",
             "GPU/NPU/TPU compilation, training, and inference in Abbey are Out of scope. Host detect is Current.",
         ),
+        "vision" | "vlm" | "video-weights" | "local-vision" => (
+            "vision",
+            "Local vision/video weights are Out of scope. Path attach + agent/MCP gen are Current.",
+        ),
+        "cot" | "chain-of-thought" | "cot-ui" | "cot-engine" => (
+            "CoT",
+            "Abbey-owned CoT engine/UI is Out of scope. Transcript viewer + Cursor thinking wrap are Current.",
+        ),
         "weights" | "qwen" | "local-gemma" | "own-model" => (
             "weights",
             "Local Qwen/Gemma weights and Abbey-own-weights training are Out of scope.",
@@ -402,7 +428,7 @@ mod tests {
 
     #[test]
     fn gate_has_all_three_statuses() {
-        assert!(by_status(Status::Current).count() >= 12);
+        assert!(by_status(Status::Current).count() >= 14);
         assert!(by_status(Status::Proposed).count() >= 3);
         assert!(by_status(Status::OutOfScope).count() >= 5);
     }

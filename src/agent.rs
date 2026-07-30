@@ -39,6 +39,10 @@ pub struct AgentConfig {
     pub media_note: Option<String>,
     /// Prefer Gemma role when media was attached (cursor binding, not local vision).
     pub media_prefers_gemma: bool,
+    /// Force capture+re-emit for `--print` even when stdout is not a TTY (CoT save).
+    pub force_capture: bool,
+    /// When set, captured stdout is also written here as a CoT transcript.
+    pub cot_path: Option<PathBuf>,
 }
 
 impl Default for AgentConfig {
@@ -62,6 +66,8 @@ impl Default for AgentConfig {
             transcript_dir: None,
             media_note: None,
             media_prefers_gemma: false,
+            force_capture: false,
+            cot_path: None,
         }
     }
 }
@@ -517,18 +523,20 @@ pub fn run_resilient(
     fresh: bool,
     prompt_and_rest: &[String],
 ) -> Result<i32> {
-    // Headless `--print` without a structured format: capture then colourise
-    // fenced code. Inherited stdio stays for interactive sessions and JSON.
-    let highlight_print = cfg.print && cfg.output_format.is_none() && crate::highlight::enabled();
+    // Headless `--print` (or forced CoT capture): capture then re-emit.
+    // Inherited stdio stays for interactive sessions and JSON.
+    let capture_print = cfg.print
+        && cfg.output_format.is_none()
+        && (cfg.force_capture || crate::highlight::enabled() || cfg.cot_path.is_some());
 
     if fresh || cfg.no_resume {
         if fresh {
             let id = cfg.create_chat()?;
             state.save_chat(&id)?;
             eprintln!("abbey: new chat {id}");
-            return run_once(cfg, Some(&id), prompt_and_rest, highlight_print);
+            return run_once(cfg, Some(&id), prompt_and_rest, capture_print);
         }
-        return run_once(cfg, None, prompt_and_rest, highlight_print);
+        return run_once(cfg, None, prompt_and_rest, capture_print);
     }
 
     let chat = if let Some(id) = state.read_chat() {
@@ -540,7 +548,7 @@ pub fn run_resilient(
         id
     };
 
-    let code = run_once(cfg, Some(&chat), prompt_and_rest, highlight_print)?;
+    let code = run_once(cfg, Some(&chat), prompt_and_rest, capture_print)?;
     if code == 0 {
         state.save_chat(&chat)?;
         return Ok(0);
@@ -557,19 +565,30 @@ pub fn run_resilient(
     let id = cfg.create_chat()?;
     state.save_chat(&id)?;
     eprintln!("abbey: new chat {id}");
-    run_once(cfg, Some(&id), prompt_and_rest, highlight_print)
+    run_once(cfg, Some(&id), prompt_and_rest, capture_print)
 }
 
 fn run_once(
     cfg: &AgentConfig,
     resume_id: Option<&str>,
     prompt_and_rest: &[String],
-    highlight_print: bool,
+    capture_print: bool,
 ) -> Result<i32> {
-    if highlight_print {
+    if capture_print {
         let (st, out, err) = cfg.run_capture(resume_id, prompt_and_rest)?;
         eprint!("{err}");
-        crate::highlight::emit_agent_stdout(&out);
+        if let Some(path) = &cfg.cot_path {
+            if let Err(e) = crate::surfaces::save_cot(path, &out) {
+                eprintln!("abbey: cot save failed: {e:#}");
+            } else {
+                eprintln!("abbey: cot transcript → {}", path.display());
+            }
+        }
+        if cfg.cot_path.is_some() {
+            let _ = crate::output::print(crate::surfaces::render_cot(&out));
+        } else {
+            crate::highlight::emit_agent_stdout(&out);
+        }
         return Ok(st.code().unwrap_or(1));
     }
     let st = cfg.run_interactive(resume_id, prompt_and_rest)?;
@@ -602,6 +621,8 @@ mod tests {
             transcript_dir: None,
             media_note: None,
             media_prefers_gemma: false,
+            force_capture: false,
+            cot_path: None,
         }
     }
 

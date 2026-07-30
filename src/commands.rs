@@ -27,6 +27,7 @@ use crate::session::compact_history;
 use crate::slash;
 use crate::state::AbbeyState;
 use crate::subagents;
+use crate::surfaces;
 use crate::voice;
 use crate::wdbx_bridge;
 use anyhow::Result;
@@ -94,6 +95,16 @@ pub fn run_cli(cli: Cli, state: AbbeyState, mut cfg: AgentConfig) -> Result<i32>
             a.extend(args);
             platform::dispatch(&a)
         }
+        Some(Commands::Vision { args }) => surfaces::dispatch_vision(&args),
+        Some(Commands::Cot { args }) => {
+            if args.first().map(String::as_str) == Some("run") {
+                let prompt: Vec<String> = args.iter().skip(1).cloned().collect();
+                generate::run_reason(&mut cfg, &state, &prompt, None)
+            } else {
+                surfaces::dispatch_cot(&args, &state)
+            }
+        }
+        Some(Commands::Runtime { args }) => surfaces::dispatch_runtime(&args),
         Some(Commands::Review { staged, note }) => {
             run_review(&mut cfg, &state, staged, &note, false)
         }

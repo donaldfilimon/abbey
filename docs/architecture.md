@@ -47,6 +47,7 @@ Status key: **Current** = shipped · **Proposed** = designed, not claimed live �
 | `highlight` | syntect fence/file ANSI colour for `-p`/print/commit/diff (TTY; not a markdown UI) |
 | `claims` | Current / Proposed / Out of scope gate + honest refuse paths |
 | `platform` | Host OS/arch matrix, thread budget, GPU/NPU/TPU detect (report-only) |
+| `surfaces` | Vision/CoT/runtime honesty — viewer + matrix; weights/engine/host stay OOS |
 | `learn` | Self-learn capture/digest/review/stats |
 | `os_control` | Cross-platform OS policy |
 | `parallel` | Thin alias → `subagents` (default Max/Gemma/Aviva) |

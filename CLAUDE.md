@@ -70,6 +70,7 @@ Key modules (`src/`):
 | `subagents.rs` | multi-subagent lanes + local PATH peer fan-out + synthesize |
 | `claims.rs` | Current/Proposed/OOS gate + refuse paths (embeddings/LoRA/multi-node) |
 | `platform.rs` | host OS matrix + threads + GPU/NPU/TPU detect (not accelerator runtime) |
+| `surfaces.rs` | vision/cot/runtime honesty (viewer + matrix; weights/engine/host OOS) |
 | `memory/` (`mod.rs`, `sqlite.rs`, `wdbx.rs`) | `MemoryStore` trait, shared reflect/validation, backend dispatch; add new backends here and they work everywhere |
 | `hybrid_loop.rs` | two-stage Gemma→Max run; stages linked by `correlation` in the route log |
 | `wdbx_bridge.rs` | `abbey wdbx` — passthrough to `abi wdbx`, plus in-process `stats`/`checkpoint` |

@@ -127,3 +127,11 @@ status: done
 surfaces; `available_parallelism` thread budget driving subagent `--jobs`; GPU/NPU/TPU
 host detect (report-only). WDBX lock via `fs2` on Unix and Windows. Voice/fm remain
 macOS-only; Abbey still does not run GPU/NPU/TPU kernels.
+
+## Vision / CoT / tool-runtime honesty
+status: done
+
+`abbey vision` · `abbey cot` · `abbey runtime` surface Current substitutes (path attach,
+agent gen, reason transcript viewer, responsibility matrix) while refusing local
+vision/video weights, Abbey-owned CoT engine/UI, and Abbey-as-tool-runtime (exit 2).
+`abbey reason` saves a CoT transcript for `cot show`.

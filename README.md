@@ -46,6 +46,9 @@ abbey claims proposed                        # embeddings, multi-node, …
 abbey claims refuse lora                     # honest exit 2
 abbey platform                               # linux/macos/windows matrix + threads
 abbey compute                                # GPU/NPU/TPU host detect (not Abbey kernels)
+abbey vision                                 # path attach + agent gen (local weights OOS)
+abbey cot show                               # last reason transcript (not Abbey CoT engine)
+abbey runtime                                # who runs tools (Abbey is not the host)
 abbey hybrid-loop "add a dark mode toggle"   # Gemma interprets → Max implements
 abbey subagents                              # catalog (abbey lanes + PATH peers)
 abbey subagents run --lanes max,reviewer --synthesize "harden auth"

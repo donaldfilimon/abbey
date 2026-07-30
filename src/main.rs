@@ -33,6 +33,7 @@ mod slash;
 mod slash_dispatch;
 mod state;
 mod subagents;
+mod surfaces;
 mod tui;
 mod voice;
 mod wdbx_bridge;

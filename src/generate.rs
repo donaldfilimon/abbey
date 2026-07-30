@@ -179,9 +179,12 @@ pub fn run_reason(
     }
     let level = thinking_level.unwrap_or("xhigh");
     cfg.model = resolve_model(&format!("fable-thinking-{level}"));
+    cfg.print = true;
+    cfg.force_capture = true;
+    cfg.cot_path = Some(crate::surfaces::cot_path(state));
     let prompt = reason_prompt(&task);
     eprintln!(
-        "abbey: reason with {} (Cursor thinking model; structured wrap)",
+        "abbey: reason with {} (Cursor thinking model; structured wrap + cot save)",
         cfg.model
     );
     run_agent(cfg, state, &[prompt], RunSpec::max())

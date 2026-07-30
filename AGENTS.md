@@ -41,6 +41,7 @@ src/highlight.rs     syntect fence/file ANSI (auto on -p)
 src/subagents.rs     multi-lane + local peer agents
 src/claims.rs        Current/Proposed/OOS gate + refuse
 src/platform.rs      host OS/threads + GPU/NPU/TPU detect
+src/surfaces.rs      vision/cot/runtime honesty surfaces
 src/learn.rs os_control.rs parallel.rs inventory.rs
 src/tui/              7-tab ratatui
 src/init/ gitops.rs agent.rs models.rs state.rs config.rs
@@ -79,6 +80,8 @@ CLI: `abbey claims` · `abbey claims proposed|oos` · `abbey claims refuse embed
 | Multi-threaded subagent fan-out (`--jobs`) | ✓ | | GPU kernels |
 | WDBX cross-process lock (Unix + Windows via fs2) | ✓ | | |
 | GPU/NPU/TPU host detection (`abbey platform`) | ✓ | | accelerator runtime in Abbey |
+| CoT transcript viewer (`abbey cot`) | ✓ | | Abbey-owned CoT engine/UI |
+| Tool responsibility matrix (`abbey runtime`) | ✓ | | Abbey as tool runtime |
 | OS allowlist control | ✓ | | unrestricted shell |
 | Skills/plugins inventory | ✓ | | |
 | Unique build stamp | ✓ | | |
@@ -91,13 +94,13 @@ CLI: `abbey claims` · `abbey claims proposed|oos` · `abbey claims refuse embed
 | On-device backend (`ABBEY_BACKEND=fm`, macOS 26+) | ✓ | | |
 | 3-D memory map (topic × recency × consolidation) | ✓ | | |
 | please-fix capture summarizer + argv clamp | ✓ | | |
-| Media path attach (`--image`/`--video`/`/image`) | ✓ | | local vision weights |
-| Image/video generation via agent tools (`imagine`/`generate`) | ✓ | | local gen weights |
-| Thinking aliases + `reason` structured wrap | ✓ | | Abbey-owned CoT UI |
+| Media path attach (`--image`/`--video`/`/image`) | ✓ | | local vision/video weights |
+| Image/video generation via agent tools (`imagine`/`generate`) | ✓ | | local vision/video weights |
+| Thinking aliases + `reason` structured wrap | ✓ | | Abbey-owned CoT engine |
 | macOS voice I/O (Premium/Enhanced TTS + on-device STT) | ✓ | | cloud TTS/STT SaaS |
 | MCP config inventory + cursor-agent mcp mgmt | ✓ | | Abbey as MCP host |
 | ACP peer inventory / launch (`acp run`) | ✓ | | Abbey as ACP host |
-| MCP/tools during a run (`--approve-mcps`) | ✓ | | Abbey tool runtime |
+| MCP/tools during a run (`--approve-mcps`) | ✓ | | Abbey as tool runtime |
 | Auto code highlighting (fences on `-p`/print · `abbey highlight`) | ✓ | | full markdown UI / LSP |
 | Semantic/learned memory embedding space | | ✓ | |
 | Multi-node · multi-GPU · shared compute mesh | | ✓ | |

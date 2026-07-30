@@ -48,6 +48,21 @@ pub const SLASH_CATALOG: &[SlashCmd] = &[
         kind: SlashKind::Local,
     },
     SlashCmd {
+        name: "vision",
+        help: "Vision honesty: path attach + agent gen (local weights OOS)",
+        kind: SlashKind::Local,
+    },
+    SlashCmd {
+        name: "cot",
+        help: "CoT transcript viewer: /cot [show|run <task>]",
+        kind: SlashKind::Local,
+    },
+    SlashCmd {
+        name: "runtime",
+        help: "Tool responsibility matrix (Abbey is not a tool host)",
+        kind: SlashKind::Local,
+    },
+    SlashCmd {
         name: "model",
         help: "Show or set default model alias/id",
         kind: SlashKind::Local,
