@@ -26,6 +26,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+/// WDBX spatial records are keyed by `u64`; Abbey's ids are uuids.
+fn spatial_id(memory_id: &str) -> u64 {
+    super::stable_hash(memory_id)
+}
+
 /// KV key namespace for Abbey memory records inside a shared WDBX store.
 const KEY_PREFIX: &str = "mem/";
 
@@ -76,10 +81,22 @@ impl WdbxMemory {
             bail!("memory record id must not be empty");
         }
         let json = serde_json::to_string(rec)?;
+        let point = super::coordinates(rec);
         let mut store = self.store.lock().expect("wdbx lock");
         store
             .put(&Self::key(&rec.id), &json)
-            .map_err(|e| anyhow!("wdbx put {}: {e}", rec.id))
+            .map_err(|e| anyhow!("wdbx put {}: {e}", rec.id))?;
+        // Mirror the 3-D position into WDBX's spatial space so the map is
+        // visible to `abi wdbx` too, not just to Abbey.
+        store
+            .put_spatial(abi_wdbx::SpatialRecord {
+                id: spatial_id(&rec.id),
+                x: point.x,
+                y: point.y,
+                z: point.z,
+                payload: rec.id.clone(),
+            })
+            .map_err(|e| anyhow!("wdbx put_spatial {}: {e}", rec.id))
     }
 
     /// All live records, newest first — the shared basis for search/filter/reflect.

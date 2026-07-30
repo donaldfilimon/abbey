@@ -330,6 +330,9 @@ pub enum MemoryCmd {
         payload: String,
         #[arg(long, default_value = "abbey cli")]
         provenance: String,
+        /// Subject tag — the 3-D map's topic axis groups by this (repeatable)
+        #[arg(long = "tag")]
+        tags: Vec<String>,
     },
     /// Get by id
     Get { id: String },
@@ -347,6 +350,20 @@ pub enum MemoryCmd {
     },
     /// Reflection report (duplicates / low confidence / superseded)
     Reflect,
+    /// 3-D memory map: topic × recency × consolidation
+    Map {
+        #[arg(long, default_value_t = 40)]
+        limit: usize,
+        /// Only this retention layer
+        #[arg(long)]
+        layer: Option<String>,
+    },
+    /// Memories nearest another one in the 3-D map
+    Near {
+        id: String,
+        #[arg(long, default_value_t = 10)]
+        limit: usize,
+    },
     /// Export layer as JSONL (train_candidate requires provenance on records)
     Export {
         #[arg(long, default_value = "ltm")]

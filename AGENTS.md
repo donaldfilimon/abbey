@@ -72,6 +72,13 @@ See [docs/architecture.md](docs/architecture.md). Personas via `abi-ai`; Max/Gem
 | WDBX in-process (feature `wdbx`, **off by default**) | ✓ | | |
 | WDBX CLI bridge (`abbey wdbx` → `abi wdbx`) | ✓ (needs a real `abi` binary) | | |
 | Hybrid loop (Gemma interpret → Max implement) | ✓ | | |
+| On-device backend (`ABBEY_BACKEND=fm`, macOS 26+) | ✓ | | |
+| 3-D memory map (topic × recency × consolidation) | ✓ | | |
+| Semantic/learned memory embedding space | | ✓ | |
+| Multi-node · multi-GPU · shared compute | | ✓ | |
+| NPU/TPU compilation & learning | | | ✓ |
+| Autonomous OS/service operation (no allowlist) | | | ✓ |
+| Abbey as her own trained model (own weights) | | | ✓ |
 | Local Qwen/Gemma weights | | | ✓ |
 | Fine-tuning / LoRA | | | ✓ |
 | Fake cost accounting | | | ✓ |

@@ -63,3 +63,37 @@
 - [x] MIT LICENSE
 - [x] mark goal done after verify
 - [x] code-review --fix: `actions` RunSpec + `init/` split + TUI tabs extract
+
+## On-device backend, spatial memory, and capability reporting
+
+### Slice 1 — on-device `fm` backend (done)
+- [x] `AgentBackend::Fm` → `/usr/bin/fm`; `ABBEY_BACKEND=fm` runs generation on-device
+      with no cursor-agent and no network
+- [x] Separate `fm` argv grammar; test proves no cursor flag (`--force`, `--sandbox`, …)
+      can leak into it
+- [x] chat id → `<state>/fm/<id>.transcript`; `create_chat` mints a local uuid since `fm`
+      has no server. Verified: a second process recalled a fact from the transcript, and a
+      control run with a fresh state dir did not
+- [x] `hybrid_run` no longer injects role→model ids under `fm` (its vocabulary is
+      `system|pcc`). **Consequence: under `fm` the Max/Gemma split is prompt-only**
+- [x] ask/plan → `--instructions`; `fm_availability` parses de-coloured stdout because
+      `fm available` exits non-zero even when the on-device model works
+
+### Slice 2 — WDBX as a 3-D memory map (done)
+- [x] `coordinates()` places each memory at topic × recency × consolidation; pure and
+      covered by the default gate
+- [x] `abbey memory map` and `abbey memory near <id>` on **both** backends
+- [x] Under `--features wdbx` the point is mirrored to a WDBX `SpatialRecord`, so the map
+      is visible to `abi wdbx` too (verified: `spatial_records: 5`)
+- [x] `abbey memory put --tag <subject>` — without it every record collapsed into one
+      column, which made the topic axis useless. Untagged records now sit in a visible
+      `(untagged)` column rather than being hash-scattered into fake topics
+- [ ] Axes are deterministic, **not** a learned embedding space — Abbey has no embedder.
+      Semantic placement stays Proposed
+
+### Not started (deferred by construction — see goals.md)
+- [ ] Multi-node / multi-GPU / shared compute between nodes
+- [ ] NPU/TPU compilation and learning
+- [ ] Autonomous operation of services and the OS (conflicts with the allowlist +
+      `--confirm` safety invariant)
+- [ ] TUI surface for the 3-D map

@@ -108,11 +108,13 @@ pub fn cmd_memory_store(state: &AbbeyState, cmd: MemoryCmd) -> Result<i32> {
             retention,
             payload,
             provenance,
+            tags,
         } => {
             let mut rec = MemoryRecord::new_stm(summary, payload);
             rec.retention = retention;
             rec.provenance = provenance;
             rec.origin = "user".into();
+            rec.tags.extend(tags);
             let id = rec.id.clone();
             mem.store(rec)?;
             println!("{id}");
@@ -152,6 +154,51 @@ pub fn cmd_memory_store(state: &AbbeyState, cmd: MemoryCmd) -> Result<i32> {
             println!("duplicate_pairs: {}", report.duplicate_summaries.len());
             for (a, b) in &report.duplicate_summaries {
                 println!("  dup\t{a}\t{b}");
+            }
+            Ok(0)
+        }
+        MemoryCmd::Map { limit, layer } => {
+            let records = mem.filter(layer.as_deref(), None, limit)?;
+            if records.is_empty() {
+                eprintln!(
+                    "abbey: no memories yet — teach her with `abbey memory put` or `abbey learn`"
+                );
+                return Ok(0);
+            }
+            println!("     x       y      z  subject          memory");
+            println!(" topic recency  depth");
+            for r in &records {
+                let p = memory::coordinates(r);
+                println!(
+                    "{:>6.0} {:>7.2} {:>6.2}  {:<16} {}",
+                    p.x,
+                    p.y,
+                    p.z,
+                    memory::primary_topic(r),
+                    r.summary
+                );
+            }
+            Ok(0)
+        }
+        MemoryCmd::Near { id, limit } => {
+            let Some(anchor) = mem.get(&id)? else {
+                bail!("memory id not found: {id}");
+            };
+            let target = memory::coordinates(&anchor);
+            let all = mem.filter(None, None, 1000)?;
+            println!(
+                "anchor  ({:.0}, {:.2}, {:.2})  {}",
+                target.x, target.y, target.z, anchor.summary
+            );
+            for (dist, r) in memory::nearest(&all, target, limit + 1) {
+                if r.id == anchor.id {
+                    continue;
+                }
+                println!(
+                    "{dist:>7.2}  {:<16} {}",
+                    memory::primary_topic(r),
+                    r.summary
+                );
             }
             Ok(0)
         }
