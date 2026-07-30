@@ -53,6 +53,9 @@ Status key: **Current** = shipped · **Proposed** = designed, not claimed live �
 1. **File size:** keep modules under ~800 lines; `main` under 200. (code-review 1k rule)
 2. **Honesty:** Max/Gemma are role→model bindings, not local weights. `/cost` is N/A.
 3. **OS control:** never execute without `--confirm`; whitelist only.
+3b. **WDBX cross-process:** `WdbxMemory` must hold `flock(2)` for its whole life —
+   `DurableStore` has no cross-process locking, and concurrent WAL appends corrupt the
+   store irrecoverably.
 4. **Self-learn:** `train_candidate` requires provenance; no silent deletes in reflect.
 5. **Tooling:** Rust nightly via `rust-toolchain.toml`; gate with `./check.sh`.
 
@@ -70,10 +73,10 @@ Status key: **Current** = shipped · **Proposed** = designed, not claimed live �
 
 ## Proposed (not Current)
 
-- Live-verified `abi wdbx` subprocess passthrough (argv construction is tested; the
-  passthrough itself is unverified while `abi` is not a binary on PATH)
 - Vector/embedding search through WDBX (`put_vector`/`search`) — the backend currently
   uses the KV space only
+- Windows cross-process safety for the WDBX backend: the `flock(2)` guard is `#[cfg(unix)]`,
+  so concurrent processes are unprotected on non-Unix targets
 - Local Qwen 3.5 / Gemma 4 weights
 - LoRA / fine-tuning runners
 - Dedicated distributed agents

@@ -4,12 +4,27 @@
 //! Writes land in the CRC-framed WAL immediately; `checkpoint` folds the WAL
 //! into a segment. Nothing is ever deleted — `invalidate` marks `obsolete`,
 //! matching the SQLite backend and the no-silent-deletes rule.
+//!
+//! ## Why there is a lock file here
+//!
+//! `DurableStore` has no cross-process concurrency control: each process
+//! recovers its own in-memory snapshot and appends to the shared WAL. Twenty
+//! `abbey` processes writing at once interleave their appends and leave the WAL
+//! permanently unreadable ("CRC mismatch at line 2" — every later open fails and
+//! the whole store reads as empty). SQLite survives the same load via file
+//! locking, so a WDBX backend without a lock is not a safe substitute.
+//!
+//! `flock(2)` on `<dir>/abbey.lock` serializes whole open→write→drop sessions.
+//! The kernel drops the lock when the fd closes, including on SIGKILL, so a
+//! crashed process cannot wedge the store the way a lock *file* would.
 
 use super::{MemoryRecord, MemoryStore, ReflectReport};
 use abi_wdbx::DurableStore;
 use anyhow::{Result, anyhow, bail};
+use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 /// KV key namespace for Abbey memory records inside a shared WDBX store.
 const KEY_PREFIX: &str = "mem/";
@@ -17,9 +32,15 @@ const KEY_PREFIX: &str = "mem/";
 /// Scan ceiling, mirroring `SqliteMemory::filter`'s `LIMIT 1000`.
 const SCAN_LIMIT: usize = 1000;
 
+/// How long to wait for another process to finish before giving up.
+const LOCK_TIMEOUT: Duration = Duration::from_secs(10);
+
 pub struct WdbxMemory {
+    // Field order is load-bearing: `store` drops (flushing) before `_lock`
+    // releases, so no other process can observe a half-finished session.
     store: Mutex<DurableStore>,
     dir: PathBuf,
+    _lock: File,
 }
 
 impl WdbxMemory {
@@ -29,12 +50,19 @@ impl WdbxMemory {
     }
 
     pub fn open(dir: &Path) -> Result<Self> {
+        Self::open_with_timeout(dir, LOCK_TIMEOUT)
+    }
+
+    pub fn open_with_timeout(dir: &Path, timeout: Duration) -> Result<Self> {
         std::fs::create_dir_all(dir)?;
+        // Must be held before recovery: `DurableStore::open` reads the WAL.
+        let lock = lock_exclusive(&dir.join("abbey.lock"), timeout)?;
         let store = DurableStore::open_directory(dir)
             .map_err(|e| anyhow!("open wdbx store {}: {e}", dir.display()))?;
         Ok(Self {
             store: Mutex::new(store),
             dir: dir.to_path_buf(),
+            _lock: lock,
         })
     }
 
@@ -91,6 +119,48 @@ impl WdbxMemory {
             s.epochs_loaded
         )
     }
+}
+
+/// Take an exclusive advisory lock, retrying until `timeout` elapses.
+#[cfg(unix)]
+fn lock_exclusive(path: &Path, timeout: Duration) -> Result<File> {
+    use std::os::unix::io::AsRawFd;
+
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(false)
+        .open(path)?;
+    let fd = file.as_raw_fd();
+    let deadline = Instant::now() + timeout;
+    loop {
+        // SAFETY: `fd` is owned by `file` and stays open for this call.
+        if unsafe { libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) } == 0 {
+            return Ok(file);
+        }
+        let err = std::io::Error::last_os_error();
+        if err.kind() != std::io::ErrorKind::WouldBlock {
+            return Err(anyhow!("lock {}: {err}", path.display()));
+        }
+        if Instant::now() >= deadline {
+            bail!(
+                "wdbx store is locked by another abbey process ({}s). \
+                 Retry, or use the sqlite backend for concurrent use.",
+                timeout.as_secs()
+            );
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+/// No advisory lock available — see the module docs for the consequence.
+#[cfg(not(unix))]
+fn lock_exclusive(path: &Path, _timeout: Duration) -> Result<File> {
+    Ok(std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(false)
+        .open(path)?)
 }
 
 impl MemoryStore for WdbxMemory {
@@ -236,6 +306,31 @@ mod tests {
         rec.retention = "train_candidate".into();
         rec.provenance.clear();
         assert!(db.store(rec).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn second_handle_is_locked_out_while_the_first_lives() {
+        let dir = tmp("lock");
+        let first = WdbxMemory::open(&dir).unwrap();
+
+        let err = match WdbxMemory::open_with_timeout(&dir, Duration::from_millis(50)) {
+            Ok(_) => panic!("a second concurrent handle must not open the store"),
+            Err(e) => e,
+        };
+        assert!(
+            format!("{err:#}").contains("locked by another abbey process"),
+            "unexpected error: {err:#}"
+        );
+
+        drop(first);
+        // Once the lock is released the store opens normally again.
+        assert!(
+            WdbxMemory::open_with_timeout(&dir, Duration::from_millis(500)).is_ok(),
+            "store must reopen after the lock is released"
+        );
+
         let _ = std::fs::remove_dir_all(&dir);
     }
 

@@ -52,8 +52,8 @@ correlation id (`abbey routes --correlation <id>`).
 | --- | --- |
 | SQLite STM/LTM/activity/train_candidate | **Current** (`src/memory/sqlite.rs`, default) |
 | `abbey learn` correction/preference/routes/digest | **Current** |
-| WDBX DurableStore in-process | **Current behind `--features wdbx`** (off by default, `src/memory/wdbx.rs`) |
-| `abi wdbx` CLI bridge when `abi` on PATH | **Current** surface, **argv-tested only** — live passthrough unverified (doctor honesty) |
+| WDBX DurableStore in-process | **Current behind `--features wdbx`** (off by default, `src/memory/wdbx.rs`; `flock`-guarded) |
+| `abi wdbx` CLI bridge when `abi` is a real binary on PATH | **Current** (doctor reports availability honestly) |
 
 ---
 

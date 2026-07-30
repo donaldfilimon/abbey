@@ -70,7 +70,7 @@ See [docs/architecture.md](docs/architecture.md). Personas via `abi-ai`; Max/Gem
 | Unique build stamp | ✓ | | |
 | Modular src/ (<1k files) | ✓ | | |
 | WDBX in-process (feature `wdbx`, **off by default**) | ✓ | | |
-| WDBX CLI bridge (`abbey wdbx` → `abi wdbx`) | argv-tested only | live verify | |
+| WDBX CLI bridge (`abbey wdbx` → `abi wdbx`) | ✓ (needs a real `abi` binary) | | |
 | Hybrid loop (Gemma interpret → Max implement) | ✓ | | |
 | Local Qwen/Gemma weights | | | ✓ |
 | Fine-tuning / LoRA | | | ✓ |
@@ -84,6 +84,12 @@ See [docs/architecture.md](docs/architecture.md). Personas via `abi-ai`; Max/Gem
   which runs both feature sets, or gated code rots unnoticed
 - Git helpers need a real repo history
 - OS execute always needs `--confirm`
+- `abi` on this machine is a **shell alias**, not a binary — the WDBX CLI bridge needs a real
+  one: `cargo build -p abi-cli` in `../abi`, then set `ABBEY_ABI_BIN`
+- `abi wdbx` paths are **base paths** (dir + base name); Abbey opens a directory. Abbey's
+  `<state>/wdbx/` is `<state>/wdbx/wdbx` to `abi` — `wdbx_bridge` translates, don't re-break it
+- `DurableStore` has no cross-process locking; `WdbxMemory` adds `flock(2)`. Removing it
+  corrupts the WAL irrecoverably under concurrent `abbey` processes
 
 ## Out of scope
 

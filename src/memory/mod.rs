@@ -5,7 +5,7 @@ mod sqlite;
 mod wdbx;
 
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 pub use sqlite::SqliteMemory;
 #[cfg(feature = "wdbx")]
@@ -107,39 +107,39 @@ pub fn feature_status() -> String {
     }
 }
 
+/// Where the configured backend keeps its store — a file for SQLite, a
+/// directory for WDBX. Pure: it never creates anything, so read-only callers
+/// can test `.exists()` before opening.
+pub fn backend_path(state_dir: &Path, backend: &str) -> PathBuf {
+    match resolved_backend(backend) {
+        #[cfg(feature = "wdbx")]
+        Backend::Wdbx => WdbxMemory::path_for_state_dir(state_dir),
+        Backend::Sqlite => SqliteMemory::path_for_state_dir(state_dir),
+    }
+}
+
 /// One honest line describing which backend a run will actually use.
 pub fn backend_status(state_dir: &Path, backend: &str) -> String {
     let requested = backend.trim().to_ascii_lowercase();
+    let path = backend_path(state_dir, &requested);
+    let present = if path.exists() {
+        "present"
+    } else {
+        "will create on first write"
+    };
     match resolved_backend(&requested) {
         #[cfg(feature = "wdbx")]
-        Backend::Wdbx => {
-            let dir = WdbxMemory::path_for_state_dir(state_dir);
-            format!(
-                "memory:     wdbx {} ({}, in-process abi-wdbx)",
-                dir.display(),
-                if dir.exists() {
-                    "present"
-                } else {
-                    "will create on first write"
-                }
-            )
-        }
+        Backend::Wdbx => format!(
+            "memory:     wdbx {} ({present}, in-process abi-wdbx)",
+            path.display()
+        ),
         Backend::Sqlite => {
-            let path = SqliteMemory::path_for_state_dir(state_dir);
             let note = if requested == "wdbx" {
                 " [requested wdbx — binary built without `--features wdbx`]"
             } else {
                 ""
             };
-            format!(
-                "memory:     sqlite {} ({}){note}",
-                path.display(),
-                if path.exists() {
-                    "present"
-                } else {
-                    "will create on first write"
-                }
-            )
+            format!("memory:     sqlite {} ({present}){note}", path.display())
         }
     }
 }

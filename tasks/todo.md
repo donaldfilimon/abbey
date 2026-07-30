@@ -21,10 +21,19 @@
       `MemoryStore` trait over `DurableStore` KV (records as JSON under `mem/<id>`)
 - [x] Backend dispatch: `memory::open_backend` → `Box<dyn MemoryStore>`; all call sites
       (session/learn/doctor/tui) route through config `memory_backend`
-- [x] Fallback: `abbey wdbx <query|db|…>` subprocess to `abi wdbx …` (`query` gains `--json`);
-      `stats`/`checkpoint` answered in-process. **argv construction unit-tested only** —
-      the live subprocess path is unverified here because `abi` is a shell alias, not a
-      binary on PATH; the bridge errors honestly instead of pretending
+- [x] Fallback: `abbey wdbx <query|db|…>` subprocess to `abi wdbx …` (`query` gains `--json`
+      and defaults to Abbey's own store); `stats`/`checkpoint` answered in-process.
+      Verified live against a locally built `abi-cli`: `query`, `db verify`, `compute info`,
+      exit-code propagation, and a cross-check that `abi` reads the same 40 records the
+      in-process backend wrote
+- [x] Cross-process safety: `flock(2)` on `<store>/abbey.lock` held for the handle's life.
+      Without it 20 concurrent `abbey` processes interleaved WAL appends and left the store
+      **permanently unreadable** (CRC mismatch, every later open failed); with it 40/40
+      concurrent writes land. SQLite passed the same test unaided — the lock is what makes
+      the backends equivalent
+- [x] Path convention: `abi` takes BASE paths (dir + base name), Abbey opens a directory —
+      `<state>/wdbx/` is `<state>/wdbx/wdbx` to `abi`. The bridge translates so a bare
+      directory can't silently read one level up and report an empty store
 - [x] Doctor lines for backend path/status + whether the feature is linked; no SEA/learn
       duplication in Abbey
 - [x] `check.sh` extended with `--features wdbx` clippy + test (the default run never

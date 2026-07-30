@@ -16,9 +16,13 @@ status: done
   off-by-default `wdbx` feature; `memory::open_backend` dispatches every call site;
   `check.sh` now gates both feature sets. Verified live: put/search/get/promote/export
   across separate processes, WAL recovery on reopen, `wdbx stats`/`checkpoint`
-- Phase 3 residual: the `abbey wdbx … → abi wdbx …` subprocess bridge is argv-tested only;
-  `abi` is not a binary on this PATH, so the live passthrough is unverified (it errors
-  honestly rather than claiming success)
+- Phase 3 hardening: concurrent `abbey` processes corrupted the WDBX WAL beyond recovery
+  (20 writers → store permanently unreadable). Fixed with `flock(2)` per store; 40/40
+  concurrent writes now land. Found by testing the case rather than assuming it
+- Phase 3 bridge verified live against a locally built `abi-cli` (`cargo build -p abi-cli`
+  in `../abi`), including a cross-check that `abi wdbx query` reads the same records the
+  in-process backend wrote. Also fixed a path-convention trap: `abi` takes base paths,
+  Abbey opens a directory
 - Phase 4 closed: `abbey hybrid-loop` (Gemma interpret → Max implement) links both stages
   by correlation id; `abbey routes --correlation <id>` reads them back. Verified live
 

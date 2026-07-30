@@ -104,10 +104,14 @@ pub fn learn_preference(state: &AbbeyState, preference: &str) -> Result<String> 
 }
 
 pub fn status(state: &AbbeyState) -> Result<()> {
-    println!(
-        "learn store: {}",
-        memory::backend_status(&state.state_dir, &configured_backend())
-    );
+    let backend = configured_backend();
+    let path = memory::backend_path(&state.state_dir, &backend);
+    println!("learn store: {}", path.display());
+    // `status` is read-only: opening a backend would create the store.
+    if !path.exists() {
+        println!("(empty — capture corrections / run learn routes)");
+        return Ok(());
+    }
     let mem = open_mem(state)?;
     for layer in ["stm", "ltm", "activity", "train_candidate"] {
         let n = mem.filter(Some(layer), Some("self-learn"), 500)?.len();

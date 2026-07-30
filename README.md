@@ -43,7 +43,7 @@ abbey init --agent        # local scan, then refine with cursor-agent
 abbey doctor
 abbey hybrid-loop "add a dark mode toggle"   # Gemma interprets → Max implements
 abbey routes --correlation <id>              # both stages of one hybrid-loop run
-abbey wdbx query ~/.abi                      # → `abi wdbx query … --json`
+abbey wdbx query                             # → `abi wdbx query <abbey store> --json`
 abbey wdbx stats                             # in-process (needs --features wdbx)
 abbey completion zsh > ~/.zsh/completions/_abbey_clap
 ```
@@ -66,16 +66,23 @@ cargo build --features wdbx
 ABBEY_MEMORY_BACKEND=wdbx abbey memory search "…"   # or memory_backend = "wdbx" in config.toml
 ```
 
-Asking for `wdbx` in a binary built without the feature falls back to SQLite and says so in
-`abbey doctor` — it never silently pretends.
+`./install.sh` builds **without** the feature, so an installed `abbey` asked for `wdbx` will
+fall back to SQLite — and say so in `abbey doctor`. It never silently pretends.
+
+Concurrent `abbey` processes are safe on both backends: SQLite via its own file locking, WDBX
+via an `flock(2)` guard Abbey holds for the store's lifetime (`abi-wdbx` itself has no
+cross-process locking — without the guard, simultaneous writers corrupt the WAL beyond
+recovery). The guard is Unix-only.
 
 ## Honest limits
 
 - Backend is **cursor-agent**, not a reimplementation of Grok/Codex/Claude runtimes.
-- `abbey wdbx <query|db|…>` shells out to `abi`; only argv construction is tested, and `abi`
-  must be a real binary on PATH (a shell alias will not do). `stats`/`checkpoint` are answered
-  in-process and need `--features wdbx`.
+- `abbey wdbx <query|db|…>` shells out to `abi`, which must be a **real binary** on PATH —
+  a shell alias will not do (`cargo build -p abi-cli` in `../abi`, then set `ABBEY_ABI_BIN`).
+  `stats`/`checkpoint` are answered in-process and need `--features wdbx`.
 - The WDBX backend uses the KV space; vector/embedding search through WDBX is not wired yet.
+- The WDBX cross-process lock is `#[cfg(unix)]`; on non-Unix targets concurrent processes are
+  unprotected.
 - Personas, worker roles, and provenance memory are **rolling out** — see `tasks/goals.md`; do not assume local Gemma/Qwen weights.
 - `/cost` is **N/A** (use Cursor account dashboard).
 - Full MCP/plugin UIs pass through to cursor-agent when available.
