@@ -1,0 +1,36 @@
+[package]
+name = "abbey"
+version = "2.6.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Abbey — hybrid persona/role CLI/TUI with OS control, parallel lanes, skills/plugins inventory, self-learn"
+license = "MIT"
+authors = ["Donald Filimon"]
+readme = "README.md"
+keywords = ["tui", "agent", "cursor", "cli"]
+categories = ["command-line-utilities"]
+
+[[bin]]
+name = "abbey"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+clap = { version = "4", features = ["derive", "env", "wrap_help"] }
+clap_complete = "4"
+crossterm = "0.28"
+dirs = "6"
+ratatui = "0.29"
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+unicode-width = "0.2"
+uuid = { version = "1", features = ["v4"] }
+abi-ai = { path = "../abi/crates/abi-ai" }
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

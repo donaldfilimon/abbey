@@ -1,0 +1,6 @@
+# Abbey TUI — Rust nightly (edition 2024)
+# "20245" → edition 2024 + current nightly channel
+[toolchain]
+channel = "nightly"
+components = ["rustfmt", "clippy"]
+profile = "minimal"
