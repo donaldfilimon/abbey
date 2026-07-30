@@ -40,6 +40,19 @@ const NOVELTY: &[&str] = &[
     "Albert",
     "Fred",
     "Ralph",
+    "Superstar",
+    "Eddy",
+    "Flo",
+    "Reed",
+    "Rocko",
+    "Sandy",
+    "Shelley",
+];
+
+/// Known natural compact voices — used when Premium/Enhanced aren't installed.
+const NATURAL: &[&str] = &[
+    "Samantha", "Ava", "Allison", "Evan", "Nathan", "Zoe", "Nicky", "Noelle", "Susan",
+    "Victoria", "Karen", "Daniel", "Moira", "Fiona", "Tessa", "Veena", "Rishi", "Serena",
 ];
 
 fn is_macos() -> bool {
@@ -145,7 +158,7 @@ pub fn best_voice(locale_prefix: &str, preferred: Option<&str>) -> Result<VoiceI
         .collect();
     filtered
         .into_iter()
-        .max_by_key(|v| (v.quality, locale_boost(&v.locale)))
+        .max_by_key(|v| (v.quality, locale_boost(&v.locale), name_boost(&v.name)))
         .or_else(|| voices.into_iter().find(|v| v.quality > 0))
         .context("no usable voices found")
 }
@@ -156,6 +169,17 @@ fn locale_boost(locale: &str) -> u8 {
         "en_GB" | "en_AU" => 2,
         l if l.starts_with("en") => 1,
         _ => 0,
+    }
+}
+
+fn name_boost(name: &str) -> u8 {
+    if NATURAL
+        .iter()
+        .any(|n| name == *n || name.starts_with(&format!("{n} ")))
+    {
+        2
+    } else {
+        0
     }
 }
 
