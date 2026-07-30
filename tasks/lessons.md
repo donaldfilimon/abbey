@@ -7,3 +7,4 @@
 - Route **confidence / alternate / fallback** are audit fields only — do not add a second agent execution path when confidence is low; keep the one canonical `run_agent` path.
 - please-fix must summarize captures before argv handoff; bare `running `/`using `/`reading ` are not always noise (cargo output is useful).
 - `learn review`/`stats` are provenance curation, not a trainer — LoRA stays Out of scope.
+- Voice “super high quality” on macOS means **downloaded Premium/Enhanced `say` voices** + on-device Speech STT — not a cloud subscription and not Abbey-owned neural weights.

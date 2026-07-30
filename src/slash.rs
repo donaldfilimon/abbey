@@ -158,6 +158,21 @@ pub const SLASH_CATALOG: &[SlashCmd] = &[
         kind: SlashKind::Agent,
     },
     SlashCmd {
+        name: "speak",
+        help: "High-quality TTS: /speak <text> (Premium/Enhanced when installed)",
+        kind: SlashKind::Local,
+    },
+    SlashCmd {
+        name: "listen",
+        help: "On-device STT: /listen [seconds]",
+        kind: SlashKind::Local,
+    },
+    SlashCmd {
+        name: "voice",
+        help: "Voice I/O: /voice status|voices|speak|listen|ask",
+        kind: SlashKind::Local,
+    },
+    SlashCmd {
         name: "memory",
         help: "Chat history, or: /memory search <q>",
         kind: SlashKind::Local,

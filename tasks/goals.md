@@ -79,3 +79,11 @@ Agent-orchestrated `imagine` / `generate video` (cursor-agent or MCP tools write
 files; Abbey has no local gen model) and `reason` (thinking model + structured
 wrap). Video is best-effort and fails honestly without a video tool. `fm`
 refuses generation.
+
+## High-quality voice input/output
+status: done
+
+macOS `say` TTS with automatic Premium/Enhanced preference, on-device Apple
+Speech STT (`abbey-stt`), and `voice ask` (listen → agent → speak). Cloud TTS/STT
+SaaS and in-process neural voice weights stay Out of scope — download Apple
+Premium voices in System Settings for super-high quality.

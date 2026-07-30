@@ -21,6 +21,7 @@ use crate::route_log;
 use crate::session::compact_history;
 use crate::slash;
 use crate::state::AbbeyState;
+use crate::voice;
 use crate::wdbx_bridge;
 use anyhow::Result;
 use clap::CommandFactory;
@@ -235,6 +236,29 @@ pub fn run_cli(cli: Cli, state: AbbeyState, mut cfg: AgentConfig) -> Result<i32>
         },
         Some(Commands::Reason { thinking, prompt }) => {
             generate::run_reason(&mut cfg, &state, &prompt, thinking.as_deref())
+        }
+        Some(Commands::Voice { args }) => voice::dispatch(&state, &mut cfg, &args),
+        Some(Commands::Speak {
+            voice: v,
+            rate,
+            out,
+            text,
+        }) => {
+            let mut args = vec!["speak".into()];
+            if let Some(name) = v {
+                args.push("-v".into());
+                args.push(name);
+            }
+            if let Some(r) = rate {
+                args.push("-r".into());
+                args.push(r.to_string());
+            }
+            if let Some(path) = out {
+                args.push("-o".into());
+                args.push(path.display().to_string());
+            }
+            args.extend(text);
+            voice::dispatch(&state, &mut cfg, &args)
         }
         Some(Commands::Os { args }) => os_control::run_os(&args, true),
         Some(Commands::Learn { args }) => learn::dispatch(&state, &args),

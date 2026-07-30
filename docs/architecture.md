@@ -42,6 +42,7 @@ Status key: **Current** = shipped Â· **Proposed** = designed, not claimed live Â
 | `please_fix` | Last-failure prompt; capture summarizer (argv-safe) |
 | `media` | Image/video path attach â†’ `--add-dir` + prompt note (no local vision) |
 | `generate` | Imagine/video gen prompts + structured `reason` (via cursor-agent tools) |
+| `voice` | macOS Premium/Enhanced TTS (`say`) + on-device STT (`scripts/abbey-stt.swift`) |
 | `learn` | Self-learn capture/digest/review/stats |
 | `os_control` | Cross-platform OS policy |
 | `parallel` | Multi-lane fan-out |
@@ -82,6 +83,8 @@ Status key: **Current** = shipped Â· **Proposed** = designed, not claimed live Â
   (`--thinking`/`/think`) + `--approve-mcps` tool passthrough
 - Agent-orchestrated generation: `abbey imagine` / `generate video` / `reason`
   (no local image/video/LoRA weights)
+- High-quality macOS voice I/O: `abbey voice speak|listen|ask` (Premium/Enhanced
+  `say` voices + on-device Speech STT; not a cloud TTS subscription)
 
 ## Proposed (not Current)
 

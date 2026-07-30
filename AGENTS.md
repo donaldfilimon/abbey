@@ -81,6 +81,7 @@ See [docs/architecture.md](docs/architecture.md). Personas via `abi-ai`; Max/Gem
 | Media path attach (`--image`/`--video`/`/image`) | ✓ | | local vision weights |
 | Image/video generation via agent tools (`imagine`/`generate`) | ✓ | | local gen weights |
 | Thinking aliases + `reason` structured wrap | ✓ | | Abbey-owned CoT UI |
+| macOS voice I/O (Premium/Enhanced TTS + on-device STT) | ✓ | | cloud TTS/STT SaaS |
 | MCP/tools passthrough (`mcp`, `--approve-mcps`) | ✓ | | Abbey tool runtime |
 | Semantic/learned memory embedding space | | ✓ | |
 | Multi-node · multi-GPU · shared compute | | ✓ | |

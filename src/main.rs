@@ -29,6 +29,7 @@ mod slash;
 mod slash_dispatch;
 mod state;
 mod tui;
+mod voice;
 mod wdbx_bridge;
 
 pub use session::hybrid_run;

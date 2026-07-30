@@ -305,6 +305,22 @@ pub enum Commands {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         prompt: Vec<String>,
     },
+    /// High-quality macOS voice I/O (Premium/Enhanced TTS + on-device STT)
+    Voice {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+    /// Speak text (alias for `abbey voice speak`)
+    Speak {
+        #[arg(short = 'v', long = "voice")]
+        voice: Option<String>,
+        #[arg(short = 'r', long = "rate")]
+        rate: Option<u32>,
+        #[arg(short = 'o', long = "out")]
+        out: Option<PathBuf>,
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        text: Vec<String>,
+    },
     /// Self-learn: correction|preference|routes|digest|export|review|stats (LoRA out of scope)
     Learn {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]

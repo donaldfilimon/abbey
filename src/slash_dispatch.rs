@@ -20,6 +20,7 @@ use crate::route_log;
 use crate::session::{apply_media_attach, compact_history, open_memory};
 use crate::slash;
 use crate::state::AbbeyState;
+use crate::voice;
 use anyhow::{Result, bail};
 
 fn rest_prompt(rest: &str) -> Vec<String> {
@@ -185,6 +186,29 @@ pub fn dispatch_slash(input: &str, state: &AbbeyState, cfg: &mut AgentConfig) ->
                 bail!("/reason <task…>");
             }
             generate::run_reason(cfg, state, &rest_prompt(rest), None)
+        }
+        "speak" => {
+            if rest.is_empty() {
+                bail!("/speak <text…>");
+            }
+            let args = vec!["speak".into(), rest.to_string()];
+            voice::dispatch(state, cfg, &args)
+        }
+        "listen" => {
+            let secs = rest.split_whitespace().next().unwrap_or("5");
+            voice::dispatch(
+                state,
+                cfg,
+                &["listen".into(), "--seconds".into(), secs.into()],
+            )
+        }
+        "voice" => {
+            let args: Vec<String> = if rest.is_empty() {
+                vec!["status".into()]
+            } else {
+                rest.split_whitespace().map(String::from).collect()
+            };
+            voice::dispatch(state, cfg, &args)
         }
         "skills" => {
             inventory::print_skills()?;

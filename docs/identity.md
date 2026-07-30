@@ -65,6 +65,8 @@ Routing decisions record **confidence**, **alternate**, and **fallback** on `rou
 | Tools during a run | **Current via cursor-agent** (`--print` has tool access; `--approve-mcps`) |
 | `abbey mcp` / `/mcp` · skills/plugins inventory | **Current** passthrough / discovery |
 | Tools / generation under `ABBEY_BACKEND=fm` | **N/A** — refuse with exit 2 |
+| `abbey voice` / `speak` / `listen` / `ask` | **Current (macOS)** — Premium/Enhanced `say` TTS + on-device Speech STT |
+| Cloud TTS/STT subscriptions · local neural voice weights | **Out of scope** (use System Settings downloads for Premium voices) |
 
 ---
 

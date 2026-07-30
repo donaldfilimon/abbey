@@ -129,10 +129,20 @@ abbey /reason compare sqlite vs wdbx for this workload
 # Tools
 abbey --approve-mcps "use my MCP tools to check status"
 abbey mcp list
+
+# Voice (macOS — Premium/Enhanced when downloaded)
+abbey voice voices
+abbey speak "build finished"                 # best installed voice
+abbey voice speak -v "Zoe (Premium)" -o ./note.m4a "ship it"
+abbey voice listen --seconds 5               # on-device Speech STT
+abbey voice ask --seconds 6                  # listen → agent → speak
 ```
 
 - Generation fails honestly if the agent has no image/video tool — Abbey does not fake files.
 - `/think` sets a Cursor `*-thinking-*` model id; `/reason` also applies a structured reasoning wrap.
+- Voice prefers **Premium → Enhanced → standard** `say` voices; download them in
+  System Settings → Accessibility → Spoken Content. STT builds `scripts/abbey-stt.swift`
+  on first listen (Xcode CLT + Mic + Speech Recognition permission).
 - Under `ABBEY_BACKEND=fm`, MCP/account/generation verbs refuse (exit 2).
 
 ## Memory backends

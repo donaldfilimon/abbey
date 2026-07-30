@@ -143,3 +143,10 @@ Buildable residuals closed 2026-07-30; Proposed/OOS stay deferred above.
 - [x] `abbey imagine` / `generate image|video` / `/imagine` `/gen-video` — prompt + out path via agent tools
 - [x] `abbey reason` / `/reason` — Cursor thinking model + structured reasoning wrap
 - [x] Refuse generation under `ABBEY_BACKEND=fm`; docs/claims stay honest (no local gen weights)
+
+## High-quality voice I/O (macOS)
+
+- [x] `voice` module: Premium→Enhanced→standard `say` TTS ranking; novelty voices demoted
+- [x] On-device STT helper `scripts/abbey-stt.swift` (lazy `swiftc` into state `bin/`)
+- [x] CLI `abbey voice|speak` + slash `/speak` `/listen` `/voice`; `voice ask` loop
+- [x] Doctor/docs: how to download Premium voices; no cloud TTS SaaS claim

@@ -299,6 +299,16 @@ pub fn cmd_doctor(state: &AbbeyState, cfg: &AgentConfig) -> Result<i32> {
     let _ = output::println(
         "tools/mcp:  abbey mcp … + --approve-mcps passthrough; skills/plugins inventory; OS allowlist",
     );
+    #[cfg(target_os = "macos")]
+    {
+        let _ = output::println(
+            "voice:      abbey voice speak|listen|ask — Premium/Enhanced say TTS + on-device Speech STT",
+        );
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = output::println("voice:      macOS only (say + Speech.framework)");
+    }
     let _ = output::println(memory::backend_status(
         &state.state_dir,
         &abbey_cfg.memory_backend,
