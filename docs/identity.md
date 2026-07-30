@@ -74,6 +74,8 @@ Routing decisions record **confidence**, **alternate**, and **fallback** on `rou
 | Multi-subagent fan-out (`abbey subagents` / `parallel`) | **Current** — named lanes + optional `--synthesize` |
 | Local distributed peers (`--peers gemini,claude,…`) | **Current** — PATH CLIs on this host |
 | Multi-node / multi-GPU agent mesh | **Proposed** (not Current) |
+| Host platform matrix + thread/GPU/NPU/TPU detect | **Current** — `abbey platform` (not accelerator runtime) |
+| GPU/NPU/TPU kernels inside Abbey | **Out of scope** |
 
 ---
 

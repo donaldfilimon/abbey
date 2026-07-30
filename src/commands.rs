@@ -19,6 +19,7 @@ use crate::models::{alias_table, resolve_model};
 use crate::os_control;
 use crate::output;
 use crate::parallel;
+use crate::platform;
 use crate::please_fix;
 use crate::protocols;
 use crate::route_log;
@@ -87,6 +88,12 @@ pub fn run_cli(cli: Cli, state: AbbeyState, mut cfg: AgentConfig) -> Result<i32>
         }
         Some(Commands::Highlight { args }) => highlight::dispatch(&args),
         Some(Commands::Claims { args }) => claims::dispatch(&args),
+        Some(Commands::Platform { args }) => platform::dispatch(&args),
+        Some(Commands::Compute { args }) => {
+            let mut a = vec!["compute".into()];
+            a.extend(args);
+            platform::dispatch(&a)
+        }
         Some(Commands::Review { staged, note }) => {
             run_review(&mut cfg, &state, staged, &note, false)
         }

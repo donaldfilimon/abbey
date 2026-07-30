@@ -44,6 +44,8 @@ abbey doctor
 abbey claims                                 # Current / Proposed / Out of scope
 abbey claims proposed                        # embeddings, multi-node, …
 abbey claims refuse lora                     # honest exit 2
+abbey platform                               # linux/macos/windows matrix + threads
+abbey compute                                # GPU/NPU/TPU host detect (not Abbey kernels)
 abbey hybrid-loop "add a dark mode toggle"   # Gemma interprets → Max implements
 abbey subagents                              # catalog (abbey lanes + PATH peers)
 abbey subagents run --lanes max,reviewer --synthesize "harden auth"
@@ -188,8 +190,8 @@ an `abi` invoked directly by you against the same store.
   a shell alias will not do (`cargo build -p abi-cli` in `../abi`, then set `ABBEY_ABI_BIN`).
   `stats`/`checkpoint` are answered in-process and need `--features wdbx`.
 - The WDBX backend uses the KV space; vector/embedding search through WDBX is not wired yet.
-- The WDBX cross-process lock is `#[cfg(unix)]`; on non-Unix targets concurrent processes are
-  unprotected.
+- The WDBX cross-process lock uses `fs2` on Unix and Windows. GPU/NPU/TPU *host*
+  detection is Current (`abbey platform`); accelerator runtimes inside Abbey are Out of scope.
 - Under WDBX lock contention a run's background STM/activity write is dropped silently (it is
   best-effort by design). Explicit `abbey memory`/`abbey learn` writes surface the error.
 - The TUI memory panel opens the store with a 250 ms timeout so a redraw never stalls; a

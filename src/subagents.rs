@@ -237,11 +237,7 @@ pub fn print_catalog() {
 }
 
 fn default_jobs() -> usize {
-    std::env::var("ABBEY_SUBAGENT_JOBS")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .filter(|n: &usize| *n > 0)
-        .unwrap_or(4)
+    crate::platform::default_subagent_jobs()
 }
 
 /// Parse CLI/slash args into [`RunOptions`].

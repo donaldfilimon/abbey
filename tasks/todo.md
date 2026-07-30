@@ -109,8 +109,9 @@
 - [x] Surface via `abbey claims` / `refuse` (2026-07-30) — still not implemented as features
 - [ ] Semantic memory search (embedding space) behind `MemoryStore` — **Proposed**
 - [ ] Multi-node / multi-GPU / shared compute / agent mesh — **Proposed**
-- [ ] Windows WDBX cross-process locking — **Proposed**
-- [ ] NPU/TPU compilation and learning — **Out of scope**
+- [x] WDBX cross-process lock on Windows + Unix (`fs2`) — **Current**
+- [x] Host GPU/NPU/TPU detection + thread matrix (`abbey platform`) — **Current**
+- [ ] GPU/NPU/TPU compilation · training · inference *in Abbey* — **Out of scope**
 - [ ] Autonomous operation of services and the OS — **Out of scope** (allowlist + `--confirm`)
 - [ ] Local Qwen/Gemma weights / LoRA / CouchDB-Python second stack — **Out of scope**
 

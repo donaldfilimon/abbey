@@ -40,6 +40,7 @@ src/please_fix.rs   last-failure prompt + capture summarizer
 src/highlight.rs     syntect fence/file ANSI (auto on -p)
 src/subagents.rs     multi-lane + local peer agents
 src/claims.rs        Current/Proposed/OOS gate + refuse
+src/platform.rs      host OS/threads + GPU/NPU/TPU detect
 src/learn.rs os_control.rs parallel.rs inventory.rs
 src/tui/              7-tab ratatui
 src/init/ gitops.rs agent.rs models.rs state.rs config.rs
@@ -74,6 +75,10 @@ CLI: `abbey claims` · `abbey claims proposed|oos` · `abbey claims refuse embed
 | Parallel lanes (Max/Gemma/Aviva) | ✓ | | |
 | Multi-subagent fan-out (`subagents` / synthesize) | ✓ | | |
 | Local distributed peer agents (PATH CLIs) | ✓ | | multi-node agent mesh |
+| linux/macos/windows primary host targets (portable surfaces) | ✓ | | voice/fm macOS-only |
+| Multi-threaded subagent fan-out (`--jobs`) | ✓ | | GPU kernels |
+| WDBX cross-process lock (Unix + Windows via fs2) | ✓ | | |
+| GPU/NPU/TPU host detection (`abbey platform`) | ✓ | | accelerator runtime in Abbey |
 | OS allowlist control | ✓ | | unrestricted shell |
 | Skills/plugins inventory | ✓ | | |
 | Unique build stamp | ✓ | | |
@@ -95,8 +100,8 @@ CLI: `abbey claims` · `abbey claims proposed|oos` · `abbey claims refuse embed
 | MCP/tools during a run (`--approve-mcps`) | ✓ | | Abbey tool runtime |
 | Auto code highlighting (fences on `-p`/print · `abbey highlight`) | ✓ | | full markdown UI / LSP |
 | Semantic/learned memory embedding space | | ✓ | |
-| Multi-node · multi-GPU · shared compute | | ✓ | |
-| NPU/TPU compilation & learning | | | ✓ |
+| Multi-node · multi-GPU · shared compute mesh | | ✓ | |
+| GPU/NPU/TPU compilation, training, inference in Abbey | | | ✓ |
 | Autonomous OS/service operation (no allowlist) | | | ✓ |
 | Abbey as her own trained model (own weights) | | | ✓ |
 | Local Qwen/Gemma weights | | | ✓ |
@@ -115,8 +120,9 @@ CLI: `abbey claims` · `abbey claims proposed|oos` · `abbey claims refuse embed
   one: `cargo build -p abi-cli` in `../abi`, then set `ABBEY_ABI_BIN`
 - `abi wdbx` paths are **base paths** (dir + base name); Abbey opens a directory. Abbey's
   `<state>/wdbx/` is `<state>/wdbx/wdbx` to `abi` — `wdbx_bridge` translates, don't re-break it
-- `DurableStore` has no cross-process locking; `WdbxMemory` adds `flock(2)`. Removing it
-  corrupts the WAL irrecoverably under concurrent `abbey` processes
+- `DurableStore` has no cross-process locking; `WdbxMemory` adds an `fs2` advisory
+  lock (Unix `flock` / Windows `LockFileEx`). Removing it corrupts the WAL
+  irrecoverably under concurrent `abbey` processes
 
 ## Out of scope
 

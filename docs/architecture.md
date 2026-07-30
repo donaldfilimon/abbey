@@ -46,6 +46,7 @@ Status key: **Current** = shipped · **Proposed** = designed, not claimed live �
 | `protocols` | MCP config inventory + ACP peer discovery/launch (not a host runtime) |
 | `highlight` | syntect fence/file ANSI colour for `-p`/print/commit/diff (TTY; not a markdown UI) |
 | `claims` | Current / Proposed / Out of scope gate + honest refuse paths |
+| `platform` | Host OS/arch matrix, thread budget, GPU/NPU/TPU detect (report-only) |
 | `learn` | Self-learn capture/digest/review/stats |
 | `os_control` | Cross-platform OS policy |
 | `parallel` | Thin alias → `subagents` (default Max/Gemma/Aviva) |
@@ -61,9 +62,9 @@ Status key: **Current** = shipped · **Proposed** = designed, not claimed live �
 1. **File size:** keep modules under ~800 lines; `main` under 200. (code-review 1k rule)
 2. **Honesty:** Max/Gemma are role→model bindings, not local weights. `/cost` is N/A.
 3. **OS control:** never execute without `--confirm`; whitelist only.
-3b. **WDBX cross-process:** `WdbxMemory` must hold `flock(2)` for its whole life —
-   `DurableStore` has no cross-process locking, and concurrent WAL appends corrupt the
-   store irrecoverably.
+3b. **WDBX cross-process:** `WdbxMemory` must hold its `fs2` advisory lock for its
+   whole life — `DurableStore` has no cross-process locking, and concurrent WAL
+   appends corrupt the store irrecoverably.
 4. **Self-learn:** `train_candidate` requires provenance; no silent deletes in reflect.
 5. **Tooling:** Rust nightly via `rust-toolchain.toml`; gate with `./check.sh`.
 
@@ -94,7 +95,9 @@ Status key: **Current** = shipped · **Proposed** = designed, not claimed live �
 - Multi-subagent / local peers: `abbey subagents run --lanes max,reviewer
   --peers gemini --synthesize` (same-host PATH CLIs; not multi-node)
 - Claims gate CLI: `abbey claims` / `refuse` for Proposed (embeddings, multi-node)
-  and Out of scope (LoRA, local weights, …)
+  and Out of scope (LoRA, local weights, GPU/NPU/TPU runtime, …)
+- Platform inventory: `abbey platform` / `compute` — linux/macos/windows matrix,
+  threads, host GPU/NPU/TPU detect (not Abbey accelerator kernels)
 - MCP/ACP surfaces: `abbey mcp status` reads `mcp.json` files; `abbey mcp list|…`
   passthrough to cursor-agent; `abbey acp list|run` discovers/launches ACP peers.
   Abbey is not an MCP or ACP host.
@@ -109,13 +112,11 @@ See also `abbey claims proposed` (machine-readable gate in `src/claims.rs`).
   (topic × recency × consolidation); Abbey has no embedder
 - Multi-node / multi-GPU / shared compute / agent mesh. `abi-wdbx` ships
   `cluster`/`remote_compute`/`compute` reference implementations Abbey does not yet use
-  (local PATH peer fan-out is Current via `subagents --peers`)
-- Windows cross-process safety for the WDBX backend: the `flock(2)` guard is `#[cfg(unix)]`,
-  so concurrent processes are unprotected on non-Unix targets
+  (local PATH peer fan-out is Current via `subagents --peers`; host GPU detect is Current)
 
 ## Out of scope
 
 See `abbey claims oos`. Includes: LoRA / fine-tuning runners; local Qwen/Gemma weights;
-Abbey-own trained weights; NPU/TPU learning; autonomous unrestricted OS; Abbey as
-MCP/ACP host; fake cost accounting; cloud TTS/STT SaaS; local vision/gen weights;
-reimplementing Grok/Codex/Claude runtimes.
+Abbey-own trained weights; GPU/NPU/TPU compilation·training·inference *inside* Abbey;
+autonomous unrestricted OS; Abbey as MCP/ACP host; fake cost accounting; cloud TTS/STT
+SaaS; local vision/gen weights; reimplementing Grok/Codex/Claude runtimes.

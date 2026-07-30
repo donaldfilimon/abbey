@@ -37,14 +37,14 @@ unicode-width = "0.2"
 uuid = { version = "1", features = ["v4"] }
 abi-ai = { path = "../abi/crates/abi-ai" }
 abi-wdbx = { path = "../abi/crates/abi-wdbx", optional = true }
-# Only for flock(2) around the WDBX store; already in the tree via abi-foundation.
-libc = { version = "0.2", optional = true }
+# Cross-platform advisory lock for the WDBX store (Unix flock / Win LockFileEx).
+fs2 = { version = "0.4", optional = true }
 
 [features]
 default = []
 # In-process WDBX memory backend. Off by default: pulls the abi-wdbx crate and
 # its portable_simd/sha2/num-bigint tree. Gate with `--features wdbx`.
-wdbx = ["dep:abi-wdbx", "dep:libc"]
+wdbx = ["dep:abi-wdbx", "dep:fs2"]
 
 [profile.release]
 lto = true

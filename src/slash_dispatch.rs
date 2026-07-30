@@ -57,6 +57,13 @@ pub fn dispatch_slash(input: &str, state: &AbbeyState, cfg: &mut AgentConfig) ->
             let args: Vec<String> = rest.split_whitespace().map(String::from).collect();
             crate::claims::dispatch(&args)
         }
+        "platform" | "targets" | "compute" => {
+            let mut args: Vec<String> = rest.split_whitespace().map(String::from).collect();
+            if cmd == "compute" {
+                args.insert(0, "compute".into());
+            }
+            crate::platform::dispatch(&args)
+        }
         "doctor" | "debug" => {
             if cmd == "debug" {
                 cmd_debug(state, cfg)

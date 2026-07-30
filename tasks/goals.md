@@ -118,4 +118,12 @@ status: done
 `abbey claims` (+ `roadmap`/`scope`) prints the Current / Proposed / Out of scope
 gate from `src/claims.rs`; `refuse embeddings|lora|multinode|…` and
 `memory embed` / `learn lora` exit 2 with substitutes. No claim laundering —
-embeddings and multi-node stay Proposed; LoRA/weights/NPU stay Out of scope.
+embeddings and multi-node stay Proposed; LoRA/weights/accelerator-runtime stay OOS.
+
+## Platform targets + compute inventory
+status: done
+
+`abbey platform` / `compute`: linux/macos/windows primary-target matrix for portable
+surfaces; `available_parallelism` thread budget driving subagent `--jobs`; GPU/NPU/TPU
+host detect (report-only). WDBX lock via `fs2` on Unix and Windows. Voice/fm remain
+macOS-only; Abbey still does not run GPU/NPU/TPU kernels.

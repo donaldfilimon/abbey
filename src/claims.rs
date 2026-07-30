@@ -104,6 +104,30 @@ pub const CLAIMS: &[Claim] = &[
         note: "macOS 26+ Foundation Models CLI; account/MCP/gen refuse",
         instead: None,
     },
+    Claim {
+        name: "linux/macos/windows/unix primary host targets (portable surfaces)",
+        status: Status::Current,
+        note: "CLI/TUI/sqlite/WDBX-lock/subagents/os-allowlist; voice+fm stay macOS-only",
+        instead: Some("abbey platform"),
+    },
+    Claim {
+        name: "multi-threaded subagent fan-out (--jobs)",
+        status: Status::Current,
+        note: "std::thread parallelism sized from available_parallelism — not GPU kernels",
+        instead: Some("abbey platform threads · ABBEY_SUBAGENT_JOBS"),
+    },
+    Claim {
+        name: "WDBX cross-process lock (Unix + Windows)",
+        status: Status::Current,
+        note: "fs2 advisory lock (flock / LockFileEx); behind --features wdbx",
+        instead: None,
+    },
+    Claim {
+        name: "GPU/NPU/TPU host detection (report-only)",
+        status: Status::Current,
+        note: "abbey platform compute — presence inventory, not Abbey accelerators",
+        instead: Some("abbey platform · abbey compute"),
+    },
     // —— Proposed ——
     Claim {
         name: "semantic / learned memory embedding space",
@@ -122,12 +146,6 @@ pub const CLAIMS: &[Claim] = &[
         status: Status::Proposed,
         note: "abi-wdbx has cluster/remote_compute refs; Abbey does not orchestrate nodes",
         instead: Some("abbey subagents --peers (local PATH CLIs)"),
-    },
-    Claim {
-        name: "Windows WDBX cross-process locking",
-        status: Status::Proposed,
-        note: "flock(2) guard is #[cfg(unix)] only",
-        instead: Some("use SQLite backend on non-Unix, or single-writer discipline"),
     },
     // —— Out of scope ——
     Claim {
@@ -149,10 +167,10 @@ pub const CLAIMS: &[Claim] = &[
         instead: None,
     },
     Claim {
-        name: "NPU/TPU compilation & learning",
+        name: "GPU/NPU/TPU compilation, training, or inference in Abbey",
         status: Status::OutOfScope,
-        note: "explicitly deferred; not on the Abbey CLI roadmap",
-        instead: None,
+        note: "host detect only — Abbey does not schedule accelerator kernels",
+        instead: Some("abbey platform compute · abbey claims refuse npu"),
     },
     Claim {
         name: "autonomous OS / unrestricted shell",
@@ -291,7 +309,10 @@ pub fn refuse(verb: &str) -> Result<i32> {
             "multi-node",
             "Multi-node / multi-GPU mesh is Proposed. Local PATH peers are Current.",
         ),
-        "npu" | "tpu" => ("npu", "NPU/TPU compilation & learning is Out of scope."),
+        "npu" | "tpu" | "gpu" | "cuda" | "metal" | "ane" => (
+            "GPU/NPU/TPU",
+            "GPU/NPU/TPU compilation, training, and inference in Abbey are Out of scope. Host detect is Current.",
+        ),
         "weights" | "qwen" | "local-gemma" | "own-model" => (
             "weights",
             "Local Qwen/Gemma weights and Abbey-own-weights training are Out of scope.",
@@ -381,7 +402,7 @@ mod tests {
 
     #[test]
     fn gate_has_all_three_statuses() {
-        assert!(by_status(Status::Current).count() >= 8);
+        assert!(by_status(Status::Current).count() >= 12);
         assert!(by_status(Status::Proposed).count() >= 3);
         assert!(by_status(Status::OutOfScope).count() >= 5);
     }

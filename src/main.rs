@@ -22,6 +22,7 @@ mod os_control;
 mod output;
 mod parallel;
 mod persona;
+mod platform;
 mod please_fix;
 mod prompts;
 mod protocols;

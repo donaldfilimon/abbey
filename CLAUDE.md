@@ -69,6 +69,7 @@ Key modules (`src/`):
 | `highlight.rs` | syntect ANSI for fenced code on `-p`/print + `abbey highlight` |
 | `subagents.rs` | multi-subagent lanes + local PATH peer fan-out + synthesize |
 | `claims.rs` | Current/Proposed/OOS gate + refuse paths (embeddings/LoRA/multi-node) |
+| `platform.rs` | host OS matrix + threads + GPU/NPU/TPU detect (not accelerator runtime) |
 | `memory/` (`mod.rs`, `sqlite.rs`, `wdbx.rs`) | `MemoryStore` trait, shared reflect/validation, backend dispatch; add new backends here and they work everywhere |
 | `hybrid_loop.rs` | two-stage Gemma→Max run; stages linked by `correlation` in the route log |
 | `wdbx_bridge.rs` | `abbey wdbx` — passthrough to `abi wdbx`, plus in-process `stats`/`checkpoint` |
@@ -92,7 +93,7 @@ Personas (Abbey/Aviva/Abi) and Max/Gemma worker roles are defined in the sibling
 - **A feature-gated module is invisible to the default gate.** If you add another `[features]` entry, add matching `clippy`/`test` lines to `check.sh`, or the code can rot while CI stays green.
 - **Each backend gets its own argv grammar.** `fm` shares none of cursor-agent's flags; `build_args_fm` is built from scratch rather than filtered, and a test asserts no cursor flag can leak into it. Under `fm`, don't let `hybrid_run` inject role→model ids (its vocabulary is `system|pcc`), and don't forward account verbs — it has no account.
 - OS execution (`os_control.rs`) must never run without `--confirm`, and only against the allowlist — this is a safety invariant, not a default to relax.
-- **`WdbxMemory` must hold its `flock(2)` for the handle's whole life.** `abi-wdbx`'s `DurableStore` has no cross-process locking; without the guard, two concurrent `abbey` processes interleave WAL appends and leave the store permanently unreadable (verified: 20 writers → CRC mismatch, every later open fails). SQLite survives the same load unaided, so the lock is what makes the two backends interchangeable. `wdbx_bridge` takes the same lock when a passthrough targets Abbey's own store — new code paths that reach the store must not route around it.
+- **`WdbxMemory` must hold its `fs2` advisory lock for the handle's whole life** (Unix `flock` / Windows `LockFileEx`). `abi-wdbx`'s `DurableStore` has no cross-process locking; without the guard, two concurrent `abbey` processes interleave WAL appends and leave the store permanently unreadable (verified: 20 writers → CRC mismatch, every later open fails). SQLite survives the same load unaided, so the lock is what makes the two backends interchangeable. `wdbx_bridge` takes the same lock when a passthrough targets Abbey's own store — new code paths that reach the store must not route around it.
 - Read-only callers should use `memory::backend_path` (pure) rather than opening, and interactive ones `open_backend_with_timeout` — `learn status` once created the very store it was meant to report on, and the TUI redraw would otherwise stall 10s on a lock.
 - `abi wdbx` takes **base paths** (parent dir + base name) while Abbey opens a **directory** — Abbey's `<state>/wdbx/` is `<state>/wdbx/wdbx` to `abi`. `wdbx_bridge` translates; passing the bare directory silently reads one level up and reports an empty store.
 - Self-learn's `train_candidate` path requires provenance; don't add silent deletes to the reflect/digest flow.

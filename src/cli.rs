@@ -392,6 +392,17 @@ pub enum Commands {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
+    /// Host OS/arch targets + thread/GPU/NPU/TPU inventory (detect-only)
+    #[command(visible_alias = "targets")]
+    Platform {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+    /// Alias for `platform compute` (threads + accelerator detect)
+    Compute {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
     /// Plugin management
     Plugin {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]

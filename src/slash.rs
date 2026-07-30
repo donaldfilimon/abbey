@@ -43,6 +43,11 @@ pub const SLASH_CATALOG: &[SlashCmd] = &[
         kind: SlashKind::Local,
     },
     SlashCmd {
+        name: "platform",
+        help: "Host targets + threads/GPU/NPU/TPU detect: /platform [compute]",
+        kind: SlashKind::Local,
+    },
+    SlashCmd {
         name: "model",
         help: "Show or set default model alias/id",
         kind: SlashKind::Local,

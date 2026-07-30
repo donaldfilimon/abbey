@@ -14,9 +14,10 @@
 //! the whole store reads as empty). SQLite survives the same load via file
 //! locking, so a WDBX backend without a lock is not a safe substitute.
 //!
-//! `flock(2)` on `<dir>/abbey.lock` serializes whole open→write→drop sessions.
-//! The kernel drops the lock when the fd closes, including on SIGKILL, so a
-//! crashed process cannot wedge the store the way a lock *file* would.
+//! An exclusive advisory lock on `<dir>/abbey.lock` (via `fs2`: `flock(2)` on
+//! Unix, `LockFileEx` on Windows) serializes whole open→write→drop sessions.
+//! The OS drops the lock when the handle closes, including on process death, so
+//! a crashed process cannot wedge the store the way a lock *file* would.
 
 use super::{MemoryRecord, MemoryStore, ReflectReport};
 use abi_wdbx::DurableStore;
@@ -132,25 +133,22 @@ pub fn lock_store_dir(dir: &Path, timeout: Duration) -> Result<File> {
 }
 
 /// Take an exclusive advisory lock, retrying until `timeout` elapses.
-#[cfg(unix)]
+///
+/// Uses `fs2` so Linux / macOS / Windows / other Unix share one path.
 fn lock_exclusive(path: &Path, timeout: Duration) -> Result<File> {
-    use std::os::unix::io::AsRawFd;
+    use fs2::FileExt;
 
     let file = std::fs::OpenOptions::new()
         .create(true)
         .write(true)
         .truncate(false)
         .open(path)?;
-    let fd = file.as_raw_fd();
     let deadline = Instant::now() + timeout;
     loop {
-        // SAFETY: `fd` is owned by `file` and stays open for this call.
-        if unsafe { libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) } == 0 {
-            return Ok(file);
-        }
-        let err = std::io::Error::last_os_error();
-        if err.kind() != std::io::ErrorKind::WouldBlock {
-            return Err(anyhow!("lock {}: {err}", path.display()));
+        match file.try_lock_exclusive() {
+            Ok(()) => return Ok(file),
+            Err(err) if is_lock_busy(&err) => {}
+            Err(err) => return Err(anyhow!("lock {}: {err}", path.display())),
         }
         if Instant::now() >= deadline {
             bail!(
@@ -163,14 +161,12 @@ fn lock_exclusive(path: &Path, timeout: Duration) -> Result<File> {
     }
 }
 
-/// No advisory lock available — see the module docs for the consequence.
-#[cfg(not(unix))]
-fn lock_exclusive(path: &Path, _timeout: Duration) -> Result<File> {
-    Ok(std::fs::OpenOptions::new()
-        .create(true)
-        .write(true)
-        .truncate(false)
-        .open(path)?)
+fn is_lock_busy(err: &std::io::Error) -> bool {
+    if err.kind() == std::io::ErrorKind::WouldBlock {
+        return true;
+    }
+    // EAGAIN/EWOULDBLOCK (Unix) · ERROR_LOCK_VIOLATION (Windows)
+    matches!(err.raw_os_error(), Some(11 | 35 | 33))
 }
 
 impl MemoryStore for WdbxMemory {
@@ -320,7 +316,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(unix)]
     fn second_handle_is_locked_out_while_the_first_lives() {
         let dir = tmp("lock");
         let first = WdbxMemory::open(&dir).unwrap();
@@ -347,7 +342,6 @@ mod tests {
     /// The TUI redraw calls `open_backend_with_timeout`; if a short timeout were
     /// ignored, a locked store would freeze the render loop for the full default.
     #[test]
-    #[cfg(unix)]
     fn a_short_timeout_fails_fast_instead_of_waiting_the_default() {
         let state_dir = tmp("fastfail");
         let held = WdbxMemory::open(&WdbxMemory::path_for_state_dir(&state_dir)).unwrap();

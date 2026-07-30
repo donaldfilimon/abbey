@@ -19,6 +19,18 @@ abbey doctor        # build stamp + persona/role/memory/os honesty
 
 `check.sh` is the production bar. Do not ship if it fails.
 
+## Primary host targets
+
+| Target | Portable CLI/TUI/memory/subagents | Notes |
+|--------|-----------------------------------|-------|
+| Linux | ✓ | primary |
+| macOS | ✓ | + voice · `fm` |
+| Windows | ✓ | WDBX lock via `fs2` / LockFileEx |
+| other Unix | ✓ | same as Linux portable set |
+
+Accelerator **host detection** (`abbey platform compute`) is Current. GPU/NPU/TPU
+**runtimes inside Abbey** are Out of scope — see `abbey claims oos`.
+
 ## Runtime deps
 
 | Dep | Required? | Notes |
@@ -27,6 +39,7 @@ abbey doctor        # build stamp + persona/role/memory/os honesty
 | `fm` (`/usr/bin/fm`) | Only for `ABBEY_BACKEND=fm` | On-device Apple Foundation Model, macOS 26+ |
 | `abi` | Optional | Prefer for `os` / `plugin` / WDBX CLI |
 | git | Optional | diff/commit/pr/branch |
+| `nvidia-smi` / ROCm / TPU tools | Optional | improve `abbey platform` detect only |
 
 ## Config
 
