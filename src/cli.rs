@@ -266,6 +266,9 @@ pub enum Commands {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
+    /// Show OS-control allowlist (alias of `os allowlist`)
+    #[command(visible_alias = "policy")]
+    Allowlist,
     /// WDBX bridge: `abi wdbx …` passthrough (query gets --json)
     Wdbx {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
@@ -326,6 +329,15 @@ pub enum Commands {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
+    /// Alias for `learn review` (train_candidate curation)
+    #[command(name = "learn-review", visible_alias = "train-review")]
+    LearnReview {
+        #[arg(default_value_t = 50)]
+        n: usize,
+    },
+    /// Alias for `learn stats` (train_candidate counts)
+    #[command(name = "learn-stats", visible_alias = "train-stats")]
+    LearnStats,
     /// Parallel Max/Gemma/Aviva lanes (alias of `subagents run` defaults)
     Parallel {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]

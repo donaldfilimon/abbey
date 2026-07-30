@@ -143,3 +143,11 @@ status: done
 Current substitutes and refuse with exit 2. Does **not** implement LoRA runners, local
 weights, accelerator kernels, unrestricted shell, or Abbey-as-MCP/ACP-host — those stay
 Out of scope. Cross-links: `learn lora`, `os refuse`, `platform refuse`, `mcp|acp refuse`.
+
+## learn review/stats + OS allowlist Current surfaces
+status: done
+
+Hardened Current substitutes the OOS pack points at: `learn` status embeds train_candidate
+curation counts; `review`/`stats` show provenance + ready (prov+conf≥0.9); top-level
+`learn-review`/`learn-stats` aliases. `abbey os` / `allowlist` print the policy panel by
+default; execute still requires `--confirm`; off-list denied. Unrestricted shell stays OOS.

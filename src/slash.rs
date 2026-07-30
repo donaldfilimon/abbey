@@ -268,6 +268,21 @@ pub const SLASH_CATALOG: &[SlashCmd] = &[
         kind: SlashKind::Local,
     },
     SlashCmd {
+        name: "learn-review",
+        help: "Alias: train_candidate review (provenance curation)",
+        kind: SlashKind::Local,
+    },
+    SlashCmd {
+        name: "learn-stats",
+        help: "Alias: train_candidate curation counts",
+        kind: SlashKind::Local,
+    },
+    SlashCmd {
+        name: "allowlist",
+        help: "OS-control allowlist / policy (alias of /os allowlist)",
+        kind: SlashKind::Local,
+    },
+    SlashCmd {
         name: "parallel",
         help: "Fan-out Max/Gemma/Aviva (alias of /subagents)",
         kind: SlashKind::Agent,

@@ -285,9 +285,8 @@ pub fn cmd_doctor(state: &AbbeyState, cfg: &AgentConfig) -> Result<i32> {
     let _ = output::println(
         "routing:    confidence/alternate/fallback on route.jsonl (audit only — no auto second agent)",
     );
-    let _ = output::println(
-        "learn:      review|stats for train_candidate provenance (LoRA out of scope)",
-    );
+    let _ =
+        output::println("learn:      review|stats (+ learn-review/learn-stats aliases; LoRA OOS)");
     let _ = output::println(
         "media:      --image/--video/--media or /image|/video attach paths (workspace read; no local vision)",
     );

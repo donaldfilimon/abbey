@@ -89,7 +89,8 @@ Routing decisions record **confidence**, **alternate**, and **fallback** on `rou
 | --- | --- |
 | SQLite STM/LTM/activity/train_candidate | **Current** (`src/memory/sqlite.rs`, default) |
 | `abbey learn` correction/preference/routes/digest/export | **Current** |
-| `abbey learn` review/stats (train_candidate provenance) | **Current** — curation only; LoRA **out of scope** |
+| `abbey learn` review/stats (+ `learn-review`/`learn-stats`) | **Current** — curation only; LoRA **out of scope** |
+| OS allowlist (`abbey os` / `abbey allowlist`) | **Current** — dry-run; execute `--confirm` only |
 | WDBX DurableStore in-process | **Current behind `--features wdbx`** (off by default, `src/memory/wdbx.rs`; `flock`-guarded) |
 | 3-D memory map (topic × recency × consolidation) | **Current** — deterministic axes, both backends; TUI Memory tab preview |
 | Learned/semantic memory embedding | **Proposed** — Abbey has no embedder (`abbey claims refuse embeddings`) |

@@ -170,7 +170,7 @@ pub const CLAIMS: &[Claim] = &[
         name: "fine-tuning / LoRA runners",
         status: Status::OutOfScope,
         note: "train_candidate is curation substrate only — no weight updates in Abbey",
-        instead: Some("abbey lora · abbey learn review|stats|export"),
+        instead: Some("abbey lora · abbey learn-review · abbey learn-stats"),
     },
     Claim {
         name: "local Qwen / Gemma weights",
@@ -194,7 +194,7 @@ pub const CLAIMS: &[Claim] = &[
         name: "autonomous OS / unrestricted shell",
         status: Status::OutOfScope,
         note: "os_control allowlist + --confirm is a safety invariant",
-        instead: Some("abbey os <allowlisted> --confirm · abbey shell"),
+        instead: Some("abbey allowlist · abbey os execute --confirm · abbey shell"),
     },
     Claim {
         name: "Abbey as MCP host / ACP host / tool runtime",

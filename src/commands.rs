@@ -298,7 +298,16 @@ pub fn run_cli(cli: Cli, state: AbbeyState, mut cfg: AgentConfig) -> Result<i32>
             voice::dispatch(&state, &mut cfg, &args)
         }
         Some(Commands::Os { args }) => os_control::run_os(&args, true),
+        Some(Commands::Allowlist) => os_control::print_policy(false),
         Some(Commands::Learn { args }) => learn::dispatch(&state, &args),
+        Some(Commands::LearnReview { n }) => {
+            learn::review_train(&state, n)?;
+            Ok(0)
+        }
+        Some(Commands::LearnStats) => {
+            learn::train_stats(&state)?;
+            Ok(0)
+        }
         Some(Commands::Parallel { prompt }) => {
             let ac = config::AbbeyConfig::load().unwrap_or_default();
             parallel::run_parallel_cli(&cfg, &state, &prompt, &ac.roles.max, &ac.roles.gemma)

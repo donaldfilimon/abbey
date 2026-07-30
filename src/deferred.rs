@@ -32,7 +32,7 @@ const TOPICS: &[Topic] = &[
             "activity + corrections stay provenance substrate — not adapters",
         ],
         oos: "fine-tuning / LoRA runners or any weight update inside Abbey",
-        instead: "abbey learn review · abbey learn stats",
+        instead: "abbey learn review · abbey learn-stats",
         refuse: "lora",
     },
     Topic {
@@ -66,7 +66,7 @@ const TOPICS: &[Topic] = &[
             "abbey os execute <cmd> --confirm — never without --confirm",
         ],
         oos: "autonomous OS / unrestricted shell / allowlist bypass",
-        instead: "abbey os <allowlisted> --confirm",
+        instead: "abbey allowlist · abbey os execute --confirm …",
         refuse: "shell",
     },
     Topic {

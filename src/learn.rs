@@ -115,13 +115,56 @@ pub fn learn_preference(state: &AbbeyState, preference: &str) -> Result<String> 
     Ok(id)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TrainStats {
+    pub total: usize,
+    pub with_provenance: usize,
+    pub high_confidence: usize,
+}
+
+impl TrainStats {
+    pub fn missing_provenance(self) -> usize {
+        self.total.saturating_sub(self.with_provenance)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct TrainCuration {
+    stats: TrainStats,
+    ready: usize,
+}
+
+fn collect_train_curation(mem: &dyn MemoryStore) -> Result<TrainCuration> {
+    let rows = mem.filter(Some("train_candidate"), None, 10_000)?;
+    let with_provenance = rows
+        .iter()
+        .filter(|r| !r.provenance.trim().is_empty())
+        .count();
+    let high_confidence = rows.iter().filter(|r| r.confidence >= 0.9).count();
+    let ready = rows
+        .iter()
+        .filter(|r| !r.provenance.trim().is_empty() && r.confidence >= 0.9)
+        .count();
+    Ok(TrainCuration {
+        stats: TrainStats {
+            total: rows.len(),
+            with_provenance,
+            high_confidence,
+        },
+        ready,
+    })
+}
+
 pub fn status(state: &AbbeyState) -> Result<()> {
     let backend = configured_backend();
     let path = memory::backend_path(&state.state_dir, &backend);
-    println!("learn store: {}", path.display());
+    println!("abbey learn — self-learn + train_candidate curation (not a LoRA runner)\n");
+    println!("store: {}", path.display());
     // `status` is read-only: opening a backend would create the store.
     if !path.exists() {
         println!("(empty — capture corrections / run learn routes)");
+        println!();
+        print_learn_usage();
         return Ok(());
     }
     let mem = open_mem(state)?;
@@ -136,11 +179,44 @@ pub fn status(state: &AbbeyState) -> Result<()> {
         report.duplicate_summaries.len(),
         report.superseded.len()
     );
+    let cur = collect_train_curation(mem.as_ref())?;
+    println!(
+        "train_candidate: total={} prov_ok={} missing={} high_conf={} ready={}",
+        cur.stats.total,
+        cur.stats.with_provenance,
+        cur.stats.missing_provenance(),
+        cur.stats.high_confidence,
+        cur.ready
+    );
+    println!();
+    println!("curate:  abbey learn review · abbey learn stats · abbey learn export");
+    println!("refuse:  abbey learn lora · abbey claims refuse lora");
     Ok(())
+}
+
+fn print_learn_usage() {
+    println!(
+        "usage:\n\
+         \x20  abbey learn                    # status + train_candidate summary\n\
+         \x20  abbey learn review [n]         # list candidates (provenance gate)\n\
+         \x20  abbey learn stats              # curation counts\n\
+         \x20  abbey learn train <text>       # add train_candidate with provenance\n\
+         \x20  abbey learn correction <text>  # LTM correction\n\
+         \x20  abbey learn preference <text>  # LTM standing directive\n\
+         \x20  abbey learn routes [n]         # route.jsonl → activity\n\
+         \x20  abbey learn digest|export …\n\
+         note:  LoRA / fine-tune is Out of scope — curation only"
+    );
 }
 
 /// Human-review listing of `train_candidate` rows (no LoRA / export-to-weights).
 pub fn review_train(state: &AbbeyState, limit: usize) -> Result<()> {
+    println!("abbey learn review — train_candidate curation (no weight updates)\n");
+    let path = memory::backend_path(&state.state_dir, &configured_backend());
+    if !path.exists() {
+        println!("(no store yet — `abbey learn train <text>` or `abbey learn correction …`)");
+        return Ok(());
+    }
     let mem = open_mem(state)?;
     let rows = mem.filter(Some("train_candidate"), None, limit)?;
     if rows.is_empty() {
@@ -148,45 +224,57 @@ pub fn review_train(state: &AbbeyState, limit: usize) -> Result<()> {
         return Ok(());
     }
     let mut missing_prov = 0usize;
+    let mut ready = 0usize;
     for r in &rows {
         let prov_ok = !r.provenance.trim().is_empty();
         if !prov_ok {
             missing_prov += 1;
         }
+        let is_ready = prov_ok && r.confidence >= 0.9;
+        if is_ready {
+            ready += 1;
+        }
         let preview: String = r.payload.chars().take(120).collect();
         println!(
-            "{}\tconf={:.2}\tprov={}\t{}",
+            "{}\tconf={:.2}\tprov={}\tready={}\t{}",
             r.id,
             r.confidence,
             if prov_ok { "ok" } else { "MISSING" },
+            if is_ready { "yes" } else { "no" },
             preview
         );
     }
     println!(
-        "review: {} candidate(s); {} missing provenance (required before any adaptation)",
+        "\nreview: {} candidate(s); {} missing provenance; {} ready (prov+conf≥0.9)\n\
+         next:   abbey learn stats · abbey learn export train_candidate\n\
+         oos:    LoRA runners — `abbey lora refuse`",
         rows.len(),
-        missing_prov
+        missing_prov,
+        ready
     );
     Ok(())
 }
 
 /// Counts for train_candidate curation — evaluation substrate, not a trainer.
 pub fn train_stats(state: &AbbeyState) -> Result<()> {
+    println!("abbey learn stats — train_candidate curation counts\n");
+    let path = memory::backend_path(&state.state_dir, &configured_backend());
+    if !path.exists() {
+        println!("train_candidate: total=0 (no store)");
+        println!("note: export via `abbey learn export train_candidate`; LoRA is out of scope");
+        return Ok(());
+    }
     let mem = open_mem(state)?;
-    let rows = mem.filter(Some("train_candidate"), None, 10_000)?;
-    let with_prov = rows
-        .iter()
-        .filter(|r| !r.provenance.trim().is_empty())
-        .count();
-    let high = rows.iter().filter(|r| r.confidence >= 0.9).count();
-    println!("train_candidate: total={}", rows.len());
-    println!("  with_provenance={with_prov}");
+    let cur = collect_train_curation(mem.as_ref())?;
+    println!("train_candidate: total={}", cur.stats.total);
+    println!("  with_provenance={}", cur.stats.with_provenance);
+    println!("  missing_provenance={}", cur.stats.missing_provenance());
+    println!("  high_confidence(>=0.9)={}", cur.stats.high_confidence);
+    println!("  curation_ready(prov+conf>=0.9)={}", cur.ready);
     println!(
-        "  missing_provenance={}",
-        rows.len().saturating_sub(with_prov)
+        "\nnext:  abbey learn review · abbey learn export train_candidate\n\
+         oos:   LoRA / fine-tune — `abbey lora refuse` (exit 2)"
     );
-    println!("  high_confidence(>=0.9)={high}");
-    println!("note: export via `abbey learn export train_candidate`; LoRA is out of scope");
     Ok(())
 }
 
@@ -196,8 +284,12 @@ pub fn dispatch(state: &AbbeyState, args: &[String]) -> Result<i32> {
         return Ok(0);
     }
     match args[0].as_str() {
-        "status" => {
+        "status" | "show" => {
             status(state)?;
+            Ok(0)
+        }
+        "help" | "-h" | "--help" => {
+            print_learn_usage();
             Ok(0)
         }
         "correction" | "fix" => {
@@ -337,5 +429,20 @@ mod tests {
         assert!(p.contains("alternate=gemma"));
         assert!(p.contains("fallback=low conf"));
         assert!(p.contains("confidence=0.55"));
+    }
+
+    #[test]
+    fn train_stats_counts_provenance_and_ready() {
+        unsafe { std::env::set_var("ABBEY_MEMORY_BACKEND", "sqlite") };
+        let state = temp_state("stats");
+        let id = capture_correction(&state, "train candidate", "prefer small diffs", true).unwrap();
+        assert!(!id.is_empty());
+        let mem = memory::open_backend(&state.state_dir, "sqlite").unwrap();
+        let cur = collect_train_curation(mem.as_ref()).unwrap();
+        assert_eq!(cur.stats.total, 1);
+        assert_eq!(cur.stats.with_provenance, 1);
+        assert_eq!(cur.stats.missing_provenance(), 0);
+        assert_eq!(cur.ready, 1); // capture_correction uses conf 0.95
+        let _ = fs::remove_dir_all(&state.state_dir);
     }
 }

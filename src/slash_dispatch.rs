@@ -285,6 +285,20 @@ pub fn dispatch_slash(input: &str, state: &AbbeyState, cfg: &mut AgentConfig) ->
             let args: Vec<String> = rest.split_whitespace().map(String::from).collect();
             learn::dispatch(state, &args)
         }
+        "learn-review" | "train-review" => {
+            let n: usize = rest
+                .split_whitespace()
+                .next()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(50);
+            learn::review_train(state, n)?;
+            Ok(0)
+        }
+        "learn-stats" | "train-stats" => {
+            learn::train_stats(state)?;
+            Ok(0)
+        }
+        "allowlist" | "policy" => os_control::print_policy(false),
         "parallel" => {
             let ac = config::AbbeyConfig::load().unwrap_or_default();
             if rest.is_empty() {

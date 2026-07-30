@@ -58,6 +58,8 @@ abbey parallel --peers gemini,claude "second opinions"   # local distributed pee
 abbey routes --correlation <id>              # both stages (conf · alt · fb)
 abbey learn review                           # train_candidate provenance curation
 abbey learn stats
+abbey learn-review · abbey learn-stats       # aliases
+abbey os · abbey allowlist                   # allowlist panel (execute needs --confirm)
 abbey wdbx query                             # → `abi wdbx query <abbey store> --json`
 abbey wdbx stats                             # in-process (needs --features wdbx)
 abbey completion zsh > ~/.zsh/completions/_abbey_clap
