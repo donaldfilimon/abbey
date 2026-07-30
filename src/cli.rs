@@ -419,6 +419,40 @@ pub enum Commands {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
+    /// Out-of-scope honesty index (lora|weights|accel|shell|host)
+    #[command(name = "oos", visible_alias = "deferred")]
+    Oos {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+    /// LoRA honesty (learn curation Current; runners OOS)
+    Lora {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+    /// Local weights honesty (bindings/fm Current; bundled weights OOS)
+    Weights {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+    /// NPU/TPU/GPU honesty (host detect Current; Abbey accel runtime OOS)
+    #[command(visible_alias = "npu", visible_alias = "tpu")]
+    Accel {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+    /// Unrestricted-shell honesty (allowlist Current; autonomous OS OOS)
+    #[command(visible_alias = "unrestricted")]
+    Shell {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+    /// MCP/ACP host honesty (inventory Current; Abbey-as-host OOS)
+    #[command(visible_alias = "tool-host")]
+    Host {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
     /// Plugin management
     Plugin {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]

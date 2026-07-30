@@ -324,6 +324,9 @@ pub fn cmd_doctor(state: &AbbeyState, cfg: &AgentConfig) -> Result<i32> {
     for line in crate::surfaces::status_lines() {
         let _ = output::println(line);
     }
+    for line in crate::deferred::status_lines() {
+        let _ = output::println(line);
+    }
     #[cfg(target_os = "macos")]
     {
         let _ = output::println(

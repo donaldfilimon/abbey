@@ -251,19 +251,22 @@ pub fn dispatch_mcp(cfg: &AgentConfig, cwd: &Path, args: &[String]) -> Result<i3
     match args[0].as_str() {
         "status" | "inventory" | "show" => print_mcp_status(cwd),
         "paths" => print_mcp_paths(cwd),
+        "host" | "refuse" => crate::claims::refuse("mcp-host"),
         "help" | "-h" | "--help" => {
             println!(
                 "abbey mcp — MCP config inventory + cursor-agent management\n\n\
                  Local:\n\
                    abbey mcp              status / inventory\n\
                    abbey mcp status\n\
-                   abbey mcp paths\n\n\
+                   abbey mcp paths\n\
+                   abbey mcp refuse       # OOS: Abbey as MCP host\n\n\
                  Via cursor-agent:\n\
                    abbey mcp list\n\
                    abbey mcp list-tools <id>\n\
                    abbey mcp enable|disable <id>\n\
                    abbey mcp login <id>\n\n\
-                 Runtime tools: abbey --approve-mcps \"…\""
+                 Runtime tools: abbey --approve-mcps \"…\"\n\
+                 honesty: abbey host · abbey runtime"
             );
             Ok(0)
         }
@@ -290,14 +293,17 @@ pub fn dispatch_acp(args: &[String]) -> Result<i32> {
                 .ok_or_else(|| anyhow::anyhow!("usage: abbey acp run <gemini|opencode>"))?;
             run_acp_peer(name)
         }
+        "host" | "refuse" => crate::claims::refuse("acp-host"),
         "help" | "-h" | "--help" => {
             println!(
                 "abbey acp — Agent Client Protocol peer inventory\n\n\
                  abbey acp              list peers\n\
                  abbey acp list\n\
                  abbey acp run gemini   start gemini --acp (stdio)\n\
-                 abbey acp run opencode start opencode acp (stdio)\n\n\
-                 Abbey is not an ACP host; pair with Zed/Claude/an MCP↔ACP bridge."
+                 abbey acp run opencode start opencode acp (stdio)\n\
+                 abbey acp refuse       # OOS: Abbey as ACP host\n\n\
+                 Abbey is not an ACP host; pair with Zed/Claude/an MCP↔ACP bridge.\n\
+                 honesty: abbey host · abbey runtime"
             );
             Ok(0)
         }

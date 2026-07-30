@@ -49,6 +49,8 @@ abbey compute                                # GPU/NPU/TPU host detect (not Abbe
 abbey vision                                 # path attach + agent gen (local weights OOS)
 abbey cot show                               # last reason transcript (not Abbey CoT engine)
 abbey runtime                                # who runs tools (Abbey is not the host)
+abbey oos                                    # LoRA · weights · NPU/TPU · shell · MCP host
+abbey lora|weights|accel|shell|host          # per-topic status / refuse (exit 2)
 abbey hybrid-loop "add a dark mode toggle"   # Gemma interprets → Max implements
 abbey subagents                              # catalog (abbey lanes + PATH peers)
 abbey subagents run --lanes max,reviewer --synthesize "harden auth"

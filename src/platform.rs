@@ -300,6 +300,7 @@ pub fn dispatch(args: &[String]) -> Result<i32> {
             println!("subagent_jobs_default: {}", default_subagent_jobs());
             Ok(0)
         }
+        Some("refuse") | Some("runtime") | Some("kernels") => crate::claims::refuse("npu"),
         Some("-h") | Some("--help") => {
             println!(
                 "abbey platform — host OS/arch + thread/accelerator inventory\n\
@@ -308,14 +309,17 @@ pub fn dispatch(args: &[String]) -> Result<i32> {
                    abbey platform              # full matrix + accelerators\n\
                    abbey platform compute      # threads + GPU/NPU/TPU detect\n\
                    abbey platform threads      # parallelism only\n\
+                   abbey platform refuse       # OOS: Abbey accelerator runtime\n\
                  \n\
-                 aliases: abbey compute\n\
+                 aliases: abbey compute · abbey accel\n\
                  note: detection ≠ Abbey accelerator runtime (see claims oos)"
             );
             Ok(0)
         }
         Some(other) => {
-            anyhow::bail!("unknown platform subcommand `{other}` — try: status|compute|threads");
+            anyhow::bail!(
+                "unknown platform subcommand `{other}` — try: status|compute|threads|refuse"
+            );
         }
     }
 }

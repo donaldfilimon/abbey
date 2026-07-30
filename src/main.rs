@@ -7,6 +7,7 @@ mod claims;
 mod cli;
 mod commands;
 mod config;
+mod deferred;
 mod doctor;
 mod generate;
 mod gitops;

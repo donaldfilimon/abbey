@@ -135,3 +135,11 @@ status: done
 agent gen, reason transcript viewer, responsibility matrix) while refusing local
 vision/video weights, Abbey-owned CoT engine/UI, and Abbey-as-tool-runtime (exit 2).
 `abbey reason` saves a CoT transcript for `cot show`.
+
+## OOS honesty pack (LoRA · weights · NPU/TPU · unrestricted OS · MCP/ACP host)
+status: done
+
+`abbey oos` index plus `abbey lora|weights|accel|shell|host` (and slash peers) print
+Current substitutes and refuse with exit 2. Does **not** implement LoRA runners, local
+weights, accelerator kernels, unrestricted shell, or Abbey-as-MCP/ACP-host — those stay
+Out of scope. Cross-links: `learn lora`, `os refuse`, `platform refuse`, `mcp|acp refuse`.

@@ -123,9 +123,9 @@ pub const CLAIMS: &[Claim] = &[
         instead: None,
     },
     Claim {
-        name: "GPU/NPU/TPU host detection (report-only)",
+        name: "GPU/NPU/TPU presence detection (report-only)",
         status: Status::Current,
-        note: "abbey platform compute — presence inventory, not Abbey accelerators",
+        note: "abbey platform compute — inventory only, not Abbey accelerators",
         instead: Some("abbey platform · abbey compute"),
     },
     Claim {
@@ -139,6 +139,12 @@ pub const CLAIMS: &[Claim] = &[
         status: Status::Current,
         note: "documents who executes what; Abbey is not the tool host",
         instead: Some("abbey runtime · --approve-mcps"),
+    },
+    Claim {
+        name: "OOS honesty surfaces (`abbey oos` / lora|weights|accel|shell|host)",
+        status: Status::Current,
+        note: "status + refuse for deferred capabilities — does not implement them",
+        instead: Some("abbey oos · abbey claims refuse …"),
     },
     // —— Proposed ——
     Claim {
@@ -164,37 +170,37 @@ pub const CLAIMS: &[Claim] = &[
         name: "fine-tuning / LoRA runners",
         status: Status::OutOfScope,
         note: "train_candidate is curation substrate only — no weight updates in Abbey",
-        instead: Some("abbey learn review|stats|export"),
+        instead: Some("abbey lora · abbey learn review|stats|export"),
     },
     Claim {
         name: "local Qwen / Gemma weights",
         status: Status::OutOfScope,
         note: "Max/Gemma are cursor-agent (or fm) bindings, not bundled weights",
-        instead: Some("ABBEY_BACKEND=fm for on-device Apple models"),
+        instead: Some("abbey weights · ABBEY_BACKEND=fm"),
     },
     Claim {
         name: "Abbey as her own trained model (own weights)",
         status: Status::OutOfScope,
         note: "product identity ≠ local foundation-model training loop",
-        instead: None,
+        instead: Some("abbey weights"),
     },
     Claim {
         name: "GPU/NPU/TPU compilation, training, or inference in Abbey",
         status: Status::OutOfScope,
-        note: "host detect only — Abbey does not schedule accelerator kernels",
-        instead: Some("abbey platform compute · abbey claims refuse npu"),
+        note: "presence inventory only — Abbey does not schedule accelerator kernels",
+        instead: Some("abbey accel · abbey platform compute"),
     },
     Claim {
         name: "autonomous OS / unrestricted shell",
         status: Status::OutOfScope,
         note: "os_control allowlist + --confirm is a safety invariant",
-        instead: Some("abbey os <allowlisted> --confirm"),
+        instead: Some("abbey os <allowlisted> --confirm · abbey shell"),
     },
     Claim {
         name: "Abbey as MCP host / ACP host / tool runtime",
         status: Status::OutOfScope,
         note: "inventory + launch only; tools run inside cursor-agent during a turn",
-        instead: Some("abbey runtime · abbey mcp|acp · --approve-mcps"),
+        instead: Some("abbey host · abbey runtime · abbey mcp|acp · --approve-mcps"),
     },
     Claim {
         name: "Abbey-owned chain-of-thought engine / interactive CoT UI",
@@ -347,14 +353,22 @@ pub fn refuse(verb: &str) -> Result<i32> {
             "cost",
             "Fake cost/token accounting is Out of scope. /cost is N/A.",
         ),
-        "mcp-host" | "acp-host" => (
-            "host",
+        "mcp-host" | "acp-host" | "host" | "tool-runtime" | "tool-host" => (
+            "MCP host",
             "Abbey is not an MCP or ACP host — inventory/launch only.",
+        ),
+        "shell" | "unrestricted" | "os-unrestricted" | "allowlist-bypass" | "yolo-shell" => (
+            "unrestricted",
+            "Unrestricted OS / autonomous shell is Out of scope. Allowlist + --confirm is Current.",
+        ),
+        "accel" | "accelerator" | "accelerators" => (
+            "GPU/NPU/TPU",
+            "GPU/NPU/TPU compilation, training, and inference in Abbey are Out of scope. Host detect is Current.",
         ),
         other => {
             eprintln!(
                 "abbey: unknown refuse topic `{other}`\n\
-                 try: embeddings · lora · multinode · npu · weights · cost · mcp-host"
+                 try: embeddings · lora · multinode · npu · weights · shell · cost · mcp-host"
             );
             return Ok(2);
         }
@@ -393,7 +407,7 @@ pub fn dispatch(args: &[String]) -> Result<i32> {
                    abbey claims <keyword>    # search\n\
                    abbey claims refuse <topic>\n\
                  \n\
-                 topics: embeddings · lora · multinode · npu · weights · cost · mcp-host"
+                 topics: embeddings · lora · multinode · npu · weights · shell · cost · mcp-host"
             );
             return Ok(0);
         }
@@ -458,6 +472,10 @@ mod tests {
         assert_eq!(refuse("embeddings").unwrap(), 2);
         assert_eq!(refuse("lora").unwrap(), 2);
         assert_eq!(refuse("multinode").unwrap(), 2);
+        assert_eq!(refuse("shell").unwrap(), 2);
+        assert_eq!(refuse("host").unwrap(), 2);
+        assert_eq!(refuse("npu").unwrap(), 2);
+        assert_eq!(refuse("weights").unwrap(), 2);
     }
 
     #[test]

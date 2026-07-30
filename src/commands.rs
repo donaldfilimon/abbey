@@ -6,6 +6,7 @@ use crate::build_info;
 use crate::claims;
 use crate::cli::{Cli, Commands, GenerateCmd, MemoryCmd, Shell};
 use crate::config;
+use crate::deferred;
 use crate::doctor::{
     cmd_debug, cmd_doctor, cmd_init, cmd_memory_store, cmd_persona, cmd_role, print_config,
     print_permissions,
@@ -105,6 +106,12 @@ pub fn run_cli(cli: Cli, state: AbbeyState, mut cfg: AgentConfig) -> Result<i32>
             }
         }
         Some(Commands::Runtime { args }) => surfaces::dispatch_runtime(&args),
+        Some(Commands::Oos { args }) => deferred::dispatch_oos(&args),
+        Some(Commands::Lora { args }) => deferred::dispatch_topic("lora", &args),
+        Some(Commands::Weights { args }) => deferred::dispatch_topic("weights", &args),
+        Some(Commands::Accel { args }) => deferred::dispatch_topic("accel", &args),
+        Some(Commands::Shell { args }) => deferred::dispatch_topic("shell", &args),
+        Some(Commands::Host { args }) => deferred::dispatch_topic("host", &args),
         Some(Commands::Review { staged, note }) => {
             run_review(&mut cfg, &state, staged, &note, false)
         }

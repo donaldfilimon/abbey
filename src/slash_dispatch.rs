@@ -81,6 +81,19 @@ pub fn dispatch_slash(input: &str, state: &AbbeyState, cfg: &mut AgentConfig) ->
             let args: Vec<String> = rest.split_whitespace().map(String::from).collect();
             crate::surfaces::dispatch_runtime(&args)
         }
+        "oos" | "deferred" => {
+            let args: Vec<String> = rest.split_whitespace().map(String::from).collect();
+            crate::deferred::dispatch_oos(&args)
+        }
+        "lora" | "weights" | "accel" | "npu" | "tpu" | "shell" | "unrestricted" | "host" => {
+            let key = match cmd {
+                "npu" | "tpu" => "accel",
+                "unrestricted" => "shell",
+                other => other,
+            };
+            let args: Vec<String> = rest.split_whitespace().map(String::from).collect();
+            crate::deferred::dispatch_topic(key, &args)
+        }
         "doctor" | "debug" => {
             if cmd == "debug" {
                 cmd_debug(state, cfg)

@@ -108,11 +108,14 @@ fn local_os(args: &[String]) -> Result<i32> {
                 println!("  {a}");
             }
             println!(
-                "backend: local whitelist (abi agent os used when abi on PATH and prefer_abi)"
+                "backend: local whitelist (abi agent os used when abi on PATH and prefer_abi)\n\
+                 rule:    execute always needs --confirm; unrestricted shell is Out of scope\n\
+                 refuse:  abbey shell refuse · abbey claims refuse shell"
             );
             Ok(0)
         }
-        other => bail!("unknown os mode `{other}` (dry-run|execute|allowlist)"),
+        "unrestricted" | "refuse" | "yolo" => crate::claims::refuse("shell"),
+        other => bail!("unknown os mode `{other}` (dry-run|execute|allowlist|refuse)"),
     }
 }
 

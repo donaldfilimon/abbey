@@ -82,6 +82,7 @@ CLI: `abbey claims` · `abbey claims proposed|oos` · `abbey claims refuse embed
 | GPU/NPU/TPU host detection (`abbey platform`) | ✓ | | accelerator runtime in Abbey |
 | CoT transcript viewer (`abbey cot`) | ✓ | | Abbey-owned CoT engine/UI |
 | Tool responsibility matrix (`abbey runtime`) | ✓ | | Abbey as tool runtime |
+| OOS honesty (`abbey oos` / lora|weights|accel|shell|host) | ✓ | | (surfaces refuse; do not implement) |
 | OS allowlist control | ✓ | | unrestricted shell |
 | Skills/plugins inventory | ✓ | | |
 | Unique build stamp | ✓ | | |

@@ -63,6 +63,36 @@ pub const SLASH_CATALOG: &[SlashCmd] = &[
         kind: SlashKind::Local,
     },
     SlashCmd {
+        name: "oos",
+        help: "OOS honesty index: /oos [lora|weights|accel|shell|host]",
+        kind: SlashKind::Local,
+    },
+    SlashCmd {
+        name: "lora",
+        help: "LoRA honesty (learn curation Current; runners OOS)",
+        kind: SlashKind::Local,
+    },
+    SlashCmd {
+        name: "weights",
+        help: "Local weights honesty (bindings/fm Current; bundled OOS)",
+        kind: SlashKind::Local,
+    },
+    SlashCmd {
+        name: "accel",
+        help: "NPU/TPU honesty: /accel [status|detect|refuse]",
+        kind: SlashKind::Local,
+    },
+    SlashCmd {
+        name: "shell",
+        help: "Unrestricted-OS honesty (allowlist Current)",
+        kind: SlashKind::Local,
+    },
+    SlashCmd {
+        name: "host",
+        help: "MCP/ACP host honesty (inventory Current; host OOS)",
+        kind: SlashKind::Local,
+    },
+    SlashCmd {
         name: "model",
         help: "Show or set default model alias/id",
         kind: SlashKind::Local,

@@ -93,7 +93,10 @@ Routing decisions record **confidence**, **alternate**, and **fallback** on `rou
 | WDBX DurableStore in-process | **Current behind `--features wdbx`** (off by default, `src/memory/wdbx.rs`; `flock`-guarded) |
 | 3-D memory map (topic × recency × consolidation) | **Current** — deterministic axes, both backends; TUI Memory tab preview |
 | Learned/semantic memory embedding | **Proposed** — Abbey has no embedder (`abbey claims refuse embeddings`) |
-| Fine-tuning / LoRA | **Out of scope** (`abbey learn lora` refuses) |
+| Fine-tuning / LoRA | **Out of scope** (`abbey lora` · `abbey learn lora` refuse) |
+| Local Qwen/Gemma / own weights | **Out of scope** (`abbey weights`) |
+| Unrestricted OS / shell | **Out of scope** (`abbey shell` · `abbey os refuse`) |
+| OOS honesty pack (`abbey oos`) | **Current** — status + refuse only |
 | Claims gate CLI | **Current** — `abbey claims` / `/claims` |
 | `abi wdbx` CLI bridge when `abi` is a real binary on PATH | **Current** (doctor reports availability honestly) |
 
