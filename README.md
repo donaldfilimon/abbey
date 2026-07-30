@@ -56,6 +56,44 @@ abbey completion zsh > ~/.zsh/completions/_abbey_clap
 /clear  /compact  /model fable  /memory  /skills  /permissions  /doctor
 ```
 
+## Backends
+
+| Backend | `ABBEY_BACKEND` | Notes |
+|---|---|---|
+| cursor-agent | `cursor` (default) | hosted models, full tool surface |
+| Grok Build | `grok` | passthrough |
+| **On-device** | `fm` | Apple Foundation Models CLI, **macOS 26+** — no cursor-agent, no network |
+
+```bash
+ABBEY_BACKEND=fm abbey -p "summarise this error"     # runs on-device
+ABBEY_BACKEND=fm abbey doctor                        # reports model availability
+```
+
+Under `fm`, conversations are kept as transcript files in `<state>/fm/` (it has no
+server-side chat ids), and `ask`/`plan` become `--instructions`. Account/session verbs
+(`status`, `ls`, `login`, `logout`, `mcp`) have no on-device equivalent and refuse with
+exit 2 rather than forwarding. **Max and Gemma both resolve to the `system` model there,
+so the role distinction is carried by the prompt, not the model.**
+
+## The 3-D memory map
+
+Every memory has a position on three interpretable axes — **topic** (subject tag),
+**recency** (log-compressed age), **consolidation** (activity → stm → ltm →
+train_candidate, lifted by confidence):
+
+```bash
+abbey memory put "plays fingerstyle guitar" --tag guitar --retention ltm
+abbey memory map                 # the whole map
+abbey memory near <id>           # what else do I know about this?
+```
+
+Tag your memories — untagged ones share one visible `(untagged)` column. Under
+`--features wdbx` each point is mirrored into WDBX's spatial space, so `abi wdbx` sees
+the same map.
+
+This is a **deterministic layout, not a learned embedding space** — Abbey has no
+embedder, and calling the distances semantic would overstate them.
+
 ## Memory backends
 
 SQLite is the default. The in-process WDBX backend (`abi-wdbx` `DurableStore`) is real but

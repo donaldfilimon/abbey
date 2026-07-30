@@ -24,6 +24,7 @@ abbey doctor        # build stamp + persona/role/memory/os honesty
 | Dep | Required? | Notes |
 |-----|-----------|-------|
 | `cursor-agent` | Yes (default) | LLM executor |
+| `fm` (`/usr/bin/fm`) | Only for `ABBEY_BACKEND=fm` | On-device Apple Foundation Model, macOS 26+ |
 | `abi` | Optional | Prefer for `os` / `plugin` / WDBX CLI |
 | git | Optional | diff/commit/pr/branch |
 
@@ -37,6 +38,7 @@ abbey doctor        # build stamp + persona/role/memory/os honesty
 - Chat/model/history/routes: `$XDG_STATE_HOME/abbey` (or `~/.local/state/abbey`)
 - Memory SQLite: `…/abbey/memory.sqlite`
 - Memory WDBX (feature `wdbx`): `…/abbey/wdbx/` (segments + WAL)
+- `fm` transcripts (backend `fm`): `…/abbey/fm/<chat-id>.transcript`
 - Never commit state dirs
 
 ## Safety

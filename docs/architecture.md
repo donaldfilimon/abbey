@@ -20,7 +20,7 @@ Status key: **Current** = shipped · **Proposed** = designed, not claimed live �
 ├─────────────────────────────────────────────────────────┤
 │  abi-ai (path) — Abbey/Aviva/Abi contracts + router     │
 │  memory — SQLite (default) · WDBX (feature `wdbx`)      │
-│  agent — cursor-agent / grok executor                   │
+│  agent — cursor-agent · grok · fm (on-device) executors │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -70,11 +70,20 @@ Status key: **Current** = shipped · **Proposed** = designed, not claimed live �
 - In-process `abi-wdbx` `DurableStore` memory backend — **behind `--features wdbx`, off by
   default**; `check.sh` gates both feature sets
 - `abbey hybrid-loop` two-stage Gemma→Max run with correlated route records
+- On-device execution via `ABBEY_BACKEND=fm` (Apple Foundation Models CLI, macOS 26+):
+  own argv grammar, chat id → transcript-file mapping, honest refusal of account verbs
+- 3-D memory map (`abbey memory map` / `near`) on both memory backends; mirrored into
+  WDBX `SpatialRecord`s under `--features wdbx`
 
 ## Proposed (not Current)
 
 - Vector/embedding search through WDBX (`put_vector`/`search`) — the backend currently
   uses the KV space only
+- A *learned* memory embedding space. The 3-D map's axes are deterministic
+  (topic × recency × consolidation); Abbey has no embedder
+- Multi-node / multi-GPU / shared compute between nodes. `abi-wdbx` ships
+  `cluster`/`remote_compute`/`compute` reference implementations Abbey does not yet use
+- TUI panel for the 3-D map (the map ships on the CLI only)
 - Windows cross-process safety for the WDBX backend: the `flock(2)` guard is `#[cfg(unix)]`,
   so concurrent processes are unprotected on non-Unix targets
 - Local Qwen 3.5 / Gemma 4 weights

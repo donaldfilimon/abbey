@@ -71,7 +71,7 @@ Key modules (`src/`):
 | `init/` (`mod.rs`, `detect.rs`, `probe.rs`) | `abbey init` — scans a project and writes `AGENTS.md` |
 | `tui/` (`app.rs`, `ui.rs`, `tabs.rs`, `mod.rs`) | 7-tab ratatui app |
 | `doctor.rs` | doctor/debug/persona/role/memory checks |
-| `agent.rs` / `models.rs` / `gitops.rs` / `state.rs` / `config.rs` | executor invocation, model aliases, local git helpers, per-cwd state, config loading |
+| `agent.rs` / `models.rs` / `gitops.rs` / `state.rs` / `config.rs` | executor invocation (cursor · grok · on-device `fm`), model aliases, local git helpers, per-cwd state, config loading |
 
 Personas (Abbey/Aviva/Abi) and Max/Gemma worker roles are defined in the sibling `abi-ai` crate (`../abi/crates/abi-ai/src/identity.rs`) — Abbey's own code consumes those contracts rather than redefining identity. See [docs/identity.md](docs/identity.md) for the distilled spec and Current/Proposed status of each claim.
 
@@ -82,6 +82,7 @@ Personas (Abbey/Aviva/Abi) and Max/Gemma worker roles are defined in the sibling
 - Only commit when asked; never force-push `main`; never commit secrets.
 - **Keep claims honest** — this project explicitly tracks what is shipped ("Current") vs. designed-only ("Proposed") vs. explicitly deferred ("Out of scope") in [AGENTS.md](AGENTS.md)'s claims-gate table and in the docs. Backend is `cursor-agent`, not a reimplementation of Grok/Codex/Claude runtimes; Max/Gemma are model-alias bindings, not local weights; `/cost` is intentionally N/A. Don't let new code or docs imply otherwise. A capability behind an off-by-default feature is "Current behind `--features X`", not plain Current — and only if the gate compiles and tests it.
 - **A feature-gated module is invisible to the default gate.** If you add another `[features]` entry, add matching `clippy`/`test` lines to `check.sh`, or the code can rot while CI stays green.
+- **Each backend gets its own argv grammar.** `fm` shares none of cursor-agent's flags; `build_args_fm` is built from scratch rather than filtered, and a test asserts no cursor flag can leak into it. Under `fm`, don't let `hybrid_run` inject role→model ids (its vocabulary is `system|pcc`), and don't forward account verbs — it has no account.
 - OS execution (`os_control.rs`) must never run without `--confirm`, and only against the allowlist — this is a safety invariant, not a default to relax.
 - **`WdbxMemory` must hold its `flock(2)` for the handle's whole life.** `abi-wdbx`'s `DurableStore` has no cross-process locking; without the guard, two concurrent `abbey` processes interleave WAL appends and leave the store permanently unreadable (verified: 20 writers → CRC mismatch, every later open fails). SQLite survives the same load unaided, so the lock is what makes the two backends interchangeable. `wdbx_bridge` takes the same lock when a passthrough targets Abbey's own store — new code paths that reach the store must not route around it.
 - Read-only callers should use `memory::backend_path` (pure) rather than opening, and interactive ones `open_backend_with_timeout` — `learn status` once created the very store it was meant to report on, and the TUI redraw would otherwise stall 10s on a lock.

@@ -26,7 +26,10 @@ Abbey is a personal AI assistant (she/her) created by Donald Filimon and The Don
 
 CLI: `abbey persona` · `/persona` · explicit `@Abbey` / `Aviva:` / `Abi:`.
 
-Local abi template completion remains deterministic (**Current** in ABI); hosted LLM quality comes from cursor-agent.
+Local abi template completion remains deterministic (**Current** in ABI); hosted LLM quality
+comes from cursor-agent, or **on-device** from Apple's Foundation Models CLI under
+`ABBEY_BACKEND=fm` (**Current**, macOS 26+). On-device, Max and Gemma share one model
+(`system`), so the role difference is prompt-only — a real narrowing worth knowing.
 
 ---
 
@@ -53,6 +56,8 @@ correlation id (`abbey routes --correlation <id>`).
 | SQLite STM/LTM/activity/train_candidate | **Current** (`src/memory/sqlite.rs`, default) |
 | `abbey learn` correction/preference/routes/digest | **Current** |
 | WDBX DurableStore in-process | **Current behind `--features wdbx`** (off by default, `src/memory/wdbx.rs`; `flock`-guarded) |
+| 3-D memory map (topic × recency × consolidation) | **Current** — deterministic axes, both backends |
+| Learned/semantic memory embedding | **Proposed** — Abbey has no embedder |
 | `abi wdbx` CLI bridge when `abi` is a real binary on PATH | **Current** (doctor reports availability honestly) |
 
 ---
