@@ -41,6 +41,9 @@ abbey init --force        # overwrite
 abbey init --print        # preview only
 abbey init --agent        # local scan, then refine with cursor-agent
 abbey doctor
+abbey claims                                 # Current / Proposed / Out of scope
+abbey claims proposed                        # embeddings, multi-node, …
+abbey claims refuse lora                     # honest exit 2
 abbey hybrid-loop "add a dark mode toggle"   # Gemma interprets → Max implements
 abbey subagents                              # catalog (abbey lanes + PATH peers)
 abbey subagents run --lanes max,reviewer --synthesize "harden auth"

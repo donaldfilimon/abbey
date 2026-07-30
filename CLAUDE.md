@@ -68,6 +68,7 @@ Key modules (`src/`):
 | `protocols.rs` | MCP config inventory + ACP peer discovery/launch (not a host runtime) |
 | `highlight.rs` | syntect ANSI for fenced code on `-p`/print + `abbey highlight` |
 | `subagents.rs` | multi-subagent lanes + local PATH peer fan-out + synthesize |
+| `claims.rs` | Current/Proposed/OOS gate + refuse paths (embeddings/LoRA/multi-node) |
 | `memory/` (`mod.rs`, `sqlite.rs`, `wdbx.rs`) | `MemoryStore` trait, shared reflect/validation, backend dispatch; add new backends here and they work everywhere |
 | `hybrid_loop.rs` | two-stage Gemma→Max run; stages linked by `correlation` in the route log |
 | `wdbx_bridge.rs` | `abbey wdbx` — passthrough to `abi wdbx`, plus in-process `stats`/`checkpoint` |

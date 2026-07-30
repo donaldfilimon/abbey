@@ -386,6 +386,12 @@ pub enum Commands {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
+    /// Claims gate: Current / Proposed / Out of scope (embeddings, LoRA, multi-node…)
+    #[command(visible_alias = "roadmap", visible_alias = "scope")]
+    Claims {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
     /// Plugin management
     Plugin {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
@@ -471,5 +477,11 @@ pub enum MemoryCmd {
     Export {
         #[arg(long, default_value = "ltm")]
         layer: String,
+    },
+    /// Proposed: semantic embeddings (honest refuse)
+    #[command(visible_alias = "embedding", visible_alias = "vector")]
+    Embed {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        _args: Vec<String>,
     },
 }

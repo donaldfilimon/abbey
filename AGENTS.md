@@ -39,6 +39,7 @@ src/wdbx_bridge.rs   `abbey wdbx` → `abi wdbx` passthrough
 src/please_fix.rs   last-failure prompt + capture summarizer
 src/highlight.rs     syntect fence/file ANSI (auto on -p)
 src/subagents.rs     multi-lane + local peer agents
+src/claims.rs        Current/Proposed/OOS gate + refuse
 src/learn.rs os_control.rs parallel.rs inventory.rs
 src/tui/              7-tab ratatui
 src/init/ gitops.rs agent.rs models.rs state.rs config.rs
@@ -59,6 +60,9 @@ tasks/                goals + todo
 See [docs/architecture.md](docs/architecture.md). Personas via `abi-ai`; Max/Gemma roles; SQLite memory; self-learn injects LTM preferences into `hybrid_run`.
 
 ### Claims gate
+
+CLI: `abbey claims` · `abbey claims proposed|oos` · `abbey claims refuse embeddings|lora|multinode`
+(source: `src/claims.rs` — keep this table and that module aligned).
 
 | Claim | Current | Proposed | Out of scope |
 | --- | --- | --- | --- |

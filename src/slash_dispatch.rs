@@ -53,6 +53,10 @@ pub fn dispatch_slash(input: &str, state: &AbbeyState, cfg: &mut AgentConfig) ->
             println!("abbey: history compacted to {n}");
             Ok(0)
         }
+        "claims" | "roadmap" | "scope" => {
+            let args: Vec<String> = rest.split_whitespace().map(String::from).collect();
+            crate::claims::dispatch(&args)
+        }
         "doctor" | "debug" => {
             if cmd == "debug" {
                 cmd_debug(state, cfg)

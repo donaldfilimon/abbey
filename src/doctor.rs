@@ -204,6 +204,7 @@ pub fn cmd_memory_store(state: &AbbeyState, cmd: MemoryCmd) -> Result<i32> {
             }
             Ok(0)
         }
+        MemoryCmd::Embed { .. } => crate::claims::refuse("embeddings"),
     }
 }
 
@@ -318,6 +319,7 @@ pub fn cmd_doctor(state: &AbbeyState, cfg: &AgentConfig) -> Result<i32> {
     ));
     let _ = output::println(crate::highlight::status_line());
     let _ = output::println(crate::subagents::status_line());
+    let _ = output::println(crate::claims::status_line());
     #[cfg(target_os = "macos")]
     {
         let _ = output::println(

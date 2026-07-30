@@ -254,9 +254,11 @@ pub fn dispatch(state: &AbbeyState, args: &[String]) -> Result<i32> {
             train_stats(state)?;
             Ok(0)
         }
+        "lora" | "finetune" | "fine-tune" | "fine_tune" => crate::claims::refuse("lora"),
         other => bail!(
             "unknown learn subcommand `{other}`\n\
-             usage: abbey learn [status|correction|train|preference|routes|digest|export|review|stats]"
+             usage: abbey learn [status|correction|train|preference|routes|digest|export|review|stats]\n\
+             (LoRA/fine-tune is Out of scope — see `abbey claims oos`)"
         ),
     }
 }

@@ -45,6 +45,7 @@ Status key: **Current** = shipped · **Proposed** = designed, not claimed live �
 | `voice` | macOS Premium/Enhanced TTS (`say`) + on-device STT (`scripts/abbey-stt.swift`) |
 | `protocols` | MCP config inventory + ACP peer discovery/launch (not a host runtime) |
 | `highlight` | syntect fence/file ANSI colour for `-p`/print/commit/diff (TTY; not a markdown UI) |
+| `claims` | Current / Proposed / Out of scope gate + honest refuse paths |
 | `learn` | Self-learn capture/digest/review/stats |
 | `os_control` | Cross-platform OS policy |
 | `parallel` | Thin alias → `subagents` (default Max/Gemma/Aviva) |
@@ -92,20 +93,29 @@ Status key: **Current** = shipped · **Proposed** = designed, not claimed live �
   hybrid-loop/parallel when stdout is a TTY; `abbey highlight` for files/stdin
 - Multi-subagent / local peers: `abbey subagents run --lanes max,reviewer
   --peers gemini --synthesize` (same-host PATH CLIs; not multi-node)
+- Claims gate CLI: `abbey claims` / `refuse` for Proposed (embeddings, multi-node)
+  and Out of scope (LoRA, local weights, …)
 - MCP/ACP surfaces: `abbey mcp status` reads `mcp.json` files; `abbey mcp list|…`
   passthrough to cursor-agent; `abbey acp list|run` discovers/launches ACP peers.
   Abbey is not an MCP or ACP host.
 
 ## Proposed (not Current)
 
+See also `abbey claims proposed` (machine-readable gate in `src/claims.rs`).
+
 - Vector/embedding search through WDBX (`put_vector`/`search`) — the backend currently
   uses the KV space only
 - A *learned* memory embedding space. The 3-D map's axes are deterministic
   (topic × recency × consolidation); Abbey has no embedder
-- Multi-node / multi-GPU / shared compute between nodes. `abi-wdbx` ships
+- Multi-node / multi-GPU / shared compute / agent mesh. `abi-wdbx` ships
   `cluster`/`remote_compute`/`compute` reference implementations Abbey does not yet use
+  (local PATH peer fan-out is Current via `subagents --peers`)
 - Windows cross-process safety for the WDBX backend: the `flock(2)` guard is `#[cfg(unix)]`,
   so concurrent processes are unprotected on non-Unix targets
-- Local Qwen 3.5 / Gemma 4 weights
-- LoRA / fine-tuning runners
-- Multi-node distributed agent mesh (local PATH peer fan-out is Current via `subagents --peers`)
+
+## Out of scope
+
+See `abbey claims oos`. Includes: LoRA / fine-tuning runners; local Qwen/Gemma weights;
+Abbey-own trained weights; NPU/TPU learning; autonomous unrestricted OS; Abbey as
+MCP/ACP host; fake cost accounting; cloud TTS/STT SaaS; local vision/gen weights;
+reimplementing Grok/Codex/Claude runtimes.

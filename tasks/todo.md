@@ -106,11 +106,13 @@
 - [x] please-fix capture summarizer: strip agent/TUI chrome, keep error signal, 24KiB body
 
 ### Deferred by construction (Proposed / Out of scope — not Abbey Current)
-- [ ] Semantic memory search (embedding space) behind `MemoryStore` — Proposed
-- [ ] Multi-node / multi-GPU / shared compute between nodes — Out of scope
-- [ ] NPU/TPU compilation and learning — Out of scope
-- [ ] Autonomous operation of services and the OS — Out of scope (allowlist + `--confirm`)
-- [ ] Local Qwen/Gemma weights / LoRA / CouchDB-Python second stack — Out of scope
+- [x] Surface via `abbey claims` / `refuse` (2026-07-30) — still not implemented as features
+- [ ] Semantic memory search (embedding space) behind `MemoryStore` — **Proposed**
+- [ ] Multi-node / multi-GPU / shared compute / agent mesh — **Proposed**
+- [ ] Windows WDBX cross-process locking — **Proposed**
+- [ ] NPU/TPU compilation and learning — **Out of scope**
+- [ ] Autonomous operation of services and the OS — **Out of scope** (allowlist + `--confirm`)
+- [ ] Local Qwen/Gemma weights / LoRA / CouchDB-Python second stack — **Out of scope**
 
 ## Hybrid model-routing architecture strategy
 

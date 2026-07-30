@@ -3,6 +3,7 @@
 use crate::actions::{RunSpec, fork_prompt, run_agent, run_commit, run_pr, run_review};
 use crate::agent::{AgentConfig, run_resilient};
 use crate::build_info;
+use crate::claims;
 use crate::cli::{Cli, Commands, GenerateCmd, MemoryCmd, Shell};
 use crate::config;
 use crate::doctor::{
@@ -85,6 +86,7 @@ pub fn run_cli(cli: Cli, state: AbbeyState, mut cfg: AgentConfig) -> Result<i32>
             Ok(0)
         }
         Some(Commands::Highlight { args }) => highlight::dispatch(&args),
+        Some(Commands::Claims { args }) => claims::dispatch(&args),
         Some(Commands::Review { staged, note }) => {
             run_review(&mut cfg, &state, staged, &note, false)
         }

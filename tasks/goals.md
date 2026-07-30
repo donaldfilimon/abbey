@@ -111,3 +111,11 @@ status: done
 (max/gemma/aviva/abbey/abi/reviewer/security/planner) via cursor-agent; peers
 (gemini/opencode/claude/codex) as same-host PATH CLIs. `parallel` remains the
 default-lane alias. Multi-node mesh stays Proposed.
+
+## Proposed / OOS claims surface
+status: done
+
+`abbey claims` (+ `roadmap`/`scope`) prints the Current / Proposed / Out of scope
+gate from `src/claims.rs`; `refuse embeddings|lora|multinode|…` and
+`memory embed` / `learn lora` exit 2 with substitutes. No claim laundering —
+embeddings and multi-node stay Proposed; LoRA/weights/NPU stay Out of scope.

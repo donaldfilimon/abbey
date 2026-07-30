@@ -3,6 +3,7 @@
 mod actions;
 mod agent;
 mod build_info;
+mod claims;
 mod cli;
 mod commands;
 mod config;

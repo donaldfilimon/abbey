@@ -38,6 +38,11 @@ pub const SLASH_CATALOG: &[SlashCmd] = &[
         kind: SlashKind::Local,
     },
     SlashCmd {
+        name: "claims",
+        help: "Current/Proposed/OOS gate: /claims [proposed|oos|refuse …]",
+        kind: SlashKind::Local,
+    },
+    SlashCmd {
         name: "model",
         help: "Show or set default model alias/id",
         kind: SlashKind::Local,
