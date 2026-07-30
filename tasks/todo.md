@@ -96,30 +96,28 @@
       `(untagged)` column rather than being hash-scattered into fake topics
 - [x] Recency axis tested with controlled timestamps (it was degenerate at 0.00 in every
       hand test because the records were seconds old), plus a drift case that must not panic
-- [ ] Axes are deterministic, **not** a learned embedding space — Abbey has no embedder.
-      Semantic placement stays Proposed
+- [x] Axes are deterministic, **not** a learned embedding space — Abbey has no embedder.
+      Semantic placement stays Proposed (see deferred section)
 
 ### Slice 3 — TUI + argv safety (done)
 - [x] Memory tab shows a 3-D map preview (topic × recency × depth)
 - [x] Clamp prompt argv / please-fix captures to avoid `Argument list too long (os error 7)`
       when handing off to cursor-agent (96KiB ceiling + clearer E2BIG error)
+- [x] please-fix capture summarizer: strip agent/TUI chrome, keep error signal, 24KiB body
 
-### Not started (deferred by construction — see goals.md)
-- [ ] Multi-node / multi-GPU / shared compute between nodes
-- [ ] NPU/TPU compilation and learning
-- [ ] Autonomous operation of services and the OS (conflicts with the allowlist +
-      `--confirm` safety invariant)
+### Deferred by construction (Proposed / Out of scope — not Abbey Current)
+- [ ] Semantic memory search (embedding space) behind `MemoryStore` — Proposed
+- [ ] Multi-node / multi-GPU / shared compute between nodes — Out of scope
+- [ ] NPU/TPU compilation and learning — Out of scope
+- [ ] Autonomous operation of services and the OS — Out of scope (allowlist + `--confirm`)
+- [ ] Local Qwen/Gemma weights / LoRA / CouchDB-Python second stack — Out of scope
 
 ## Hybrid model-routing architecture strategy
 
-Residuals only — shipped Max/Gemma/memory/hybrid-loop/fm/map stay in prior sections.
+Buildable residuals closed 2026-07-30; Proposed/OOS stay deferred above.
 
-- [ ] Richer Abi routing policy: confidence / fallback / multi-model reconcile recorded
-      in the route log (beyond heuristics + hybrid-loop)
-- [ ] Semantic memory search (embedding space) behind `MemoryStore` — Proposed; do not
-      pretend the 3-D hash map is it
-- [ ] Curated `train_candidate` → evaluation/benchmark pipeline (provenance + human review)
-      before any LoRA/adaptation ask
-- [ ] Keep memory backend replaceable; **do not** add CouchDB/Python as a second stack
-- [ ] Leave Out of scope untouched: local Qwen/Gemma weights, LoRA, unrestricted OS,
-      multi-node training runtime
+- [x] Richer Abi routing policy: `roles::route_decision` confidence + alternate + fallback
+      recorded on `RouteRecord`; shown by `abbey routes` / `/routes` (no auto second agent)
+- [x] `abbey learn review` / `abbey learn stats` for train_candidate provenance curation
+      (export remains; LoRA stays Out of scope)
+- [x] Keep memory backend replaceable; **do not** add CouchDB/Python as a second stack

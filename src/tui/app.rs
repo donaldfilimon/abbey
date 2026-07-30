@@ -192,7 +192,7 @@ impl App {
             config::wdbx_cli_status(&ac),
             "os-control: abbey os dry-run|execute --confirm (cross-platform allowlist)".into(),
             "parallel:   abbey parallel <prompt> (Max+Gemma+Aviva lanes)".into(),
-            "learn:      abbey learn correction|preference|routes|digest".into(),
+            "learn:      abbey learn correction|preference|routes|digest|review|stats".into(),
         ]);
         self.doctor_lines = lines;
         self.history = self.state.history(40);

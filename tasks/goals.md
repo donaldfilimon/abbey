@@ -41,7 +41,7 @@ status: done
 status: done
 
 ## Hybrid model-routing architecture strategy
-status: todo
+status: done
 
 Captured 2026-07-30 from the Hybrid Model Routing and Memory Architecture Strategy
 brief. Coarse intention: formalize model specialization as a first-class principle
@@ -50,19 +50,12 @@ changeable technical worker role; Gemma = visual/conversational), keep memory
 backend-replaceable with provenance, delay LoRA/fine-tuning until curated data
 exists, treat activity+corrections as future training substrate.
 
-**Already Current in Abbey (do not re-build):** Max/Gemma role bindings (not local
-weights), persona contracts via `abi-ai`, route log + hybrid-loop correlation,
-`MemoryStore` abstraction with stm/ltm/activity/train_candidate, SQLite default +
-optional WDBX (`--features wdbx`), self-learn + reflect, fm on-device backend,
-interpretable 3-D map (topic × recency × consolidation). Claims gate and
-Out-of-scope (local weights, LoRA, fake cost, unrestricted OS) stay binding.
+**Closed as Current (buildable slices):** richer `route_decision` confidence /
+alternate / fallback on the route log (audit only — no second execution path);
+`abbey learn review` + `stats` for train_candidate provenance curation; please-fix
+capture summarizer + argv clamp. Already-shipped Max/Gemma/personas/memory/hybrid-loop/
+fm/3-D map remain as before.
 
-**Open residuals for this goal (Proposed / next slices):**
-- Richer Abi routing policy (confidence, cost/latency, fallback, multi-model
-  reconcile) beyond today's heuristics + hybrid-loop
-- Semantic/learned memory embedding space (map today is deterministic, not an
-  embedder)
-- Curated train_candidate → evaluation/benchmark pipeline before any adaptation
-- Optional CouchDB/Python interim is **not** Abbey's path (Rust + SQLite/WDBX);
-  keep the abstraction, do not add a second memory stack for the brief's wording
-- Multi-node / NPU-TPU learning / autonomous OS remain Out of scope
+**Residuals stay Proposed / Out of scope (not laundered):** semantic embedding
+space; multi-node / NPU-TPU learning; autonomous OS; local weights / LoRA;
+CouchDB/Python second memory stack. Claims gate in AGENTS.md stays binding.

@@ -191,13 +191,18 @@ pub fn run_cli(cli: Cli, state: AbbeyState, mut cfg: AgentConfig) -> Result<i32>
                 return Ok(1);
             }
             for r in records {
+                let alt = r.alternate.as_deref().unwrap_or("-");
+                let fb = r.fallback.as_deref().unwrap_or("-");
                 println!(
-                    "{}\t{}\t{}\t{}\t{}\t{}",
+                    "{}\t{}\t{}\t{}\t{:.2}\t{}\talt={}\tfb={}\t{}",
                     r.ts,
                     r.persona,
                     r.role,
                     r.model,
+                    r.confidence,
                     r.stage.as_deref().unwrap_or("-"),
+                    alt,
+                    fb,
                     r.reason
                 );
             }

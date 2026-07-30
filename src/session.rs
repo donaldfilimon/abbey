@@ -136,10 +136,11 @@ pub fn hybrid_run(
     let abbey_cfg = config::AbbeyConfig::load().unwrap_or_default();
 
     let persona = persona::select_persona(&joined);
-    let role = roles::select_role(
+    let decision = roles::route_decision(
         &joined,
         role_override.or_else(|| WorkerRole::parse(&abbey_cfg.default_role)),
     );
+    let role = decision.primary;
     let model_alias = match role {
         WorkerRole::Gemma => abbey_cfg.roles.gemma.as_str(),
         WorkerRole::Max | WorkerRole::Auto => {
@@ -159,7 +160,7 @@ pub fn hybrid_run(
         "persona={} role={} class={:?}",
         persona.label(),
         role.label(),
-        roles::classify_task(&joined)
+        decision.class
     );
     let rec = route_log::RouteRecord::new(
         state.cwd.display().to_string(),
@@ -167,7 +168,11 @@ pub fn hybrid_run(
         role.label(),
         cfg.model.clone(),
         reason,
-        0.75,
+        decision.confidence,
+    )
+    .with_routing(
+        decision.alternate.map(|r| r.label().to_string()),
+        decision.fallback,
     );
     let _ = route_log::append_route_record(&state.state_dir, &rec);
     record_activity(state, persona, role, &joined, &cfg.model);

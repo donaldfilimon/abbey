@@ -159,7 +159,7 @@ pub const SLASH_CATALOG: &[SlashCmd] = &[
     },
     SlashCmd {
         name: "learn",
-        help: "Self-learn: correction|preference|routes|digest",
+        help: "Self-learn: correction|preference|routes|digest|review|stats",
         kind: SlashKind::Local,
     },
     SlashCmd {

@@ -127,6 +127,57 @@ pub fn status(state: &AbbeyState) -> Result<()> {
     Ok(())
 }
 
+/// Human-review listing of `train_candidate` rows (no LoRA / export-to-weights).
+pub fn review_train(state: &AbbeyState, limit: usize) -> Result<()> {
+    let mem = open_mem(state)?;
+    let rows = mem.filter(Some("train_candidate"), None, limit)?;
+    if rows.is_empty() {
+        println!("(no train_candidate records — `abbey learn train <text>`)");
+        return Ok(());
+    }
+    let mut missing_prov = 0usize;
+    for r in &rows {
+        let prov_ok = !r.provenance.trim().is_empty();
+        if !prov_ok {
+            missing_prov += 1;
+        }
+        let preview: String = r.payload.chars().take(120).collect();
+        println!(
+            "{}\tconf={:.2}\tprov={}\t{}",
+            r.id,
+            r.confidence,
+            if prov_ok { "ok" } else { "MISSING" },
+            preview
+        );
+    }
+    println!(
+        "review: {} candidate(s); {} missing provenance (required before any adaptation)",
+        rows.len(),
+        missing_prov
+    );
+    Ok(())
+}
+
+/// Counts for train_candidate curation — evaluation substrate, not a trainer.
+pub fn train_stats(state: &AbbeyState) -> Result<()> {
+    let mem = open_mem(state)?;
+    let rows = mem.filter(Some("train_candidate"), None, 10_000)?;
+    let with_prov = rows
+        .iter()
+        .filter(|r| !r.provenance.trim().is_empty())
+        .count();
+    let high = rows.iter().filter(|r| r.confidence >= 0.9).count();
+    println!("train_candidate: total={}", rows.len());
+    println!("  with_provenance={with_prov}");
+    println!(
+        "  missing_provenance={}",
+        rows.len().saturating_sub(with_prov)
+    );
+    println!("  high_confidence(>=0.9)={high}");
+    println!("note: export via `abbey learn export train_candidate`; LoRA is out of scope");
+    Ok(())
+}
+
 pub fn dispatch(state: &AbbeyState, args: &[String]) -> Result<i32> {
     if args.is_empty() {
         status(state)?;
@@ -182,9 +233,18 @@ pub fn dispatch(state: &AbbeyState, args: &[String]) -> Result<i32> {
             }
             Ok(0)
         }
+        "review" => {
+            let n: usize = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(50);
+            review_train(state, n)?;
+            Ok(0)
+        }
+        "stats" => {
+            train_stats(state)?;
+            Ok(0)
+        }
         other => bail!(
             "unknown learn subcommand `{other}`\n\
-             usage: abbey learn [status|correction|train|preference|routes|digest|export]"
+             usage: abbey learn [status|correction|train|preference|routes|digest|export|review|stats]"
         ),
     }
 }

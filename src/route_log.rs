@@ -25,6 +25,12 @@ pub struct RouteRecord {
     /// Stage name within a correlated run (`interpret`, `implement`, …).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stage: Option<String>,
+    /// Alternate role Abi considered (not auto-invoked).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alternate: Option<String>,
+    /// Fallback note when confidence is low (audit only — no second agent path).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fallback: Option<String>,
 }
 
 impl RouteRecord {
@@ -47,6 +53,8 @@ impl RouteRecord {
             tools: Vec::new(),
             correlation: None,
             stage: None,
+            alternate: None,
+            fallback: None,
         }
     }
 
@@ -54,6 +62,12 @@ impl RouteRecord {
     pub fn in_stage(mut self, correlation: impl Into<String>, stage: impl Into<String>) -> Self {
         self.correlation = Some(correlation.into());
         self.stage = Some(stage.into());
+        self
+    }
+
+    pub fn with_routing(mut self, alternate: Option<String>, fallback: Option<String>) -> Self {
+        self.alternate = alternate;
+        self.fallback = fallback;
         self
     }
 }
