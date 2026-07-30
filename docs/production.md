@@ -9,10 +9,13 @@
 ## Release gate
 
 ```bash
-./check.sh          # fmt + clippy -D warnings + test
+./check.sh          # fmt + clippy -D warnings + test, for BOTH feature sets
 ./install.sh        # release binary → ~/.local/bin/abbey
 abbey doctor        # build stamp + persona/role/memory/os honesty
 ```
+
+`check.sh` runs clippy/test twice: default features, then `--features wdbx`. A bare
+`cargo test` never compiles `src/memory/wdbx.rs`, so it can pass while that code is broken.
 
 `check.sh` is the production bar. Do not ship if it fails.
 
@@ -33,6 +36,7 @@ abbey doctor        # build stamp + persona/role/memory/os honesty
 
 - Chat/model/history/routes: `$XDG_STATE_HOME/abbey` (or `~/.local/state/abbey`)
 - Memory SQLite: `…/abbey/memory.sqlite`
+- Memory WDBX (feature `wdbx`): `…/abbey/wdbx/` (segments + WAL)
 - Never commit state dirs
 
 ## Safety

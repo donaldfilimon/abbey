@@ -4,7 +4,7 @@ use crate::agent::AgentConfig;
 use crate::config;
 use crate::inventory;
 use crate::learn;
-use crate::memory::{MemoryStore, SqliteMemory};
+use crate::memory;
 use crate::models;
 use crate::persona;
 use crate::roles;
@@ -86,9 +86,11 @@ impl App {
     }
 
     pub fn refresh_memory(&mut self) {
-        let path = SqliteMemory::path_for_state_dir(&self.state.state_dir);
-        let mut lines = vec![format!("sqlite: {}", path.display())];
-        if let Ok(mem) = SqliteMemory::open(&path) {
+        let backend = config::AbbeyConfig::load()
+            .unwrap_or_default()
+            .memory_backend;
+        let mut lines = vec![memory::backend_status(&self.state.state_dir, &backend)];
+        if let Ok(mem) = memory::open_backend(&self.state.state_dir, &backend) {
             for layer in ["stm", "ltm", "activity", "train_candidate"] {
                 let n = mem
                     .filter(Some(layer), None, 500)
@@ -156,10 +158,8 @@ impl App {
             format!("no-resume: {}", self.cfg.no_resume),
             "personas:   Abbey · Aviva · Abi (abi-ai)".into(),
             "roles:      Max→technical · Gemma→visual (cursor-agent bindings)".into(),
-            format!(
-                "memory:     {}",
-                SqliteMemory::path_for_state_dir(&self.state.state_dir).display()
-            ),
+            memory::backend_status(&self.state.state_dir, &ac.memory_backend),
+            memory::feature_status(),
             config::wdbx_cli_status(&ac),
             "os-control: abbey os dry-run|execute --confirm (cross-platform allowlist)".into(),
             "parallel:   abbey parallel <prompt> (Max+Gemma+Aviva lanes)".into(),

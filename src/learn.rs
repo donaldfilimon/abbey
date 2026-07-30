@@ -1,13 +1,20 @@
 //! Self-learning from user corrections, routes, and activity → memory layers.
 
-use crate::memory::{MemoryRecord, MemoryStore, SqliteMemory};
+use crate::config;
+use crate::memory::{self, MemoryRecord, MemoryStore};
 use crate::route_log;
 use crate::state::AbbeyState;
 use anyhow::{Result, bail};
 use std::path::Path;
 
-pub fn open_mem(state: &AbbeyState) -> Result<SqliteMemory> {
-    SqliteMemory::open(&SqliteMemory::path_for_state_dir(&state.state_dir))
+fn configured_backend() -> String {
+    config::AbbeyConfig::load()
+        .unwrap_or_default()
+        .memory_backend
+}
+
+pub fn open_mem(state: &AbbeyState) -> Result<Box<dyn MemoryStore>> {
+    memory::open_backend(&state.state_dir, &configured_backend())
 }
 
 /// Capture an explicit user correction into LTM (+ optional train_candidate).
@@ -97,12 +104,10 @@ pub fn learn_preference(state: &AbbeyState, preference: &str) -> Result<String> 
 }
 
 pub fn status(state: &AbbeyState) -> Result<()> {
-    let path = SqliteMemory::path_for_state_dir(&state.state_dir);
-    println!("learn store: {}", path.display());
-    if !path.exists() {
-        println!("(empty — capture corrections / run learn routes)");
-        return Ok(());
-    }
+    println!(
+        "learn store: {}",
+        memory::backend_status(&state.state_dir, &configured_backend())
+    );
     let mem = open_mem(state)?;
     for layer in ["stm", "ltm", "activity", "train_candidate"] {
         let n = mem.filter(Some(layer), Some("self-learn"), 500)?.len();
@@ -182,8 +187,7 @@ pub fn dispatch(state: &AbbeyState, args: &[String]) -> Result<i32> {
 
 /// Inject top LTM preferences into a prompt (self-learning context).
 pub fn preference_context(state_dir: &Path, limit: usize) -> String {
-    let path = SqliteMemory::path_for_state_dir(state_dir);
-    let Ok(mem) = SqliteMemory::open(&path) else {
+    let Ok(mem) = memory::open_backend(state_dir, &configured_backend()) else {
         return String::new();
     };
     let Ok(prefs) = mem.filter(Some("ltm"), Some("preference"), limit) else {

@@ -50,10 +50,7 @@ impl SqliteMemory {
     }
 
     fn validate_train(rec: &MemoryRecord) -> Result<()> {
-        if rec.retention == "train_candidate" && rec.provenance.trim().is_empty() {
-            bail!("train_candidate requires non-empty provenance");
-        }
-        Ok(())
+        super::validate_train(rec)
     }
 
     fn row_to_rec(row: &rusqlite::Row<'_>) -> rusqlite::Result<MemoryRecord> {
@@ -240,29 +237,7 @@ impl MemoryStore for SqliteMemory {
     }
 
     fn reflect(&self) -> Result<ReflectReport> {
-        let all = self.filter(None, None, 500)?;
-        let mut report = ReflectReport::default();
-        for r in &all {
-            if r.confidence < 0.4 {
-                report.low_confidence.push(r.id.clone());
-            }
-            if r.supersedes.is_some() || r.obsolete {
-                report.superseded.push(r.id.clone());
-            }
-        }
-        for i in 0..all.len() {
-            for j in (i + 1)..all.len() {
-                let a = &all[i].summary;
-                let b = &all[j].summary;
-                let prefix_len = 24.min(a.len()).min(b.len());
-                if prefix_len >= 12 && a[..prefix_len] == b[..prefix_len] {
-                    report
-                        .duplicate_summaries
-                        .push((all[i].id.clone(), all[j].id.clone()));
-                }
-            }
-        }
-        Ok(report)
+        Ok(super::reflect_over(&self.filter(None, None, 500)?))
     }
 }
 

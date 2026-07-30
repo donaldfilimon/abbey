@@ -1,10 +1,15 @@
 //! Replaceable memory backends (SQLite interim; WDBX later).
 
 mod sqlite;
+#[cfg(feature = "wdbx")]
+mod wdbx;
 
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 
 pub use sqlite::SqliteMemory;
+#[cfg(feature = "wdbx")]
+pub use wdbx::WdbxMemory;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoryRecord {
@@ -59,6 +64,126 @@ pub struct ReflectReport {
     pub duplicate_summaries: Vec<(String, String)>,
     pub low_confidence: Vec<String>,
     pub superseded: Vec<String>,
+}
+
+/// Open the backend named by config/`ABBEY_MEMORY_BACKEND`.
+///
+/// `wdbx` is only selectable when the crate was built with `--features wdbx`;
+/// otherwise it falls back to SQLite rather than failing a session, and
+/// [`backend_status`] reports why.
+pub fn open_backend(state_dir: &Path, backend: &str) -> anyhow::Result<Box<dyn MemoryStore>> {
+    match resolved_backend(backend) {
+        Backend::Sqlite => Ok(Box::new(SqliteMemory::open(
+            &SqliteMemory::path_for_state_dir(state_dir),
+        )?)),
+        #[cfg(feature = "wdbx")]
+        Backend::Wdbx => Ok(Box::new(WdbxMemory::open(
+            &WdbxMemory::path_for_state_dir(state_dir),
+        )?)),
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Backend {
+    Sqlite,
+    #[cfg(feature = "wdbx")]
+    Wdbx,
+}
+
+fn resolved_backend(requested: &str) -> Backend {
+    match requested.trim().to_ascii_lowercase().as_str() {
+        #[cfg(feature = "wdbx")]
+        "wdbx" => Backend::Wdbx,
+        _ => Backend::Sqlite,
+    }
+}
+
+/// Whether this binary was compiled with the in-process WDBX backend linked in.
+pub fn feature_status() -> String {
+    if cfg!(feature = "wdbx") {
+        "wdbx:       in-process abi-wdbx linked (feature `wdbx` on)".into()
+    } else {
+        "wdbx:       in-process backend NOT linked (rebuild with `--features wdbx`)".into()
+    }
+}
+
+/// One honest line describing which backend a run will actually use.
+pub fn backend_status(state_dir: &Path, backend: &str) -> String {
+    let requested = backend.trim().to_ascii_lowercase();
+    match resolved_backend(&requested) {
+        #[cfg(feature = "wdbx")]
+        Backend::Wdbx => {
+            let dir = WdbxMemory::path_for_state_dir(state_dir);
+            format!(
+                "memory:     wdbx {} ({}, in-process abi-wdbx)",
+                dir.display(),
+                if dir.exists() {
+                    "present"
+                } else {
+                    "will create on first write"
+                }
+            )
+        }
+        Backend::Sqlite => {
+            let path = SqliteMemory::path_for_state_dir(state_dir);
+            let note = if requested == "wdbx" {
+                " [requested wdbx — binary built without `--features wdbx`]"
+            } else {
+                ""
+            };
+            format!(
+                "memory:     sqlite {} ({}){note}",
+                path.display(),
+                if path.exists() {
+                    "present"
+                } else {
+                    "will create on first write"
+                }
+            )
+        }
+    }
+}
+
+/// First `n` **chars** of `s` (never slices mid-codepoint).
+fn char_prefix(s: &str, n: usize) -> &str {
+    match s.char_indices().nth(n) {
+        Some((idx, _)) => &s[..idx],
+        None => s,
+    }
+}
+
+/// Shared reflection pass so every backend reports duplicates / low confidence /
+/// superseded identically. Never deletes — it only reports.
+pub fn reflect_over(all: &[MemoryRecord]) -> ReflectReport {
+    let mut report = ReflectReport::default();
+    for r in all {
+        if r.confidence < 0.4 {
+            report.low_confidence.push(r.id.clone());
+        }
+        if r.supersedes.is_some() || r.obsolete {
+            report.superseded.push(r.id.clone());
+        }
+    }
+    for i in 0..all.len() {
+        for j in (i + 1)..all.len() {
+            let a = char_prefix(&all[i].summary, 24);
+            let b = char_prefix(&all[j].summary, 24);
+            if a.chars().count() >= 12 && a == b {
+                report
+                    .duplicate_summaries
+                    .push((all[i].id.clone(), all[j].id.clone()));
+            }
+        }
+    }
+    report
+}
+
+/// Reject `train_candidate` records without provenance, on every backend.
+pub fn validate_train(rec: &MemoryRecord) -> anyhow::Result<()> {
+    if rec.retention == "train_candidate" && rec.provenance.trim().is_empty() {
+        anyhow::bail!("train_candidate requires non-empty provenance");
+    }
+    Ok(())
 }
 
 pub trait MemoryStore {

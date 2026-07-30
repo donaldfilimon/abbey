@@ -17,14 +17,25 @@
 - [x] `abbey memory reflect` / learn digest (duplicates / low-confidence listing)
 
 ### Phase 3 — WDBX bridge
-- [ ] Feature `wdbx`: path-dep `abi-wdbx`; `WdbxMemory` trait impl
-- [ ] Fallback: `abbey wdbx` subprocess to `abi wdbx … --json` when feature off
-- [ ] Doctor line for WDBX path/status; no SEA/learn duplication in Abbey
+- [x] Feature `wdbx`: optional path-dep `abi-wdbx`; `WdbxMemory` implements the full
+      `MemoryStore` trait over `DurableStore` KV (records as JSON under `mem/<id>`)
+- [x] Backend dispatch: `memory::open_backend` → `Box<dyn MemoryStore>`; all call sites
+      (session/learn/doctor/tui) route through config `memory_backend`
+- [x] Fallback: `abbey wdbx <query|db|…>` subprocess to `abi wdbx …` (`query` gains `--json`);
+      `stats`/`checkpoint` answered in-process. **argv construction unit-tested only** —
+      the live subprocess path is unverified here because `abi` is a shell alias, not a
+      binary on PATH; the bridge errors honestly instead of pretending
+- [x] Doctor lines for backend path/status + whether the feature is linked; no SEA/learn
+      duplication in Abbey
+- [x] `check.sh` extended with `--features wdbx` clippy + test (the default run never
+      compiles the gated code, so it could otherwise rot silently)
 
 ### Phase 4 — TUI + operational loop
 - [x] TUI tabs: Personas, Memory, Skills (+ Home/Chats/Models/Doctor)
 - [x] Doctor: persona prior, role bindings (Max→id, Gemma→id), memory backend
-- [ ] Hybrid visual+code loop: Gemma interpret → Max implement; Abi route log links both
+- [x] Hybrid visual+code loop: `abbey hybrid-loop` runs Gemma interpret → Max implement;
+      both stages carry a shared `correlation` id in the route log, queryable via
+      `abbey routes --correlation <id>` (unit-tested linkage; verified live end-to-end)
 
 ### Phase 5 — Config and migration
 - [x] `~/.config/abbey/config.toml`: role→model, default persona, memory backend

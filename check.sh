@@ -12,6 +12,14 @@ cargo clippy --all-targets -- -D warnings
 echo "== test =="
 cargo test
 
+# The wdbx backend is behind an off-by-default feature, so the default-feature
+# clippy/test runs above never compile it. Gate it explicitly or it can rot.
+echo "== clippy (--features wdbx) =="
+cargo clippy --features wdbx --all-targets -- -D warnings
+
+echo "== test (--features wdbx) =="
+cargo test --features wdbx
+
 echo "== file size guard (main < 200, others warn > 800) =="
 python3 - <<'PY'
 from pathlib import Path

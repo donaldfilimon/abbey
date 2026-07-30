@@ -237,11 +237,25 @@ pub enum Commands {
     Routes {
         #[arg(default_value_t = 10)]
         n: usize,
+        /// Show only the stages of one correlated run (see `abbey hybrid-loop`)
+        #[arg(long)]
+        correlation: Option<String>,
     },
     /// Cross-platform OS control (dry-run default; execute --confirm)
     Os {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
+    },
+    /// WDBX bridge: `abi wdbx …` passthrough (query gets --json)
+    Wdbx {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+    /// Gemma interpret → Max implement, linked in the route log
+    #[command(name = "hybrid-loop", visible_alias = "loop")]
+    HybridLoop {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        prompt: Vec<String>,
     },
     /// Self-learn: corrections, preferences, route digest, export
     Learn {

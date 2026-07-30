@@ -4,7 +4,7 @@ use crate::agent::{AgentConfig, Worktree, run_resilient};
 use crate::cli::{Cli, ExecMode};
 use crate::config;
 use crate::learn;
-use crate::memory::{MemoryRecord, MemoryStore, SqliteMemory};
+use crate::memory::{self, MemoryRecord, MemoryStore};
 use crate::models::resolve_model;
 use crate::persona;
 use crate::roles::{self, WorkerRole};
@@ -69,9 +69,12 @@ pub fn apply_global_flags(cli: &Cli, state: &AbbeyState, cfg: &mut AgentConfig) 
     Ok(())
 }
 
-pub fn open_memory(state: &AbbeyState) -> Result<SqliteMemory> {
-    let path = SqliteMemory::path_for_state_dir(&state.state_dir);
-    SqliteMemory::open(&path)
+/// Open the configured memory backend (sqlite by default; wdbx under `--features wdbx`).
+pub fn open_memory(state: &AbbeyState) -> Result<Box<dyn MemoryStore>> {
+    let backend = config::AbbeyConfig::load()
+        .unwrap_or_default()
+        .memory_backend;
+    memory::open_backend(&state.state_dir, &backend)
 }
 
 pub fn hybrid_run(

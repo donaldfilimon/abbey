@@ -6,7 +6,7 @@ use crate::cli::{MemoryCmd, VERSION};
 use crate::config;
 use crate::gitops;
 use crate::init;
-use crate::memory::{MemoryRecord, MemoryStore, SqliteMemory};
+use crate::memory::{self, MemoryRecord};
 use crate::output;
 use crate::persona;
 use crate::roles::{self, WorkerRole};
@@ -238,16 +238,11 @@ pub fn cmd_doctor(state: &AbbeyState, cfg: &AgentConfig) -> Result<i32> {
     for line in roles::role_status_lines(&abbey_cfg.roles.max, &abbey_cfg.roles.gemma) {
         let _ = output::println(line);
     }
-    let mem_path = SqliteMemory::path_for_state_dir(&state.state_dir);
-    let _ = output::println(format!(
-        "memory:     sqlite {} ({})",
-        mem_path.display(),
-        if mem_path.exists() {
-            "present"
-        } else {
-            "will create on first write"
-        }
+    let _ = output::println(memory::backend_status(
+        &state.state_dir,
+        &abbey_cfg.memory_backend,
     ));
+    let _ = output::println(memory::feature_status());
     let _ = output::println(config::wdbx_cli_status(&abbey_cfg));
     let hist = state.history(5);
     if !hist.is_empty() {

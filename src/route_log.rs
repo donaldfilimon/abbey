@@ -18,6 +18,13 @@ pub struct RouteRecord {
     pub confidence: f32,
     #[serde(default)]
     pub tools: Vec<String>,
+    /// Shared id linking the stages of one multi-stage run (e.g. the
+    /// Gemma-interpret → Max-implement hybrid loop). `None` for single-shot runs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub correlation: Option<String>,
+    /// Stage name within a correlated run (`interpret`, `implement`, …).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stage: Option<String>,
 }
 
 impl RouteRecord {
@@ -38,8 +45,26 @@ impl RouteRecord {
             reason: reason.into(),
             confidence,
             tools: Vec::new(),
+            correlation: None,
+            stage: None,
         }
     }
+
+    /// Tag this record as one stage of a correlated multi-stage run.
+    pub fn in_stage(mut self, correlation: impl Into<String>, stage: impl Into<String>) -> Self {
+        self.correlation = Some(correlation.into());
+        self.stage = Some(stage.into());
+        self
+    }
+}
+
+/// All records sharing `correlation`, oldest first — the linked view of one
+/// multi-stage run.
+pub fn correlated_routes(state_dir: &Path, correlation: &str) -> Result<Vec<RouteRecord>> {
+    Ok(recent_routes(state_dir, usize::MAX)?
+        .into_iter()
+        .filter(|r| r.correlation.as_deref() == Some(correlation))
+        .collect())
 }
 
 pub fn route_log_path(state_dir: &Path) -> std::path::PathBuf {

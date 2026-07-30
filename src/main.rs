@@ -8,6 +8,7 @@ mod commands;
 mod config;
 mod doctor;
 mod gitops;
+mod hybrid_loop;
 mod init;
 mod inventory;
 mod learn;
@@ -26,6 +27,7 @@ mod slash;
 mod slash_dispatch;
 mod state;
 mod tui;
+mod wdbx_bridge;
 
 pub use session::hybrid_run;
 pub use slash_dispatch::dispatch_slash;

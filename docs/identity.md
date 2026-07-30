@@ -37,7 +37,12 @@ Local abi template completion remains deterministic (**Current** in ABI); hosted
 | **Max** | Code, tools, math, implementation | cursor-agent model alias (default `fable`) |
 | **Gemma** | Visual / conversational | cursor-agent model alias (default `composer`) |
 
-These are **role bindings**, not local Qwen/Gemma weights (**Proposed**).
+These are **role bindings**, not local Qwen/Gemma weights (**out of scope** — see
+[AGENTS.md](../AGENTS.md) claims gate and `tasks/lessons.md`).
+
+The two roles compose in `abbey hybrid-loop` (**Current**): Gemma interprets the request,
+Max implements against that interpretation, and Abi's route log links both stages under one
+correlation id (`abbey routes --correlation <id>`).
 
 ---
 
@@ -45,10 +50,10 @@ These are **role bindings**, not local Qwen/Gemma weights (**Proposed**).
 
 | Layer | Status |
 | --- | --- |
-| SQLite STM/LTM/activity/train_candidate | **Current** (`src/memory/`) |
+| SQLite STM/LTM/activity/train_candidate | **Current** (`src/memory/sqlite.rs`, default) |
 | `abbey learn` correction/preference/routes/digest | **Current** |
-| WDBX DurableStore in-process | **Proposed** |
-| `abi wdbx` CLI bridge when `abi` on PATH | **Current** (doctor honesty) |
+| WDBX DurableStore in-process | **Current behind `--features wdbx`** (off by default, `src/memory/wdbx.rs`) |
+| `abi wdbx` CLI bridge when `abi` on PATH | **Current** surface, **argv-tested only** — live passthrough unverified (doctor honesty) |
 
 ---
 

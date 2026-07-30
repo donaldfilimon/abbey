@@ -10,6 +10,7 @@ use crate::doctor::{
     print_permissions,
 };
 use crate::gitops;
+use crate::hybrid_loop;
 use crate::inventory;
 use crate::learn;
 use crate::models::{alias_table, resolve_model};
@@ -20,6 +21,7 @@ use crate::route_log;
 use crate::session::compact_history;
 use crate::slash;
 use crate::state::AbbeyState;
+use crate::wdbx_bridge;
 use anyhow::Result;
 use clap::CommandFactory;
 use clap_complete::{Shell as ClapShell, generate};
@@ -166,14 +168,32 @@ pub fn run_cli(cli: Cli, state: AbbeyState, mut cfg: AgentConfig) -> Result<i32>
         },
         Some(Commands::Persona { name }) => cmd_persona(name.as_deref()),
         Some(Commands::Role { name }) => cmd_role(name.as_deref()),
-        Some(Commands::Routes { n }) => {
-            for r in route_log::recent_routes(&state.state_dir, n)? {
+        Some(Commands::Routes { n, correlation }) => {
+            let records = match &correlation {
+                Some(id) => route_log::correlated_routes(&state.state_dir, id)?,
+                None => route_log::recent_routes(&state.state_dir, n)?,
+            };
+            if correlation.is_some() && records.is_empty() {
+                eprintln!("abbey: no routes for that correlation id");
+                return Ok(1);
+            }
+            for r in records {
                 println!(
-                    "{}\t{}\t{}\t{}\t{}",
-                    r.ts, r.persona, r.role, r.model, r.reason
+                    "{}\t{}\t{}\t{}\t{}\t{}",
+                    r.ts,
+                    r.persona,
+                    r.role,
+                    r.model,
+                    r.stage.as_deref().unwrap_or("-"),
+                    r.reason
                 );
             }
             Ok(0)
+        }
+        Some(Commands::Wdbx { args }) => wdbx_bridge::run(&state, &args),
+        Some(Commands::HybridLoop { prompt }) => {
+            let ac = config::AbbeyConfig::load().unwrap_or_default();
+            hybrid_loop::run_hybrid_loop(&cfg, &state, &prompt, &ac.roles.max, &ac.roles.gemma)
         }
         Some(Commands::Os { args }) => os_control::run_os(&args, true),
         Some(Commands::Learn { args }) => learn::dispatch(&state, &args),

@@ -10,7 +10,6 @@ use crate::gitops;
 use crate::init;
 use crate::inventory;
 use crate::learn;
-use crate::memory::MemoryStore;
 use crate::models::resolve_model;
 use crate::os_control;
 use crate::parallel;

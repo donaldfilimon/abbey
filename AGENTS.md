@@ -21,6 +21,7 @@ Guidance for AI coding agents in this repository.
 
 - Build: `cargo build --release` · `./install.sh`
 - Test / lint: `./check.sh` or `cargo test` · `cargo clippy --all-targets -- -D warnings`
+- WDBX backend: `cargo build --features wdbx` (off by default; `check.sh` gates both sets)
 
 ## Layout
 
@@ -32,7 +33,10 @@ src/session.rs        hybrid_run + flags
 src/doctor.rs         doctor / persona / memory helpers
 src/prompts.rs        review/commit prompts
 src/persona.rs roles.rs route_log.rs
-src/memory/ learn.rs os_control.rs parallel.rs inventory.rs
+src/memory/          trait + sqlite + wdbx (feature-gated) backends
+src/hybrid_loop.rs   Gemma interpret → Max implement, correlated
+src/wdbx_bridge.rs   `abbey wdbx` → `abi wdbx` passthrough
+src/ learn.rs os_control.rs parallel.rs inventory.rs
 src/tui/              7-tab ratatui
 src/init.rs gitops.rs agent.rs models.rs state.rs config.rs
 docs/                 identity · architecture · production
@@ -65,14 +69,19 @@ See [docs/architecture.md](docs/architecture.md). Personas via `abi-ai`; Max/Gem
 | Skills/plugins inventory | ✓ | | |
 | Unique build stamp | ✓ | | |
 | Modular src/ (<1k files) | ✓ | | |
-| WDBX in-process | | ✓ | |
+| WDBX in-process (feature `wdbx`, **off by default**) | ✓ | | |
+| WDBX CLI bridge (`abbey wdbx` → `abi wdbx`) | argv-tested only | live verify | |
+| Hybrid loop (Gemma interpret → Max implement) | ✓ | | |
+| Local Qwen/Gemma weights | | | ✓ |
 | Fine-tuning / LoRA | | | ✓ |
 | Fake cost accounting | | | ✓ |
 
 ## Gotchas
 
 - Toolchain: `rust-toolchain.toml` nightly + edition 2024
-- `abi-ai` path-dep expects sibling `../abi`
+- `abi-ai` path-dep expects sibling `../abi`; `--features wdbx` also needs `../abi/crates/abi-wdbx`
+- Default `cargo clippy`/`cargo test` never compile the `wdbx` module — use `./check.sh`,
+  which runs both feature sets, or gated code rots unnoticed
 - Git helpers need a real repo history
 - OS execute always needs `--confirm`
 

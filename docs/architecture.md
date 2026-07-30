@@ -15,8 +15,11 @@ Status key: **Current** = shipped · **Proposed** = designed, not claimed live �
 │  learn — correction / preference / digest → SQLite      │
 │  inventory — skills / plugins / peer agent tools        │
 ├─────────────────────────────────────────────────────────┤
+│  hybrid_loop — Gemma interpret → Max implement (linked) │
+│  wdbx_bridge — `abbey wdbx` → `abi wdbx` passthrough    │
+├─────────────────────────────────────────────────────────┤
 │  abi-ai (path) — Abbey/Aviva/Abi contracts + router     │
-│  memory — SQLite interim (WDBX bridge Proposed)         │
+│  memory — SQLite (default) · WDBX (feature `wdbx`)      │
 │  agent — cursor-agent / grok executor                   │
 └─────────────────────────────────────────────────────────┘
 ```
@@ -33,7 +36,9 @@ Status key: **Current** = shipped · **Proposed** = designed, not claimed live �
 | `doctor` | Doctor/debug/persona/role/memory/init helpers |
 | `prompts` | Review/commit prompt builders |
 | `persona` / `roles` / `route_log` | Hybrid routing spine |
-| `memory` | Trait + SQLite store |
+| `memory` | Trait + backend dispatch (`open_backend` → `Box<dyn MemoryStore>`); SQLite default, WDBX under `--features wdbx` |
+| `hybrid_loop` | Two-stage Gemma→Max run, correlated in the route log |
+| `wdbx_bridge` | `abbey wdbx` — `abi wdbx` passthrough + in-process `stats`/`checkpoint` |
 | `learn` | Self-learn capture/digest |
 | `os_control` | Cross-platform OS policy |
 | `parallel` | Multi-lane fan-out |
@@ -59,10 +64,16 @@ Status key: **Current** = shipped · **Proposed** = designed, not claimed live �
 - Parallel lanes; OS allowlist; skills/plugins inventory
 - Unique `ABBEY_BUILD_STAMP`; 7-tab TUI
 - `/init` project scan → AGENTS.md
+- In-process `abi-wdbx` `DurableStore` memory backend — **behind `--features wdbx`, off by
+  default**; `check.sh` gates both feature sets
+- `abbey hybrid-loop` two-stage Gemma→Max run with correlated route records
 
 ## Proposed (not Current)
 
-- In-process `abi-wdbx` DurableStore feature
+- Live-verified `abi wdbx` subprocess passthrough (argv construction is tested; the
+  passthrough itself is unverified while `abi` is not a binary on PATH)
+- Vector/embedding search through WDBX (`put_vector`/`search`) — the backend currently
+  uses the KV space only
 - Local Qwen 3.5 / Gemma 4 weights
 - LoRA / fine-tuning runners
 - Dedicated distributed agents
