@@ -126,9 +126,13 @@ abbey reason "should we split session.rs further?"
 abbey --thinking xhigh "…"
 abbey /reason compare sqlite vs wdbx for this workload
 
-# Tools
-abbey --approve-mcps "use my MCP tools to check status"
-abbey mcp list
+# MCP / ACP
+abbey mcp                  # inventory ~/.cursor/mcp.json + project configs
+abbey mcp paths
+abbey mcp list             # cursor-agent's view / approval list
+abbey --approve-mcps "…"   # tools run inside cursor-agent during a turn
+abbey acp                  # ACP peers (gemini --acp, opencode acp, …)
+abbey acp run gemini       # start ACP stdio server for an ACP host to attach
 
 # Voice (macOS — Premium/Enhanced when downloaded)
 abbey voice voices

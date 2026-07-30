@@ -63,7 +63,9 @@ Routing decisions record **confidence**, **alternate**, and **fallback** on `rou
 | Local vision / video / generation weights | **Out of scope** |
 | `--thinking <level>` · `/think` · `abbey reason` · `/reason` | **Current** — Cursor `*-thinking-*` + structured reasoning wrap (not Abbey CoT UI) |
 | Tools during a run | **Current via cursor-agent** (`--print` has tool access; `--approve-mcps`) |
-| `abbey mcp` / `/mcp` · skills/plugins inventory | **Current** passthrough / discovery |
+| `abbey mcp` / `/mcp` config inventory + cursor-agent management | **Current** (not an MCP host runtime) |
+| `abbey acp` peer inventory / `acp run` | **Current** — launches gemini/opencode ACP stdio; not an ACP host |
+| skills/plugins inventory | **Current** |
 | Tools / generation under `ABBEY_BACKEND=fm` | **N/A** — refuse with exit 2 |
 | `abbey voice` / `speak` / `listen` / `ask` | **Current (macOS)** — Premium/Enhanced `say` TTS + on-device Speech STT |
 | Cloud TTS/STT subscriptions · local neural voice weights | **Out of scope** (use System Settings downloads for Premium voices) |

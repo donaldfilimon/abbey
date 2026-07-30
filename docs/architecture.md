@@ -43,6 +43,7 @@ Status key: **Current** = shipped · **Proposed** = designed, not claimed live �
 | `media` | Image/video path attach → `--add-dir` + prompt note (no local vision) |
 | `generate` | Imagine/video gen prompts + structured `reason` (via cursor-agent tools) |
 | `voice` | macOS Premium/Enhanced TTS (`say`) + on-device STT (`scripts/abbey-stt.swift`) |
+| `protocols` | MCP config inventory + ACP peer discovery/launch (not a host runtime) |
 | `learn` | Self-learn capture/digest/review/stats |
 | `os_control` | Cross-platform OS policy |
 | `parallel` | Multi-lane fan-out |
@@ -85,6 +86,9 @@ Status key: **Current** = shipped · **Proposed** = designed, not claimed live �
   (no local image/video/LoRA weights)
 - High-quality macOS voice I/O: `abbey voice speak|listen|ask` (Premium/Enhanced
   `say` voices + on-device Speech STT; not a cloud TTS subscription)
+- MCP/ACP surfaces: `abbey mcp status` reads `mcp.json` files; `abbey mcp list|…`
+  passthrough to cursor-agent; `abbey acp list|run` discovers/launches ACP peers.
+  Abbey is not an MCP or ACP host.
 
 ## Proposed (not Current)
 

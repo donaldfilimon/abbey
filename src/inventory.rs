@@ -125,10 +125,11 @@ pub fn list_agent_tools() -> Vec<AgentTool> {
         ("agent", "cursor/grok agent alias"),
         ("abi", "ABI CLI (WDBX, personas, os, plugins)"),
         ("abi-mcp", "ABI MCP stdio server"),
+        ("gemini", "Gemini CLI (supports --acp)"),
         ("grok", "Grok Build CLI"),
         ("codex", "OpenAI Codex CLI"),
         ("claude", "Claude Code CLI"),
-        ("opencode", "OpenCode CLI"),
+        ("opencode", "OpenCode CLI (supports `acp`)"),
     ];
     PEERS
         .iter()

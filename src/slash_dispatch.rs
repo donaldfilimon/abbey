@@ -16,6 +16,7 @@ use crate::models::resolve_model;
 use crate::os_control;
 use crate::parallel;
 use crate::please_fix;
+use crate::protocols;
 use crate::route_log;
 use crate::session::{apply_media_attach, compact_history, open_memory};
 use crate::slash;
@@ -268,12 +269,12 @@ pub fn dispatch_slash(input: &str, state: &AbbeyState, cfg: &mut AgentConfig) ->
             Ok(st.code().unwrap_or(1))
         }
         "mcp" => {
-            let mut a = vec!["mcp".into()];
-            if !rest.is_empty() {
-                a.extend(rest.split_whitespace().map(String::from));
-            }
-            let st = cfg.passthrough(&a)?;
-            Ok(st.code().unwrap_or(1))
+            let args: Vec<String> = rest.split_whitespace().map(String::from).collect();
+            protocols::dispatch_mcp(cfg, &state.cwd, &args)
+        }
+        "acp" => {
+            let args: Vec<String> = rest.split_whitespace().map(String::from).collect();
+            protocols::dispatch_acp(&args)
         }
         "plan" => {
             let prompt = if rest.is_empty() {

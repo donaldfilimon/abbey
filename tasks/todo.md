@@ -150,3 +150,10 @@ Buildable residuals closed 2026-07-30; Proposed/OOS stay deferred above.
 - [x] On-device STT helper `scripts/abbey-stt.swift` (lazy `swiftc` into state `bin/`)
 - [x] CLI `abbey voice|speak` + slash `/speak` `/listen` `/voice`; `voice ask` loop
 - [x] Doctor/docs: how to download Premium voices; no cloud TTS SaaS claim
+
+## MCP / ACP protocol surfaces
+
+- [x] `protocols` module: parse `mcpServers` from standard mcp.json paths
+- [x] `abbey mcp status|paths` local inventory; other verbs → cursor-agent
+- [x] `abbey acp list|run` for gemini/opencode ACP stdio peers
+- [x] Doctor + claims: Abbey is not an MCP/ACP host runtime

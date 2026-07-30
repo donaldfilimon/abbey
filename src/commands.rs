@@ -17,6 +17,7 @@ use crate::models::{alias_table, resolve_model};
 use crate::os_control;
 use crate::parallel;
 use crate::please_fix;
+use crate::protocols;
 use crate::route_log;
 use crate::session::compact_history;
 use crate::slash;
@@ -318,11 +319,8 @@ pub fn run_cli(cli: Cli, state: AbbeyState, mut cfg: AgentConfig) -> Result<i32>
         Some(Commands::Ls) => passthrough_or_refuse(&cfg, "ls", &["ls".into()]),
         Some(Commands::Login) => passthrough_or_refuse(&cfg, "login", &["login".into()]),
         Some(Commands::Logout) => passthrough_or_refuse(&cfg, "logout", &["logout".into()]),
-        Some(Commands::Mcp { args }) => {
-            let mut a = vec!["mcp".into()];
-            a.extend(args);
-            passthrough_or_refuse(&cfg, "mcp", &a)
-        }
+        Some(Commands::Mcp { args }) => protocols::dispatch_mcp(&cfg, &state.cwd, &args),
+        Some(Commands::Acp { args }) => protocols::dispatch_acp(&args),
         Some(Commands::Plugin { args }) => inventory::run_plugin_passthrough(&args),
         Some(Commands::Completion { shell }) => {
             let mut cmd = Cli::command();

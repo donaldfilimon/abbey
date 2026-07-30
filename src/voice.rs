@@ -51,8 +51,8 @@ const NOVELTY: &[&str] = &[
 
 /// Known natural compact voices — used when Premium/Enhanced aren't installed.
 const NATURAL: &[&str] = &[
-    "Samantha", "Ava", "Allison", "Evan", "Nathan", "Zoe", "Nicky", "Noelle", "Susan",
-    "Victoria", "Karen", "Daniel", "Moira", "Fiona", "Tessa", "Veena", "Rishi", "Serena",
+    "Samantha", "Ava", "Allison", "Evan", "Nathan", "Zoe", "Nicky", "Noelle", "Susan", "Victoria",
+    "Karen", "Daniel", "Moira", "Fiona", "Tessa", "Veena", "Rishi", "Serena",
 ];
 
 fn is_macos() -> bool {

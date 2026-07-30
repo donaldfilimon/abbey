@@ -297,8 +297,25 @@ pub fn cmd_doctor(state: &AbbeyState, cfg: &AgentConfig) -> Result<i32> {
         "reasoning:  abbey reason|/reason + --thinking|/think → Cursor *-thinking-* (structured wrap)",
     );
     let _ = output::println(
-        "tools/mcp:  abbey mcp … + --approve-mcps passthrough; skills/plugins inventory; OS allowlist",
+        "tools/mcp:  abbey mcp status|list + --approve-mcps (inventory + cursor-agent; not an MCP host)",
     );
+    let _ = output::println(
+        "acp:        abbey acp list|run gemini|opencode (peer ACP servers; Abbey is not an ACP host)",
+    );
+    if let Ok(groups) = crate::protocols::load_mcp_servers(&state.cwd) {
+        let n: usize = groups.iter().map(|(_, s)| s.len()).sum();
+        let files = groups.len();
+        let _ = output::println(format!(
+            "mcp cfg:    {n} server(s) across {files} config file(s)"
+        ));
+    }
+    let acp_n = crate::protocols::acp_peers()
+        .iter()
+        .filter(|p| p.path.is_some() && !p.acp_args.is_empty())
+        .count();
+    let _ = output::println(format!(
+        "acp peers:  {acp_n} ACP-capable binary(ies) on PATH"
+    ));
     #[cfg(target_os = "macos")]
     {
         let _ = output::println(

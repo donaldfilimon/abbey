@@ -82,7 +82,9 @@ See [docs/architecture.md](docs/architecture.md). Personas via `abi-ai`; Max/Gem
 | Image/video generation via agent tools (`imagine`/`generate`) | ✓ | | local gen weights |
 | Thinking aliases + `reason` structured wrap | ✓ | | Abbey-owned CoT UI |
 | macOS voice I/O (Premium/Enhanced TTS + on-device STT) | ✓ | | cloud TTS/STT SaaS |
-| MCP/tools passthrough (`mcp`, `--approve-mcps`) | ✓ | | Abbey tool runtime |
+| MCP config inventory + cursor-agent mcp mgmt | ✓ | | Abbey as MCP host |
+| ACP peer inventory / launch (`acp run`) | ✓ | | Abbey as ACP host |
+| MCP/tools during a run (`--approve-mcps`) | ✓ | | Abbey tool runtime |
 | Semantic/learned memory embedding space | | ✓ | |
 | Multi-node · multi-GPU · shared compute | | ✓ | |
 | NPU/TPU compilation & learning | | | ✓ |

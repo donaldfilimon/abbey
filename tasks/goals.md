@@ -87,3 +87,11 @@ macOS `say` TTS with automatic Premium/Enhanced preference, on-device Apple
 Speech STT (`abbey-stt`), and `voice ask` (listen → agent → speak). Cloud TTS/STT
 SaaS and in-process neural voice weights stay Out of scope — download Apple
 Premium voices in System Settings for super-high quality.
+
+## MCP and ACP server surfaces
+status: done
+
+Config inventory for MCP (`abbey mcp status` over standard mcp.json paths) plus
+cursor-agent management passthrough; ACP peer discovery/launch for gemini and
+opencode. Abbey remains a client-side CLI — not an MCP host or ACP host. Tool
+execution during runs stays inside cursor-agent (`--approve-mcps`).

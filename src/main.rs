@@ -22,6 +22,7 @@ mod parallel;
 mod persona;
 mod please_fix;
 mod prompts;
+mod protocols;
 mod roles;
 mod route_log;
 mod session;

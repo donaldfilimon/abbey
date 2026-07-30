@@ -239,8 +239,13 @@ pub const SLASH_CATALOG: &[SlashCmd] = &[
     },
     SlashCmd {
         name: "mcp",
-        help: "Pass through to cursor-agent mcp",
-        kind: SlashKind::Agent,
+        help: "MCP inventory + cursor-agent mcp: /mcp [status|list|…]",
+        kind: SlashKind::Local,
+    },
+    SlashCmd {
+        name: "acp",
+        help: "ACP peers: /acp [list|run gemini|opencode]",
+        kind: SlashKind::Local,
     },
     SlashCmd {
         name: "debug",

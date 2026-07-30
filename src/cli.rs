@@ -364,8 +364,13 @@ pub enum Commands {
     Login,
     /// Logout (cursor-agent passthrough)
     Logout,
-    /// MCP management (Codex/Claude mcp)
+    /// MCP config inventory + cursor-agent mcp management
     Mcp {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+    /// Agent Client Protocol peer inventory / launch (not an ACP host)
+    Acp {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
