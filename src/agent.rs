@@ -223,6 +223,61 @@ pub fn which_bin(bin: &str) -> Option<PathBuf> {
     None
 }
 
+/// Soft ceiling for a single prompt argv string.
+///
+/// macOS `ARG_MAX` is typically 256KiB–1MiB and includes the environment.
+/// Huge `please-fix` captures (or pasted logs) as one trailing argv used to
+/// yield `Argument list too long (os error 7)` and abort the hand-off.
+pub const MAX_PROMPT_ARGV_BYTES: usize = 96 * 1024;
+
+/// Truncate `s` on a UTF-8 boundary so its byte length is ≤ `max_bytes`.
+pub fn truncate_utf8_bytes(s: &str, max_bytes: usize) -> String {
+    if s.len() <= max_bytes {
+        return s.to_string();
+    }
+    let marker = format!(
+        "\n\n… [truncated for OS argv limit; kept {max_bytes} of {} bytes]",
+        s.len()
+    );
+    let budget = max_bytes.saturating_sub(marker.len());
+    let mut end = budget.min(s.len());
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    let mut out = s[..end].to_string();
+    out.push_str(&marker);
+    if out.len() > max_bytes {
+        let mut e = max_bytes;
+        while e > 0 && !out.is_char_boundary(e) {
+            e -= 1;
+        }
+        out.truncate(e);
+    }
+    out
+}
+
+/// Clamp every trailing prompt string so the child argv stays under the OS limit.
+pub fn clamp_prompt_args(prompt_and_rest: &[String]) -> Vec<String> {
+    prompt_and_rest
+        .iter()
+        .map(|s| truncate_utf8_bytes(s, MAX_PROMPT_ARGV_BYTES))
+        .collect()
+}
+
+fn map_exec_err(err: std::io::Error, agent_path: &Path) -> anyhow::Error {
+    // E2BIG — Darwin/Linux typically use errno 7.
+    if err.raw_os_error() == Some(7) {
+        return anyhow::anyhow!(
+            "exec {}: Argument list too long (os error 7).\n\
+             Abbey clamps prompts to {MAX_PROMPT_ARGV_BYTES} bytes; if this still \
+             fires, shrink CURSOR_AGENT_COMPLETED_PATH / please-fix input or unset \
+             oversized environment variables.",
+            agent_path.display()
+        );
+    }
+    anyhow::Error::new(err).context(format!("exec {}", agent_path.display()))
+}
+
 impl AgentConfig {
     pub fn with_resolved_agent(mut self) -> Result<Self> {
         self.agent_path = resolve_agent()?;
@@ -278,6 +333,7 @@ impl AgentConfig {
     /// leaked `--force`/`--sandbox` would break the backend the first time a
     /// user passed one.
     fn build_args_fm(&self, resume_id: Option<&str>, prompt_and_rest: &[String]) -> Vec<String> {
+        let prompts = clamp_prompt_args(prompt_and_rest);
         let mut args = vec![
             "respond".to_string(),
             "--model".into(),
@@ -307,7 +363,7 @@ impl AgentConfig {
                 args.push(path.display().to_string());
             }
         }
-        args.extend(prompt_and_rest.iter().cloned());
+        args.extend(prompts);
         args
     }
 
@@ -315,6 +371,7 @@ impl AgentConfig {
         if self.backend == AgentBackend::Fm {
             return self.build_args_fm(resume_id, prompt_and_rest);
         }
+        let prompts = clamp_prompt_args(prompt_and_rest);
         let mut args = Vec::new();
         args.push("--model".into());
         args.push(self.model.clone());
@@ -363,7 +420,7 @@ impl AgentConfig {
                 args.push(id.to_string());
             }
         }
-        args.extend(prompt_and_rest.iter().cloned());
+        args.extend(prompts);
         args
     }
 
@@ -380,7 +437,7 @@ impl AgentConfig {
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit())
             .status()
-            .with_context(|| format!("exec {}", self.agent_path.display()))?;
+            .map_err(|e| map_exec_err(e, &self.agent_path))?;
         Ok(status)
     }
 
@@ -396,7 +453,7 @@ impl AgentConfig {
         let out = Command::new(&cfg.agent_path)
             .args(&args)
             .output()
-            .with_context(|| format!("exec {}", cfg.agent_path.display()))?;
+            .map_err(|e| map_exec_err(e, &cfg.agent_path))?;
         Ok((
             out.status,
             String::from_utf8_lossy(&out.stdout).into_owned(),
@@ -637,5 +694,35 @@ mod tests {
     fn strip_ansi_removes_fm_colour_codes() {
         let coloured = "\u{1b}[38;2;255;107;128mError:\u{1b}[0m System model available";
         assert_eq!(strip_ansi(coloured), "Error: System model available");
+    }
+
+    #[test]
+    fn truncate_utf8_bytes_respects_char_boundaries_and_cap() {
+        let s = "a".repeat(MAX_PROMPT_ARGV_BYTES + 50_000);
+        let out = truncate_utf8_bytes(&s, MAX_PROMPT_ARGV_BYTES);
+        assert!(out.len() <= MAX_PROMPT_ARGV_BYTES);
+        assert!(out.contains("truncated for OS argv limit"));
+    }
+
+    #[test]
+    fn clamp_prompt_args_caps_each_trailing_string() {
+        let huge = "x".repeat(MAX_PROMPT_ARGV_BYTES + 10_000);
+        let argv = clamp_prompt_args(&[huge, "ok".into()]);
+        assert!(argv[0].len() <= MAX_PROMPT_ARGV_BYTES);
+        assert_eq!(argv[1], "ok");
+    }
+
+    #[test]
+    fn build_args_clamps_a_please_fix_sized_prompt() {
+        let mut cfg = maximal_cursor_config();
+        cfg.backend = AgentBackend::Cursor;
+        let huge = "y".repeat(MAX_PROMPT_ARGV_BYTES + 80_000);
+        let argv = cfg.build_args(None, &[huge]);
+        let last = argv.last().expect("prompt");
+        assert!(
+            last.len() <= MAX_PROMPT_ARGV_BYTES,
+            "prompt argv still too long: {}",
+            last.len()
+        );
     }
 }

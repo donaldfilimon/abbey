@@ -39,7 +39,7 @@ pub fn draw(f: &mut Frame, app: &App) {
             root[1],
             app,
             &app.memory_lines,
-            " Memory · self-learn LTM ",
+            "Memory · map · self-learn LTM ",
         ),
         Tab::Skills => draw_lines_panel(
             f,

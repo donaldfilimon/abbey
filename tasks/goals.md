@@ -25,40 +25,44 @@ status: done
   Abbey opens a directory
 - Phase 4 closed: `abbey hybrid-loop` (Gemma interpret → Max implement) links both stages
   by correlation id; `abbey routes --correlation <id>` reads them back. Verified live
+- Strategy brief re-captured 2026-07-30 as **Hybrid model-routing architecture strategy**
+  for Proposed residuals (richer routing, semantic memory, train curation) — not a reopen
 
 ## On-device backend, spatial memory, and capability reporting
-status: in_progress
-
-Captured 2026-07-30 from: "complete abbey as an independent model not requiring any
-backend and gpu acceleration with multi node and multi gpu support, npu/tpu support for
-compilation and learning to run and operate new services and the os and computers itself,
-shared compute between nodes, beautiful CLI/TUI, optional fm-CLI platform checking on
-macOS 27, wdbx as a 3-D brain-like memory map people can teach."
-
-Buildable and in scope for this goal:
-- `ABBEY_BACKEND=fm` — Apple Foundation Models CLI (`/usr/bin/fm`) as a real executor, so
-  Abbey runs **on-device with no cursor-agent and no network**. Verified present on this
-  machine (macOS 27.0, `fm respond` ~1.1s, `system` model available)
-- Platform/capability probe: `fm available`, on-device vs Private Cloud Compute, and the
-  compute backends `abi-wdbx` can actually report (CPU/GPU/ANE selection)
-- WDBX 3-D spatial memory: `abi-wdbx` already ships `SpatialIndex3D`/`Point3D` and
-  `hybrid_spatial_search`; wiring Abbey's memory records to 3-D points is real work
-- CLI/TUI polish
-
-**Not buildable as stated — recorded here so the goal is not silently laundered:**
-- "Independent model" in the sense of Abbey *being* a model (own weights, own training)
-  is a research-scale project, and `AGENTS.md` already lists local Qwen/Gemma weights and
-  LoRA/fine-tuning as **Out of scope**. What is achievable is *independence from
-  cursor-agent* via an on-device backend — that is what this goal builds
-- Multi-node / multi-GPU / NPU-TPU *compilation and learning*: `abi-wdbx` has
-  `cluster`/`remote_compute`/`compute` reference implementations, so **capability
-  reporting and shared-compute plumbing** are reachable; a distributed training runtime is
-  not, and must not be claimed
-- "Operate the OS and computers itself" autonomously conflicts with the standing safety
-  invariant that OS execution is allowlist-only and always requires `--confirm`. Not
-  relaxing that; see `os_control.rs`
-- "More powerful than frontier models" is not an acceptance criterion anything can meet;
-  ignored as a claim, treated as "make the CLI/TUI genuinely better"
+status: done
+- `ABBEY_BACKEND=fm` on-device executor (no cursor-agent/network); argv isolation + account
+  verb refusals verified
+- Interpretable 3-D memory map (topic × recency × consolidation) on both backends;
+  TUI Memory tab shows the map preview; `nearest_to` shared (no dead spatial dual-write)
+- Deferred by construction remain Out of scope / Proposed: multi-node training, NPU/TPU
+  learning, autonomous OS, semantic embedder
 
 ## Broader polish
 status: done
+
+## Hybrid model-routing architecture strategy
+status: todo
+
+Captured 2026-07-30 from the Hybrid Model Routing and Memory Architecture Strategy
+brief. Coarse intention: formalize model specialization as a first-class principle
+(Abi routes/moderates, Abbey integrates, Aviva as precise expert mode; Max =
+changeable technical worker role; Gemma = visual/conversational), keep memory
+backend-replaceable with provenance, delay LoRA/fine-tuning until curated data
+exists, treat activity+corrections as future training substrate.
+
+**Already Current in Abbey (do not re-build):** Max/Gemma role bindings (not local
+weights), persona contracts via `abi-ai`, route log + hybrid-loop correlation,
+`MemoryStore` abstraction with stm/ltm/activity/train_candidate, SQLite default +
+optional WDBX (`--features wdbx`), self-learn + reflect, fm on-device backend,
+interpretable 3-D map (topic × recency × consolidation). Claims gate and
+Out-of-scope (local weights, LoRA, fake cost, unrestricted OS) stay binding.
+
+**Open residuals for this goal (Proposed / next slices):**
+- Richer Abi routing policy (confidence, cost/latency, fallback, multi-model
+  reconcile) beyond today's heuristics + hybrid-loop
+- Semantic/learned memory embedding space (map today is deterministic, not an
+  embedder)
+- Curated train_candidate → evaluation/benchmark pipeline before any adaptation
+- Optional CouchDB/Python interim is **not** Abbey's path (Rust + SQLite/WDBX);
+  keep the abstraction, do not add a second memory stack for the brief's wording
+- Multi-node / NPU-TPU learning / autonomous OS remain Out of scope

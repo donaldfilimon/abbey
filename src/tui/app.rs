@@ -118,6 +118,27 @@ impl App {
                         lines.push(format!("pref: {}", p.summary));
                     }
                 }
+                // Interpretable 3-D map preview (topic × recency × consolidation).
+                if let Ok(records) = mem.filter(None, None, 12) {
+                    if records.is_empty() {
+                        lines.push(
+                            "map: empty — teach with `abbey memory put --tag <subject>`".into(),
+                        );
+                    } else {
+                        lines.push("map  topic×recency×depth (CLI: abbey memory map|near)".into());
+                        for r in &records {
+                            let p = memory::coordinates(r);
+                            lines.push(format!(
+                                "  {:>5.0} {:>6.2} {:>5.2}  {:<14} {}",
+                                p.x,
+                                p.y,
+                                p.z,
+                                memory::primary_topic(r),
+                                r.summary
+                            ));
+                        }
+                    }
+                }
             }
             // A locked or broken store is not an empty one — say which.
             Err(e) => lines.push(format!("unavailable: {e}")),

@@ -3,8 +3,10 @@
 set -eu
 cd "$(dirname "$0")"
 cargo build --release
+# Honour CARGO_TARGET_DIR (Cursor sandboxes redirect it); fall back to ./target.
+BIN="${CARGO_TARGET_DIR:-target}/release/abbey"
 mkdir -p "${HOME}/.local/bin"
-install -m 755 target/release/abbey "${HOME}/.local/bin/abbey"
+install -m 755 "$BIN" "${HOME}/.local/bin/abbey"
 echo "installed: ${HOME}/.local/bin/abbey ($("${HOME}/.local/bin/abbey" --version))"
 
 # Zsh completions (if modular zsh dir exists)

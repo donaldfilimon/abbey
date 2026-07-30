@@ -1,12 +1,19 @@
 //! Shared "please fix last failure" prompt construction.
 
+use crate::agent::{MAX_PROMPT_ARGV_BYTES, truncate_utf8_bytes};
 use anyhow::{Result, bail};
 use std::io::{self, IsTerminal, Read};
 use std::path::PathBuf;
 
+/// Captured command output ceiling (fits under argv clamp with room for the wrapper).
+const MAX_CAPTURE_BYTES: usize = MAX_PROMPT_ARGV_BYTES.saturating_sub(512);
+
 pub fn build_prompt(explicit: &[String]) -> Result<String> {
     if !explicit.is_empty() {
-        return Ok(explicit.join(" "));
+        return Ok(truncate_utf8_bytes(
+            &explicit.join(" "),
+            MAX_PROMPT_ARGV_BYTES,
+        ));
     }
     if let Ok(path) = std::env::var("CURSOR_AGENT_COMPLETED_PATH") {
         if let Ok(text) = std::fs::read_to_string(path) {
@@ -14,9 +21,13 @@ pub fn build_prompt(explicit: &[String]) -> Result<String> {
             if lines.len() >= 2 {
                 let cmd = lines[0];
                 let code = lines[lines.len() - 1];
-                let out = lines[1..lines.len() - 1].join("\n");
-                return Ok(format!(
-                    "I just ran the command: \"{cmd}\", which exited with code {code}. The output was:\n\n{out}\n\nPlease help me fix it."
+                let out =
+                    truncate_utf8_bytes(&lines[1..lines.len() - 1].join("\n"), MAX_CAPTURE_BYTES);
+                return Ok(truncate_utf8_bytes(
+                    &format!(
+                        "I just ran the command: \"{cmd}\", which exited with code {code}. The output was:\n\n{out}\n\nPlease help me fix it."
+                    ),
+                    MAX_PROMPT_ARGV_BYTES,
                 ));
             }
         }
@@ -25,7 +36,11 @@ pub fn build_prompt(explicit: &[String]) -> Result<String> {
         let mut buf = String::new();
         io::stdin().read_to_string(&mut buf)?;
         if !buf.trim().is_empty() {
-            return Ok(format!("Please fix this failure:\n\n{}", buf.trim()));
+            let body = truncate_utf8_bytes(buf.trim(), MAX_CAPTURE_BYTES);
+            return Ok(truncate_utf8_bytes(
+                &format!("Please fix this failure:\n\n{body}"),
+                MAX_PROMPT_ARGV_BYTES,
+            ));
         }
     }
     if let Some(cmd) = last_shell_command() {
@@ -44,7 +59,7 @@ pub fn build_prompt(explicit: &[String]) -> Result<String> {
 pub fn build_prompt_soft(explicit: &str) -> String {
     let t = explicit.trim();
     if !t.is_empty() {
-        return t.to_string();
+        return truncate_utf8_bytes(t, MAX_PROMPT_ARGV_BYTES);
     }
     match build_prompt(&[]) {
         Ok(p) => p,

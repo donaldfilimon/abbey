@@ -88,10 +88,9 @@
 
 ### Slice 2 — WDBX as a 3-D memory map (done)
 - [x] `coordinates()` places each memory at topic × recency × consolidation; pure and
-      covered by the default gate
-- [x] `abbey memory map` and `abbey memory near <id>` on **both** backends
-- [x] Under `--features wdbx` the point is mirrored to a WDBX `SpatialRecord`, so the map
-      is visible to `abi wdbx` too (verified: `spatial_records: 5`)
+      covered by the default gate (`src/memory/map.rs`)
+- [x] `abbey memory map` and `abbey memory near <id>` on **both** backends via
+      `memory::nearest_to` (shared math; no dead spatial dual-write)
 - [x] `abbey memory put --tag <subject>` — without it every record collapsed into one
       column, which made the topic axis useless. Untagged records now sit in a visible
       `(untagged)` column rather than being hash-scattered into fake topics
@@ -100,9 +99,27 @@
 - [ ] Axes are deterministic, **not** a learned embedding space — Abbey has no embedder.
       Semantic placement stays Proposed
 
+### Slice 3 — TUI + argv safety (done)
+- [x] Memory tab shows a 3-D map preview (topic × recency × depth)
+- [x] Clamp prompt argv / please-fix captures to avoid `Argument list too long (os error 7)`
+      when handing off to cursor-agent (96KiB ceiling + clearer E2BIG error)
+
 ### Not started (deferred by construction — see goals.md)
 - [ ] Multi-node / multi-GPU / shared compute between nodes
 - [ ] NPU/TPU compilation and learning
 - [ ] Autonomous operation of services and the OS (conflicts with the allowlist +
       `--confirm` safety invariant)
-- [ ] TUI surface for the 3-D map
+
+## Hybrid model-routing architecture strategy
+
+Residuals only — shipped Max/Gemma/memory/hybrid-loop/fm/map stay in prior sections.
+
+- [ ] Richer Abi routing policy: confidence / fallback / multi-model reconcile recorded
+      in the route log (beyond heuristics + hybrid-loop)
+- [ ] Semantic memory search (embedding space) behind `MemoryStore` — Proposed; do not
+      pretend the 3-D hash map is it
+- [ ] Curated `train_candidate` → evaluation/benchmark pipeline (provenance + human review)
+      before any LoRA/adaptation ask
+- [ ] Keep memory backend replaceable; **do not** add CouchDB/Python as a second stack
+- [ ] Leave Out of scope untouched: local Qwen/Gemma weights, LoRA, unrestricted OS,
+      multi-node training runtime
