@@ -3,6 +3,7 @@
 use crate::agent::{AgentBackend, AgentConfig, Worktree, run_resilient};
 use crate::cli::{Cli, ExecMode};
 use crate::config;
+use crate::hybrid_loop::{self, STAGE_IMPLEMENT, STAGE_INTERPRET};
 use crate::learn;
 use crate::memory::{self, MemoryRecord, MemoryStore};
 use crate::models::resolve_model;
@@ -10,7 +11,8 @@ use crate::persona;
 use crate::roles::{self, WorkerRole};
 use crate::route_log;
 use crate::state::AbbeyState;
-use anyhow::Result;
+use abi_ai::AgentProfile;
+use anyhow::{Result, bail};
 
 pub fn apply_global_flags(cli: &Cli, state: &AbbeyState, cfg: &mut AgentConfig) -> Result<()> {
     // `fm` keeps conversations in transcript files under the state dir.
@@ -79,6 +81,50 @@ pub fn open_memory(state: &AbbeyState) -> Result<Box<dyn MemoryStore>> {
     memory::open_backend(&state.state_dir, &backend)
 }
 
+/// Shared persona × role × prefs assembly used by single-shot and hybrid-loop.
+fn assemble_prompt(
+    persona: AgentProfile,
+    role: WorkerRole,
+    user_body: &str,
+    prefs: &str,
+) -> String {
+    let wrapped = persona::wrap_prompt(persona, user_body);
+    let note = roles::role_system_note(role);
+    if prefs.is_empty() {
+        format!("{note}\n\n{wrapped}")
+    } else {
+        format!("{note}\n\n{prefs}\n{wrapped}")
+    }
+}
+
+fn maybe_inject_role_model(cfg: &mut AgentConfig, state: &AbbeyState, model_alias: &str) {
+    // Never under `fm`: its vocabulary is system|pcc. Role distinction is prompt-only.
+    if cfg.backend != AgentBackend::Fm
+        && std::env::var("ABBEY_MODEL").is_err()
+        && cfg.model == state.read_model()
+    {
+        cfg.model = resolve_model(model_alias);
+    }
+}
+
+fn record_activity(
+    state: &AbbeyState,
+    persona: AgentProfile,
+    role: WorkerRole,
+    joined: &str,
+    model: &str,
+) {
+    if let Ok(mem) = open_memory(state) {
+        let mut m = MemoryRecord::new_stm(
+            format!("route {}/{}", persona.label(), role.label()),
+            format!("{joined}\n→ model {model}"),
+        );
+        m.tags.push("activity".into());
+        m.retention = "activity".into();
+        let _ = mem.store(m);
+    }
+}
+
 pub fn hybrid_run(
     cfg: &mut AgentConfig,
     state: &AbbeyState,
@@ -104,25 +150,10 @@ pub fn hybrid_run(
             }
         }
     };
-    // Only override model when user didn't set -m / ABBEY_MODEL explicitly this run.
-    // Never under `fm`: its vocabulary is system|pcc, so injecting a cursor-agent
-    // id here would hand the backend an argument it rejects. Under `fm` the role
-    // distinction is carried by the prompt alone.
-    if cfg.backend != AgentBackend::Fm
-        && std::env::var("ABBEY_MODEL").is_err()
-        && cfg.model == state.read_model()
-    {
-        cfg.model = resolve_model(model_alias);
-    }
+    maybe_inject_role_model(cfg, state, model_alias);
 
-    let wrapped_user = persona::wrap_prompt(persona, &joined);
-    let note = roles::role_system_note(role);
     let prefs = learn::preference_context(&state.state_dir, 8);
-    let final_prompt = if prefs.is_empty() {
-        format!("{note}\n\n{wrapped_user}")
-    } else {
-        format!("{note}\n\n{prefs}\n{wrapped_user}")
-    };
+    let final_prompt = assemble_prompt(persona, role, &joined, &prefs);
 
     let reason = format!(
         "persona={} role={} class={:?}",
@@ -139,18 +170,109 @@ pub fn hybrid_run(
         0.75,
     );
     let _ = route_log::append_route_record(&state.state_dir, &rec);
-
-    if let Ok(mem) = open_memory(state) {
-        let mut m = MemoryRecord::new_stm(
-            format!("route {}/{}", persona.label(), role.label()),
-            format!("{joined}\n→ model {}", cfg.model),
-        );
-        m.tags.push("activity".into());
-        m.retention = "activity".into();
-        let _ = mem.store(m);
-    }
+    record_activity(state, persona, role, &joined, &cfg.model);
 
     run_resilient(cfg, state, fresh, &[final_prompt])
+}
+
+/// Gemma interpret → Max implement through the same wrap as [`hybrid_run`].
+pub fn hybrid_loop_run(
+    cfg: &AgentConfig,
+    state: &AbbeyState,
+    prompt: &[String],
+    max_model: &str,
+    gemma_model: &str,
+) -> Result<i32> {
+    let user = prompt.join(" ");
+    if user.trim().is_empty() {
+        bail!("usage: abbey hybrid-loop <prompt…>");
+    }
+
+    let correlation = uuid::Uuid::new_v4().to_string();
+    let cwd = state.cwd.display().to_string();
+    let persona = persona::select_persona(&user);
+    let prefs = learn::preference_context(&state.state_dir, 8);
+    let gemma = resolve_model(gemma_model);
+    let max = resolve_model(max_model);
+
+    eprintln!(
+        "abbey: hybrid-loop {correlation}\n  stage 1 interpret → gemma({gemma})\n  \
+         stage 2 implement → max({max})"
+    );
+
+    record_activity(state, persona, WorkerRole::Gemma, &user, &gemma);
+
+    // ---- stage 1: Gemma interprets ----
+    let mut g_cfg = cfg.clone();
+    g_cfg.print = true;
+    if g_cfg.backend != AgentBackend::Fm {
+        g_cfg.model = gemma.clone();
+    }
+    let stage1 = assemble_prompt(
+        persona,
+        WorkerRole::Gemma,
+        &hybrid_loop::interpret_body(&user),
+        &prefs,
+    );
+    let (g_status, interpretation, g_err) = g_cfg.run_capture(None, &[stage1])?;
+    if !g_err.trim().is_empty() {
+        eprint!("{g_err}");
+    }
+    if interpretation.trim().is_empty() {
+        bail!(
+            "hybrid-loop: interpret stage produced no output (exit {})",
+            g_status.code().unwrap_or(1)
+        );
+    }
+    hybrid_loop::log_stage(
+        &state.state_dir,
+        &cwd,
+        &correlation,
+        STAGE_INTERPRET,
+        WorkerRole::Gemma,
+        &g_cfg.model,
+        persona.label(),
+    )?;
+    println!(
+        "===== stage:interpret role:gemma model:{} =====",
+        g_cfg.model
+    );
+    println!("{}", interpretation.trim_end());
+
+    // ---- stage 2: Max implements ----
+    let mut m_cfg = cfg.clone();
+    m_cfg.print = true;
+    if m_cfg.backend != AgentBackend::Fm {
+        m_cfg.model = max.clone();
+    }
+    let stage2 = assemble_prompt(
+        persona,
+        WorkerRole::Max,
+        &hybrid_loop::implement_body(&user, &interpretation),
+        &prefs,
+    );
+    let (m_status, implementation, m_err) = m_cfg.run_capture(None, &[stage2])?;
+    if !m_err.trim().is_empty() {
+        eprint!("{m_err}");
+    }
+    hybrid_loop::log_stage(
+        &state.state_dir,
+        &cwd,
+        &correlation,
+        STAGE_IMPLEMENT,
+        WorkerRole::Max,
+        &m_cfg.model,
+        persona.label(),
+    )?;
+    println!(
+        "\n===== stage:implement role:max model:{} =====",
+        m_cfg.model
+    );
+    println!("{}", implementation.trim_end());
+    println!("\n===== route link =====");
+    println!("correlation {correlation} — `abbey routes --correlation` shows both stages");
+
+    Ok(m_status.code().unwrap_or(1))
 }
 
 pub fn compact_history(state: &AbbeyState, keep: usize) -> Result<usize> {

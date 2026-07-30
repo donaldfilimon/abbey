@@ -85,7 +85,7 @@ impl AgentBackend {
             .as_str()
         {
             "grok" | "grok-build" | "xai" => Self::Grok,
-            "fm" | "apple" | "foundation" | "on-device" | "local" => Self::Fm,
+            "fm" | "apple" | "foundation" | "on-device" => Self::Fm,
             _ => Self::Cursor,
         }
     }
@@ -102,19 +102,22 @@ impl AgentBackend {
     pub fn is_on_device(self) -> bool {
         matches!(self, Self::Fm)
     }
+
+    /// Account / session-list / MCP surface — `fm` has none of these.
+    pub fn supports_account_surface(self) -> bool {
+        !matches!(self, Self::Fm)
+    }
 }
 
 /// Map an Abbey model/alias onto `fm`'s two-model vocabulary (`system` | `pcc`).
 ///
-/// Every cursor-agent id collapses to `system` (on-device) — Abbey's role
-/// bindings have no meaning here, so under `fm` the Max/Gemma distinction is
-/// carried by the prompt alone, not by the model.
+/// Exact aliases only — substring matching (`cloud`, `private`) would mis-route
+/// ordinary cursor-agent ids. Under `fm` the Max/Gemma distinction is carried by
+/// the prompt alone, not by the model.
 pub fn fm_model(requested: &str) -> &'static str {
-    let r = requested.trim().to_ascii_lowercase();
-    if r.contains("pcc") || r.contains("cloud") || r.contains("private") {
-        "pcc"
-    } else {
-        "system"
+    match requested.trim().to_ascii_lowercase().as_str() {
+        "pcc" | "private-cloud-compute" | "private_cloud_compute" => "pcc",
+        _ => "system",
     }
 }
 
@@ -568,7 +571,18 @@ mod tests {
         assert_eq!(fm_model("composer-2.5"), "system");
         assert_eq!(fm_model("auto"), "system");
         assert_eq!(fm_model("pcc"), "pcc");
-        assert_eq!(fm_model("Private Cloud Compute"), "pcc");
+        assert_eq!(fm_model("private-cloud-compute"), "pcc");
+        assert_eq!(fm_model("private_cloud_compute"), "pcc");
+        // Substrings must not hijack unrelated aliases.
+        assert_eq!(fm_model("Private Cloud Compute"), "system");
+        assert_eq!(fm_model("my-cloud-model"), "system");
+    }
+
+    #[test]
+    fn fm_refuses_account_surface() {
+        assert!(!AgentBackend::Fm.supports_account_surface());
+        assert!(AgentBackend::Cursor.supports_account_surface());
+        assert!(AgentBackend::Grok.supports_account_surface());
     }
 
     #[test]

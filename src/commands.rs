@@ -1,7 +1,7 @@
 //! Clap subcommand dispatch.
 
 use crate::actions::{RunSpec, fork_prompt, run_agent, run_commit, run_pr, run_review};
-use crate::agent::{AgentBackend, AgentConfig, run_resilient};
+use crate::agent::{AgentConfig, run_resilient};
 use crate::build_info;
 use crate::cli::{Cli, Commands, MemoryCmd, Shell};
 use crate::config;
@@ -10,7 +10,6 @@ use crate::doctor::{
     print_permissions,
 };
 use crate::gitops;
-use crate::hybrid_loop;
 use crate::inventory;
 use crate::learn;
 use crate::models::{alias_table, resolve_model};
@@ -27,16 +26,18 @@ use clap::CommandFactory;
 use clap_complete::{Shell as ClapShell, generate};
 use std::io;
 
-/// `fm` is a local one-shot generator: it has no account, no chat picker and no
-/// MCP surface. Forwarding these verbs to it prints an opaque `fm` usage error
-/// and (worse) exited 0, so refuse them explicitly instead.
-fn unsupported_on_device(verb: &str) -> Result<i32> {
-    eprintln!(
-        "abbey: `{verb}` is not applicable under the on-device backend (ABBEY_BACKEND=fm).\n\
-         The Apple Foundation Models CLI has no account, session list, or MCP surface.\n\
-         Unset ABBEY_BACKEND to use cursor-agent."
-    );
-    Ok(2)
+/// Refuse account/session/MCP verbs under backends that have no such surface.
+fn passthrough_or_refuse(cfg: &AgentConfig, verb: &str, args: &[String]) -> Result<i32> {
+    if !cfg.backend.supports_account_surface() {
+        eprintln!(
+            "abbey: `{verb}` is not applicable under the on-device backend (ABBEY_BACKEND=fm).\n\
+             The Apple Foundation Models CLI has no account, session list, or MCP surface.\n\
+             Unset ABBEY_BACKEND to use cursor-agent."
+        );
+        return Ok(2);
+    }
+    let st = cfg.passthrough(args)?;
+    Ok(st.code().unwrap_or(1))
 }
 
 pub fn run_cli(cli: Cli, state: AbbeyState, mut cfg: AgentConfig) -> Result<i32> {
@@ -204,8 +205,7 @@ pub fn run_cli(cli: Cli, state: AbbeyState, mut cfg: AgentConfig) -> Result<i32>
         }
         Some(Commands::Wdbx { args }) => wdbx_bridge::run(&state, &args),
         Some(Commands::HybridLoop { prompt }) => {
-            let ac = config::AbbeyConfig::load().unwrap_or_default();
-            hybrid_loop::run_hybrid_loop(&cfg, &state, &prompt, &ac.roles.max, &ac.roles.gemma)
+            run_agent(&mut cfg, &state, &prompt, RunSpec::hybrid_loop())
         }
         Some(Commands::Os { args }) => os_control::run_os(&args, true),
         Some(Commands::Learn { args }) => learn::dispatch(&state, &args),
@@ -254,50 +254,21 @@ pub fn run_cli(cli: Cli, state: AbbeyState, mut cfg: AgentConfig) -> Result<i32>
             println!("{id}");
             Ok(0)
         }
-        Some(Commands::Status) => {
-            if cfg.backend == AgentBackend::Fm {
-                return unsupported_on_device("status");
-            }
-            let st = cfg.passthrough(&["status".into()])?;
-            Ok(st.code().unwrap_or(1))
-        }
+        Some(Commands::Status) => passthrough_or_refuse(&cfg, "status", &["status".into()]),
         Some(Commands::Models) => {
-            if cfg.backend == AgentBackend::Fm {
+            if !cfg.backend.supports_account_surface() {
                 print!("{}", cfg.list_models_text()?);
                 return Ok(0);
             }
-            let st = cfg.passthrough(&["models".into()])?;
-            Ok(st.code().unwrap_or(1))
+            passthrough_or_refuse(&cfg, "models", &["models".into()])
         }
-        Some(Commands::Ls) => {
-            if cfg.backend == AgentBackend::Fm {
-                return unsupported_on_device("ls");
-            }
-            let st = cfg.passthrough(&["ls".into()])?;
-            Ok(st.code().unwrap_or(1))
-        }
-        Some(Commands::Login) => {
-            if cfg.backend == AgentBackend::Fm {
-                return unsupported_on_device("login");
-            }
-            let st = cfg.passthrough(&["login".into()])?;
-            Ok(st.code().unwrap_or(1))
-        }
-        Some(Commands::Logout) => {
-            if cfg.backend == AgentBackend::Fm {
-                return unsupported_on_device("logout");
-            }
-            let st = cfg.passthrough(&["logout".into()])?;
-            Ok(st.code().unwrap_or(1))
-        }
+        Some(Commands::Ls) => passthrough_or_refuse(&cfg, "ls", &["ls".into()]),
+        Some(Commands::Login) => passthrough_or_refuse(&cfg, "login", &["login".into()]),
+        Some(Commands::Logout) => passthrough_or_refuse(&cfg, "logout", &["logout".into()]),
         Some(Commands::Mcp { args }) => {
-            if cfg.backend == AgentBackend::Fm {
-                return unsupported_on_device("mcp");
-            }
             let mut a = vec!["mcp".into()];
             a.extend(args);
-            let st = cfg.passthrough(&a)?;
-            Ok(st.code().unwrap_or(1))
+            passthrough_or_refuse(&cfg, "mcp", &a)
         }
         Some(Commands::Plugin { args }) => inventory::run_plugin_passthrough(&args),
         Some(Commands::Completion { shell }) => {

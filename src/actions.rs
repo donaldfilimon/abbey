@@ -1,9 +1,10 @@
 //! Canonical agent run specs — one path for CLI and slash (no dual orchestration).
 
 use crate::agent::AgentConfig;
+use crate::config::AbbeyConfig;
 use crate::prompts::{build_commit_prompt, build_review_prompt};
 use crate::roles::WorkerRole;
-use crate::session::hybrid_run;
+use crate::session::{hybrid_loop_run, hybrid_run};
 use crate::state::AbbeyState;
 use anyhow::Result;
 
@@ -14,6 +15,8 @@ pub struct RunSpec {
     pub mode: Option<&'static str>,
     pub role: Option<WorkerRole>,
     pub print: bool,
+    /// Gemma interpret → Max implement, correlated in the route log.
+    pub hybrid_loop: bool,
 }
 
 impl RunSpec {
@@ -57,6 +60,14 @@ impl RunSpec {
             ..Self::default()
         }
     }
+
+    pub fn hybrid_loop() -> Self {
+        Self {
+            hybrid_loop: true,
+            print: true,
+            ..Self::default()
+        }
+    }
 }
 
 /// Single entry used by clap + slash. Always goes through `hybrid_run`
@@ -72,6 +83,10 @@ pub fn run_agent(
     }
     if spec.print {
         cfg.print = true;
+    }
+    if spec.hybrid_loop {
+        let ac = AbbeyConfig::load().unwrap_or_default();
+        return hybrid_loop_run(cfg, state, prompt, &ac.roles.max, &ac.roles.gemma);
     }
     hybrid_run(cfg, state, spec.fresh, prompt, spec.role)
 }

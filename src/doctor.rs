@@ -185,18 +185,14 @@ pub fn cmd_memory_store(state: &AbbeyState, cmd: MemoryCmd) -> Result<i32> {
                 bail!("memory id not found: {id}");
             };
             let target = memory::coordinates(&anchor);
-            let all = mem.filter(None, None, 1000)?;
             println!(
                 "anchor  ({:.0}, {:.2}, {:.2})  {}",
                 target.x, target.y, target.z, anchor.summary
             );
-            for (dist, r) in memory::nearest(&all, target, limit + 1) {
-                if r.id == anchor.id {
-                    continue;
-                }
+            for (dist, r) in memory::nearest_to(mem.as_ref(), &id, limit)? {
                 println!(
                     "{dist:>7.2}  {:<16} {}",
-                    memory::primary_topic(r),
+                    memory::primary_topic(&r),
                     r.summary
                 );
             }

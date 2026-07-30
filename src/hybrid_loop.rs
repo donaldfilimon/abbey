@@ -1,44 +1,50 @@
-//! Two-stage hybrid loop: **Gemma interprets → Max implements**, with both
-//! stages linked in the route log by a shared correlation id (Abi's audit view).
+//! Hybrid-loop stage prompts and correlated route logging.
 //!
-//! Only the sequencing, prompt assembly, and route linkage live here. The stage
-//! bodies are ordinary `cursor-agent --print` captures, so a live run's *content*
-//! is not deterministic — the tests cover the parts that are.
+//! Orchestration lives in [`crate::session::hybrid_loop_run`] so persona wrap,
+//! preference injection, activity memory, and the `fm` model guard stay on the
+//! one canonical path. This module only owns the stage text and route linkage.
 
-use crate::agent::AgentConfig;
-use crate::models::resolve_model;
-use crate::persona;
-use crate::roles::{self, WorkerRole};
+use crate::roles::WorkerRole;
 use crate::route_log::{self, RouteRecord};
-use crate::state::AbbeyState;
-use anyhow::{Result, bail};
+use anyhow::Result;
 use std::path::Path;
 
 pub const STAGE_INTERPRET: &str = "interpret";
 pub const STAGE_IMPLEMENT: &str = "implement";
 
-/// Gemma stage: turn the raw request into an explicit, human-facing reading of
-/// what is being asked — including anything visual or ambiguous.
-pub fn interpret_prompt(user: &str) -> String {
-    let note = roles::role_system_note(WorkerRole::Gemma);
+/// Stage-1 body (no role note — [`crate::session`] adds it via assemble_prompt).
+pub fn interpret_body(user: &str) -> String {
     format!(
-        "{note}\n\nStage 1 of 2 (interpret). Do NOT write the implementation.\n\
+        "Stage 1 of 2 (interpret). Do NOT write the implementation.\n\
          Restate the request precisely, list what is visually or behaviourally\n\
          implied, name the ambiguities, and state the acceptance criteria a\n\
          reviewer would check.\n\nRequest:\n{user}"
     )
 }
 
-/// Max stage: implement against the interpretation, not the raw request.
-pub fn implement_prompt(user: &str, interpretation: &str) -> String {
-    let note = roles::role_system_note(WorkerRole::Max);
+/// Stage-2 body (no role note — session assemble_prompt adds it).
+pub fn implement_body(user: &str, interpretation: &str) -> String {
     format!(
-        "{note}\n\nStage 2 of 2 (implement). Stage 1 (Gemma) produced the\n\
+        "Stage 2 of 2 (implement). Stage 1 (Gemma) produced the\n\
          interpretation below. Implement against it. If it conflicts with the\n\
          original request, say so and follow the original request.\n\n\
          --- interpretation ---\n{interpretation}\n--- end interpretation ---\n\n\
          Original request:\n{user}"
     )
+}
+
+/// Full interpret prompt including the Gemma role note (tests / direct callers).
+#[cfg(test)]
+pub fn interpret_prompt(user: &str) -> String {
+    let note = crate::roles::role_system_note(WorkerRole::Gemma);
+    format!("{note}\n\n{}", interpret_body(user))
+}
+
+/// Full implement prompt including the Max role note (tests / direct callers).
+#[cfg(test)]
+pub fn implement_prompt(user: &str, interpretation: &str) -> String {
+    let note = crate::roles::role_system_note(WorkerRole::Max);
+    format!("{note}\n\n{}", implement_body(user, interpretation))
 }
 
 /// Append one stage's route record under a shared correlation id.
@@ -61,82 +67,6 @@ pub fn log_stage(
     )
     .in_stage(correlation, stage);
     route_log::append_route_record(state_dir, &rec)
-}
-
-/// Run both stages. Returns the exit code of the implement stage.
-pub fn run_hybrid_loop(
-    cfg: &AgentConfig,
-    state: &AbbeyState,
-    prompt: &[String],
-    max_model: &str,
-    gemma_model: &str,
-) -> Result<i32> {
-    let user = prompt.join(" ");
-    if user.trim().is_empty() {
-        bail!("usage: abbey hybrid-loop <prompt…>");
-    }
-
-    let correlation = uuid::Uuid::new_v4().to_string();
-    let cwd = state.cwd.display().to_string();
-    let persona_label = persona::select_persona(&user).label().to_string();
-    let gemma = resolve_model(gemma_model);
-    let max = resolve_model(max_model);
-
-    eprintln!(
-        "abbey: hybrid-loop {correlation}\n  stage 1 interpret → gemma({gemma})\n  \
-         stage 2 implement → max({max})"
-    );
-
-    // ---- stage 1: Gemma interprets ----
-    log_stage(
-        &state.state_dir,
-        &cwd,
-        &correlation,
-        STAGE_INTERPRET,
-        WorkerRole::Gemma,
-        &gemma,
-        &persona_label,
-    )?;
-    let mut g_cfg = cfg.clone();
-    g_cfg.model = gemma.clone();
-    g_cfg.print = true;
-    let (g_status, interpretation, g_err) = g_cfg.run_capture(None, &[interpret_prompt(&user)])?;
-    if !g_err.trim().is_empty() {
-        eprint!("{g_err}");
-    }
-    if interpretation.trim().is_empty() {
-        bail!(
-            "hybrid-loop: interpret stage produced no output (exit {})",
-            g_status.code().unwrap_or(1)
-        );
-    }
-    println!("===== stage:interpret role:gemma model:{gemma} =====");
-    println!("{}", interpretation.trim_end());
-
-    // ---- stage 2: Max implements ----
-    log_stage(
-        &state.state_dir,
-        &cwd,
-        &correlation,
-        STAGE_IMPLEMENT,
-        WorkerRole::Max,
-        &max,
-        &persona_label,
-    )?;
-    let mut m_cfg = cfg.clone();
-    m_cfg.model = max.clone();
-    m_cfg.print = true;
-    let (m_status, implementation, m_err) =
-        m_cfg.run_capture(None, &[implement_prompt(&user, &interpretation)])?;
-    if !m_err.trim().is_empty() {
-        eprint!("{m_err}");
-    }
-    println!("\n===== stage:implement role:max model:{max} =====");
-    println!("{}", implementation.trim_end());
-    println!("\n===== route link =====");
-    println!("correlation {correlation} — `abbey routes` shows both stages");
-
-    Ok(m_status.code().unwrap_or(1))
 }
 
 #[cfg(test)]
@@ -236,5 +166,12 @@ mod tests {
         let p = interpret_prompt("add a dark mode toggle");
         assert!(p.contains("Do NOT write the implementation"));
         assert!(p.contains("add a dark mode toggle"));
+    }
+
+    #[test]
+    fn stage_bodies_omit_role_notes_so_session_can_assemble() {
+        let body = interpret_body("x");
+        assert!(!body.contains("Gemma"));
+        assert!(body.contains("Stage 1 of 2"));
     }
 }
