@@ -2,6 +2,7 @@
 
 mod app;
 mod tabs;
+mod theme;
 mod ui;
 
 pub use app::run_tui;
