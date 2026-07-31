@@ -93,8 +93,18 @@ impl Ledger {
         self.goals.iter().filter(|g| g.status.is_open())
     }
 
+    /// Unchecked todos that are actually *work* — deferred-by-construction
+    /// sections are excluded.
+    ///
+    /// Without this, an unchecked box under "Deferred by construction" was
+    /// nominated as the next slice, so `improve run --confirm` would dispatch
+    /// Max to build a capability `abbey claims refuse` exits 2 for. The
+    /// checkbox format alone is not enough — it regresses the moment someone
+    /// writes `- [ ]` under that heading again.
     pub fn open_todos(&self) -> impl Iterator<Item = &TodoItem> {
-        self.todos.iter().filter(|t| !t.done)
+        self.todos
+            .iter()
+            .filter(|t| !t.done && !is_deferred_section(&t.section))
     }
 
     pub fn open_todo_count(&self) -> usize {
@@ -243,6 +253,16 @@ pub fn parse_goals(text: &str) -> Vec<Goal> {
     goals
 }
 
+/// Whether a `todo.md` heading marks capabilities Abbey deliberately does not
+/// build (Proposed / Out of scope), rather than pending work.
+///
+/// Matched on the section heading rather than item text so that a legitimate
+/// todo like "document why X is out of scope" is still picked up as work.
+pub fn is_deferred_section(section: &str) -> bool {
+    let s = section.to_ascii_lowercase();
+    s.contains("deferred") || s.contains("out of scope") || s.contains("not abbey current")
+}
+
 pub fn parse_todos(text: &str) -> Vec<TodoItem> {
     let mut items = Vec::new();
     let mut section = String::new();
@@ -374,6 +394,48 @@ status: todo
             pick_work(&ledger, None, true),
             WorkFocus::Stabilize
         ));
+    }
+
+    #[test]
+    fn deferred_sections_are_never_nominated_as_work() {
+        // Regression: an unchecked box under a deferred heading was picked as
+        // the next slice, so `improve run --confirm` would dispatch Max to
+        // build something `abbey claims refuse` exits 2 for.
+        let text = "## Deferred by construction (Proposed / Out of scope — not Abbey Current)\n\
+                    - [ ] Semantic memory search (learned embedding space) — **Proposed**\n\
+                    - [ ] Multi-node / multi-GPU mesh — **Proposed**\n";
+        let todos = parse_todos(text);
+        assert_eq!(todos.len(), 2, "parser still sees the items");
+
+        let ledger = Ledger {
+            goals_path: PathBuf::new(),
+            todo_path: PathBuf::new(),
+            goals: vec![Goal {
+                title: "Closed".into(),
+                status: GoalStatus::Done,
+                body: String::new(),
+            }],
+            todos,
+        };
+        assert_eq!(ledger.open_todo_count(), 0, "deferred items are not work");
+        assert!(ledger.next_open_todo().is_none());
+        assert!(matches!(
+            pick_work(&ledger, None, false),
+            WorkFocus::Stabilize
+        ));
+    }
+
+    #[test]
+    fn a_real_todo_mentioning_out_of_scope_is_still_work() {
+        // Filtering on the heading, not item text, so this stays pickable.
+        let text = "## Docs\n- [ ] document why LoRA is out of scope\n";
+        let ledger = Ledger {
+            goals_path: PathBuf::new(),
+            todo_path: PathBuf::new(),
+            goals: Vec::new(),
+            todos: parse_todos(text),
+        };
+        assert_eq!(ledger.open_todo_count(), 1);
     }
 
     #[test]

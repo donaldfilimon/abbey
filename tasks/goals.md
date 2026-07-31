@@ -218,3 +218,13 @@ guard ordering and decomposed `app.rs` (1025→896: refresh methods split into
 **Not exercised:** `improve run --confirm` — the Max force-apply path spends real
 cursor-agent credits and edits the tree autonomously; left for a human-initiated run.
 
+**Follow-up defect fixed 2026-07-31 (stays `done` — rule 4, not new scope):** `pick_work`
+nominated unchecked boxes under "Deferred by construction" as the next slice, so
+`improve run --confirm` would have dispatched Max to build a capability
+`abbey claims refuse` exits 2 for — wasted spend plus direct laundering pressure.
+`ledger::is_deferred_section` now excludes those sections (matched on the heading, so a
+real todo like "document why X is out of scope" still counts as work), with two
+regression tests. Verified live: `improve status` went 5 open todos → 0 and focus
+`stabilize`; `improve run` takes the "already production-ready (gate green · no open
+slice)" early return with zero lanes dispatched.
+

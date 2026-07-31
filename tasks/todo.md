@@ -106,21 +106,29 @@
 - [x] please-fix capture summarizer: strip agent/TUI chrome, keep error signal, 24KiB body
 
 ### Deferred by construction (Proposed / Out of scope — not Abbey Current)
+
+Closed work that *came out of* this section:
 - [x] Surface via `abbey claims` / `refuse` (2026-07-30) — still not implemented as features
 - [x] *Lexical* similarity search behind `MemoryStore` — **Current** (`abbey memory similar`,
       `src/memory/similarity.rs`). `abi-ai` n-gram feature hash + cosine, computed per query
       on both backends. Verified live: `memory search "chekpoint"` (typo) returns nothing
       while `memory similar "chekpoint"` ranks the checkpoint record first at 0.44
-- [ ] Semantic memory search (**learned** embedding space) behind `MemoryStore` — **Proposed**.
-      The lexical slice above does *not* close this: a feature hash has no trained semantics,
-      so the same idea in different words still misses. `claims refuse embeddings` still
-      exits 2, and abi-wdbx `put_vector` storage stays unwired (nothing is persisted)
-- [ ] Multi-node / multi-GPU / shared compute / agent mesh — **Proposed**
 - [x] WDBX cross-process lock on Windows + Unix (`fs2`) — **Current**
 - [x] Host GPU/NPU/TPU detection + thread matrix (`abbey platform`) — **Current**
-- [ ] GPU/NPU/TPU compilation · training · inference *in Abbey* — **Out of scope**
-- [ ] Autonomous operation of services and the OS — **Out of scope** (allowlist + `--confirm`)
-- [ ] Local Qwen/Gemma weights / LoRA / CouchDB-Python second stack — **Out of scope**
+
+**Boundaries — deliberately not built. Not checkboxes: these are decisions, not
+pending work.** Re-opening one means changing the claims gate in `AGENTS.md` first,
+not ticking a box here. `abbey improve` skips this whole section when picking work
+(`ledger::is_deferred_section`) — an unchecked box here used to be nominated as the
+next slice, which would have sent Max to build a capability `claims refuse` exits 2 for.
+
+| Capability | Status | Why it stays closed |
+|---|---|---|
+| Semantic memory search (**learned** embedding space) | **Proposed** | The lexical slice does *not* close this — a feature hash has no trained semantics, so the same idea in different words still misses. `claims refuse embeddings` exits 2; abi-wdbx `put_vector` stays unwired (nothing persisted) |
+| Multi-node · multi-GPU · shared compute mesh | **Proposed** | Cannot be honestly verified from one host. `abi-wdbx` ships `cluster`/`remote_compute` references Abbey does not orchestrate; `subagents --peers` (same-host PATH) is the Current substitute |
+| GPU/NPU/TPU compilation · training · inference *in Abbey* | **Out of scope** | Abbey detects accelerators (`abbey platform`) but runs no kernels. Contradicts "backend is `cursor-agent`, not a reimplementation" (CLAUDE.md) |
+| Autonomous operation of services and the OS | **Out of scope** | Contradicts the safety invariant in CLAUDE.md: OS execution "must never run without `--confirm`, and only against the allowlist — this is a safety invariant, not a default to relax" |
+| Local Qwen/Gemma weights · LoRA · CouchDB-Python second stack | **Out of scope** | A decision, not a capability gap: `abi-nn` next door already ships `train_model`/`train_on_jsonl`, and Abbey deliberately does **not** depend on it. `train_candidate` stays curation substrate only |
 
 ## Hybrid model-routing architecture strategy
 
