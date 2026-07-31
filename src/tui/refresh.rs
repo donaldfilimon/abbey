@@ -1,0 +1,140 @@
+//! Background-data refresh for the Personas/Memory/Skills/Doctor panels.
+//!
+//! Split out of `app.rs` purely for file-size — these four methods only read
+//! `self` via pub fields and write back a `Vec<String>` per panel, no shared
+//! state with the input/event-handling half of `App`.
+
+use crate::config;
+use crate::inventory;
+use crate::memory;
+use crate::persona;
+use crate::roles;
+use std::time::Duration;
+
+use super::app::App;
+
+impl App {
+    pub fn refresh_personas(&mut self) {
+        let ac = config::AbbeyConfig::load().unwrap_or_default();
+        let mut lines = persona::persona_status_lines("");
+        lines.extend(roles::role_status_lines(&ac.roles.max, &ac.roles.gemma));
+        lines.push(format!("default_role: {}", ac.default_role));
+        lines.push(
+            "routing: route_decision → route.jsonl (alt/fb audit only; no auto second agent)"
+                .into(),
+        );
+        lines.push("Tip: /max · /gemma · /routes · hybrid-loop · /persona aviva".into());
+        self.persona_lines = lines;
+    }
+
+    pub fn refresh_memory(&mut self) {
+        let backend = config::AbbeyConfig::load()
+            .unwrap_or_default()
+            .memory_backend;
+        let mut lines = vec![memory::backend_status(&self.state.state_dir, &backend)];
+        let opened = memory::open_backend_with_timeout(
+            &self.state.state_dir,
+            &backend,
+            Duration::from_millis(250),
+        );
+        match opened {
+            Ok(mem) => {
+                for layer in ["stm", "ltm", "activity", "train_candidate"] {
+                    let n = mem
+                        .filter(Some(layer), None, 500)
+                        .map(|v| v.len())
+                        .unwrap_or(0);
+                    lines.push(format!("{layer:<16} {n}"));
+                }
+                if let Ok(report) = mem.reflect() {
+                    lines.push(format!(
+                        "reflect low={} dups={} superseded={}",
+                        report.low_confidence.len(),
+                        report.duplicate_summaries.len(),
+                        report.superseded.len()
+                    ));
+                }
+                if let Ok(prefs) = mem.filter(Some("ltm"), Some("preference"), 10) {
+                    for p in prefs.into_iter().take(5) {
+                        lines.push(format!("pref: {}", p.summary));
+                    }
+                }
+                if let Ok(records) = mem.filter(None, None, 12) {
+                    if records.is_empty() {
+                        lines.push(
+                            "map: empty — teach with `abbey memory put --tag <subject>`".into(),
+                        );
+                    } else {
+                        lines.push("map  topic×recency×depth (CLI: abbey memory map|near)".into());
+                        for r in &records {
+                            let p = memory::coordinates(r);
+                            lines.push(format!(
+                                "  {:>5.0} {:>6.2} {:>5.2}  {:<14} {}",
+                                p.x,
+                                p.y,
+                                p.z,
+                                memory::primary_topic(r),
+                                r.summary
+                            ));
+                        }
+                    }
+                }
+            }
+            Err(e) => lines.push(format!("unavailable: {e}")),
+        }
+        lines.push("CLI: abbey learn correction|preference|digest|review|stats".into());
+        self.memory_lines = lines;
+    }
+
+    pub fn refresh_skills(&mut self) {
+        let mut lines = Vec::new();
+        if let Ok(skills) = inventory::list_skills() {
+            for s in skills.into_iter().take(80) {
+                if s.description.is_empty() {
+                    lines.push(s.name);
+                } else {
+                    lines.push(format!("{} — {}", s.name, s.description));
+                }
+            }
+        }
+        for t in inventory::list_agent_tools() {
+            let mark = if t.path.is_some() { "✓" } else { "·" };
+            lines.push(format!("{mark} tool:{:<12} {}", t.name, t.kind));
+        }
+        if lines.is_empty() {
+            lines.push("(no skills/tools found)".into());
+        }
+        self.skill_lines = lines;
+    }
+
+    pub fn refresh_doctor(&mut self) {
+        let chat = self.state.read_chat().unwrap_or_else(|| "(none)".into());
+        let ac = config::AbbeyConfig::load().unwrap_or_default();
+        let mut lines = crate::build_info::lines();
+        lines.extend([
+            format!("agent:     {}", self.cfg.agent_path.display()),
+            format!("agent ver: {}", self.cfg.agent_version()),
+            format!("model:     {}", self.cfg.model),
+            format!("chat:      {chat}"),
+            format!("chat file: {}", self.state.active_chat_file().display()),
+            format!("per-cwd:   {}", self.state.per_cwd),
+            format!("cwd:       {}", self.state.cwd.display()),
+            format!("state:     {}", self.state.state_dir.display()),
+            format!("auto-review: {}", self.cfg.auto_review),
+            format!("trust:     {}", self.cfg.trust),
+            format!("force:     {}", self.cfg.force),
+            format!("no-resume: {}", self.cfg.no_resume),
+            "personas:   Abbey · Aviva · Abi (abi-ai)".into(),
+            "roles:      Max→technical · Gemma→visual (cursor-agent bindings)".into(),
+            memory::backend_status(&self.state.state_dir, &ac.memory_backend),
+            memory::feature_status(),
+            config::wdbx_cli_status(&ac),
+            "os-control: abbey os dry-run|execute --confirm (cross-platform allowlist)".into(),
+            "subagents:  abbey subagents run --lanes max,reviewer [--peers gemini]".into(),
+            "parallel:   alias of subagents with Max+Gemma+Aviva defaults".into(),
+            "learn:      abbey learn correction|preference|routes|digest|review|stats".into(),
+        ]);
+        self.doctor_lines = lines;
+        self.history = self.state.history(40);
+    }
+}

@@ -166,14 +166,21 @@ Buildable residuals closed 2026-07-30; Proposed/OOS stay deferred above.
 - [x] `src/improve/{mod,ledger,gate}.rs` — status/plan/run, ledger parse, check.sh runner
 - [x] CLI/slash/doctor/claims wiring; bounded `--confirm` + max-rounds/minutes
 - [x] Unit tests for ledger/args/gate classify; no live agent in tests
-- [ ] Close goal after `./check.sh` green evidence (human ledger close)
+- [x] Close goal after `./check.sh` green evidence (human ledger close) — verified live via
+      the built binary: `abbey improve status` (ledger parse: 18 goals/86 todos, correct
+      focus pick) and `abbey improve plan` (diagnose+implement prompt preview, no apply)
+      against a green `./check.sh`. `improve run --confirm` (the Max force-apply path) was
+      **not** exercised — that spends real cursor-agent credits and edits the tree
+      autonomously, so it stays for a human-initiated run, not this close
 
-### Known gate bug — file-size guard hard-fail is unreachable
-- [ ] `check.sh`'s file-size guard checks `elif n > 800: WARN` before `elif n > 1000: FAIL`,
-      so the FAIL branch never fires — anything over 800 lines always matches the WARN arm
-      first. Contradicts AGENTS.md's stated 1000-line hard cap. Fix the ordering (check
-      `n > 1000` first) — but only once the item below is resolved, or this immediately reds
-      the gate
-- [ ] `src/tui/app.rs` is 1025 lines (past the stated 1000-line hard cap; currently only
-      WARNs). Needs decomposition — split overlay/palette state or per-tab draw logic out —
-      before the guard above is fixed
+### Known gate bug — file-size guard hard-fail is unreachable (closed)
+- [x] `src/tui/app.rs` decomposed 1025→896 lines: the four background-refresh methods
+      (`refresh_personas`/`refresh_memory`/`refresh_skills`/`refresh_doctor`) moved to a new
+      `src/tui/refresh.rs` (`impl App` in a sibling module — same pattern `ui.rs` already
+      uses for `super::app::App`). Mechanical move only, no behavior change; dropped five
+      now-unused imports (`config`/`inventory`/`memory`/`persona`/`roles`) from `app.rs`
+- [x] `check.sh`'s file-size guard reordered — `elif n > 1000: FAIL` now checked before
+      `elif n > 800: WARN`, so the hard-fail branch is reachable again. Re-ran `./check.sh`
+      with the reorder live: both flagged files (`app.rs` 896, `src/improve/mod.rs` 842)
+      correctly only WARN; `gate::classify_failures`'s `"hard max 1000"` match still lines
+      up with the FAIL message text, so the `FailKind::FileSize` classifier isn't dead

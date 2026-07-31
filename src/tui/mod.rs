@@ -2,6 +2,7 @@
 
 mod app;
 mod overlay;
+mod refresh;
 mod tabs;
 mod theme;
 mod ui;

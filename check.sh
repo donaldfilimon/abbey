@@ -68,11 +68,11 @@ for p in Path("src").rglob("*.rs"):
     if p.name == "main.rs" and n > 200:
         print(f"FAIL {rel}: {n} lines (max 200)")
         bad = True
-    elif n > 800:
-        print(f"WARN {rel}: {n} lines (soft max 800)")
     elif n > 1000:
         print(f"FAIL {rel}: {n} lines (hard max 1000)")
         bad = True
+    elif n > 800:
+        print(f"WARN {rel}: {n} lines (soft max 800)")
 if bad:
     raise SystemExit(1)
 print("ok")

@@ -177,10 +177,21 @@ paths` + this-host matrix column, `install.ps1`, softer `check.sh` cross-target 
 targets are already installed. Voice/fm remain macOS-only; accelerator runtimes stay OOS.
 
 ## Smart improve loop (ledger + gate, bounded auto)
-status: in_progress
+status: done
 
 `abbey improve` — parse `tasks/goals.md` + `todo.md`, fan out local diagnose lanes
 (reviewer/gemma), Max implement with one `--confirm` for the run, hard stop on
 `./check.sh` green (or max-rounds / max-minutes). Same-host only; never auto-marks
 goals.md done; OS allowlist execute unchanged.
+
+**Closed 2026-07-31:** live-verified against the built binary — `abbey improve status`
+correctly parses the real ledger (18 goals / 86 todos) and picks focus; `abbey improve
+plan` renders the diagnose + implement prompts with no apply — both against a green
+`./check.sh`. Also closed a gap found while verifying: `check.sh`'s file-size guard had
+an unreachable hard-fail branch (`elif n > 800` shadowed `elif n > 1000`), and
+`src/tui/app.rs` had already crossed that 1000-line cap under the dead branch. Fixed the
+guard ordering and decomposed `app.rs` (1025→896: refresh methods split into
+`src/tui/refresh.rs`) so the corrected guard passes for real, not by omission.
+**Not exercised:** `improve run --confirm` — the Max force-apply path spends real
+cursor-agent credits and edits the tree autonomously; left for a human-initiated run.
 
