@@ -234,7 +234,7 @@ pub const SLASH_CATALOG: &[SlashCmd] = &[
     },
     SlashCmd {
         name: "memory",
-        help: "Chat history, or: /memory search <q>",
+        help: "Chat history, or: /memory search <q> | /memory similar <q>",
         kind: SlashKind::Local,
     },
     SlashCmd {

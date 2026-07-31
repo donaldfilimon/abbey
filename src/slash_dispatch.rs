@@ -12,6 +12,7 @@ use crate::init;
 use crate::inventory;
 use crate::learn;
 use crate::media::{self, MediaAttach, MediaKind};
+use crate::memory;
 use crate::models::resolve_model;
 use crate::os_control;
 use crate::parallel;
@@ -144,6 +145,15 @@ pub fn dispatch_slash(input: &str, state: &AbbeyState, cfg: &mut AgentConfig) ->
                 for r in mem.search_keyword(q, 20)? {
                     println!("{}\t{}\t{}", r.id, r.retention, r.summary);
                 }
+                return Ok(0);
+            }
+            if rest.starts_with("similar ") {
+                let q = rest.trim_start_matches("similar ").trim();
+                let mem = open_memory(state)?;
+                for (score, r) in memory::similar_to_text(mem.as_ref(), q, 20)? {
+                    println!("{score:.2}\t{}\t{}", r.retention, r.summary);
+                }
+                println!("note: lexical n-gram cosine — learned embeddings stay Proposed");
                 return Ok(0);
             }
             let n: usize = rest.parse().unwrap_or(15);
