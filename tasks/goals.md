@@ -228,3 +228,13 @@ regression tests. Verified live: `improve status` went 5 open todos → 0 and fo
 `stabilize`; `improve run` takes the "already production-ready (gate green · no open
 slice)" early return with zero lanes dispatched.
 
+**Maintenance 2026-07-31 (stays `done`):** `src/improve/mod.rs` 842 → 735 lines —
+`RunReport` + `report_path`/`write_report`/`latest_report_path` extracted to
+`src/improve/report.rs` (a self-contained concern: owns its fields, reaches
+`AbbeyState` only for `state_dir`). Addresses the file-size guard's **soft WARN**,
+not a failure — the file was never near the 1000-line hard cap. Verified beyond the
+gate: `improve status` still prints its `last report:` line, which `latest_report_path`
+feeds and which no test would have caught. `src/tui/app.rs` (896) deliberately left
+alone — it was already decomposed once this session (1025 → 896) and cutting it again
+to chase a soft warning would be line-shaving, not decomposition.
+
