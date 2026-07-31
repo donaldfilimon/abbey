@@ -105,6 +105,7 @@ CLI: `abbey claims` · `abbey claims proposed|oos` · `abbey claims refuse embed
 | MCP/tools during a run (`--approve-mcps`) | ✓ | | Abbey as tool runtime |
 | Auto code highlighting (fences on `-p`/print · `abbey highlight`) | ✓ | | full markdown UI / LSP |
 | Semantic/learned memory embedding space | | ✓ | |
+| Memory filter by source / timestamp / project | | ✓ | |
 | Multi-node · multi-GPU · shared compute mesh | | ✓ | |
 | GPU/NPU/TPU compilation, training, inference in Abbey | | | ✓ |
 | Autonomous OS/service operation (no allowlist) | | | ✓ |
@@ -115,7 +116,12 @@ CLI: `abbey claims` · `abbey claims proposed|oos` · `abbey claims refuse embed
 
 ## Gotchas
 
-- Toolchain: `rust-toolchain.toml` nightly + edition 2024
+- Toolchain: `rust-toolchain.toml` nightly + edition 2024. **`../abi` requires
+  `rust-version = 1.99`.** A Homebrew-installed `rustc`/`cargo` on PATH shadows rustup's
+  nightly (rustup's shims live in `~/.cargo/bin` and may be missing entirely), so the gate
+  can fail with "rustc 1.97.1 is not supported by the following packages" while rustup's
+  nightly is perfectly new enough. `check.sh` now detects this and prints the remedy
+  (`brew unlink rust` / `rustup default nightly`)
 - `abi-ai` path-dep expects sibling `../abi`; `--features wdbx` also needs `../abi/crates/abi-wdbx`
 - Default `cargo clippy`/`cargo test` never compile the `wdbx` module — use `./check.sh`,
   which runs both feature sets, or gated code rots unnoticed

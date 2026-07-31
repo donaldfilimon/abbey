@@ -3,6 +3,44 @@
 set -eu
 cd "$(dirname "$0")"
 
+# Toolchain guard. `rust-toolchain.toml` pins nightly, but a real (non-shim)
+# cargo earlier on PATH — Homebrew's `rust` formula is the usual culprit —
+# silently wins and can be older than the sibling ../abi crates' rust-version.
+# Cargo already detects that; what it does not print is the remedy. Probe with
+# a cheap metadata resolve rather than comparing version strings, so this does
+# not hardcode a version that rots the next time ../abi bumps.
+# `cargo check` is the probe because the rust-version gate fires during unit-graph
+# construction, before any compilation — so in the failing case it returns
+# immediately, and in the passing case it warms dev-profile artifacts that the
+# `cargo test` steps below reuse.
+echo "== toolchain =="
+if ! probe=$(cargo check --quiet 2>&1 >/dev/null); then
+  if printf '%s' "$probe" | grep -q 'is not supported by the following packages'; then
+    printf '%s\n' "$probe" >&2
+    printf '\ncheck.sh: the active toolchain is too old for this workspace.\n\n' >&2
+    printf '  active cargo : %s (%s)\n' "$(command -v cargo)" "$(cargo --version 2>&1)" >&2
+    printf '  Abbey pins   : nightly (rust-toolchain.toml)\n' >&2
+    cat >&2 <<'MSG'
+
+This is usually PATH shadowing, not a missing toolchain: rustup may already
+have a new-enough nightly while a Homebrew-installed rustc/cargo appears first
+on PATH (rustup's shims live in ~/.cargo/bin and may be absent entirely).
+
+Check and fix:
+  rustup run nightly rustc --version     # is rustup's nightly new enough?
+  command -v -a cargo                    # which cargo actually wins?
+  brew unlink rust                       # let rustup's shims take over
+  rustup default nightly                 # (re)install shims if missing
+
+MSG
+    exit 1
+  fi
+  printf '%s\n' "$probe" >&2
+  echo "check.sh: cargo metadata failed (see above)" >&2
+  exit 1
+fi
+echo "ok ($(cargo --version))"
+
 echo "== rustfmt =="
 cargo fmt --all -- --check
 

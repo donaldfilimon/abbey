@@ -40,6 +40,14 @@ status: done
 ## Broader polish
 status: done
 
+**Review 2026-07-30:** `./check.sh` was **not runnable in a default shell** — Homebrew's
+rustc/cargo 1.97.1 shadows rustup's nightly 1.99.0 on PATH (no shims in `~/.cargo/bin`),
+and the sibling `../abi` crates now require `rust-version = 1.99`. The code was fine:
+the full gate passes under nightly 1.99 (101+7 and 107+7 tests). Added a toolchain
+guard to `check.sh` that turns cargo's bare "not supported by the following packages"
+into the actual remedy (`brew unlink rust` / `rustup default nightly`), verified in
+both the broken and working configurations.
+
 ## Hybrid model-routing architecture strategy
 status: done
 
@@ -59,6 +67,14 @@ fm/3-D map remain as before.
 **Residuals stay Proposed / Out of scope (not laundered):** semantic embedding
 space; multi-node / NPU-TPU learning; autonomous OS; local weights / LoRA;
 CouchDB/Python second memory stack. Claims gate in AGENTS.md stays binding.
+
+**Review 2026-07-30 (`/goal /review`) — gap found, recorded not built:** the brief's
+memory interface names *filter by source*, *by timestamp*, and *by project/domain*
+(plus recency weighting and confidence thresholds in the retrieval layer).
+`MemoryStore::filter` only takes `(retention, tag, limit)`. Unlike semantic search
+these need no embedder, so they were neither shipped nor listed as residual — an
+honesty hole in this goal's close. Now **Proposed** in the claims gate. Goal stays
+`done`: this is a named future slice, not a re-opening.
 
 **Polish (2026-07-30):** CLI/slash route line parity via `format_route_line`;
 hybrid-loop stages record paired alt/fb; learn routes keep routing fields;
