@@ -237,6 +237,16 @@ fn cmd_status(state: &AbbeyState, opts: &ImproveOpts) -> Result<i32> {
     let ledger = Ledger::load(&root)?;
     println!("abbey improve status");
     println!("root:    {}", root.display());
+    // Name the exact files, so a bare-looking ledger points at which path missed.
+    // Labelled by filename, not "goals"/"todos" — those would collide with the
+    // count line below and read as duplicate output.
+    for (label, path) in [
+        ("goals.md", &ledger.goals_path),
+        ("todo.md ", &ledger.todo_path),
+    ] {
+        let mark = if path.exists() { "" } else { "  (missing)" };
+        println!("{label}: {}{mark}", path.display());
+    }
     println!(
         "goals:   {} open / {} total · todos: {} open / {} total",
         ledger.open_goals().count(),

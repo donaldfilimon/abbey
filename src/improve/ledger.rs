@@ -57,11 +57,10 @@ pub struct TodoItem {
 
 #[derive(Debug, Clone)]
 pub struct Ledger {
-    /// Which files were actually loaded — not read yet (status prints `root`
-    /// instead), kept for a future error message naming the exact ledger file.
-    #[allow(dead_code)]
+    /// The exact files this ledger was loaded from. `improve status` prints
+    /// them, which is what tells you *which* path was empty when a ledger
+    /// looks unexpectedly bare.
     pub goals_path: PathBuf,
-    #[allow(dead_code)]
     pub todo_path: PathBuf,
     pub goals: Vec<Goal>,
     pub todos: Vec<TodoItem>,
@@ -141,14 +140,6 @@ impl Ledger {
 
     pub fn next_open_todo(&self) -> Option<&TodoItem> {
         self.open_todos().next()
-    }
-
-    /// `pick_work` currently derives "nothing open" from `pick_goal`/
-    /// `next_open_todo` directly; kept as the more explicit query for callers
-    /// that want a plain "is this ledger closed" check.
-    #[allow(dead_code)]
-    pub fn all_goals_closed(&self) -> bool {
-        !self.goals.is_empty() && self.goals.iter().all(|g| g.status == GoalStatus::Done)
     }
 }
 

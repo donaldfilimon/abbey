@@ -238,3 +238,15 @@ feeds and which no test would have caught. `src/tui/app.rs` (896) deliberately l
 alone — it was already decomposed once this session (1025 → 896) and cutting it again
 to chase a soft warning would be line-shaving, not decomposition.
 
+**Dead-code audit 2026-07-31 (stays `done`):** `src/improve/` now carries **zero**
+`#[allow(dead_code)]`. Three genuinely-unused items deleted — `gate::check_script_path`
+(zero callers; its comment claimed "used only in tests / helpers", which was simply
+false, and it duplicated `resolve_check_cmd`), `Ledger::all_goals_closed` (zero callers;
+`pick_work` derives the same thing directly), and `GateReport::output` (never read;
+`excerpt` is the used path and the full text is consumed locally). `Ledger::goals_path`/
+`todo_path` were wired up instead of deleted: `improve status` now names the exact ledger
+files with a `(missing)` marker, which is what tells you *which* path was empty when a
+ledger looks unexpectedly bare — verified live in both the present and missing cases.
+Most of these allows were added earlier the same session under gate pressure; the audit
+was resolving that, not new scope.
+

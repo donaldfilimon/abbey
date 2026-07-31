@@ -5,7 +5,7 @@
 
 use crate::agent::truncate_utf8_bytes;
 use anyhow::{Context, Result, bail};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 use std::time::Instant;
 
@@ -39,10 +39,8 @@ impl FailKind {
 pub struct GateReport {
     pub ok: bool,
     pub exit: i32,
-    /// Full untruncated stdout+stderr. Prompts/printing use `excerpt`
-    /// instead; kept for a future full-log write, not read yet.
-    #[allow(dead_code)]
-    pub output: String,
+    /// Clamped, signal-first view of stdout+stderr. The full text is only ever
+    /// consumed locally by `classify_failures` + `clamp_excerpt`.
     pub excerpt: String,
     pub kinds: Vec<FailKind>,
     pub elapsed_ms: u128,
@@ -127,7 +125,6 @@ pub fn run_gate(root: &Path) -> Result<GateReport> {
     Ok(GateReport {
         ok,
         exit,
-        output: combined,
         excerpt,
         kinds,
         elapsed_ms: started.elapsed().as_millis(),
@@ -236,12 +233,6 @@ pub fn wants_security_lane(kinds: &[FailKind]) -> bool {
     kinds
         .iter()
         .any(|k| matches!(k, FailKind::Clippy | FailKind::Test | FailKind::Other))
-}
-
-/// Path used only in tests / helpers.
-#[allow(dead_code)]
-pub fn check_script_path(root: &Path) -> PathBuf {
-    root.join("check.sh")
 }
 
 #[cfg(test)]
