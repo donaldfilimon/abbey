@@ -77,6 +77,7 @@ CLI: `abbey claims` · `abbey claims proposed|oos` · `abbey claims refuse embed
 | Parallel lanes (Max/Gemma/Aviva) | ✓ | | |
 | Multi-subagent fan-out (`subagents` / synthesize) | ✓ | | |
 | Local distributed peer agents (PATH CLIs) | ✓ | | multi-node agent mesh |
+| Goal-driven improve (`abbey improve` + check.sh bar) | ✓ | | multi-node / auto-done goals / unrestricted OS |
 | linux/macos/windows primary host targets (portable surfaces) | ✓ | | voice/fm macOS-only; see `platform paths` |
 | Multi-threaded subagent fan-out (`--jobs`) | ✓ | | GPU kernels |
 | WDBX cross-process lock (Unix + Windows via fs2) | ✓ | | |

@@ -1,61 +1,75 @@
 //! Ratatui drawing for Abbey TUI.
 
-use super::app::{App, Tab};
+use super::app::{App, Focus, OverlayKind, Tab};
+use super::overlay;
+use super::widgets::{
+    accent_style, dim_style, draw_kpi_strip, draw_vertical_scrollbar, list_highlight_style,
+    rounded_block,
+};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph, Tabs, Wrap};
-
-const ACCENT: Color = Color::Rgb(180, 120, 255); // abbey violet
-const DIM: Color = Color::Rgb(120, 120, 140);
-const OK: Color = Color::Rgb(120, 220, 160);
-const WARN: Color = Color::Rgb(240, 180, 80);
+use ratatui::widgets::{List, ListItem, Paragraph, Tabs, Wrap};
 
 pub fn draw(f: &mut Frame, app: &App) {
     let root = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3),
+            Constraint::Length(if app.tab == Tab::Home { 1 } else { 0 }),
             Constraint::Min(5),
             Constraint::Length(3),
             Constraint::Length(1),
         ])
         .split(f.area());
 
+    // Fill background
+    f.render_widget(
+        Paragraph::new("").style(Style::default().bg(app.theme.bg).fg(app.theme.fg)),
+        f.area(),
+    );
+
     draw_header(f, root[0], app);
-    match app.tab {
-        Tab::Home => draw_home(f, root[1], app),
-        Tab::Chats => draw_chats(f, root[1], app),
-        Tab::Personas => draw_lines_panel(
-            f,
-            root[1],
-            app,
-            &app.persona_lines,
-            " Personas · Max/Gemma roles ",
-        ),
-        Tab::Memory => draw_lines_panel(
-            f,
-            root[1],
-            app,
-            &app.memory_lines,
-            "Memory · map · self-learn LTM ",
-        ),
-        Tab::Skills => draw_lines_panel(
-            f,
-            root[1],
-            app,
-            &app.skill_lines,
-            " Skills · plugins · peer tools ",
-        ),
-        Tab::Models => draw_models(f, root[1], app),
-        Tab::Doctor => draw_doctor(f, root[1], app),
+    if app.tab == Tab::Home {
+        let chips = app.kpi_chips();
+        let refs: Vec<(&str, &str)> = chips
+            .iter()
+            .map(|(a, b)| (a.as_str(), b.as_str()))
+            .collect();
+        draw_kpi_strip(f, root[1], &refs, &app.theme);
     }
-    draw_input(f, root[2], app);
-    draw_status(f, root[3], app);
+    match app.tab {
+        Tab::Home => draw_home(f, root[2], app),
+        Tab::Chats => draw_list_tab(f, root[2], app, " Chats · Enter activate · / filter "),
+        Tab::Personas => draw_list_tab(f, root[2], app, " Personas · Max/Gemma roles "),
+        Tab::Memory => draw_list_tab(f, root[2], app, " Memory · map · self-learn "),
+        Tab::Skills => draw_list_tab(f, root[2], app, " Skills · plugins · peers "),
+        Tab::Models => draw_list_tab(f, root[2], app, " Models · Enter select "),
+        Tab::Doctor => draw_list_tab(f, root[2], app, " Doctor "),
+    }
+    draw_input(f, root[3], app);
+    draw_status(f, root[4], app);
+
+    if app.overlay != OverlayKind::None {
+        overlay::draw_overlay(
+            f,
+            f.area(),
+            app.overlay,
+            &app.overlay_query,
+            app.overlay_idx,
+            &app.theme,
+            &app.input,
+        );
+    }
 }
 
 fn draw_header(f: &mut Frame, area: Rect, app: &App) {
+    let pulse = if app.tick % 20 < 10 {
+        app.theme.header_pulse
+    } else {
+        app.theme.accent
+    };
     let titles: Vec<Line> = Tab::ALL
         .iter()
         .map(|t| {
@@ -64,300 +78,273 @@ fn draw_header(f: &mut Frame, area: Rect, app: &App) {
                 format!(" {} ", t.title()),
                 if selected {
                     Style::default()
-                        .fg(Color::Black)
-                        .bg(ACCENT)
+                        .fg(app.theme.bg)
+                        .bg(pulse)
                         .add_modifier(Modifier::BOLD)
                 } else {
-                    Style::default().fg(DIM)
+                    Style::default().fg(app.theme.fg_dim)
                 },
             ))
         })
         .collect();
 
+    let brand = if app.tick % 20 < 10 {
+        Style::default()
+            .fg(app.theme.header_pulse)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+            .fg(app.theme.accent)
+            .add_modifier(Modifier::BOLD)
+    };
+
     let tabs = Tabs::new(titles)
         .select(Tab::ALL.iter().position(|t| *t == app.tab).unwrap_or(0))
         .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(ACCENT))
+            rounded_block("", &app.theme, false)
+                .title(Span::styled(" ✦ Abbey ", brand))
                 .title(Span::styled(
-                    " ✦ Abbey ",
-                    Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                    format!(" {} ", app.theme_id.as_str()),
+                    Style::default().fg(app.theme.fg_dim),
                 )),
         )
-        .divider(Span::raw("│"));
+        .divider(Span::styled("│", Style::default().fg(app.theme.border)));
     f.render_widget(tabs, area);
 }
 
 fn draw_home(f: &mut Frame, area: Rect, app: &App) {
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(58), Constraint::Percentage(42)])
+        .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
         .split(area);
 
     let chat = app.state.read_chat().unwrap_or_else(|| "—".into());
     let body = vec![
         Line::from(vec![
-            Span::styled("model  ", Style::default().fg(DIM)),
+            Span::styled("model  ", dim_style(&app.theme)),
             Span::styled(
                 app.cfg.model.clone(),
-                Style::default().fg(OK).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(app.theme.ok)
+                    .add_modifier(Modifier::BOLD),
             ),
         ]),
         Line::from(vec![
-            Span::styled("chat   ", Style::default().fg(DIM)),
-            Span::styled(chat, Style::default().fg(Color::Cyan)),
+            Span::styled("chat   ", dim_style(&app.theme)),
+            Span::styled(chat, Style::default().fg(app.theme.accent)),
         ]),
         Line::from(vec![
-            Span::styled("cwd    ", Style::default().fg(DIM)),
-            Span::raw(app.state.cwd.display().to_string()),
+            Span::styled("cwd    ", dim_style(&app.theme)),
+            Span::raw(short_path(&app.state.cwd.display().to_string())),
         ]),
         Line::from(""),
+        Line::from(Span::styled("Keys", accent_style(&app.theme))),
         Line::from(Span::styled(
-            "Keys",
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            "  Enter /slash     run or execute slash",
+            dim_style(&app.theme),
         )),
-        Line::from("  Enter          run session (or execute /slash)"),
-        Line::from("  /help          Claude Code–style slash catalog"),
-        Line::from("  Ctrl-n         new chat"),
-        Line::from("  Ctrl-p         please-fix"),
-        Line::from("  Tab / 1-7      Home Chats Personas Memory Skills Models Doctor"),
-        Line::from("  Esc / q        quit (empty input)"),
+        Line::from(Span::styled(
+            "  `  Ctrl-L        toggle prompt ↔ panel",
+            dim_style(&app.theme),
+        )),
+        Line::from(Span::styled(
+            "  Ctrl-K / Ctrl-T  palette / theme",
+            dim_style(&app.theme),
+        )),
+        Line::from(Span::styled(
+            "  Tab 1-7 · ?      tabs · help",
+            dim_style(&app.theme),
+        )),
         Line::from(""),
         Line::from(Span::styled(
-            "Hybrid: Abbey/Aviva/Abi · Max/Gemma · parallel · OS control · self-learn.",
-            Style::default().fg(DIM),
-        )),
-        Line::from(Span::styled(
-            "Enter launches cursor-agent with persona/role wrap; TUI restores on exit.",
-            Style::default().fg(DIM),
+            "Composer-first · dual focus · dashboard chips.",
+            dim_style(&app.theme),
         )),
     ];
 
     let left = Paragraph::new(body)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(" Session ")
-                .border_style(Style::default().fg(DIM)),
-        )
+        .block(rounded_block(
+            " Session ",
+            &app.theme,
+            app.focus == Focus::Prompt,
+        ))
         .wrap(Wrap { trim: false });
     f.render_widget(left, chunks[0]);
 
-    let recent: Vec<ListItem> = app
-        .history
-        .iter()
-        .take(12)
-        .map(|e| {
-            ListItem::new(Line::from(vec![
-                Span::styled(
-                    format!("{} ", &e.timestamp[11..19.min(e.timestamp.len())]),
-                    Style::default().fg(DIM),
-                ),
-                Span::styled(
-                    e.chat_id.chars().take(8).collect::<String>(),
-                    Style::default().fg(Color::Cyan),
-                ),
-                Span::raw(" "),
-                Span::styled(short_path(&e.cwd), Style::default().fg(DIM)),
-            ]))
-        })
-        .collect();
-
-    let right = List::new(recent).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title(" Recent chats ")
-            .border_style(Style::default().fg(DIM)),
-    );
-    f.render_widget(right, chunks[1]);
+    draw_recent_list(f, chunks[1], app);
 }
 
-fn draw_lines_panel(f: &mut Frame, area: Rect, app: &App, lines: &[String], title: &str) {
+fn draw_recent_list(f: &mut Frame, area: Rect, app: &App) {
+    let lines = app.filtered_lines();
+    let focused = app.focus == Focus::Panel;
     let items: Vec<ListItem> = lines
         .iter()
         .enumerate()
+        .skip(app.scroll)
         .map(|(i, line)| {
-            let style = if i == app.list_idx {
-                Style::default()
-                    .bg(Color::Rgb(40, 30, 60))
-                    .fg(Color::White)
-                    .add_modifier(Modifier::BOLD)
+            let style = if focused && i == app.list_idx {
+                list_highlight_style(&app.theme)
             } else {
-                Style::default()
+                Style::default().fg(app.theme.fg)
+            };
+            // Prefer cyan-ish accent for id portion when we can split
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 2 {
+                ListItem::new(Line::from(vec![
+                    Span::styled(
+                        format!("{} ", parts[0].get(11..19).unwrap_or(parts[0])),
+                        dim_style(&app.theme),
+                    ),
+                    Span::styled(
+                        parts[1].chars().take(8).collect::<String>(),
+                        Style::default().fg(app.theme.accent),
+                    ),
+                    Span::raw(" "),
+                    Span::styled(
+                        short_path(parts.get(2..).map(|p| p.join(" ")).as_deref().unwrap_or("")),
+                        dim_style(&app.theme),
+                    ),
+                ]))
+                .style(style)
+            } else {
+                ListItem::new(line.clone()).style(style)
+            }
+        })
+        .collect();
+
+    let title = if app.filter.is_empty() {
+        " Recent chats ".to_string()
+    } else {
+        format!(" Recent · /{} ", app.filter)
+    };
+    let block = rounded_block(&title, &app.theme, focused);
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    f.render_widget(List::new(items), inner);
+    draw_vertical_scrollbar(
+        f,
+        area,
+        lines.len(),
+        inner.height as usize,
+        app.scroll,
+        &app.theme,
+    );
+}
+
+fn draw_list_tab(f: &mut Frame, area: Rect, app: &App, title: &str) {
+    let lines = app.filtered_lines();
+    let focused = app.focus == Focus::Panel;
+    let title = if app.filtering || !app.filter.is_empty() {
+        format!("{title} filter:{}/ ", app.filter)
+    } else {
+        title.to_string()
+    };
+    let items: Vec<ListItem> = lines
+        .iter()
+        .enumerate()
+        .skip(app.scroll)
+        .map(|(i, line)| {
+            let style = if focused && i == app.list_idx {
+                list_highlight_style(&app.theme)
+            } else {
+                Style::default().fg(app.theme.fg)
             };
             ListItem::new(line.clone()).style(style)
         })
         .collect();
-    let list = List::new(items).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title(title.to_string())
-            .border_style(Style::default().fg(ACCENT)),
+
+    let block = rounded_block(&title, &app.theme, focused);
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    f.render_widget(List::new(items), inner);
+    draw_vertical_scrollbar(
+        f,
+        area,
+        lines.len(),
+        inner.height as usize,
+        app.scroll,
+        &app.theme,
     );
-    f.render_widget(list, area);
-}
-
-fn draw_chats(f: &mut Frame, area: Rect, app: &App) {
-    let items: Vec<ListItem> = app
-        .history
-        .iter()
-        .enumerate()
-        .map(|(i, e)| {
-            let style = if i == app.list_idx {
-                Style::default()
-                    .bg(Color::Rgb(40, 30, 60))
-                    .fg(Color::White)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default()
-            };
-            ListItem::new(Line::from(vec![
-                Span::styled(format!("{}  ", e.timestamp), Style::default().fg(DIM)),
-                Span::styled(e.chat_id.clone(), Style::default().fg(Color::Cyan)),
-                Span::raw("  "),
-                Span::raw(e.cwd.clone()),
-            ]))
-            .style(style)
-        })
-        .collect();
-
-    let list = List::new(items).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title(" Chat history · Enter to activate · j/k move ")
-            .border_style(Style::default().fg(ACCENT)),
-    );
-    f.render_widget(list, area);
-}
-
-fn draw_models(f: &mut Frame, area: Rect, app: &App) {
-    let items: Vec<ListItem> = if !app.live_models.is_empty() {
-        app.live_models
-            .iter()
-            .enumerate()
-            .map(|(i, line)| {
-                let style = if i == app.list_idx {
-                    Style::default()
-                        .bg(Color::Rgb(40, 30, 60))
-                        .add_modifier(Modifier::BOLD)
-                } else {
-                    Style::default()
-                };
-                ListItem::new(line.clone()).style(style)
-            })
-            .collect()
-    } else {
-        app.aliases
-            .iter()
-            .enumerate()
-            .map(|(i, (a, full))| {
-                let style = if i == app.list_idx {
-                    Style::default()
-                        .bg(Color::Rgb(40, 30, 60))
-                        .add_modifier(Modifier::BOLD)
-                } else {
-                    Style::default()
-                };
-                ListItem::new(Line::from(vec![
-                    Span::styled(
-                        format!("{a:<12}"),
-                        Style::default().fg(OK).add_modifier(Modifier::BOLD),
-                    ),
-                    Span::styled(full.clone(), Style::default().fg(DIM)),
-                ]))
-                .style(style)
-            })
-            .collect()
-    };
-
-    let title = if app.live_models.is_empty() {
-        " Model aliases · Enter to select · (live list empty / offline) "
-    } else {
-        " Models (from cursor-agent) · Enter to select "
-    };
-
-    let list = List::new(items).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title(title)
-            .border_style(Style::default().fg(ACCENT)),
-    );
-    f.render_widget(list, area);
-}
-
-fn draw_doctor(f: &mut Frame, area: Rect, app: &App) {
-    let lines: Vec<Line> = app
-        .doctor_lines
-        .iter()
-        .enumerate()
-        .map(|(i, l)| {
-            let style = if i == app.list_idx {
-                Style::default().bg(Color::Rgb(40, 30, 60))
-            } else {
-                Style::default()
-            };
-            Line::from(Span::styled(l.clone(), style))
-        })
-        .collect();
-
-    let p = Paragraph::new(lines)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(" Doctor ")
-                .border_style(Style::default().fg(WARN)),
-        )
-        .wrap(Wrap { trim: false });
-    f.render_widget(p, area);
 }
 
 fn draw_input(f: &mut Frame, area: Rect, app: &App) {
-    let title = match app.tab {
-        Tab::Home => " Prompt ",
-        _ => " Prompt (switch to Home to type · Enter runs) ",
+    let focused = app.focus == Focus::Prompt;
+    let title = if focused {
+        " Prompt · Enter run · /slash · ↑↓ history "
+    } else {
+        " Prompt (Ctrl-L / ` to focus) "
     };
 
-    // Show cursor as inverted char
+    let caret_on = app.tick % 2 == 0;
     let mut spans = Vec::new();
     let (before, after) = app.input.split_at(app.cursor.min(app.input.len()));
     spans.push(Span::raw(before.to_string()));
     if let Some(ch) = after.chars().next() {
-        spans.push(Span::styled(
-            ch.to_string(),
-            Style::default().bg(ACCENT).fg(Color::Black),
-        ));
+        let style = if caret_on && focused {
+            Style::default().bg(app.theme.accent).fg(app.theme.bg)
+        } else {
+            Style::default().fg(app.theme.fg)
+        };
+        spans.push(Span::styled(ch.to_string(), style));
         spans.push(Span::raw(after[ch.len_utf8()..].to_string()));
-    } else {
+    } else if caret_on && focused {
         spans.push(Span::styled(
             " ",
-            Style::default().bg(ACCENT).fg(Color::Black),
+            Style::default().bg(app.theme.accent).fg(app.theme.bg),
         ));
     }
 
-    let p = Paragraph::new(Line::from(spans)).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title(title)
-            .border_style(Style::default().fg(Color::Cyan)),
-    );
+    let border = if focused {
+        app.theme.prompt_border
+    } else {
+        app.theme.border
+    };
+    let p = Paragraph::new(Line::from(spans))
+        .block(rounded_block(title, &app.theme, focused).border_style(Style::default().fg(border)));
     f.render_widget(p, area);
 }
 
 fn draw_status(f: &mut Frame, area: Rect, app: &App) {
     let exit = app
         .last_agent_code
-        .map(|c| format!(" last={c}"))
-        .unwrap_or_default();
+        .map(|c| {
+            let color = if c == 0 {
+                app.theme.ok
+            } else {
+                app.theme.error
+            };
+            Span::styled(format!(" last={c}"), Style::default().fg(color))
+        })
+        .unwrap_or_else(|| Span::raw(""));
+    let filter = if app.filter.is_empty() {
+        Span::raw("")
+    } else {
+        Span::styled(
+            format!(" filter={} ", app.filter),
+            Style::default().fg(app.theme.warn),
+        )
+    };
     let line = Line::from(vec![
-        Span::styled(" ▸ ", Style::default().fg(ACCENT)),
+        Span::styled(" ▸ ", accent_style(&app.theme)),
+        Span::styled(
+            format!("{} ", app.focus.label()),
+            Style::default().fg(app.theme.accent_dim),
+        ),
+        Span::styled(format!("{} ", app.theme_id.as_str()), dim_style(&app.theme)),
+        filter,
         Span::raw(app.status.clone()),
-        Span::styled(exit, Style::default().fg(DIM)),
+        exit,
     ]);
-    f.render_widget(Paragraph::new(line), area);
+    f.render_widget(
+        Paragraph::new(line).style(Style::default().bg(app.theme.bg)),
+        area,
+    );
 }
 
 fn short_path(p: &str) -> String {
+    if p.is_empty() {
+        return String::new();
+    }
     if let Some(home) = dirs::home_dir() {
         let hs = home.to_string_lossy();
         if let Some(rest) = p.strip_prefix(hs.as_ref()) {

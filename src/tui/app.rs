@@ -10,7 +10,10 @@ use crate::persona;
 use crate::roles;
 use crate::state::AbbeyState;
 use anyhow::Result;
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crossterm::event::{
+    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind,
+    KeyModifiers, MouseEventKind,
+};
 use crossterm::execute;
 use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
@@ -20,16 +23,31 @@ use ratatui::backend::CrosstermBackend;
 use std::io::stdout;
 use std::time::Duration;
 
-pub use super::tabs::{PendingAction, Tab};
+use super::overlay::{self, PaletteAction};
+use super::theme::{Theme, ThemeId};
+
+pub use super::tabs::{Focus, OverlayKind, PendingAction, Tab};
 
 pub struct App {
     pub state: AbbeyState,
     pub cfg: AgentConfig,
     pub tab: Tab,
+    pub focus: Focus,
+    pub theme_id: ThemeId,
+    pub theme: Theme,
     pub input: String,
     pub cursor: usize,
     pub status: String,
     pub list_idx: usize,
+    pub scroll: usize,
+    pub filter: String,
+    pub filtering: bool,
+    pub input_history: Vec<String>,
+    pub history_idx: Option<usize>,
+    pub tick: u64,
+    pub overlay: OverlayKind,
+    pub overlay_query: String,
+    pub overlay_idx: usize,
     pub should_quit: bool,
     pub pending: PendingAction,
     pub last_agent_code: Option<i32>,
@@ -50,14 +68,27 @@ impl App {
             .iter()
             .map(|(a, b)| ((*a).to_string(), (*b).to_string()))
             .collect();
+        let theme_id = ThemeId::resolve(&state.state_dir);
         let mut app = Self {
             state,
             cfg,
             tab: Tab::Home,
+            focus: Focus::Prompt,
+            theme_id,
+            theme: Theme::from_id(theme_id),
             input: String::new(),
             cursor: 0,
-            status: "Enter run · /help · Ctrl-n new · Ctrl-p fix · Tab panels · q quit".into(),
+            status: "Enter run · ` focus · Ctrl-K palette · Ctrl-T theme · ? help".into(),
             list_idx: 0,
+            scroll: 0,
+            filter: String::new(),
+            filtering: false,
+            input_history: Vec::new(),
+            history_idx: None,
+            tick: 0,
+            overlay: OverlayKind::None,
+            overlay_query: String::new(),
+            overlay_idx: 0,
             should_quit: false,
             pending: PendingAction::None,
             last_agent_code: None,
@@ -74,6 +105,13 @@ impl App {
         app.refresh_memory();
         app.refresh_skills();
         Ok(app)
+    }
+
+    pub fn cycle_theme(&mut self) {
+        self.theme_id = self.theme_id.cycle();
+        self.theme = Theme::from_id(self.theme_id);
+        let _ = ThemeId::save(&self.state.state_dir, self.theme_id);
+        self.status = format!("theme → {}", self.theme_id.as_str());
     }
 
     pub fn refresh_personas(&mut self) {
@@ -94,7 +132,6 @@ impl App {
             .unwrap_or_default()
             .memory_backend;
         let mut lines = vec![memory::backend_status(&self.state.state_dir, &backend)];
-        // Redraw path: never block the render loop on another process's lock.
         let opened = memory::open_backend_with_timeout(
             &self.state.state_dir,
             &backend,
@@ -122,7 +159,6 @@ impl App {
                         lines.push(format!("pref: {}", p.summary));
                     }
                 }
-                // Interpretable 3-D map preview (topic × recency × consolidation).
                 if let Ok(records) = mem.filter(None, None, 12) {
                     if records.is_empty() {
                         lines.push(
@@ -144,7 +180,6 @@ impl App {
                     }
                 }
             }
-            // A locked or broken store is not an empty one — say which.
             Err(e) => lines.push(format!("unavailable: {e}")),
         }
         lines.push("CLI: abbey learn correction|preference|digest|review|stats".into());
@@ -213,9 +248,120 @@ impl App {
         }
     }
 
+    pub fn refresh_all(&mut self) {
+        self.refresh_doctor();
+        self.refresh_personas();
+        self.refresh_memory();
+        self.refresh_skills();
+        self.status = "refreshed".into();
+    }
+
+    pub fn filtered_lines(&self) -> Vec<String> {
+        let raw: Vec<String> = match self.tab {
+            Tab::Home => self
+                .history
+                .iter()
+                .map(|e| format!("{}  {}  {}", e.timestamp, e.chat_id, e.cwd))
+                .collect(),
+            Tab::Chats => self
+                .history
+                .iter()
+                .map(|e| format!("{}  {}  {}", e.timestamp, e.chat_id, e.cwd))
+                .collect(),
+            Tab::Personas => self.persona_lines.clone(),
+            Tab::Memory => self.memory_lines.clone(),
+            Tab::Skills => self.skill_lines.clone(),
+            Tab::Models => {
+                if self.live_models.is_empty() {
+                    self.aliases
+                        .iter()
+                        .map(|(a, full)| format!("{a:<12} {full}"))
+                        .collect()
+                } else {
+                    self.live_models.clone()
+                }
+            }
+            Tab::Doctor => self.doctor_lines.clone(),
+        };
+        let f = self.filter.trim().to_ascii_lowercase();
+        if f.is_empty() || !matches!(self.tab, Tab::Home | Tab::Chats | Tab::Models | Tab::Skills) {
+            return raw;
+        }
+        raw.into_iter()
+            .filter(|l| l.to_ascii_lowercase().contains(&f))
+            .collect()
+    }
+
+    pub fn list_len(&self) -> usize {
+        self.filtered_lines().len()
+    }
+
+    pub fn ensure_visible(&mut self, viewport: usize) {
+        let len = self.list_len();
+        if len == 0 {
+            self.list_idx = 0;
+            self.scroll = 0;
+            return;
+        }
+        if self.list_idx >= len {
+            self.list_idx = len - 1;
+        }
+        if self.list_idx < self.scroll {
+            self.scroll = self.list_idx;
+        } else if viewport > 0 && self.list_idx >= self.scroll + viewport {
+            self.scroll = self.list_idx + 1 - viewport;
+        }
+    }
+
+    fn push_history(&mut self) {
+        let t = self.input.trim();
+        if t.is_empty() {
+            return;
+        }
+        if self.input_history.last().map(|s| s.as_str()) != Some(t) {
+            self.input_history.push(t.to_string());
+        }
+        if self.input_history.len() > 100 {
+            self.input_history.remove(0);
+        }
+        self.history_idx = None;
+    }
+
+    fn history_up(&mut self) {
+        if self.input_history.is_empty() {
+            return;
+        }
+        let next = match self.history_idx {
+            None => self.input_history.len() - 1,
+            Some(0) => 0,
+            Some(i) => i - 1,
+        };
+        self.history_idx = Some(next);
+        self.input = self.input_history[next].clone();
+        self.cursor = self.input.len();
+        self.sync_slash_overlay();
+    }
+
+    fn history_down(&mut self) {
+        let Some(i) = self.history_idx else {
+            return;
+        };
+        if i + 1 >= self.input_history.len() {
+            self.history_idx = None;
+            self.input.clear();
+            self.cursor = 0;
+        } else {
+            self.history_idx = Some(i + 1);
+            self.input = self.input_history[i + 1].clone();
+            self.cursor = self.input.len();
+        }
+        self.sync_slash_overlay();
+    }
+
     fn insert_char(&mut self, c: char) {
         self.input.insert(self.cursor, c);
         self.cursor += c.len_utf8();
+        self.sync_slash_overlay();
     }
 
     fn backspace(&mut self) {
@@ -230,6 +376,7 @@ impl App {
         let start = self.cursor - prev;
         self.input.replace_range(start..self.cursor, "");
         self.cursor = start;
+        self.sync_slash_overlay();
     }
 
     fn delete(&mut self) {
@@ -243,6 +390,7 @@ impl App {
             .unwrap_or(0);
         self.input
             .replace_range(self.cursor..self.cursor + next, "");
+        self.sync_slash_overlay();
     }
 
     fn move_left(&mut self) {
@@ -269,50 +417,60 @@ impl App {
         self.cursor += next;
     }
 
-    pub fn list_len(&self) -> usize {
-        match self.tab {
-            Tab::Home => 0,
-            Tab::Chats => self.history.len(),
-            Tab::Personas => self.persona_lines.len(),
-            Tab::Memory => self.memory_lines.len(),
-            Tab::Skills => self.skill_lines.len(),
-            Tab::Models => {
-                if self.live_models.is_empty() {
-                    self.aliases.len()
-                } else {
-                    self.live_models.len()
-                }
-            }
-            Tab::Doctor => self.doctor_lines.len(),
+    fn sync_slash_overlay(&mut self) {
+        if self.overlay == OverlayKind::Palette || self.overlay == OverlayKind::Help {
+            return;
+        }
+        let t = self.input.trim_start();
+        if t.starts_with('/') && !t.contains(char::is_whitespace) {
+            self.overlay = OverlayKind::SlashSuggest;
+            self.overlay_idx = 0;
+        } else if self.overlay == OverlayKind::SlashSuggest {
+            self.overlay = OverlayKind::None;
+        }
+    }
+
+    fn accept_slash_suggestion(&mut self) {
+        let prefix = self
+            .input
+            .split_whitespace()
+            .next()
+            .unwrap_or("/")
+            .trim_start_matches('/');
+        let suggestions = overlay::slash_suggestions(prefix);
+        if let Some(cmd) = suggestions.get(self.overlay_idx) {
+            self.input = format!("/{} ", cmd.name);
+            self.cursor = self.input.len();
+            self.overlay = OverlayKind::None;
+            self.overlay_idx = 0;
         }
     }
 
     fn select_list_item(&mut self) {
+        let lines = self.filtered_lines();
         match self.tab {
-            Tab::Chats => {
-                if let Some(e) = self.history.get(self.list_idx) {
-                    if let Err(err) = self.state.save_chat(&e.chat_id) {
-                        self.status = format!("save chat failed: {err}");
-                    } else {
-                        self.status = format!("active chat → {}", e.chat_id);
-                        self.refresh_doctor();
+            Tab::Home | Tab::Chats => {
+                if let Some(line) = lines.get(self.list_idx) {
+                    // timestamp  chat_id  cwd — chat_id is 2nd field
+                    let parts: Vec<_> = line.split_whitespace().collect();
+                    if parts.len() >= 2 {
+                        let chat_id = parts[1];
+                        if let Err(err) = self.state.save_chat(chat_id) {
+                            self.status = format!("save chat failed: {err}");
+                        } else {
+                            self.status = format!("active chat → {chat_id}");
+                            self.refresh_doctor();
+                        }
                     }
                 }
             }
             Tab::Models => {
-                if !self.live_models.is_empty() {
-                    if let Some(line) = self.live_models.get(self.list_idx) {
-                        let id = line.split_whitespace().next().unwrap_or(line);
-                        let id = models::resolve_model(id);
-                        self.cfg.model = id.clone();
-                        let _ = self.state.save_model(&id);
-                        self.status = format!("model → {id}");
-                        self.refresh_doctor();
-                    }
-                } else if let Some((alias, full)) = self.aliases.get(self.list_idx) {
-                    self.cfg.model = full.clone();
-                    let _ = self.state.save_model(full);
-                    self.status = format!("model → {alias} ({full})");
+                if let Some(line) = lines.get(self.list_idx) {
+                    let id = line.split_whitespace().next().unwrap_or(line);
+                    let id = models::resolve_model(id);
+                    self.cfg.model = id.clone();
+                    let _ = self.state.save_model(&id);
+                    self.status = format!("model → {id}");
                     self.refresh_doctor();
                 }
             }
@@ -329,19 +487,89 @@ impl App {
                 self.refresh_skills();
                 self.status = "skills refreshed".into();
             }
-            _ => {}
+            Tab::Doctor => {}
         }
     }
 
     fn on_tab_enter(&mut self, tab: Tab) {
         self.tab = tab;
         self.list_idx = 0;
+        self.scroll = 0;
+        self.filter.clear();
+        self.filtering = false;
         match tab {
-            Tab::Models if self.live_models.is_empty() => self.refresh_models_live(),
+            Tab::Models => {
+                if self.live_models.is_empty() {
+                    self.refresh_models_live();
+                }
+            }
             Tab::Doctor => self.refresh_doctor(),
             Tab::Personas => self.refresh_personas(),
             Tab::Memory => self.refresh_memory(),
             Tab::Skills => self.refresh_skills(),
+            Tab::Chats | Tab::Home => {
+                self.refresh_doctor();
+            }
+        }
+    }
+
+    fn close_overlay(&mut self) -> bool {
+        if self.overlay != OverlayKind::None {
+            self.overlay = OverlayKind::None;
+            self.overlay_query.clear();
+            self.overlay_idx = 0;
+            return true;
+        }
+        false
+    }
+
+    fn apply_palette_action(&mut self, action: PaletteAction) {
+        self.close_overlay();
+        match action {
+            PaletteAction::Slash(name) => {
+                self.pending = PendingAction::Slash(format!("/{name}"));
+            }
+            PaletteAction::NewChat => {
+                self.pending = PendingAction::RunSession { fresh: true };
+            }
+            PaletteAction::PleaseFix => {
+                self.pending = PendingAction::RunPleaseFix;
+            }
+            PaletteAction::Refresh => self.refresh_all(),
+            PaletteAction::CycleTheme => self.cycle_theme(),
+            PaletteAction::GotoDoctor => self.on_tab_enter(Tab::Doctor),
+            PaletteAction::Quit => self.should_quit = true,
+        }
+    }
+
+    fn handle_palette_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc => {
+                self.close_overlay();
+            }
+            KeyCode::Enter => {
+                let items = overlay::fuzzy_filter(&overlay::palette_items(), &self.overlay_query);
+                if let Some(it) = items.get(self.overlay_idx) {
+                    self.apply_palette_action(it.action);
+                }
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                let n = overlay::fuzzy_filter(&overlay::palette_items(), &self.overlay_query).len();
+                if n > 0 {
+                    self.overlay_idx = (self.overlay_idx + 1).min(n - 1);
+                }
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                self.overlay_idx = self.overlay_idx.saturating_sub(1);
+            }
+            KeyCode::Backspace => {
+                self.overlay_query.pop();
+                self.overlay_idx = 0;
+            }
+            KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.overlay_query.push(c);
+                self.overlay_idx = 0;
+            }
             _ => {}
         }
     }
@@ -358,8 +586,57 @@ impl App {
             return;
         }
 
+        if self.overlay == OverlayKind::Palette {
+            self.handle_palette_key(key);
+            return;
+        }
+        if self.overlay == OverlayKind::Help {
+            if matches!(key.code, KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q')) {
+                self.close_overlay();
+            }
+            return;
+        }
+
+        // Global chords
         match key.code {
+            KeyCode::Char('k') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.overlay = OverlayKind::Palette;
+                self.overlay_query.clear();
+                self.overlay_idx = 0;
+                return;
+            }
+            KeyCode::Char('t') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.cycle_theme();
+                return;
+            }
+            KeyCode::Char('l') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.focus = self.focus.toggle();
+                self.status = format!("focus → {}", self.focus.label());
+                return;
+            }
+            KeyCode::Char('`') if key.modifiers.is_empty() && self.focus == Focus::Panel => {
+                self.focus = Focus::Prompt;
+                self.status = "focus → prompt".into();
+                return;
+            }
+            KeyCode::Char('`') if key.modifiers.is_empty() && self.focus == Focus::Prompt => {
+                // Only toggle when input empty so backticks can be typed? Prefer always toggle
+                // when input empty; otherwise insert.
+                if self.input.is_empty() {
+                    self.focus = Focus::Panel;
+                    self.status = "focus → panel".into();
+                    return;
+                }
+            }
+            KeyCode::F(1) => {
+                self.overlay = OverlayKind::Help;
+                return;
+            }
             KeyCode::Tab => {
+                if self.overlay == OverlayKind::SlashSuggest {
+                    self.accept_slash_suggestion();
+                    return;
+                }
                 self.on_tab_enter(self.tab.next());
                 return;
             }
@@ -370,27 +647,85 @@ impl App {
             _ => {}
         }
 
-        if self.tab == Tab::Home {
+        if self.filtering && self.focus == Focus::Panel {
+            match key.code {
+                KeyCode::Esc => {
+                    self.filtering = false;
+                    self.filter.clear();
+                    self.list_idx = 0;
+                    return;
+                }
+                KeyCode::Enter => {
+                    self.filtering = false;
+                    return;
+                }
+                KeyCode::Backspace => {
+                    self.filter.pop();
+                    self.list_idx = 0;
+                    return;
+                }
+                KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    self.filter.push(c);
+                    self.list_idx = 0;
+                    return;
+                }
+                _ => {}
+            }
+        }
+
+        if self.focus == Focus::Prompt {
             match key.code {
                 KeyCode::Char('q') if key.modifiers.is_empty() && self.input.is_empty() => {
                     self.should_quit = true;
                     return;
                 }
+                KeyCode::Char('?') if self.input.is_empty() => {
+                    self.overlay = OverlayKind::Help;
+                    return;
+                }
                 KeyCode::Esc => {
+                    if self.close_overlay() {
+                        return;
+                    }
                     if !self.input.is_empty() {
                         self.input.clear();
                         self.cursor = 0;
+                        self.overlay = OverlayKind::None;
                     } else {
                         self.should_quit = true;
                     }
                     return;
                 }
                 KeyCode::Enter => {
-                    let t = self.input.trim().to_string();
-                    if t.starts_with('/') {
-                        self.pending = PendingAction::Slash(t);
+                    if self.overlay == OverlayKind::SlashSuggest {
+                        self.accept_slash_suggestion();
+                        return;
+                    }
+                    self.submit_prompt();
+                    return;
+                }
+                KeyCode::Up => {
+                    if self.overlay == OverlayKind::SlashSuggest {
+                        self.overlay_idx = self.overlay_idx.saturating_sub(1);
                     } else {
-                        self.pending = PendingAction::RunSession { fresh: false };
+                        self.history_up();
+                    }
+                    return;
+                }
+                KeyCode::Down => {
+                    if self.overlay == OverlayKind::SlashSuggest {
+                        let prefix = self
+                            .input
+                            .split_whitespace()
+                            .next()
+                            .unwrap_or("/")
+                            .trim_start_matches('/');
+                        let n = overlay::slash_suggestions(prefix).len();
+                        if n > 0 {
+                            self.overlay_idx = (self.overlay_idx + 1).min(n - 1);
+                        }
+                    } else {
+                        self.history_down();
                     }
                     return;
                 }
@@ -403,11 +738,7 @@ impl App {
                     return;
                 }
                 KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                    self.refresh_doctor();
-                    self.refresh_personas();
-                    self.refresh_memory();
-                    self.refresh_skills();
-                    self.status = "refreshed".into();
+                    self.refresh_all();
                     return;
                 }
                 KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -442,8 +773,21 @@ impl App {
             }
         }
 
+        // Panel focus
         match key.code {
-            KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
+            KeyCode::Esc => {
+                if self.close_overlay() {
+                    return;
+                }
+                if !self.filter.is_empty() {
+                    self.filter.clear();
+                    self.filtering = false;
+                    self.list_idx = 0;
+                } else {
+                    self.focus = Focus::Prompt;
+                    self.status = "focus → prompt".into();
+                }
+            }
             KeyCode::Char('1') => self.on_tab_enter(Tab::Home),
             KeyCode::Char('2') => self.on_tab_enter(Tab::Chats),
             KeyCode::Char('3') => self.on_tab_enter(Tab::Personas),
@@ -451,6 +795,11 @@ impl App {
             KeyCode::Char('5') => self.on_tab_enter(Tab::Skills),
             KeyCode::Char('6') => self.on_tab_enter(Tab::Models),
             KeyCode::Char('7') => self.on_tab_enter(Tab::Doctor),
+            KeyCode::Char('/') => {
+                self.filtering = true;
+                self.filter.clear();
+                self.status = "filter…".into();
+            }
             KeyCode::Down | KeyCode::Char('j') => {
                 let len = self.list_len();
                 if len > 0 {
@@ -460,43 +809,108 @@ impl App {
             KeyCode::Up | KeyCode::Char('k') => {
                 self.list_idx = self.list_idx.saturating_sub(1);
             }
-            KeyCode::Enter => {
-                if matches!(
-                    self.tab,
-                    Tab::Chats | Tab::Models | Tab::Personas | Tab::Memory | Tab::Skills
-                ) {
-                    self.select_list_item();
-                } else if self.tab == Tab::Home {
-                    let t = self.input.trim().to_string();
-                    if t.starts_with('/') {
-                        self.pending = PendingAction::Slash(t);
-                    } else {
-                        self.pending = PendingAction::RunSession { fresh: false };
-                    }
+            KeyCode::PageDown => {
+                let len = self.list_len();
+                if len > 0 {
+                    self.list_idx = (self.list_idx + 10).min(len - 1);
                 }
             }
+            KeyCode::PageUp => {
+                self.list_idx = self.list_idx.saturating_sub(10);
+            }
+            KeyCode::Home => self.list_idx = 0,
+            KeyCode::End => {
+                let len = self.list_len();
+                if len > 0 {
+                    self.list_idx = len - 1;
+                }
+            }
+            KeyCode::Enter => self.select_list_item(),
             KeyCode::Char('n') => {
                 self.pending = PendingAction::RunSession { fresh: true };
             }
             KeyCode::Char('p') => {
                 self.pending = PendingAction::RunPleaseFix;
             }
-            KeyCode::Char('r') => {
-                self.refresh_doctor();
-                self.refresh_personas();
-                self.refresh_memory();
-                self.refresh_skills();
-                self.status = "refreshed".into();
+            KeyCode::Char('r') => self.refresh_all(),
+            KeyCode::Char('q') => self.should_quit = true,
+            _ => {}
+        }
+    }
+
+    fn submit_prompt(&mut self) {
+        let t = self.input.trim().to_string();
+        self.push_history();
+        if t.starts_with('/') {
+            self.pending = PendingAction::Slash(t);
+        } else {
+            self.pending = PendingAction::RunSession { fresh: false };
+        }
+    }
+
+    fn handle_mouse(&mut self, kind: MouseEventKind) {
+        match kind {
+            MouseEventKind::ScrollDown => {
+                let len = self.list_len();
+                if len > 0 {
+                    self.list_idx = (self.list_idx + 1).min(len - 1);
+                }
+            }
+            MouseEventKind::ScrollUp => {
+                self.list_idx = self.list_idx.saturating_sub(1);
             }
             _ => {}
         }
+    }
+
+    pub fn kpi_chips(&self) -> Vec<(String, String)> {
+        let chat = self
+            .state
+            .read_chat()
+            .map(|c| c.chars().take(8).collect::<String>())
+            .unwrap_or_else(|| "—".into());
+        let persona = self
+            .persona_lines
+            .first()
+            .and_then(|l| l.split_whitespace().nth(1))
+            .unwrap_or("abbey")
+            .to_string();
+        let role = self
+            .persona_lines
+            .iter()
+            .find(|l| l.starts_with("default_role:"))
+            .map(|l| l.trim_start_matches("default_role:").trim().to_string())
+            .unwrap_or_else(|| "auto".into());
+        let mem = self
+            .memory_lines
+            .first()
+            .map(|s| {
+                if s.len() > 18 {
+                    format!("{}…", &s[..16])
+                } else {
+                    s.clone()
+                }
+            })
+            .unwrap_or_else(|| "—".into());
+        let last = self
+            .last_agent_code
+            .map(|c| c.to_string())
+            .unwrap_or_else(|| "—".into());
+        vec![
+            ("model".into(), self.cfg.model.clone()),
+            ("chat".into(), chat),
+            ("persona".into(), persona),
+            ("role".into(), role),
+            ("last".into(), last),
+            ("mem".into(), mem),
+        ]
     }
 }
 
 pub fn run_tui(state: AbbeyState, cfg: AgentConfig) -> Result<i32> {
     enable_raw_mode()?;
     let mut stdout = stdout();
-    execute!(stdout, EnterAlternateScreen)?;
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
@@ -505,6 +919,7 @@ pub fn run_tui(state: AbbeyState, cfg: AgentConfig) -> Result<i32> {
 
     let result = (|| -> Result<i32> {
         loop {
+            app.ensure_visible(12);
             terminal.draw(|f| super::ui::draw(f, &app))?;
 
             match app.pending {
@@ -512,7 +927,11 @@ pub fn run_tui(state: AbbeyState, cfg: AgentConfig) -> Result<i32> {
                 action => {
                     app.pending = PendingAction::None;
                     disable_raw_mode()?;
-                    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+                    execute!(
+                        terminal.backend_mut(),
+                        LeaveAlternateScreen,
+                        DisableMouseCapture
+                    )?;
                     terminal.show_cursor()?;
 
                     let prompt: Vec<String> = if app.input.trim().is_empty() {
@@ -562,12 +981,17 @@ pub fn run_tui(state: AbbeyState, cfg: AgentConfig) -> Result<i32> {
                     }
                     app.input.clear();
                     app.cursor = 0;
+                    app.overlay = OverlayKind::None;
                     app.refresh_doctor();
                     app.refresh_memory();
                     code = run_code;
 
                     enable_raw_mode()?;
-                    execute!(terminal.backend_mut(), EnterAlternateScreen)?;
+                    execute!(
+                        terminal.backend_mut(),
+                        EnterAlternateScreen,
+                        EnableMouseCapture
+                    )?;
                     terminal.hide_cursor()?;
                     terminal.clear()?;
                 }
@@ -578,16 +1002,23 @@ pub fn run_tui(state: AbbeyState, cfg: AgentConfig) -> Result<i32> {
             }
 
             if event::poll(Duration::from_millis(100))? {
-                if let Event::Key(key) = event::read()? {
-                    app.handle_key(key);
+                match event::read()? {
+                    Event::Key(key) => app.handle_key(key),
+                    Event::Mouse(m) => app.handle_mouse(m.kind),
+                    _ => {}
                 }
             }
+            app.tick = app.tick.wrapping_add(1);
         }
         Ok(code)
     })();
 
     disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    )?;
     terminal.show_cursor()?;
 
     result

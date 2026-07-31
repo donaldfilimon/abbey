@@ -160,3 +160,20 @@ Buildable residuals closed 2026-07-30; Proposed/OOS stay deferred above.
 - [x] `abbey mcp status|paths` local inventory; other verbs → cursor-agent
 - [x] `abbey acp list|run` for gemini/opencode ACP stdio peers
 - [x] Doctor + claims: Abbey is not an MCP/ACP host runtime
+
+## Smart improve (ledger + gate)
+
+- [x] `src/improve/{mod,ledger,gate}.rs` — status/plan/run, ledger parse, check.sh runner
+- [x] CLI/slash/doctor/claims wiring; bounded `--confirm` + max-rounds/minutes
+- [x] Unit tests for ledger/args/gate classify; no live agent in tests
+- [ ] Close goal after `./check.sh` green evidence (human ledger close)
+
+### Known gate bug — file-size guard hard-fail is unreachable
+- [ ] `check.sh`'s file-size guard checks `elif n > 800: WARN` before `elif n > 1000: FAIL`,
+      so the FAIL branch never fires — anything over 800 lines always matches the WARN arm
+      first. Contradicts AGENTS.md's stated 1000-line hard cap. Fix the ordering (check
+      `n > 1000` first) — but only once the item below is resolved, or this immediately reds
+      the gate
+- [ ] `src/tui/app.rs` is 1025 lines (past the stated 1000-line hard cap; currently only
+      WARNs). Needs decomposition — split overlay/palette state or per-tab draw logic out —
+      before the guard above is fixed

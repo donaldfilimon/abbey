@@ -1,4 +1,4 @@
-//! TUI tab + pending action types.
+//! TUI tab, focus, overlay, and pending action types.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tab {
@@ -43,6 +43,38 @@ impl Tab {
         let i = Tab::ALL.iter().position(|t| *t == self).unwrap_or(0);
         Tab::ALL[(i + Tab::ALL.len() - 1) % Tab::ALL.len()]
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Focus {
+    #[default]
+    Prompt,
+    Panel,
+}
+
+impl Focus {
+    pub fn toggle(self) -> Self {
+        match self {
+            Self::Prompt => Self::Panel,
+            Self::Panel => Self::Prompt,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Prompt => "prompt",
+            Self::Panel => "panel",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum OverlayKind {
+    #[default]
+    None,
+    Palette,
+    Help,
+    SlashSuggest,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

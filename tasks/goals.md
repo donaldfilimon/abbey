@@ -175,3 +175,12 @@ PATHEXT-aware `which_bin`, Windows agent/install candidate paths, platform-aware
 clamp (CreateProcess-safe), Windows OS allowlist of real executables, `abbey platform
 paths` + this-host matrix column, `install.ps1`, softer `check.sh` cross-target smoke when
 targets are already installed. Voice/fm remain macOS-only; accelerator runtimes stay OOS.
+
+## Smart improve loop (ledger + gate, bounded auto)
+status: in_progress
+
+`abbey improve` — parse `tasks/goals.md` + `todo.md`, fan out local diagnose lanes
+(reviewer/gemma), Max implement with one `--confirm` for the run, hard stop on
+`./check.sh` green (or max-rounds / max-minutes). Same-host only; never auto-marks
+goals.md done; OS allowlist execute unchanged.
+

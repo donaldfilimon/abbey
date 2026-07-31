@@ -14,6 +14,7 @@ mod gitops;
 mod highlight;
 mod host;
 mod hybrid_loop;
+mod improve;
 mod init;
 mod inventory;
 mod learn;

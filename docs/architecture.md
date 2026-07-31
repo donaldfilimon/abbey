@@ -54,6 +54,7 @@ Status key: **Current** = shipped · **Proposed** = designed, not claimed live �
 | `os_control` | Cross-platform OS policy |
 | `parallel` | Thin alias → `subagents` (default Max/Gemma/Aviva) |
 | `subagents` | Named multi-subagent fan-out + local PATH peer CLIs + synthesize |
+| `improve` | Goal ledger + bounded diagnose/implement loop; `./check.sh` hard bar |
 | `inventory` | Skills/plugins/peer tools |
 | `config` / `build_info` | Config + unique build stamp |
 | `tui/` | tabs + app + ui (7-tab ratatui) |
@@ -97,6 +98,9 @@ Status key: **Current** = shipped · **Proposed** = designed, not claimed live �
   hybrid-loop/parallel when stdout is a TTY; `abbey highlight` for files/stdin
 - Multi-subagent / local peers: `abbey subagents run --lanes max,reviewer
   --peers gemini --synthesize` (same-host PATH CLIs; not multi-node)
+- Goal-driven improve: `abbey improve status|plan|run --confirm` — ledger pick from
+  `tasks/goals.md` + `todo.md`, local diagnose/implement lanes, hard bar `./check.sh`;
+  does not auto-mark goals done; not a multi-node mesh
 - Claims gate CLI: `abbey claims` / `refuse` for Proposed (embeddings, multi-node)
   and Out of scope (LoRA, local weights, GPU/NPU/TPU runtime, …)
 - Platform inventory: `abbey platform` / `compute` — linux/macos/windows matrix,

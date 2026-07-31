@@ -293,6 +293,11 @@ pub const SLASH_CATALOG: &[SlashCmd] = &[
         kind: SlashKind::Local,
     },
     SlashCmd {
+        name: "improve",
+        help: "Smart improve: /improve status|plan|run [--confirm] (ledger + check.sh)",
+        kind: SlashKind::Local,
+    },
+    SlashCmd {
         name: "permissions",
         help: "Show trust/force/sandbox knobs",
         kind: SlashKind::Local,

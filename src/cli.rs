@@ -349,6 +349,12 @@ pub enum Commands {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
+    /// Goal-driven improve loop: ledger + local subagents + ./check.sh bar
+    #[command(visible_alias = "smart-improve", visible_alias = "prod-ready")]
+    Improve {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
     /// Discover peer agentic tools on PATH
     #[command(visible_alias = "tools")]
     Agents,

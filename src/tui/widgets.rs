@@ -26,6 +26,7 @@ pub fn rounded_block(title: &str, theme: &Theme, focused: bool) -> Block<'static
 }
 
 /// Compact KPI chip as a single line (label dim, value bold on chip background).
+#[allow(dead_code)] // public helper for callers / future panels
 pub fn chip(label: &str, value: &str, theme: &Theme) -> Line<'static> {
     Line::from(chip_spans(label, value, theme))
 }
@@ -33,15 +34,10 @@ pub fn chip(label: &str, value: &str, theme: &Theme) -> Line<'static> {
 fn chip_spans(label: &str, value: &str, theme: &Theme) -> Vec<Span<'static>> {
     let chip_style = Style::default().bg(theme.chip_bg);
     vec![
-        Span::styled(
-            format!(" {label} "),
-            chip_style.fg(theme.fg_dim),
-        ),
+        Span::styled(format!(" {label} "), chip_style.fg(theme.fg_dim)),
         Span::styled(
             format!("{value} "),
-            chip_style
-                .fg(theme.chip_fg)
-                .add_modifier(Modifier::BOLD),
+            chip_style.fg(theme.chip_fg).add_modifier(Modifier::BOLD),
         ),
     ]
 }

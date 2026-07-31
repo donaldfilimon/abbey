@@ -93,6 +93,12 @@ pub const CLAIMS: &[Claim] = &[
         instead: None,
     },
     Claim {
+        name: "Goal-driven improve loop (local subagents + check.sh bar)",
+        status: Status::Current,
+        note: "abbey improve — ledger pick + bounded --confirm apply; not multi-node / not unrestricted OS",
+        instead: Some("abbey improve status|plan|run --confirm"),
+    },
+    Claim {
         name: "MCP/ACP inventory + voice + highlight + media/imagine",
         status: Status::Current,
         note: "not an MCP/ACP host; no local vision/gen/voice weights",

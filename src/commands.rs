@@ -14,6 +14,7 @@ use crate::doctor::{
 use crate::generate::{self, GenKind};
 use crate::gitops;
 use crate::highlight;
+use crate::improve;
 use crate::inventory;
 use crate::learn;
 use crate::models::{alias_table, resolve_model};
@@ -316,6 +317,7 @@ pub fn run_cli(cli: Cli, state: AbbeyState, mut cfg: AgentConfig) -> Result<i32>
             let ac = config::AbbeyConfig::load().unwrap_or_default();
             subagents::dispatch(&cfg, &state, &args, &ac.roles.max, &ac.roles.gemma)
         }
+        Some(Commands::Improve { args }) => improve::dispatch(&cfg, &state, &args),
         Some(Commands::Agents) => {
             inventory::print_agent_tools();
             for line in build_info::lines() {

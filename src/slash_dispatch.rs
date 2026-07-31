@@ -317,6 +317,10 @@ pub fn dispatch_slash(input: &str, state: &AbbeyState, cfg: &mut AgentConfig) ->
             let args: Vec<String> = rest.split_whitespace().map(String::from).collect();
             crate::subagents::dispatch(cfg, state, &args, &ac.roles.max, &ac.roles.gemma)
         }
+        "improve" | "smart-improve" | "prod-ready" => {
+            let args: Vec<String> = rest.split_whitespace().map(String::from).collect();
+            crate::improve::dispatch(cfg, state, &args)
+        }
         "permissions" => {
             print_permissions(cfg);
             Ok(0)

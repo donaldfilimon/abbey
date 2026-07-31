@@ -530,7 +530,9 @@ pub fn print_merged(results: &[LaneResult]) {
     }
 }
 
-fn synthesize(
+/// Abi-persona merge pass over lane results (used by `subagents --synthesize`
+/// and `abbey improve`).
+pub fn synthesize(
     base: &AgentConfig,
     max_model: &str,
     user: &str,
