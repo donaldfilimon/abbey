@@ -105,6 +105,7 @@ CLI: `abbey claims` · `abbey claims proposed|oos` · `abbey claims refuse embed
 | ACP peer inventory / launch (`acp run`) | ✓ | | Abbey as ACP host |
 | MCP/tools during a run (`--approve-mcps`) | ✓ | | Abbey as tool runtime |
 | Auto code highlighting (fences on `-p`/print · `abbey highlight`) | ✓ | | full markdown UI / LSP |
+| Lexical similarity search (`memory similar`, n-gram cosine) | ✓ | | learned/semantic ranking |
 | Semantic/learned memory embedding space | | ✓ | |
 | Memory filter by source / timestamp / project | | ✓ | |
 | Multi-node · multi-GPU · shared compute mesh | | ✓ | |

@@ -107,7 +107,14 @@
 
 ### Deferred by construction (Proposed / Out of scope — not Abbey Current)
 - [x] Surface via `abbey claims` / `refuse` (2026-07-30) — still not implemented as features
-- [ ] Semantic memory search (embedding space) behind `MemoryStore` — **Proposed**
+- [x] *Lexical* similarity search behind `MemoryStore` — **Current** (`abbey memory similar`,
+      `src/memory/similarity.rs`). `abi-ai` n-gram feature hash + cosine, computed per query
+      on both backends. Verified live: `memory search "chekpoint"` (typo) returns nothing
+      while `memory similar "chekpoint"` ranks the checkpoint record first at 0.44
+- [ ] Semantic memory search (**learned** embedding space) behind `MemoryStore` — **Proposed**.
+      The lexical slice above does *not* close this: a feature hash has no trained semantics,
+      so the same idea in different words still misses. `claims refuse embeddings` still
+      exits 2, and abi-wdbx `put_vector` storage stays unwired (nothing is persisted)
 - [ ] Multi-node / multi-GPU / shared compute / agent mesh — **Proposed**
 - [x] WDBX cross-process lock on Windows + Unix (`fs2`) — **Current**
 - [x] Host GPU/NPU/TPU detection + thread matrix (`abbey platform`) — **Current**

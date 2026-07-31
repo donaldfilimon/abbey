@@ -1,6 +1,7 @@
 //! Replaceable memory backends (SQLite interim; WDBX later).
 
 pub mod map;
+pub mod similarity;
 mod sqlite;
 #[cfg(feature = "wdbx")]
 mod wdbx;
@@ -10,6 +11,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 pub use map::{coordinates, nearest_to, primary_topic};
+pub use similarity::{similar_to_id, similar_to_text};
 pub use sqlite::SqliteMemory;
 #[cfg(feature = "wdbx")]
 pub use wdbx::{WdbxMemory, lock_store_dir};

@@ -93,7 +93,8 @@ Routing decisions record **confidence**, **alternate**, and **fallback** on `rou
 | OS allowlist (`abbey os` / `abbey allowlist`) | **Current** — dry-run; execute `--confirm` only |
 | WDBX DurableStore in-process | **Current behind `--features wdbx`** (off by default, `src/memory/wdbx.rs`; `flock`-guarded) |
 | 3-D memory map (topic × recency × consolidation) | **Current** — deterministic axes, both backends; TUI Memory tab preview |
-| Learned/semantic memory embedding | **Proposed** — Abbey has no embedder (`abbey claims refuse embeddings`) |
+| Lexical similarity search (`abbey memory similar`) | **Current** — `abi-ai` n-gram feature hash + cosine, computed per query, both backends |
+| Learned/semantic memory embedding | **Proposed** — the in-process embedder is a deterministic n-gram hash, not trained; same-idea-different-words still misses (`abbey claims refuse embeddings`) |
 | Fine-tuning / LoRA | **Out of scope** (`abbey lora` · `abbey learn lora` refuse) |
 | Local Qwen/Gemma / own weights | **Out of scope** (`abbey weights`) |
 | Unrestricted OS / shell | **Out of scope** (`abbey shell` · `abbey os refuse`) |

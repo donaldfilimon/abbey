@@ -152,18 +152,26 @@ pub const CLAIMS: &[Claim] = &[
         note: "status + refuse for deferred capabilities — does not implement them",
         instead: Some("abbey oos · abbey claims refuse …"),
     },
+    Claim {
+        name: "lexical similarity search over memory (feature-hash cosine)",
+        status: Status::Current,
+        note: "abi-ai n-gram hash + cosine at query time — no trained semantics",
+        instead: Some("abbey memory similar <query> | --id <id>"),
+    },
     // —— Proposed ——
     Claim {
         name: "semantic / learned memory embedding space",
         status: Status::Proposed,
-        note: "no embedder in-process; 3-D map is deterministic layout only",
-        instead: Some("abbey memory map|near|search (keyword)"),
+        note: "in-process embedder is a deterministic n-gram hash, not trained; \
+               same-idea-different-words still misses",
+        instead: Some("abbey memory similar (lexical) · map|near|search"),
     },
     Claim {
         name: "WDBX vector put_vector / embedding search",
         status: Status::Proposed,
-        note: "in-process backend uses KV space today; abi-wdbx vectors not wired",
-        instead: Some("abbey memory search · abbey wdbx query (KV)"),
+        note: "vectors are computed per query and never stored; abi-wdbx vector \
+               storage stays unwired",
+        instead: Some("abbey memory similar · abbey wdbx query (KV)"),
     },
     Claim {
         name: "multi-node · multi-GPU · shared compute mesh",
@@ -329,7 +337,8 @@ pub fn refuse(verb: &str) -> Result<i32> {
     let (claim_key, detail) = match key.as_str() {
         "embed" | "embedding" | "embeddings" | "semantic" | "vector" | "vectors" => (
             "embedding",
-            "Semantic/learned embeddings are Proposed. Abbey has no embedder.",
+            "Learned/semantic embeddings are Proposed. Abbey's in-process embedder \
+             is a deterministic n-gram hash — try `abbey memory similar`.",
         ),
         "lora" | "finetune" | "fine-tune" | "fine_tune" | "train-weights" => (
             "lora",

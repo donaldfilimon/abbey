@@ -198,6 +198,39 @@ pub fn cmd_memory_store(state: &AbbeyState, cmd: MemoryCmd) -> Result<i32> {
             }
             Ok(0)
         }
+        MemoryCmd::Similar { query, id, limit } => {
+            let hits = match id {
+                Some(anchor) => {
+                    let Some(rec) = mem.get(&anchor)? else {
+                        bail!("memory id not found: {anchor}");
+                    };
+                    println!("anchor  {}", rec.summary);
+                    memory::similar_to_id(mem.as_ref(), &anchor, limit)?
+                }
+                None => {
+                    if query.trim().is_empty() {
+                        bail!("usage: abbey memory similar <query> | --id <id>");
+                    }
+                    memory::similar_to_text(mem.as_ref(), &query, limit)?
+                }
+            };
+            if hits.is_empty() {
+                eprintln!(
+                    "abbey: no memories yet — teach her with `abbey memory put` or `abbey learn`"
+                );
+                return Ok(0);
+            }
+            println!("  cos  subject          memory");
+            for (score, r) in hits {
+                println!(
+                    "{score:>5.2}  {:<16} {}",
+                    memory::primary_topic(&r),
+                    r.summary
+                );
+            }
+            println!("note: lexical n-gram cosine — learned/semantic embeddings stay Proposed");
+            Ok(0)
+        }
         MemoryCmd::Export { layer } => {
             for r in mem.filter(Some(&layer), None, 10_000)? {
                 println!("{}", serde_json::to_string(&r)?);

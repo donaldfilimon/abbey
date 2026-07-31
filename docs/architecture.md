@@ -114,9 +114,13 @@ Status key: **Current** = shipped · **Proposed** = designed, not claimed live �
 See also `abbey claims proposed` (machine-readable gate in `src/claims.rs`).
 
 - Vector/embedding search through WDBX (`put_vector`/`search`) — the backend currently
-  uses the KV space only
-- A *learned* memory embedding space. The 3-D map's axes are deterministic
-  (topic × recency × consolidation); Abbey has no embedder
+  uses the KV space only. `memory similar` embeds per query and stores nothing, so
+  WDBX vector storage stays genuinely unwired
+- A *learned* memory embedding space. `memory similar` is Current but classical: an
+  `abi-ai` signed feature hash over character n-grams, so it matches surface form
+  (typos, word order, morphology) and not meaning — same idea in different words
+  still misses. The 3-D map's axes are likewise deterministic
+  (topic × recency × consolidation)
 - Multi-node / multi-GPU / shared compute / agent mesh. `abi-wdbx` ships
   `cluster`/`remote_compute`/`compute` reference implementations Abbey does not yet use
   (local PATH peer fan-out is Current via `subagents --peers`; host GPU detect is Current)

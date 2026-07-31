@@ -552,6 +552,20 @@ pub enum MemoryCmd {
         #[arg(long, default_value_t = 10)]
         limit: usize,
     },
+    /// Lexical similarity search (feature-hash cosine — not learned semantics)
+    ///
+    /// Ranks by shared character n-grams, so it tolerates typos and word order
+    /// where `search` (substring) misses. Pass `--id` to anchor on a record.
+    Similar {
+        /// Free-text query; omit when using --id
+        #[arg(default_value = "")]
+        query: String,
+        /// Anchor on an existing record instead of free text
+        #[arg(long)]
+        id: Option<String>,
+        #[arg(long, default_value_t = 10)]
+        limit: usize,
+    },
     /// Export layer as JSONL (train_candidate requires provenance on records)
     Export {
         #[arg(long, default_value = "ltm")]

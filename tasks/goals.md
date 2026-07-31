@@ -176,6 +176,29 @@ clamp (CreateProcess-safe), Windows OS allowlist of real executables, `abbey pla
 paths` + this-host matrix column, `install.ps1`, softer `check.sh` cross-target smoke when
 targets are already installed. Voice/fm remain macOS-only; accelerator runtimes stay OOS.
 
+## Lexical similarity search over memory
+status: done
+
+Captured 2026-07-31 while auditing the last unchecked todos. The "semantic memory
+search" residual had been filed as Proposed on the premise that Abbey has no
+embedder — but `abi-ai` (an **unconditional** dependency, not `--features wdbx`)
+already ships `text_embedding`: a deterministic signed feature hash over character
+n-grams. The gap was never a missing embedder, only unwired plumbing.
+
+**Current:** `abbey memory similar <query>` / `--id <anchor>` over a new
+`src/memory/similarity.rs` — cosine over `abi-ai` n-gram vectors, computed at query
+time on both backends (mirrors how `map::nearest_to` recomputes coordinates). Six
+unit tests plus live verification: `memory search "chekpoint"` (typo) returns
+nothing where `memory similar "chekpoint"` ranks the intended record first at 0.44.
+
+**Deliberately NOT closed — learned/semantic embedding stays Proposed.** A feature
+hash has no trained semantics: it matches surface form, not meaning, so the same
+idea in different words still misses (observed live — an unrelated record scored
+0.47 against the wdbx anchor purely on shared trigrams). `abbey claims refuse
+embeddings` still exits 2, and its wording now names the real substitute instead of
+the now-false "Abbey has no embedder". Vectors are never persisted, so abi-wdbx's
+`put_vector` storage stays honestly unwired.
+
 ## Smart improve loop (ledger + gate, bounded auto)
 status: done
 
