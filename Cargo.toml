@@ -40,6 +40,11 @@ abi-wdbx = { path = "../abi/crates/abi-wdbx", optional = true }
 # Cross-platform advisory lock for the WDBX store (Unix flock / Win LockFileEx).
 fs2 = { version = "0.4", optional = true }
 
+# SIGPIPE reset only — already in the tree transitively, so this costs no extra
+# build. Unix-gated: Windows has no SIGPIPE.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [features]
 default = []
 # In-process WDBX memory backend. Off by default: pulls the abi-wdbx crate and

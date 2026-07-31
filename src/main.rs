@@ -54,7 +54,29 @@ use state::AbbeyState;
 use std::io::{self, IsTerminal};
 use std::process::ExitCode;
 
+/// Restore default `SIGPIPE` so `abbey … | head` ends quietly.
+///
+/// Rust's std sets `SIGPIPE` to `SIG_IGN` before `main`, which turns a closed
+/// downstream reader into an `EPIPE` error that `println!` panics on — so
+/// `abbey memory map | head -2` printed a Rust panic instead of exiting like
+/// `cat`/`ls` do. Only fires once output exceeds the pipe buffer, which is why
+/// short commands looked fine.
+#[cfg(unix)]
+fn restore_sigpipe() {
+    // SAFETY: setting SIG_DFL is async-signal-safe, and this runs as the first
+    // statement of `main` — before any threads exist or any output is written.
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
+}
+
+/// Windows has no `SIGPIPE`; a closed pipe surfaces as a normal write error.
+#[cfg(not(unix))]
+fn restore_sigpipe() {}
+
 fn main() -> ExitCode {
+    // Before `Cli::parse()`, which itself prints for `--help` / `--version`.
+    restore_sigpipe();
     match real_main() {
         Ok(code) => ExitCode::from(code as u8),
         Err(err) => {

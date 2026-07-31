@@ -15,6 +15,7 @@ dependencies = [
  "crossterm",
  "dirs",
  "fs2",
+ "libc",
  "ratatui",
  "rusqlite",
  "serde",

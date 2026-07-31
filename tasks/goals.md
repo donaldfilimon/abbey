@@ -1,5 +1,23 @@
 # Goals
 
+## Broken-pipe (SIGPIPE) papercut
+status: done
+
+Found live 2026-07-31 while verifying `improve status`: `abbey memory map | head -2`
+printed a Rust panic (`failed printing to stdout: Broken pipe`) instead of exiting
+quietly like `cat`/`ls`. Rust's std sets `SIGPIPE` to `SIG_IGN` before `main`, so a
+closed downstream reader becomes an `EPIPE` error that `println!` panics on. Only
+fires once output exceeds the pipe buffer, which is why short commands looked fine
+and it went unnoticed.
+
+**Current:** `restore_sigpipe()` resets `SIG_DFL` as the first statement of `main` —
+before `Cli::parse()`, which itself prints for `--help`/`--version`. `libc` added as
+a `cfg(unix)` dep only (already in the tree transitively, so no extra build cost);
+Windows gets a no-op arm since it has no `SIGPIPE`. Verified live on `memory map`,
+`--help`, and `claims` piped to `head` — all clean stderr — and unpiped runs still
+exit 0. Deliberately **no test**: reproducing `EPIPE` needs a real pipe with a
+closing reader, and a flaky test would be worse than none.
+
 ## Production structure + spec
 status: done
 - Decomposed `main.rs` (1074→86) into session/commands/slash_dispatch/doctor/prompts
