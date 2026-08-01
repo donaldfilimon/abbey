@@ -56,8 +56,12 @@ Key modules (`src/`):
 | Module | Responsibility |
 |---|---|
 | `main.rs` | thin entry — routing only, must stay under 200 lines |
+| `cli.rs` | clap `Cli`/`Subcommand` definitions (Grok Build/Codex/Claude Code parity surface) |
 | `actions.rs` | `RunSpec` + `run_agent` — the one path every surface calls |
 | `commands.rs` | clap subcommand match → actions |
+| `output.rs` | stdout helpers that treat a broken pipe as success (`abbey doctor \| head`) |
+| `build_info.rs` | build-stamp constants from `build.rs` (version/git/target/profile/host) |
+| `improve/` (`mod.rs`, `gate.rs`, `ledger.rs`, `report.rs`) | `abbey improve` — goal-ledger pick + local subagent lanes + `check.sh` gate; stops on green + no open slice, never auto-closes a goal to done |
 | `slash.rs` / `slash_dispatch.rs` | slash catalog + shared handler → actions |
 | `session.rs` | global flag application, `hybrid_run`, history compaction |
 | `persona.rs` / `roles.rs` / `route_log.rs` | hybrid routing spine (`route_decision` → conf/alt/fb on JSONL) |
