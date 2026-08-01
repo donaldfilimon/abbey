@@ -1,7 +1,28 @@
 # Goals
 
-## Broken-pipe (SIGPIPE) papercut
-status: done
+## Fully independent TUI + agent runtime
+status: todo
+
+Captured 2026-07-31: "fully independent tui and runtime similar to claude code or
+codex" — not started this turn.
+
+**This collides with the project's central architecture decision, stated in
+CLAUDE.md and enforced throughout this session:** "Backend is `cursor-agent`, not
+a reimplementation of Grok/Codex/Claude runtimes." `AGENTS.md`'s claims gate carries
+"Abbey as MCP host / ACP host / tool runtime" as Out of scope (`src/claims.rs:214`),
+and `abbey runtime` actively **refuses** the reading "Abbey is a tool runtime" with
+exit 2 (`src/surfaces.rs:84`, tested). Closing this goal means amending that gate
+first — same precondition already stated for the other open boundaries — and, if the
+direct-model-API or local-weights reading is chosen, deleting a shipped refusal path
+rather than adding a feature next to it.
+
+The phrase is genuinely ambiguous between readings that differ by orders of
+magnitude (see the question asked in-session): a richer standalone TUI surface
+(mostly tractable — Abbey's ratatui TUI already never touches cursor-agent's
+presentation) vs. Abbey calling model APIs directly with its own tool-execution
+loop (a large rewrite, replacing cursor-agent as executor) vs. local model weights
+(currently Out of scope in three separate gate rows). Not resolved without the
+user picking one — no reading was assumed or started.
 
 Found live 2026-07-31 while verifying `improve status`: `abbey memory map | head -2`
 printed a Rust panic (`failed printing to stdout: Broken pipe`) instead of exiting
