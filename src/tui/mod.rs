@@ -1,6 +1,7 @@
 //! Abbey custom TUI (ratatui + crossterm).
 
 mod app;
+mod keys;
 mod overlay;
 mod refresh;
 mod tabs;

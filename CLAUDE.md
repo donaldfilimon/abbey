@@ -85,7 +85,7 @@ Key modules (`src/`):
 | `parallel.rs` | multi-lane fan-out (Max/Gemma/Aviva) |
 | `inventory.rs` | skills/plugins/peer-agent-tool discovery |
 | `init/` (`mod.rs`, `detect.rs`, `probe.rs`) | `abbey init` — scans a project and writes `AGENTS.md` |
-| `tui/` (`app.rs`, `ui.rs`, `tabs.rs`, `mod.rs`) | 7-tab ratatui app |
+| `tui/` (`app.rs`, `keys.rs`, `ui.rs`, `tabs.rs`, `overlay.rs`, `refresh.rs`, `theme.rs`, `widgets.rs`, `mod.rs`) | 7-tab ratatui app; `keys.rs` holds key/palette/editor/mouse input handling split out of `app.rs` |
 | `doctor.rs` | doctor/debug/persona/role/memory checks |
 | `agent.rs` / `models.rs` / `gitops.rs` / `state.rs` / `config.rs` | executor invocation (cursor · grok · on-device `fm`), model aliases, local git helpers, per-cwd state, config loading |
 
