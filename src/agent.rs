@@ -545,9 +545,29 @@ pub fn run_resilient(
     }
     eprintln!("abbey: resume of {chat} failed (exit {code}); creating a new chat…");
     let id = cfg.create_chat()?;
-    state.save_chat(&id)?;
     eprintln!("abbey: new chat {id}");
-    run_once(cfg, Some(&id), prompt_and_rest, capture_print)
+    let retry_code = run_once(cfg, Some(&id), prompt_and_rest, capture_print)?;
+
+    // Persist the new chat only if it actually worked. When the retry fails too
+    // the cause is not a stale chat — it is something a new chat cannot fix
+    // (account/plan rejection, a bad flag, the agent being down). Saving the
+    // fresh id anyway would make the *next* invocation resume a chat that has
+    // never succeeded, fail, and mint another: one orphan chat per command,
+    // compounding, with the user's real transcript abandoned. Same reasoning as
+    // the `fm` early-return above.
+    state.save_chat(chat_to_persist(&chat, &id, retry_code))?;
+    if retry_code != 0 {
+        eprintln!("abbey: new chat also failed (exit {retry_code}); keeping {chat}");
+    }
+    Ok(retry_code)
+}
+
+/// Which chat id stays in state after a resume failure forced a retry.
+///
+/// Keeping the freshly created chat is only right when it worked; otherwise the
+/// failure is not staleness and the new id would poison the next invocation.
+fn chat_to_persist<'a>(original: &'a str, retried: &'a str, retry_code: i32) -> &'a str {
+    if retry_code == 0 { retried } else { original }
 }
 
 fn run_once(
@@ -580,6 +600,17 @@ fn run_once(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn failed_retry_keeps_the_original_chat() {
+        // A successful retry means the old chat really was stale — adopt the new one.
+        assert_eq!(chat_to_persist("old", "new", 0), "new");
+        // A failed retry means the cause was not staleness (plan/auth rejection,
+        // bad flag, agent down). Adopting "new" would make the next invocation
+        // resume a chat that has never worked and mint yet another.
+        assert_eq!(chat_to_persist("old", "new", 1), "old");
+        assert_eq!(chat_to_persist("old", "new", 2), "old");
+    }
 
     /// A config with every cursor-agent knob turned on — the `fm` builder must
     /// still emit only flags `fm respond` actually accepts.
