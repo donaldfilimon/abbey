@@ -62,6 +62,11 @@ impl MediaAttach {
     }
 
     /// Ensure each file's parent is on `--add-dir` so cursor-agent can see it.
+    ///
+    /// Attaching a file widens the agent's readable scope to that file's whole
+    /// directory, which is easy to miss: `--image ~/.ssh/key.png` grants read
+    /// access to `~/.ssh`. Each newly added directory is announced on stderr so
+    /// the grant is never silent.
     pub fn apply_add_dirs(&self, cfg: &mut AgentConfig) {
         for (p, _) in &self.paths {
             if let Some(parent) = p.parent() {
@@ -70,6 +75,10 @@ impl MediaAttach {
                     continue;
                 }
                 if !cfg.add_dirs.iter().any(|d| d == &parent) {
+                    eprintln!(
+                        "abbey: media attach grants the agent read access to {}",
+                        parent.display()
+                    );
                     cfg.add_dirs.push(parent);
                 }
             }
