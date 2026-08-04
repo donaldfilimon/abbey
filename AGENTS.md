@@ -84,7 +84,7 @@ CLI: `abbey claims` · `abbey claims proposed|oos` · `abbey claims refuse embed
 | Goal-driven improve (`abbey improve` + check.sh bar) | ✓ | | multi-node / auto-done goals / unrestricted OS |
 | linux/macos/windows primary host targets (portable surfaces) | ✓ | | voice/fm macOS-only; see `platform paths` |
 | Multi-threaded subagent fan-out (`--jobs`) | ✓ | | GPU kernels |
-| WDBX cross-process lock (Unix + Windows via fs2) | ✓ | | |
+| WDBX cross-process lock (Unix + Windows via fs4) | ✓ | | |
 | GPU/NPU/TPU host detection (`abbey platform`) | ✓ | | accelerator runtime in Abbey |
 | CoT transcript viewer (`abbey cot`) | ✓ | | Abbey-owned CoT engine/UI |
 | Tool responsibility matrix (`abbey runtime`) | ✓ | | Abbey as tool runtime |
@@ -137,7 +137,7 @@ CLI: `abbey claims` · `abbey claims proposed|oos` · `abbey claims refuse embed
   one: `cargo build -p abi-cli` in `../abi`, then set `ABBEY_ABI_BIN`
 - `abi wdbx` paths are **base paths** (dir + base name); Abbey opens a directory. Abbey's
   `<state>/wdbx/` is `<state>/wdbx/wdbx` to `abi` — `wdbx_bridge` translates, don't re-break it
-- `DurableStore` has no cross-process locking; `WdbxMemory` adds an `fs2` advisory
+- `DurableStore` has no cross-process locking; `WdbxMemory` adds an `fs4` advisory
   lock (Unix `flock` / Windows `LockFileEx`). Removing it corrupts the WAL
   irrecoverably under concurrent `abbey` processes
 

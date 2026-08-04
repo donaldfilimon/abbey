@@ -52,7 +52,7 @@ pub fn surface_matrix() -> &'static [SurfaceSupport] {
             linux: true,
             macos: true,
             windows: true,
-            note: "fs2 advisory lock (Unix flock / Win LockFileEx); --features wdbx",
+            note: "fs4 advisory lock (Unix flock / Win LockFileEx); --features wdbx",
         },
         SurfaceSupport {
             name: "multi-thread subagents (--jobs)",

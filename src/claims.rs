@@ -125,7 +125,7 @@ pub const CLAIMS: &[Claim] = &[
     Claim {
         name: "WDBX cross-process lock (Unix + Windows)",
         status: Status::Current,
-        note: "fs2 advisory lock (flock / LockFileEx); behind --features wdbx",
+        note: "fs4 advisory lock (flock / LockFileEx); behind --features wdbx",
         instead: None,
     },
     Claim {

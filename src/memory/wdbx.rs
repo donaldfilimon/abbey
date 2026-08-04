@@ -14,7 +14,7 @@
 //! the whole store reads as empty). SQLite survives the same load via file
 //! locking, so a WDBX backend without a lock is not a safe substitute.
 //!
-//! An exclusive advisory lock on `<dir>/abbey.lock` (via `fs2`: `flock(2)` on
+//! An exclusive advisory lock on `<dir>/abbey.lock` (via `fs4`: `flock(2)` on
 //! Unix, `LockFileEx` on Windows) serializes whole open→write→drop sessions.
 //! The OS drops the lock when the handle closes, including on process death, so
 //! a crashed process cannot wedge the store the way a lock *file* would.
@@ -134,9 +134,10 @@ pub fn lock_store_dir(dir: &Path, timeout: Duration) -> Result<File> {
 
 /// Take an exclusive advisory lock, retrying until `timeout` elapses.
 ///
-/// Uses `fs2` so Linux / macOS / Windows / other Unix share one path.
+/// Uses `fs4` (maintained fork of the abandoned `fs2`) so Linux / macOS /
+/// Windows / other Unix share one path.
 fn lock_exclusive(path: &Path, timeout: Duration) -> Result<File> {
-    use fs2::FileExt;
+    use fs4::fs_std::FileExt;
 
     let file = std::fs::OpenOptions::new()
         .create(true)
@@ -145,8 +146,10 @@ fn lock_exclusive(path: &Path, timeout: Duration) -> Result<File> {
         .open(path)?;
     let deadline = Instant::now() + timeout;
     loop {
+        // fs4 reports contention as Ok(false) rather than an errno to match.
         match file.try_lock_exclusive() {
-            Ok(()) => return Ok(file),
+            Ok(true) => return Ok(file),
+            Ok(false) => {}
             Err(err) if is_lock_busy(&err) => {}
             Err(err) => return Err(anyhow!("lock {}: {err}", path.display())),
         }
