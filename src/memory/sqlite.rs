@@ -266,6 +266,52 @@ mod tests {
     }
 
     #[test]
+    fn invalidate_marks_obsolete_without_deleting() {
+        let dir = std::env::temp_dir().join(format!("abbey-mem-inv-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = SqliteMemory::open(&SqliteMemory::path_for_state_dir(&dir)).unwrap();
+        let mut rec = MemoryRecord::new_stm("stale fact", "body");
+        rec.provenance = "test".into();
+        let id = rec.id.clone();
+        db.store(rec).unwrap();
+
+        db.invalidate(&id).unwrap();
+
+        // No silent deletes: the record still exists, just flagged obsolete.
+        let after = db.get(&id).unwrap().expect("record was deleted");
+        assert!(after.obsolete, "invalidate must set obsolete");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn supersede_links_new_record_and_retires_old() {
+        let dir = std::env::temp_dir().join(format!("abbey-mem-sup-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = SqliteMemory::open(&SqliteMemory::path_for_state_dir(&dir)).unwrap();
+        let mut old = MemoryRecord::new_stm("wrong fact", "body");
+        old.provenance = "test".into();
+        let old_id = old.id.clone();
+        db.store(old).unwrap();
+
+        let mut fixed = MemoryRecord::new_stm("corrected fact", "body");
+        fixed.provenance = "test supersede".into();
+        let new_id = fixed.id.clone();
+        db.supersede(&old_id, fixed).unwrap();
+
+        let old_after = db.get(&old_id).unwrap().expect("old record deleted");
+        assert!(old_after.obsolete, "superseded record must be obsolete");
+        let new_after = db.get(&new_id).unwrap().expect("new record missing");
+        assert_eq!(
+            new_after.supersedes.as_deref(),
+            Some(old_id.as_str()),
+            "replacement must point back at what it replaced"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn train_requires_provenance() {
         let dir = std::env::temp_dir().join(format!("abbey-mem-train-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);

@@ -210,7 +210,7 @@ pub trait MemoryStore {
     fn store(&self, rec: MemoryRecord) -> anyhow::Result<()>;
     fn get(&self, id: &str) -> anyhow::Result<Option<MemoryRecord>>;
     fn update(&self, rec: MemoryRecord) -> anyhow::Result<()>;
-    #[allow(dead_code)]
+    /// Mark obsolete — never deletes (see the no-silent-deletes rule).
     fn invalidate(&self, id: &str) -> anyhow::Result<()>;
     fn search_keyword(&self, query: &str, limit: usize) -> anyhow::Result<Vec<MemoryRecord>>;
     fn filter(
@@ -220,7 +220,7 @@ pub trait MemoryStore {
         limit: usize,
     ) -> anyhow::Result<Vec<MemoryRecord>>;
     fn promote(&self, id: &str, new_retention: &str) -> anyhow::Result<()>;
-    #[allow(dead_code)]
+    /// Store `new_rec` and mark `old_id` obsolete, preserving both.
     fn supersede(&self, old_id: &str, new_rec: MemoryRecord) -> anyhow::Result<()>;
     fn reflect(&self) -> anyhow::Result<ReflectReport>;
 }

@@ -536,6 +536,24 @@ pub enum MemoryCmd {
         #[arg(default_value = "ltm")]
         retention: String,
     },
+    /// Mark a memory obsolete (never deletes — provenance is preserved)
+    Invalidate { id: String },
+    /// Replace a memory with a corrected one, marking the old obsolete
+    Supersede {
+        /// Record being replaced
+        old_id: String,
+        /// Summary of the replacement record
+        summary: String,
+        #[arg(long, default_value = "stm")]
+        retention: String,
+        #[arg(long, default_value = "")]
+        payload: String,
+        #[arg(long, default_value = "abbey cli supersede")]
+        provenance: String,
+        /// Subject tag for the replacement (repeatable)
+        #[arg(long = "tag")]
+        tags: Vec<String>,
+    },
     /// Reflection report (duplicates / low confidence / superseded)
     Reflect,
     /// 3-D memory map: topic × recency × consolidation

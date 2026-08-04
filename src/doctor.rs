@@ -141,6 +141,29 @@ pub fn cmd_memory_store(state: &AbbeyState, cmd: MemoryCmd) -> Result<i32> {
             println!("promoted {id} → {retention}");
             Ok(0)
         }
+        MemoryCmd::Invalidate { id } => {
+            mem.invalidate(&id)?;
+            println!("invalidated {id} (marked obsolete, not deleted)");
+            Ok(0)
+        }
+        MemoryCmd::Supersede {
+            old_id,
+            summary,
+            retention,
+            payload,
+            provenance,
+            tags,
+        } => {
+            let mut rec = MemoryRecord::new_stm(summary, payload);
+            rec.retention = retention;
+            rec.provenance = provenance;
+            rec.origin = "user".into();
+            rec.tags.extend(tags);
+            let new_id = rec.id.clone();
+            mem.supersede(&old_id, rec)?;
+            println!("superseded {old_id} → {new_id} (old marked obsolete)");
+            Ok(0)
+        }
         MemoryCmd::Reflect => {
             let report = mem.reflect()?;
             println!("low_confidence: {}", report.low_confidence.len());
