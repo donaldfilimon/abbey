@@ -246,6 +246,35 @@ pub fn truncate_utf8_bytes(s: &str, max_bytes: usize) -> String {
 }
 
 /// Clamp every trailing prompt string so the child argv stays under the OS limit.
+/// Whether a prompt would reach the backend in option position.
+///
+/// Prompt words are appended to the backend's argv with no `--` separator, so a
+/// leading-dash prompt is parsed as flags rather than text: `abbey print --
+/// "--force …"` does not *ask about* `--force`, it hands cursor-agent its real
+/// `--force` (always-approve) flag.
+///
+/// Abbey's own generated prompts are unaffected — `please-fix` and the hybrid
+/// loop embed captured errors and model output mid-string, so that argv element
+/// always begins with prose. Only a user's own leading-dash prompt trips this.
+pub fn looks_like_flags(prompt_and_rest: &[String]) -> bool {
+    prompt_and_rest
+        .iter()
+        .find(|p| !p.trim().is_empty())
+        .is_some_and(|first| first.trim_start().starts_with('-'))
+}
+
+/// Warn once, at the spawn point, rather than rewriting the argv: whether the
+/// backend honours a `--` separator is unverified, and silently reshaping every
+/// invocation to find out is not worth the risk to the primary path.
+fn warn_if_prompt_looks_like_flags(prompt_and_rest: &[String]) {
+    if looks_like_flags(prompt_and_rest) {
+        eprintln!(
+            "abbey: prompt begins with `-` — the backend will read it as options, \
+             not text (e.g. `--force` enables always-approve)"
+        );
+    }
+}
+
 pub fn clamp_prompt_args(prompt_and_rest: &[String]) -> Vec<String> {
     let cap = max_prompt_argv_bytes();
     prompt_and_rest
@@ -424,6 +453,7 @@ impl AgentConfig {
         resume_id: Option<&str>,
         prompt_and_rest: &[String],
     ) -> Result<ExitStatus> {
+        warn_if_prompt_looks_like_flags(prompt_and_rest);
         let args = self.build_args(resume_id, prompt_and_rest);
         let status = Command::new(&self.agent_path)
             .args(&args)
@@ -441,6 +471,7 @@ impl AgentConfig {
         resume_id: Option<&str>,
         prompt_and_rest: &[String],
     ) -> Result<(ExitStatus, String, String)> {
+        warn_if_prompt_looks_like_flags(prompt_and_rest);
         let mut cfg = self.clone();
         cfg.print = true;
         let args = cfg.build_args(resume_id, prompt_and_rest);
@@ -600,6 +631,28 @@ fn run_once(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn flag_shaped_prompts_are_detected() {
+        // Only the first non-empty word matters — that is the one the backend
+        // sees in option position.
+        assert!(looks_like_flags(&["--force".to_string()]));
+        assert!(looks_like_flags(&["  ".to_string(), "-p".to_string()]));
+        assert!(!looks_like_flags(&["explain --force".to_string()]));
+        assert!(!looks_like_flags(&[]));
+    }
+
+    #[test]
+    fn abbey_generated_prompts_are_not_flagged() {
+        // please-fix and the hybrid loop wrap untrusted text mid-string, so the
+        // argv element begins with prose even when the text itself has flags.
+        assert!(!looks_like_flags(&[
+            "Please fix this failure:\n\n--force --yolo".to_string()
+        ]));
+        assert!(!looks_like_flags(&[
+            "Stage 2 of 2 (implement).\n--- interpretation ---\n--force".to_string()
+        ]));
+    }
 
     #[test]
     fn failed_retry_keeps_the_original_chat() {
