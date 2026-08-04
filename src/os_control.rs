@@ -29,12 +29,26 @@ pub fn allowed_names() -> Vec<&'static str> {
     v
 }
 
+/// Whether `cmd` names an allowlisted executable.
+///
+/// Matching is case-insensitive on Windows (its filesystem and `PATHEXT` are)
+/// but **case-sensitive on Unix**, even though macOS ships a case-insensitive
+/// filesystem by default. Folding case on Unix would let a caller name a
+/// command the allowlist did not literally approve: `WHOAMI` resolves to the
+/// same inode as `whoami`, but that inode is a multi-call binary that switches
+/// on `argv[0]`, so it runs as `id` and prints uid/gid/groups instead of a
+/// username. The command that executed would then differ from the one the
+/// policy recorded — exactly the mismatch this surface exists to prevent.
 pub fn is_allowed(cmd: &str) -> bool {
     let base = std::path::Path::new(cmd)
         .file_name()
         .and_then(|s| s.to_str())
-        .unwrap_or(cmd)
-        .to_ascii_lowercase();
+        .unwrap_or(cmd);
+    let base = if cfg!(windows) {
+        base.to_ascii_lowercase()
+    } else {
+        base.to_string()
+    };
     let base = base.trim_end_matches(".exe");
     allowed_names().contains(&base)
 }
@@ -175,6 +189,20 @@ mod tests {
         assert!(!is_allowed("echo"));
         assert!(is_allowed("where"));
         assert!(is_allowed("whoami.exe"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unix_matching_is_case_sensitive() {
+        // macOS ships a case-insensitive filesystem, so `WHOAMI` opens the same
+        // inode as `whoami` — but that inode dispatches on argv[0] and runs as
+        // `id`. Accepting the case variant would execute a different program
+        // than the allowlist approved.
+        assert!(is_allowed("whoami"));
+        assert!(!is_allowed("WHOAMI"));
+        assert!(!is_allowed("EcHo"));
+        // Case folding must not become a way to reach a denied command either.
+        assert!(!is_allowed("RM"));
     }
 
     #[cfg(unix)]
