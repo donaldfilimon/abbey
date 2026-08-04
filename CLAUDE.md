@@ -33,6 +33,14 @@ Rust **nightly**, edition **2024**, pinned via `rust-toolchain.toml` (`rustfmt` 
 
 Abbey has one canonical execution path shared by the CLI, slash commands, and the TUI — do not add a second way to invoke the agent.
 
+Two headless capture commands are the standing exceptions: `print`
+(`commands.rs`) and `commit` (`actions::run_commit`) call
+`AgentConfig::run_capture` directly and never reach `run_agent`. They therefore
+skip `hybrid_run` entirely — no persona/role wrap, no prefs injection, and **no
+`route.jsonl` entry** (verified: `abbey print …` leaves the route log unchanged
+where `abbey ask …` appends a row). That is deliberate for single-shot piping,
+but it means the routing audit does not see them. Keep the list at two.
+
 ```
 CLI (clap) · TUI (ratatui) · slash catalog
         ↓ all three funnel into:
