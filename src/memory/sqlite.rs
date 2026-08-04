@@ -312,6 +312,46 @@ mod tests {
     }
 
     #[test]
+    fn invalidated_records_leave_search_but_stay_retrievable() {
+        // The contract behind `abbey memory invalidate`: an obsolete record
+        // must stop polluting search results, yet still be fetchable by id so
+        // the provenance trail survives. Verified by hand against the release
+        // binary; encoded here so a regression cannot pass silently.
+        let dir = std::env::temp_dir().join(format!("abbey-mem-hide-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = SqliteMemory::open(&SqliteMemory::path_for_state_dir(&dir)).unwrap();
+
+        let mut rec = MemoryRecord::new_stm("searchable needle token", "body");
+        rec.provenance = "test".into();
+        let id = rec.id.clone();
+        db.store(rec).unwrap();
+
+        // Control: it is findable before invalidation, so an empty result
+        // afterwards means "filtered", not "search is broken".
+        assert!(
+            db.search_keyword("needle", 10)
+                .unwrap()
+                .iter()
+                .any(|r| r.id == id),
+            "record should be searchable before invalidation"
+        );
+
+        db.invalidate(&id).unwrap();
+
+        assert!(
+            !db.search_keyword("needle", 10)
+                .unwrap()
+                .iter()
+                .any(|r| r.id == id),
+            "invalidated record must not appear in search"
+        );
+        let fetched = db.get(&id).unwrap().expect("record must still exist");
+        assert!(fetched.obsolete);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn train_requires_provenance() {
         let dir = std::env::temp_dir().join(format!("abbey-mem-train-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
