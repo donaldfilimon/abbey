@@ -27,7 +27,11 @@ Guidance for AI coding agents in this repository.
 
 ```
 src/main.rs           thin entry (<200 lines)
+src/cli.rs            clap Cli/Subcommand definitions
 src/commands.rs       clap dispatch
+src/output.rs         stdout helpers (broken pipe = success)
+src/build_info.rs     build-stamp constants from build.rs
+src/improve/          `abbey improve` — goal pick + lanes + check.sh gate
 src/slash_dispatch.rs slash handler
 src/session.rs        hybrid_run + flags
 src/doctor.rs         doctor / persona / memory helpers
