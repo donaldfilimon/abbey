@@ -106,6 +106,14 @@ abbey memory map                 # the whole map
 abbey memory near <id>           # what else do I know about this?
 ```
 
+When something you stored turns out to be wrong, retire it rather than deleting it —
+memories are never silently removed, so the provenance trail survives:
+
+```bash
+abbey memory invalidate <id>                     # mark obsolete, keep the record
+abbey memory supersede <old-id> "corrected fact" # store the fix, retire the old
+```
+
 Tag your memories — untagged ones share one visible `(untagged)` column. Under
 `--features wdbx` each point is mirrored into WDBX's spatial space, so `abi wdbx` sees
 the same map.
