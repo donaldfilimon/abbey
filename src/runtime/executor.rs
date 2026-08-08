@@ -1,0 +1,165 @@
+//! Provider-neutral execution seam for the durable run manager.
+//!
+//! This module deliberately owns no model, tool, shell, network, or memory
+//! behavior. Concrete providers adapt their request into [`Executor::Request`]
+//! and report only completion or a bounded failure to the manager.
+
+use std::fmt;
+use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
+
+const MAX_FAILURE_BYTES: usize = 4_096;
+
+/// Monotonic cooperative-cancellation signal shared with one running executor.
+#[derive(Clone, Debug, Default)]
+pub struct CancellationToken {
+    cancelled: Arc<AtomicBool>,
+}
+
+impl CancellationToken {
+    /// Request cancellation. Repeated calls are harmless.
+    pub fn cancel(&self) {
+        self.cancelled.store(true, Ordering::Release);
+    }
+
+    /// Return whether cancellation has been requested.
+    #[must_use]
+    pub fn is_cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::Acquire)
+    }
+}
+
+/// Bounded, display-safe execution failure retained by the run manager.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExecutionError {
+    message: String,
+}
+
+impl ExecutionError {
+    #[must_use]
+    pub fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: bounded_message(message.into()),
+        }
+    }
+
+    #[must_use]
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+}
+
+impl fmt::Display for ExecutionError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for ExecutionError {}
+
+/// Execution implementation injected into a [`RunManager`](super::manager::RunManager).
+///
+/// Cancellation is cooperative. Implementations should inspect `cancellation`
+/// at natural interruption points and return promptly when it becomes set.
+pub trait Executor: Send + Sync + 'static {
+    type Request: Send + 'static;
+
+    fn execute(
+        &self,
+        request: Self::Request,
+        cancellation: &CancellationToken,
+    ) -> Result<(), ExecutionError>;
+}
+
+/// Outcome produced without allowing an executor panic to kill the manager worker.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum ExecutionAttempt {
+    Completed,
+    Failed(ExecutionError),
+    Panicked(ExecutionError),
+}
+
+pub(crate) fn execute_catching_panics<E: Executor>(
+    executor: &E,
+    request: E::Request,
+    cancellation: &CancellationToken,
+) -> ExecutionAttempt {
+    match catch_unwind(AssertUnwindSafe(|| {
+        executor.execute(request, cancellation)
+    })) {
+        Ok(Ok(())) => ExecutionAttempt::Completed,
+        Ok(Err(error)) => ExecutionAttempt::Failed(error),
+        Err(payload) => ExecutionAttempt::Panicked(ExecutionError::new(panic_message(payload))),
+    }
+}
+
+fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
+    let message = payload
+        .downcast_ref::<&str>()
+        .map(|value| (*value).to_owned())
+        .or_else(|| payload.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "executor panicked with a non-string payload".to_owned());
+    format!("executor panicked: {message}")
+}
+
+fn bounded_message(message: String) -> String {
+    if message.len() <= MAX_FAILURE_BYTES {
+        return message;
+    }
+
+    let mut end = MAX_FAILURE_BYTES.saturating_sub(3);
+    while !message.is_char_boundary(end) {
+        end = end.saturating_sub(1);
+    }
+    let mut bounded = message[..end].to_owned();
+    bounded.push_str("...");
+    bounded
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct PanicExecutor;
+
+    impl Executor for PanicExecutor {
+        type Request = ();
+
+        fn execute(
+            &self,
+            (): Self::Request,
+            _cancellation: &CancellationToken,
+        ) -> Result<(), ExecutionError> {
+            panic!("fixture panic")
+        }
+    }
+
+    #[test]
+    fn cancellation_is_monotonic_and_shared() {
+        let token = CancellationToken::default();
+        let clone = token.clone();
+        assert!(!clone.is_cancelled());
+        token.cancel();
+        token.cancel();
+        assert!(clone.is_cancelled());
+    }
+
+    #[test]
+    fn execution_errors_are_utf8_safely_bounded() {
+        let error = ExecutionError::new("🦀".repeat(MAX_FAILURE_BYTES));
+        assert!(error.message().len() <= MAX_FAILURE_BYTES);
+        assert!(error.message().ends_with("..."));
+    }
+
+    #[test]
+    fn executor_panics_become_explicit_attempts() {
+        let attempt = execute_catching_panics(&PanicExecutor, (), &CancellationToken::default());
+        let ExecutionAttempt::Panicked(error) = attempt else {
+            panic!("expected panic outcome")
+        };
+        assert_eq!(error.message(), "executor panicked: fixture panic");
+    }
+}
