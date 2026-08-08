@@ -24,6 +24,23 @@ loop (a large rewrite, replacing cursor-agent as executor) vs. local model weigh
 (currently Out of scope in three separate gate rows). Not resolved without the
 user picking one — no reading was assumed or started.
 
+**Re-captured 2026-08-08 (`/goal`): "interactive cli and tui and gui/tui advanced
+more modern rust implementations without requirement for any other backend but
+abi."** This resolves part of the 2026-07-31 ambiguity: the chosen direction is
+Abbey standing alone on the **sibling `abi` workspace as the sole backend** — no
+cursor-agent requirement — with a modernized interactive CLI + TUI (and a GUI/TUI
+surface). Same coarse intention as this section, so recorded here rather than as a
+duplicate goal (ledger rule: one intention, one `##`). Not started this turn.
+Preconditions unchanged and still binding before any slice can close: amend the
+AGENTS.md claims gate first ("backend is cursor-agent" row, tool-runtime OOS rows,
+shipped refusal paths in `src/surfaces.rs`/`src/claims.rs`). Open scoping question
+for execute: what `abi` offers as a generation backend today — `abi-ai` (an
+existing unconditional dep) is deterministic identity/routing/embedding, not an
+LLM executor, so "abi as only backend" needs the executor story named (e.g.
+`abi-cli`/`abi-connectors`) before the first slice is cut. GUI reading also needs
+a pick: richer ratatui TUI vs. an actual windowed GUI (new stack, e.g. egui) —
+the latter would be a new claims-gate row, not a checkbox.
+
 Found live 2026-07-31 while verifying `improve status`: `abbey memory map | head -2`
 printed a Rust panic (`failed printing to stdout: Broken pipe`) instead of exiting
 quietly like `cat`/`ls`. Rust's std sets `SIGPIPE` to `SIG_IGN` before `main`, so a
