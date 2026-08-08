@@ -238,7 +238,7 @@ impl MemoryStore for SqliteMemory {
                     tags_json, embedding_ref, confidence, provenance, retention,
                     supersedes, classification, obsolete, project
              FROM memory WHERE obsolete=0
-             ORDER BY timestamp DESC LIMIT 1000",
+             ORDER BY timestamp DESC",
         )?;
         let rows = stmt.query_map([], Self::row_to_rec)?;
         let mut out = Vec::new();

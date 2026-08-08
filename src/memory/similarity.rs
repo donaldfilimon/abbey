@@ -165,6 +165,35 @@ mod tests {
     }
 
     #[test]
+    fn filtered_similarity_applies_the_filter_before_the_candidate_budget() {
+        let dir =
+            std::env::temp_dir().join(format!("abbey-sim-filter-budget-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = SqliteMemory::open(&SqliteMemory::path_for_state_dir(&dir)).unwrap();
+
+        let mut included = rec("durable vector memory", &["wdbx"]);
+        included.project = "project-a".into();
+        included.timestamp = "2020-01-01T00:00:00Z".into();
+        db.store(included).unwrap();
+
+        for index in 0..=SCAN_LIMIT {
+            let mut excluded = rec(&format!("unrelated newer record {index}"), &[]);
+            excluded.project = "project-b".into();
+            excluded.timestamp = "2021-01-01T00:00:00Z".into();
+            db.store(excluded).unwrap();
+        }
+
+        let filter =
+            MemoryFilter::new(None, None, None, None, Some("project-a".into()), None, None)
+                .unwrap();
+        let hits = similar_to_text_filtered(&db, "durable vector memory", &filter, 10).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].1.project, "project-a");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn ranking_is_descending_by_similarity() {
         let records = vec![
             rec("alpha beta gamma", &[]),
