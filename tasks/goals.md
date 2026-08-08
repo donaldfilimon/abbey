@@ -1,5 +1,40 @@
 # Goals
 
+## Working CI on GitHub
+status: blocked
+
+Captured 2026-08-08 after the repo gained a remote
+(`github.com/donaldfilimon/abbey`, private) and a web-authored
+`.github/workflows/rust.yml`.
+
+**Shipped (`bdc0491`):** the workflow as authored could never have gone green —
+Abbey path-depends on the sibling ABI workspace, so a lone checkout fails at
+manifest resolution. Proved with a fresh clone: `cargo metadata` exits 101 with
+"no matching package named `abi-ai`". The workflow now checks out `abbey` and
+public `donaldfilimon/abi` as siblings, installs the `rust-toolchain.toml`
+nightly (+rustfmt/clippy, which also satisfies `../abi`'s `rust-version = 1.99`),
+caches cargo, and runs `./check.sh` rather than a bare build+test that would
+silently skip the `wdbx` feature set. Same commit replaced the unedited template
+`SECURITY.md`, which claimed abbey supports versions "5.1.x"/"4.0.x" (abbey is
+2.6.0) — a false Current claim in a repo whose whole discipline is claim honesty.
+
+**Verified:** the workflow's checkout layout reproduced locally (fresh `abbey`
+clone + sibling `abi` clone) → `cargo metadata` resolves and `./check.sh` exits
+0. **Not verified on `ubuntu-latest`**, because no run has ever executed.
+
+**Why blocked, not done:** every Actions run on this repo ends in
+`startup_failure` at 0s with **zero jobs scheduled** — including GitHub's own
+default template and the Dependabot run, i.e. before workflow content is even
+read. The same account's *public* `abi` repo runs Actions normally (jobs execute
+for 18–40s). That isolates the cause to private-repo Actions minutes / spending
+limit, which is an account setting outside this repository and not inspectable
+with the current token scopes.
+
+**Unblocks when** the owner checks github.com/settings/billing (Actions minutes
++ spending limit). Deliberately *not* worked around by making the repo public —
+private was an explicit choice. Until then `./check.sh` locally remains the
+real gate, and no green-CI badge or claim may be added.
+
 ## Fully independent TUI + agent runtime
 status: done
 - Closed 2026-08-08 on the **abi-backed-independence** reading: Abbey runs CLI,

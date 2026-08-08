@@ -1,5 +1,19 @@
 # Todo
 
+## Working CI on GitHub (blocked — see goals.md)
+
+- [x] Workflow checks out `abbey` + sibling `donaldfilimon/abi` (path dep cannot
+      resolve otherwise — fresh clone exits 101 at `cargo metadata`)
+- [x] CI runs `./check.sh` (both feature sets), not a bare build+test
+- [x] `SECURITY.md` replaced — the template claimed nonexistent 5.1.x/4.0.x support
+- [x] CI constraints documented in `docs/production.md`
+- [ ] **Blocked:** a run that actually executes. Every run is `startup_failure`
+      at 0s / 0 jobs, including GitHub's own template — private-repo Actions
+      minutes or spending limit, not workflow content. Owner action:
+      github.com/settings/billing
+- [ ] **Blocked on the above:** confirm `check.sh` passes on `ubuntu-latest`
+      (verified only by reproducing the checkout layout locally so far)
+
 ## Hybrid routing and memory
 
 ### Phase 1 — Spec spine

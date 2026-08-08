@@ -21,6 +21,32 @@ abbey platform paths
 
 `check.sh` is the production bar. Do not ship if it fails.
 
+## CI
+
+`.github/workflows/rust.yml` runs the same `./check.sh` on push and PR to `main`.
+
+**It must check out two repositories.** Abbey path-depends on the sibling ABI
+workspace (`abi-ai`, and `abi-wdbx` under `--features wdbx`), so a lone checkout
+cannot even resolve the manifest — `cargo metadata` fails with *"no matching
+package named `abi-ai`"* before anything compiles. The workflow therefore checks
+out `abbey` and `donaldfilimon/abi` (public) into sibling paths, reproducing the
+layout `../abi` expects. Any CI rewrite that drops the second checkout will fail
+immediately, and not for an obvious reason.
+
+The toolchain comes from `rust-toolchain.toml` (nightly + rustfmt + clippy);
+nightly also satisfies `../abi`'s `rust-version = 1.99`. CI runs `check.sh`
+rather than a bare `cargo build && cargo test` so the `wdbx` feature set is
+actually compiled and tested.
+
+**Known blocker (2026-08-08):** every Actions run on the private `abbey` repo
+ends in `startup_failure` at 0s with zero jobs scheduled — including GitHub's
+own default template and Dependabot, i.e. before workflow content matters. The
+same account's *public* `abi` repo runs Actions normally, which points at
+private-repo Actions minutes / spending limit rather than anything in this
+repository. Until that is resolved, `./check.sh` locally is the real gate; the
+workflow is verified only by reproducing its checkout layout locally (fresh
+`abbey` clone + sibling `abi` clone → `check.sh` exits 0), not by a green run.
+
 ## Primary host targets
 
 | Target | Portable CLI/TUI/memory/subagents | Notes |
