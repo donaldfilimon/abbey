@@ -19,7 +19,7 @@
 //! The OS drops the lock when the handle closes, including on process death, so
 //! a crashed process cannot wedge the store the way a lock *file* would.
 
-use super::{MemoryRecord, MemoryStore, ReflectReport};
+use super::{MemoryFilter, MemoryRecord, MemoryStore, ReflectReport};
 use abi_wdbx::DurableStore;
 use anyhow::{Result, anyhow, bail};
 use std::fs::File;
@@ -215,18 +215,12 @@ impl MemoryStore for WdbxMemory {
             .collect())
     }
 
-    fn filter(
-        &self,
-        retention: Option<&str>,
-        tag: Option<&str>,
-        limit: usize,
-    ) -> Result<Vec<MemoryRecord>> {
+    fn filter_with(&self, filter: &MemoryFilter, limit: usize) -> Result<Vec<MemoryRecord>> {
         Ok(self
             .scan()
             .into_iter()
             .filter(|r| !r.obsolete)
-            .filter(|r| retention.is_none_or(|ret| r.retention == ret))
-            .filter(|r| tag.is_none_or(|t| r.tags.iter().any(|x| x == t)))
+            .filter(|record| filter.matches(record))
             .take(limit)
             .collect())
     }
@@ -373,6 +367,35 @@ mod tests {
         let mut rec = MemoryRecord::new_stm("ghost", "body");
         rec.provenance = "test".into();
         assert!(db.update(rec).is_err(), "update must not create records");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn shared_source_project_and_timestamp_filters_apply_after_reopen() {
+        let dir = tmp("filters");
+        let mut record = MemoryRecord::new_stm("filtered", "body");
+        record.provenance = "test".into();
+        record.source_type = "import".into();
+        record.source_ref = "bundle-1".into();
+        record.project = "project-a".into();
+        record.timestamp = "2026-08-08T12:00:00Z".into();
+        {
+            let db = WdbxMemory::open(&dir).unwrap();
+            db.store(record).unwrap();
+            db.checkpoint().unwrap();
+        }
+        let db = WdbxMemory::open(&dir).unwrap();
+        let filter = MemoryFilter::new(
+            None,
+            None,
+            Some("import".into()),
+            Some("bundle-1".into()),
+            Some("project-a".into()),
+            Some("2026-08-08T12:00:00Z".into()),
+            Some("2026-08-08T12:00:00Z".into()),
+        )
+        .unwrap();
+        assert_eq!(db.filter_with(&filter, 10).unwrap().len(), 1);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

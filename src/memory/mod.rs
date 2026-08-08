@@ -21,6 +21,9 @@ pub struct MemoryRecord {
     pub id: String,
     pub source_type: String,
     pub source_ref: String,
+    /// Canonical project root associated with this memory, when known.
+    #[serde(default)]
+    pub project: String,
     pub timestamp: String,
     pub origin: String,
     pub payload: String,
@@ -48,6 +51,7 @@ impl MemoryRecord {
             id: uuid::Uuid::new_v4().to_string(),
             source_type: "session".into(),
             source_ref: String::new(),
+            project: current_project(),
             timestamp: chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string(),
             origin: "system".into(),
             payload: payload.into(),
@@ -62,6 +66,127 @@ impl MemoryRecord {
             obsolete: false,
         }
     }
+}
+
+/// Backend-neutral memory query constraints.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct MemoryFilter {
+    pub retention: Option<String>,
+    pub tag: Option<String>,
+    pub source_type: Option<String>,
+    pub source_ref: Option<String>,
+    pub project: Option<String>,
+    /// Inclusive lower RFC 3339 boundary, normalized to UTC.
+    pub since: Option<String>,
+    /// Inclusive upper RFC 3339 boundary, normalized to UTC.
+    pub until: Option<String>,
+}
+
+impl MemoryFilter {
+    /// Validate and normalize one RFC 3339 timestamp to UTC.
+    pub fn normalize_timestamp(raw: &str) -> anyhow::Result<String> {
+        chrono::DateTime::parse_from_rfc3339(raw)
+            .map(|time| {
+                time.with_timezone(&chrono::Utc)
+                    .to_rfc3339_opts(chrono::SecondsFormat::AutoSi, true)
+            })
+            .map_err(|error| anyhow::anyhow!("invalid RFC 3339 timestamp {raw:?}: {error}"))
+    }
+
+    /// Parse and validate timestamp boundaries before a backend is queried.
+    pub fn new(
+        retention: Option<String>,
+        tag: Option<String>,
+        source_type: Option<String>,
+        source_ref: Option<String>,
+        project: Option<String>,
+        since: Option<String>,
+        until: Option<String>,
+    ) -> anyhow::Result<Self> {
+        let since = normalize_bound(since, "since")?;
+        let until = normalize_bound(until, "until")?;
+        if since
+            .as_ref()
+            .zip(until.as_ref())
+            .is_some_and(|(a, b)| a > b)
+        {
+            anyhow::bail!("memory filter --since must not be later than --until");
+        }
+        Ok(Self {
+            retention,
+            tag,
+            source_type,
+            source_ref,
+            project,
+            since,
+            until,
+        })
+    }
+
+    #[must_use]
+    pub fn matches(&self, record: &MemoryRecord) -> bool {
+        self.retention
+            .as_deref()
+            .is_none_or(|value| record.retention == value)
+            && self
+                .tag
+                .as_deref()
+                .is_none_or(|value| record.tags.iter().any(|tag| tag == value))
+            && self
+                .source_type
+                .as_deref()
+                .is_none_or(|value| record.source_type == value)
+            && self
+                .source_ref
+                .as_deref()
+                .is_none_or(|value| record.source_ref == value)
+            && self
+                .project
+                .as_deref()
+                .is_none_or(|value| record.project == value)
+            && self.timestamp_matches(record)
+    }
+
+    fn timestamp_matches(&self, record: &MemoryRecord) -> bool {
+        if self.since.is_none() && self.until.is_none() {
+            return true;
+        }
+        let Ok(recorded) = chrono::DateTime::parse_from_rfc3339(&record.timestamp) else {
+            return false;
+        };
+        let since_ok = self.since.as_deref().is_none_or(|raw| {
+            chrono::DateTime::parse_from_rfc3339(raw).is_ok_and(|since| recorded >= since)
+        });
+        let until_ok = self.until.as_deref().is_none_or(|raw| {
+            chrono::DateTime::parse_from_rfc3339(raw).is_ok_and(|until| recorded <= until)
+        });
+        since_ok && until_ok
+    }
+}
+
+fn normalize_bound(value: Option<String>, label: &str) -> anyhow::Result<Option<String>> {
+    value
+        .map(|raw| {
+            MemoryFilter::normalize_timestamp(&raw).map_err(|error| {
+                anyhow::anyhow!("invalid --{label} RFC 3339 timestamp {raw:?}: {error}")
+            })
+        })
+        .transpose()
+}
+
+fn current_project() -> String {
+    let cwd = std::env::current_dir().unwrap_or_default();
+    let output = std::process::Command::new("git")
+        .args(["rev-parse", "--show-toplevel"])
+        .current_dir(&cwd)
+        .output();
+    output
+        .ok()
+        .filter(|result| result.status.success())
+        .and_then(|result| String::from_utf8(result.stdout).ok())
+        .map(|root| root.trim().to_string())
+        .filter(|root| !root.is_empty())
+        .unwrap_or_else(|| cwd.canonicalize().unwrap_or(cwd).display().to_string())
 }
 
 #[derive(Debug, Clone, Default)]
@@ -213,14 +338,92 @@ pub trait MemoryStore {
     /// Mark obsolete — never deletes (see the no-silent-deletes rule).
     fn invalidate(&self, id: &str) -> anyhow::Result<()>;
     fn search_keyword(&self, query: &str, limit: usize) -> anyhow::Result<Vec<MemoryRecord>>;
+    fn search_keyword_with(
+        &self,
+        query: &str,
+        filter: &MemoryFilter,
+        limit: usize,
+    ) -> anyhow::Result<Vec<MemoryRecord>> {
+        let needle = query.to_ascii_lowercase();
+        Ok(self
+            .filter_with(filter, 1000)?
+            .into_iter()
+            .filter(|record| {
+                record.summary.to_ascii_lowercase().contains(&needle)
+                    || record.payload.to_ascii_lowercase().contains(&needle)
+                    || record.provenance.to_ascii_lowercase().contains(&needle)
+            })
+            .take(limit)
+            .collect())
+    }
     fn filter(
         &self,
         retention: Option<&str>,
         tag: Option<&str>,
         limit: usize,
-    ) -> anyhow::Result<Vec<MemoryRecord>>;
+    ) -> anyhow::Result<Vec<MemoryRecord>> {
+        self.filter_with(
+            &MemoryFilter {
+                retention: retention.map(str::to_string),
+                tag: tag.map(str::to_string),
+                ..MemoryFilter::default()
+            },
+            limit,
+        )
+    }
+    fn filter_with(&self, filter: &MemoryFilter, limit: usize)
+    -> anyhow::Result<Vec<MemoryRecord>>;
     fn promote(&self, id: &str, new_retention: &str) -> anyhow::Result<()>;
     /// Store `new_rec` and mark `old_id` obsolete, preserving both.
     fn supersede(&self, old_id: &str, new_rec: MemoryRecord) -> anyhow::Result<()>;
     fn reflect(&self) -> anyhow::Result<ReflectReport>;
+}
+
+#[cfg(test)]
+mod filter_tests {
+    use super::*;
+
+    #[test]
+    fn bounds_are_inclusive_and_all_metadata_dimensions_are_exact() {
+        let mut record = MemoryRecord::new_stm("summary", "payload");
+        record.timestamp = "2026-08-08T12:00:00Z".into();
+        record.retention = "ltm".into();
+        record.tags.push("preference".into());
+        record.source_type = "route".into();
+        record.source_ref = "route-7".into();
+        record.project = "/project/abbey".into();
+        let filter = MemoryFilter::new(
+            Some("ltm".into()),
+            Some("preference".into()),
+            Some("route".into()),
+            Some("route-7".into()),
+            Some("/project/abbey".into()),
+            Some("2026-08-08T08:00:00-04:00".into()),
+            Some("2026-08-08T12:00:00Z".into()),
+        )
+        .unwrap();
+        assert!(filter.matches(&record));
+        record.timestamp = "not-a-timestamp".into();
+        assert!(!filter.matches(&record));
+    }
+
+    #[test]
+    fn malformed_or_reversed_bounds_fail_instead_of_broadening() {
+        assert!(
+            MemoryFilter::new(None, None, None, None, None, Some("yesterday".into()), None)
+                .is_err()
+        );
+        assert!(
+            MemoryFilter::new(
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some("2026-08-09T00:00:00Z".into()),
+                Some("2026-08-08T00:00:00Z".into()),
+            )
+            .is_err()
+        );
+    }
 }

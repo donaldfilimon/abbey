@@ -14,6 +14,7 @@ use crate::route_log;
 use crate::state::AbbeyState;
 use abi_ai::AgentProfile;
 use anyhow::{Result, bail};
+use std::process::ExitStatus;
 
 pub fn apply_global_flags(cli: &Cli, state: &AbbeyState, cfg: &mut AgentConfig) -> Result<()> {
     // `fm` and `abi` keep conversations in transcript files under the state
@@ -169,6 +170,52 @@ fn record_activity(
     }
 }
 
+struct LoopStageResult {
+    status: ExitStatus,
+    output: String,
+    model: String,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_loop_stage(
+    base: &AgentConfig,
+    state: &AbbeyState,
+    persona: AgentProfile,
+    role: WorkerRole,
+    requested_model: &str,
+    body: &str,
+    prefs: &str,
+    cwd: &str,
+    correlation: &str,
+    stage: &str,
+) -> Result<LoopStageResult> {
+    let mut stage_cfg = base.clone();
+    stage_cfg.print = true;
+    // Foundation Models and ABI use role text, not cursor model bindings.
+    if !matches!(stage_cfg.backend, AgentBackend::Fm | AgentBackend::Abi) {
+        stage_cfg.model = requested_model.to_string();
+    }
+    let prompt = assemble_prompt(persona, role, body, prefs);
+    let (status, output, stderr) = stage_cfg.run_capture(None, &[prompt])?;
+    if !stderr.trim().is_empty() {
+        eprint!("{stderr}");
+    }
+    hybrid_loop::log_stage(
+        &state.state_dir,
+        cwd,
+        correlation,
+        stage,
+        role,
+        &stage_cfg.model,
+        persona.label(),
+    )?;
+    Ok(LoopStageResult {
+        status,
+        output,
+        model: stage_cfg.model,
+    })
+}
+
 pub fn hybrid_run(
     cfg: &mut AgentConfig,
     state: &AbbeyState,
@@ -276,78 +323,54 @@ pub fn hybrid_loop_run(
     record_activity(state, persona, WorkerRole::Gemma, &user, &gemma);
 
     // ---- stage 1: Gemma interprets ----
-    let mut g_cfg = cfg.clone();
-    g_cfg.print = true;
-    if !matches!(g_cfg.backend, AgentBackend::Fm | AgentBackend::Abi) {
-        g_cfg.model = gemma.clone();
-    }
-    let stage1 = assemble_prompt(
+    let stage1 = run_loop_stage(
+        cfg,
+        state,
         persona,
         WorkerRole::Gemma,
+        &gemma,
         &hybrid_loop::interpret_body(&user),
         &prefs,
-    );
-    let (g_status, interpretation, g_err) = g_cfg.run_capture(None, &[stage1])?;
-    if !g_err.trim().is_empty() {
-        eprint!("{g_err}");
-    }
-    if interpretation.trim().is_empty() {
-        bail!(
-            "hybrid-loop: interpret stage produced no output (exit {})",
-            g_status.code().unwrap_or(1)
-        );
-    }
-    hybrid_loop::log_stage(
-        &state.state_dir,
         &cwd,
         &correlation,
         STAGE_INTERPRET,
-        WorkerRole::Gemma,
-        &g_cfg.model,
-        persona.label(),
     )?;
+    if stage1.output.trim().is_empty() {
+        bail!(
+            "hybrid-loop: interpret stage produced no output (exit {})",
+            stage1.status.code().unwrap_or(1)
+        );
+    }
     println!(
         "===== stage:interpret role:gemma model:{} =====",
-        g_cfg.model
+        stage1.model
     );
-    crate::highlight::emit_agent_stdout(interpretation.trim_end());
+    crate::highlight::emit_agent_stdout(stage1.output.trim_end());
     println!();
 
     // ---- stage 2: Max implements ----
-    let mut m_cfg = cfg.clone();
-    m_cfg.print = true;
-    if !matches!(m_cfg.backend, AgentBackend::Fm | AgentBackend::Abi) {
-        m_cfg.model = max.clone();
-    }
-    let stage2 = assemble_prompt(
+    let stage2 = run_loop_stage(
+        cfg,
+        state,
         persona,
         WorkerRole::Max,
-        &hybrid_loop::implement_body(&user, &interpretation),
+        &max,
+        &hybrid_loop::implement_body(&user, &stage1.output),
         &prefs,
-    );
-    let (m_status, implementation, m_err) = m_cfg.run_capture(None, &[stage2])?;
-    if !m_err.trim().is_empty() {
-        eprint!("{m_err}");
-    }
-    hybrid_loop::log_stage(
-        &state.state_dir,
         &cwd,
         &correlation,
         STAGE_IMPLEMENT,
-        WorkerRole::Max,
-        &m_cfg.model,
-        persona.label(),
     )?;
     println!(
         "\n===== stage:implement role:max model:{} =====",
-        m_cfg.model
+        stage2.model
     );
-    crate::highlight::emit_agent_stdout(implementation.trim_end());
+    crate::highlight::emit_agent_stdout(stage2.output.trim_end());
     println!();
     println!("\n===== route link =====");
     println!("correlation {correlation} — `abbey routes --correlation` shows both stages");
 
-    Ok(m_status.code().unwrap_or(1))
+    Ok(stage2.status.code().unwrap_or(1))
 }
 
 pub fn compact_history(state: &AbbeyState, keep: usize) -> Result<usize> {

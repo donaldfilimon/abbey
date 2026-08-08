@@ -1,6 +1,6 @@
 //! Clap CLI — Grok Build / Codex / Claude Code parity surface.
 
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -525,6 +525,18 @@ pub enum MemoryCmd {
         /// Subject tag — the 3-D map's topic axis groups by this (repeatable)
         #[arg(long = "tag")]
         tags: Vec<String>,
+        /// Source category such as session, route, or import.
+        #[arg(long, default_value = "session")]
+        source: String,
+        /// Source-specific stable reference.
+        #[arg(long)]
+        source_ref: Option<String>,
+        /// Project root/name override (defaults to the current Git root).
+        #[arg(long)]
+        project: Option<String>,
+        /// Record timestamp in RFC 3339 form.
+        #[arg(long)]
+        timestamp: Option<String>,
     },
     /// Get by id
     Get { id: String },
@@ -533,6 +545,8 @@ pub enum MemoryCmd {
         query: String,
         #[arg(long, default_value_t = 20)]
         limit: usize,
+        #[command(flatten)]
+        filter: MemoryFilterArgs,
     },
     /// Promote retention layer
     Promote {
@@ -567,6 +581,8 @@ pub enum MemoryCmd {
         /// Only this retention layer
         #[arg(long)]
         layer: Option<String>,
+        #[command(flatten)]
+        filter: MemoryFilterArgs,
     },
     /// Memories nearest another one in the 3-D map
     Near {
@@ -592,6 +608,8 @@ pub enum MemoryCmd {
     Export {
         #[arg(long, default_value = "ltm")]
         layer: String,
+        #[command(flatten)]
+        filter: MemoryFilterArgs,
     },
     /// Proposed: semantic embeddings (honest refuse)
     #[command(visible_alias = "embedding", visible_alias = "vector")]
@@ -599,4 +617,27 @@ pub enum MemoryCmd {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         _args: Vec<String>,
     },
+}
+
+/// Filters shared by memory query surfaces.
+#[derive(Debug, Clone, Default, Args)]
+pub struct MemoryFilterArgs {
+    /// Subject tag.
+    #[arg(long)]
+    pub tag: Option<String>,
+    /// Source category.
+    #[arg(long)]
+    pub source: Option<String>,
+    /// Exact source reference.
+    #[arg(long)]
+    pub source_ref: Option<String>,
+    /// Exact project identifier/root.
+    #[arg(long)]
+    pub project: Option<String>,
+    /// Inclusive RFC 3339 lower timestamp bound.
+    #[arg(long)]
+    pub since: Option<String>,
+    /// Inclusive RFC 3339 upper timestamp bound.
+    #[arg(long)]
+    pub until: Option<String>,
 }

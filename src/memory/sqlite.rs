@@ -1,6 +1,6 @@
 //! SQLite interim memory backend (not WDBX).
 
-use super::{MemoryRecord, MemoryStore, ReflectReport};
+use super::{MemoryFilter, MemoryRecord, MemoryStore, ReflectReport};
 use anyhow::{Context, Result, bail};
 use rusqlite::{Connection, OptionalExtension, params};
 use std::path::{Path, PathBuf};
@@ -38,12 +38,27 @@ impl SqliteMemory {
                 retention TEXT NOT NULL,
                 supersedes TEXT,
                 classification TEXT NOT NULL,
-                obsolete INTEGER NOT NULL DEFAULT 0
+                obsolete INTEGER NOT NULL DEFAULT 0,
+                project TEXT NOT NULL DEFAULT ''
             );
             CREATE INDEX IF NOT EXISTS idx_memory_retention ON memory(retention);
             CREATE INDEX IF NOT EXISTS idx_memory_summary ON memory(summary);
             "#,
         )?;
+        let has_project = {
+            let mut statement = conn.prepare("PRAGMA table_info(memory)")?;
+            let columns = statement.query_map([], |row| row.get::<_, String>(1))?;
+            columns
+                .collect::<rusqlite::Result<Vec<_>>>()?
+                .iter()
+                .any(|column| column == "project")
+        };
+        if !has_project {
+            conn.execute(
+                "ALTER TABLE memory ADD COLUMN project TEXT NOT NULL DEFAULT ''",
+                [],
+            )?;
+        }
         Ok(Self {
             conn: Mutex::new(conn),
         })
@@ -72,6 +87,7 @@ impl SqliteMemory {
             supersedes: row.get(12)?,
             classification: row.get(13)?,
             obsolete: row.get::<_, i64>(14)? != 0,
+            project: row.get(15)?,
         })
     }
 }
@@ -85,8 +101,8 @@ impl MemoryStore for SqliteMemory {
             r#"INSERT INTO memory (
                 id, source_type, source_ref, timestamp, origin, payload, summary,
                 tags_json, embedding_ref, confidence, provenance, retention,
-                supersedes, classification, obsolete
-            ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)"#,
+                supersedes, classification, obsolete, project
+            ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)"#,
             params![
                 rec.id,
                 rec.source_type,
@@ -103,6 +119,7 @@ impl MemoryStore for SqliteMemory {
                 rec.supersedes,
                 rec.classification,
                 if rec.obsolete { 1 } else { 0 },
+                rec.project,
             ],
         )?;
         Ok(())
@@ -113,7 +130,7 @@ impl MemoryStore for SqliteMemory {
         let mut stmt = conn.prepare(
             "SELECT id, source_type, source_ref, timestamp, origin, payload, summary,
                     tags_json, embedding_ref, confidence, provenance, retention,
-                    supersedes, classification, obsolete
+                    supersedes, classification, obsolete, project
              FROM memory WHERE id = ?1",
         )?;
         let rec = stmt.query_row(params![id], Self::row_to_rec).optional()?;
@@ -129,7 +146,7 @@ impl MemoryStore for SqliteMemory {
                 source_type=?2, source_ref=?3, timestamp=?4, origin=?5, payload=?6,
                 summary=?7, tags_json=?8, embedding_ref=?9, confidence=?10,
                 provenance=?11, retention=?12, supersedes=?13, classification=?14,
-                obsolete=?15
+                obsolete=?15, project=?16
              WHERE id=?1"#,
             params![
                 rec.id,
@@ -147,6 +164,7 @@ impl MemoryStore for SqliteMemory {
                 rec.supersedes,
                 rec.classification,
                 if rec.obsolete { 1 } else { 0 },
+                rec.project,
             ],
         )?;
         if n == 0 {
@@ -170,7 +188,7 @@ impl MemoryStore for SqliteMemory {
         let mut stmt = conn.prepare(
             "SELECT id, source_type, source_ref, timestamp, origin, payload, summary,
                     tags_json, embedding_ref, confidence, provenance, retention,
-                    supersedes, classification, obsolete
+                    supersedes, classification, obsolete, project
              FROM memory
              WHERE obsolete=0 AND (summary LIKE ?1 OR payload LIKE ?1 OR provenance LIKE ?1)
              ORDER BY timestamp DESC LIMIT ?2",
@@ -183,17 +201,12 @@ impl MemoryStore for SqliteMemory {
         Ok(out)
     }
 
-    fn filter(
-        &self,
-        retention: Option<&str>,
-        tag: Option<&str>,
-        limit: usize,
-    ) -> Result<Vec<MemoryRecord>> {
+    fn filter_with(&self, filter: &MemoryFilter, limit: usize) -> Result<Vec<MemoryRecord>> {
         let conn = self.conn.lock().expect("sqlite lock");
         let mut stmt = conn.prepare(
             "SELECT id, source_type, source_ref, timestamp, origin, payload, summary,
                     tags_json, embedding_ref, confidence, provenance, retention,
-                    supersedes, classification, obsolete
+                    supersedes, classification, obsolete, project
              FROM memory WHERE obsolete=0
              ORDER BY timestamp DESC LIMIT 1000",
         )?;
@@ -201,15 +214,8 @@ impl MemoryStore for SqliteMemory {
         let mut out = Vec::new();
         for r in rows {
             let rec = r?;
-            if let Some(ret) = retention {
-                if rec.retention != ret {
-                    continue;
-                }
-            }
-            if let Some(t) = tag {
-                if !rec.tags.iter().any(|x| x == t) {
-                    continue;
-                }
+            if !filter.matches(&rec) {
+                continue;
             }
             out.push(rec);
             if out.len() >= limit {
@@ -245,6 +251,38 @@ impl MemoryStore for SqliteMemory {
 mod tests {
     use super::*;
     use crate::memory::{MemoryRecord, MemoryStore};
+
+    #[test]
+    fn opening_a_legacy_schema_adds_project_without_losing_records() {
+        let dir = std::env::temp_dir().join(format!("abbey-mem-migrate-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = SqliteMemory::path_for_state_dir(&dir);
+        let connection = Connection::open(&path).unwrap();
+        connection
+            .execute_batch(
+                "CREATE TABLE memory (
+                    id TEXT PRIMARY KEY, source_type TEXT NOT NULL, source_ref TEXT NOT NULL,
+                    timestamp TEXT NOT NULL, origin TEXT NOT NULL, payload TEXT NOT NULL,
+                    summary TEXT NOT NULL, tags_json TEXT NOT NULL, embedding_ref TEXT,
+                    confidence REAL NOT NULL, provenance TEXT NOT NULL, retention TEXT NOT NULL,
+                    supersedes TEXT, classification TEXT NOT NULL,
+                    obsolete INTEGER NOT NULL DEFAULT 0
+                );
+                INSERT INTO memory VALUES (
+                    'legacy','session','','2026-08-08T00:00:00Z','system','','kept','[]',
+                    NULL,1.0,'test','ltm',NULL,'internal',0
+                );",
+            )
+            .unwrap();
+        drop(connection);
+
+        let db = SqliteMemory::open(&path).unwrap();
+        let record = db.get("legacy").unwrap().unwrap();
+        assert_eq!(record.summary, "kept");
+        assert_eq!(record.project, "");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn store_get_search_promote() {
