@@ -218,7 +218,7 @@ Buildable residuals closed 2026-07-30; Proposed/OOS stay deferred above.
 windowed GUI stays **Proposed** (new dep tree + claims-gate row); Abbey as her own agent
 runtime stays **Out of scope** (would delete shipped refusals); the shipped default stays
 cursor-agent because the default is now a per-user config key.
-- [x] Account/MCP/gen refuse; no stale-chat retry; doctor + claims + docs honesty
+- [x] Account/gen refuse; local MCP inventory remains available; no stale-chat retry; doctor + claims + docs honesty
 - [x] Unit tests: no flag leak, `--` prompt position, normalize thinking→local, abi candidate paths
 
 ## High-quality voice I/O (macOS)

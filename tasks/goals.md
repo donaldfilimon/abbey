@@ -92,8 +92,8 @@ surface). Same coarse intention as this section, so recorded here rather than as
 duplicate goal (ledger rule: one intention, one `##`).
 
 **Executor slice (2026-08-08, Max):** `ABBEY_BACKEND=abi` → `abi complete` is now a
-real AgentBackend (own argv grammar, `--` separator, account/MCP/gen refuse, no
-stale-chat retry). Default transport is local persona-template; bare `claude-*` /
+real AgentBackend (own argv grammar, `--` separator, account/gen refuse, local
+MCP inventory remains available, no stale-chat retry). Default transport is local persona-template; bare `claude-*` /
 `live`|`anthropic` opt into abi's Anthropic transport; cursor role/thinking
 bindings (e.g. Max→`claude-*-thinking-*` leftovers in state) stay local — no
 silent `--live`. Binary resolution prefers `ABBEY_ABI_BIN`/`abi_bin` and never
