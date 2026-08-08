@@ -170,6 +170,8 @@ Buildable residuals closed 2026-07-30; Proposed/OOS stay deferred above.
 - [x] TUI backend honesty: Home `backend` chip · status-bar backend (warn when off-default) ·
       Doctor backend/roles lines (prompt-only under fm/abi) · Models tab static prefetch so
       the cursor alias table never shows under abi/fm
+- [x] In-TUI backend switcher: Ctrl-B + palette "Cycle backend" via `resolve_agent_for`;
+      unresolvable backends skipped, honest status when nothing else resolves
 - [ ] "Modern TUI" beyond honesty (richer panes/layout) — needs a design pick (see goals.md
       residuals); windowed GUI would be a claims-gate amendment first
 - [x] Account/MCP/gen refuse; no stale-chat retry; doctor + claims + docs honesty

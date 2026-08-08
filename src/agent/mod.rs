@@ -143,6 +143,16 @@ impl AgentBackend {
     pub fn has_server_sessions(self) -> bool {
         matches!(self, Self::Cursor | Self::Grok)
     }
+
+    /// The next backend in the fixed TUI switch order (wraps around).
+    pub fn cycle_next(self) -> Self {
+        match self {
+            Self::Cursor => Self::Grok,
+            Self::Grok => Self::Fm,
+            Self::Fm => Self::Abi,
+            Self::Abi => Self::Cursor,
+        }
+    }
 }
 
 /// Strip ANSI SGR sequences — every `fm` subcommand colourizes its output, so
@@ -175,8 +185,16 @@ pub fn resolve_agent() -> Result<PathBuf> {
             return Ok(p);
         }
     }
+    resolve_agent_for(AgentBackend::from_env())
+}
+
+/// Resolve the executor binary for a specific backend.
+///
+/// Unlike [`resolve_agent`], this ignores the `ABBEY_AGENT` path override —
+/// that override belongs to the env-chosen backend; honouring it while
+/// *switching* backends would hand every backend the same binary.
+pub fn resolve_agent_for(backend: AgentBackend) -> Result<PathBuf> {
     let home = dirs::home_dir().context("HOME")?;
-    let backend = AgentBackend::from_env();
     // `abi` resolution matches the WDBX bridge: config `abi_bin` /
     // ABBEY_ABI_BIN first, then known install paths, then PATH. Done *before*
     // the shared candidate scan so a present cursor-agent can never win.
@@ -529,6 +547,25 @@ mod tests {
         assert!(AgentBackend::Grok.has_server_sessions());
         assert!(!AgentBackend::Fm.has_server_sessions());
         assert!(!AgentBackend::Abi.has_server_sessions());
+    }
+
+    #[test]
+    fn backend_cycle_visits_all_and_wraps() {
+        let mut b = AgentBackend::Cursor;
+        let mut seen = Vec::new();
+        for _ in 0..4 {
+            b = b.cycle_next();
+            seen.push(b);
+        }
+        assert_eq!(b, AgentBackend::Cursor, "cycle must wrap to the start");
+        for expect in [
+            AgentBackend::Grok,
+            AgentBackend::Fm,
+            AgentBackend::Abi,
+            AgentBackend::Cursor,
+        ] {
+            assert!(seen.contains(&expect), "{expect:?} missing from cycle");
+        }
     }
 
     #[test]

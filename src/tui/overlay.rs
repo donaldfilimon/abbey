@@ -16,6 +16,7 @@ pub enum PaletteAction {
     Slash(&'static str),
     NewChat,
     PleaseFix,
+    CycleBackend,
     Refresh,
     CycleTheme,
     GotoDoctor,
@@ -54,6 +55,12 @@ const BUILTIN: &[PaletteItem] = &[
         label: "Cycle theme",
         detail: "ink → violet → mono",
         action: PaletteAction::CycleTheme,
+    },
+    PaletteItem {
+        id: "backend",
+        label: "Cycle backend",
+        detail: "cursor → grok → fm → abi (skips unresolvable)",
+        action: PaletteAction::CycleBackend,
     },
     PaletteItem {
         id: "doctor",
@@ -118,6 +125,7 @@ pub fn help_lines() -> Vec<&'static str> {
         "  1-7            jump to tab",
         "  Ctrl-K         command palette",
         "  Ctrl-T         cycle theme (ink / violet / mono)",
+        "  Ctrl-B         cycle backend (cursor / grok / fm / abi)",
         "  F1 / ?         help (empty prompt)",
         "  /              filter lists (panel focus)",
         "  ↑↓             history (prompt) · move (panel)",

@@ -119,6 +119,33 @@ impl App {
         }
     }
 
+    /// Switch to the next executor backend whose binary actually resolves.
+    ///
+    /// Unresolvable backends (no `fm` on this OS, `abi` only a shell alias)
+    /// are skipped with no state change; if nothing else resolves the current
+    /// backend stays and the status line says so. Chat ids are per-backend
+    /// artifacts — the next run under a server backend simply resumes or
+    /// mints as usual, and `fm`/`abi` mint locally.
+    pub fn cycle_backend(&mut self) {
+        let mut next = self.cfg.backend;
+        for _ in 0..3 {
+            next = next.cycle_next();
+            let Ok(path) = crate::agent::resolve_agent_for(next) else {
+                continue;
+            };
+            self.cfg.backend = next;
+            self.cfg.agent_path = path;
+            self.live_models.clear();
+            if !next.supports_account_surface() {
+                self.refresh_models_live();
+            }
+            self.refresh_doctor();
+            self.status = format!("backend → {}", next.label());
+            return;
+        }
+        self.status = "backend: no other executor resolvable on this host".into();
+    }
+
     pub fn refresh_all(&mut self) {
         self.refresh_doctor();
         self.refresh_personas();

@@ -68,6 +68,17 @@ non-cursor backends so it never falls back to the cursor alias table under
 gate green). TUI *rendering* was not driven live (no TTY in this session) — the
 claim is compile + unit-tested helpers, not a screenshot.
 
+**In-TUI backend switcher slice (2026-08-08, /goal continue):** Ctrl-B and a
+"Cycle backend" palette entry rotate cursor → grok → fm → abi *in place* —
+`resolve_agent_for(backend)` (new; ignores the `ABBEY_AGENT` override, which
+belongs only to the env-chosen backend) re-resolves the binary per candidate and
+unresolvable backends are skipped with no state change; if nothing else resolves,
+the current backend stays and the status line says so. Switching refreshes the
+Doctor panel, clears/prefetches the Models list, and the status-bar/chip honesty
+from the previous slice makes the active executor visible immediately. Cycle
+order + wrap covered by a unit test; gate green (153+5+7 / 159+5+7). Same honesty
+caveat: switch logic is unit-tested and compiled, not TTY-driven in this session.
+
 **Named residuals (open, not laundered):** richer/multi-pane "modern" TUI and any
 windowed GUI (egui or similar — would be a new claims-gate row and a new dep
 tree); whether cursor-agent should ever stop being the default; abi-side chat
