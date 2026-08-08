@@ -142,6 +142,12 @@ CLI: `abbey claims` · `abbey claims proposed|oos` · `abbey claims refuse embed
 - `DurableStore` has no cross-process locking; `WdbxMemory` adds an `fs4` advisory
   lock (Unix `flock` / Windows `LockFileEx`). Removing it corrupts the WAL
   irrecoverably under concurrent `abbey` processes
+- `AgentBackend::from_env()` resolves **once per process** (env > config `backend`
+  key > cursor). The TUI's Ctrl-B switch changes `AgentConfig::backend` at runtime,
+  so never branch per-call behaviour on `from_env()` — thread `cfg.backend` through
+  (`state.read_chat_for(cfg.backend)`). Getting this wrong let a cursor-launched
+  session keep adopting `CURSOR_AGENT_CHAT_ID` after switching to `abi`, silently
+  killing continuity
 
 ## Out of scope
 

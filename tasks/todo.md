@@ -113,7 +113,7 @@ Closed work that *came out of* this section:
       `src/memory/similarity.rs`). `abi-ai` n-gram feature hash + cosine, computed per query
       on both backends. Verified live: `memory search "chekpoint"` (typo) returns nothing
       while `memory similar "chekpoint"` ranks the checkpoint record first at 0.44
-- [x] WDBX cross-process lock on Windows + Unix (`fs2`) — **Current**
+- [x] WDBX cross-process lock on Windows + Unix (`fs4`) — **Current**
 - [x] Host GPU/NPU/TPU detection + thread matrix (`abbey platform`) — **Current**
 
 **Boundaries — deliberately not built. Not checkboxes: these are decisions, not

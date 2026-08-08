@@ -66,7 +66,7 @@ Status key: **Current** = shipped · **Proposed** = designed, not claimed live �
 1. **File size:** keep modules under ~800 lines; `main` under 200. (code-review 1k rule)
 2. **Honesty:** Max/Gemma are role→model bindings, not local weights. `/cost` is N/A.
 3. **OS control:** never execute without `--confirm`; whitelist only.
-3b. **WDBX cross-process:** `WdbxMemory` must hold its `fs2` advisory lock for its
+3b. **WDBX cross-process:** `WdbxMemory` must hold its `fs4` advisory lock for its
    whole life — `DurableStore` has no cross-process locking, and concurrent WAL
    appends corrupt the store irrecoverably.
 4. **Self-learn:** `train_candidate` requires provenance; no silent deletes in reflect.

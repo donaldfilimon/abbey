@@ -27,7 +27,7 @@ abbey platform paths
 |--------|-----------------------------------|-------|
 | Linux | ✓ | primary |
 | macOS | ✓ | + voice · `fm` |
-| Windows | ✓ | PATHEXT `which_bin`; WDBX `fs2` LockFileEx; tighter argv clamp |
+| Windows | ✓ | PATHEXT `which_bin`; WDBX `fs4` LockFileEx; tighter argv clamp |
 | other Unix | ✓ | same as Linux portable set |
 
 Windows OS allowlist is real System32 tools only (`whoami`, `hostname`, `where`,

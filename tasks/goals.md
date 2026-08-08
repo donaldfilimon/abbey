@@ -9,6 +9,23 @@ status: done
   recorded as boundaries below and in `tasks/todo.md`, exactly like multi-node
   and semantic embeddings were for earlier goals. Every buildable slice under
   the accepted reading is shipped, gate-green, and live-verified.
+- Merged to `main` 2026-08-08 (`d050c8e`), then reviewed at high effort with five
+  independent reviewers. **Four findings, all fixed in `09c9a44`** — stays `done`
+  (rule 4: defects in shipped work are not new scope). The one that mattered:
+  `read_chat` gated its `CURSOR_AGENT_CHAT_ID` guard on the process-cached
+  `AgentBackend::from_env()`, so the Ctrl-B switcher shipped in the same change
+  silently reopened the cursor-id hijack the guard had just closed — introduced
+  by the `OnceLock` added to fix a per-frame config read. Now
+  `read_chat_for(cfg.backend)` at every call site, with a regression test. Also
+  fixed: doctor's abi line hardcoded `ABBEY_BACKEND=abi` and lied when the config
+  key selected the backend; two comments left over-claiming/under-claiming abi
+  continuity. Lessons recorded in `tasks/lessons.md`.
+- Docs finished 2026-08-08: corrected three long-standing `fs2`→`fs4` errors and a
+  false "Unix-only" WDBX-lock caveat across README/architecture/production (the
+  code has been `fs4` with Windows `LockFileEx` throughout), refreshed README's
+  layout block (`agent.rs`→`agent/`, config/state notes), and replaced the
+  now-stale caching rule in CLAUDE.md with the live-backend rule the review
+  established.
 
 Captured 2026-07-31: "fully independent tui and runtime similar to claude code or
 codex" — executor slice in progress (see below); TUI/GUI modernization still open.
@@ -288,7 +305,7 @@ status: done
 
 `abbey platform` / `compute`: linux/macos/windows primary-target matrix for portable
 surfaces; `available_parallelism` thread budget driving subagent `--jobs`; GPU/NPU/TPU
-host detect (report-only). WDBX lock via `fs2` on Unix and Windows. Voice/fm remain
+host detect (report-only). WDBX lock via `fs4` on Unix and Windows. Voice/fm remain
 macOS-only; Abbey still does not run GPU/NPU/TPU kernels.
 
 ## Vision / CoT / tool-runtime honesty

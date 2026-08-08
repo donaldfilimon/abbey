@@ -205,11 +205,11 @@ ABBEY_MEMORY_BACKEND=wdbx abbey memory search "…"   # or memory_backend = "wdb
 fall back to SQLite — and say so in `abbey doctor`. It never silently pretends.
 
 Concurrent `abbey` processes are safe on both backends: SQLite via its own file locking, WDBX
-via an `flock(2)` guard Abbey holds for the store's lifetime (`abi-wdbx` itself has no
-cross-process locking — without the guard, simultaneous writers corrupt the WAL beyond
-recovery). `abbey wdbx` passthroughs aimed at Abbey's own store take the same lock, so the
-bridge can't route around it. Caveats: the guard is **Unix-only**, and it does not extend to
-an `abi` invoked directly by you against the same store.
+via an `fs4` advisory-lock guard Abbey holds for the store's lifetime — `flock(2)` on Unix,
+`LockFileEx` on Windows (`abi-wdbx` itself has no cross-process locking — without the guard,
+simultaneous writers corrupt the WAL beyond recovery). `abbey wdbx` passthroughs aimed at
+Abbey's own store take the same lock, so the bridge can't route around it. Caveat: the guard
+does not extend to an `abi` invoked directly by you against the same store.
 
 ## Honest limits
 
@@ -218,7 +218,7 @@ an `abi` invoked directly by you against the same store.
   a shell alias will not do (`cargo build -p abi-cli` in `../abi`, then set `ABBEY_ABI_BIN`).
   `stats`/`checkpoint` are answered in-process and need `--features wdbx`.
 - The WDBX backend uses the KV space; vector/embedding search through WDBX is not wired yet.
-- The WDBX cross-process lock uses `fs2` on Unix and Windows. GPU/NPU/TPU *host*
+- The WDBX cross-process lock uses `fs4` on Unix and Windows. GPU/NPU/TPU *host*
   detection is Current (`abbey platform`); accelerator runtimes inside Abbey are Out of scope.
 - Under WDBX lock contention a run's background STM/activity write is dropped silently (it is
   best-effort by design). Explicit `abbey memory`/`abbey learn` writes surface the error.
@@ -244,14 +244,15 @@ src/
   route_log.rs    route.jsonl audit
   init/           /init project scan → AGENTS.md
   gitops.rs       local git helpers
-  agent.rs        cursor · grok · fm executors
+  agent/          cursor · grok · fm · abi executors (argv.rs = per-backend grammars)
   memory/         trait + sqlite · wdbx (feature-gated) + map
   hybrid_loop.rs  Gemma interpret → Max implement
   wdbx_bridge.rs  abbey wdbx → abi wdbx
   please_fix.rs  last-failure prompt + capture summarizer
   learn.rs        self-learn + review/stats
   models.rs       model aliases
-  state.rs        per-cwd chats
+  config.rs       config.toml (roles, memory_backend, backend, abi_bin)
+  state.rs        per-cwd chats (read_chat_for takes the live backend)
   tui/            7-tab ratatui app
 tasks/            goals + todo board
 docs/             identity · architecture · production
