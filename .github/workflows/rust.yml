@@ -61,6 +61,11 @@ jobs:
           ABBEY_ABI_BIN: ${{ github.workspace }}/abi/target/debug/abi
         run: ./check.sh
 
+      - name: Install cargo-audit if absent
+        run: |
+          command -v cargo-audit >/dev/null 2>&1 && exit 0
+          cargo install cargo-audit --locked
+
       - name: RustSec dependency scan
         working-directory: abbey
         env:
@@ -119,6 +124,11 @@ jobs:
         env:
           ABBEY_ABI_BIN: ${{ github.workspace }}/abi/target/debug/abi
         run: ./check.sh
+
+      - name: Install cargo-audit if absent
+        run: |
+          command -v cargo-audit >/dev/null 2>&1 && exit 0
+          cargo install cargo-audit --locked
 
       - name: RustSec dependency scan
         working-directory: abbey
