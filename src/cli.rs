@@ -368,8 +368,12 @@ pub enum Commands {
     },
     /// Show force/trust/sandbox knobs (Claude /permissions)
     Permissions,
-    /// Show Abbey env config
-    Config,
+    /// Show Abbey env config (`--init` scaffolds config.toml if absent)
+    Config {
+        /// Write an annotated default config.toml when none exists yet.
+        #[arg(long)]
+        init: bool,
+    },
     /// Cost tracking unavailable note (Claude /cost)
     Cost,
     /// List slash commands

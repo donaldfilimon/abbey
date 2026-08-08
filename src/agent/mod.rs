@@ -132,10 +132,22 @@ impl AgentBackend {
                 return Self::parse(&v).unwrap_or(Self::Cursor);
             }
         }
-        crate::config::AbbeyConfig::load()
+        let Some(configured) = crate::config::AbbeyConfig::load()
             .ok()
-            .and_then(|c| c.backend.as_deref().and_then(Self::parse))
-            .unwrap_or(Self::Cursor)
+            .and_then(|c| c.backend)
+        else {
+            return Self::Cursor;
+        };
+        Self::parse(&configured).unwrap_or_else(|| {
+            // Silently falling back would make a typo'd config key look like
+            // it worked — the user asked for a specific executor and got
+            // cursor-agent instead, with no way to tell.
+            eprintln!(
+                "abbey: config `backend = {configured:?}` is not one of \
+                 cursor|grok|fm|abi — using cursor-agent"
+            );
+            Self::Cursor
+        })
     }
 
     /// State subdirectory holding this backend's conversation transcripts.

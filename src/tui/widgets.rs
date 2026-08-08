@@ -25,12 +25,6 @@ pub fn rounded_block(title: &str, theme: &Theme, focused: bool) -> Block<'static
         .title(title.to_string())
 }
 
-/// Compact KPI chip as a single line (label dim, value bold on chip background).
-#[allow(dead_code)] // public helper for callers / future panels
-pub fn chip(label: &str, value: &str, theme: &Theme) -> Line<'static> {
-    Line::from(chip_spans(label, value, theme))
-}
-
 fn chip_spans(label: &str, value: &str, theme: &Theme) -> Vec<Span<'static>> {
     let chip_style = Style::default().bg(theme.chip_bg);
     vec![
@@ -119,8 +113,7 @@ mod tests {
         let theme = Theme::from_id(ThemeId::Ink);
         let _ = rounded_block("Test", &theme, true);
         let _ = rounded_block("Test", &theme, false);
-        let line = chip("model", "gpt-4", &theme);
-        assert!(!line.spans.is_empty());
+        assert!(!chip_spans("model", "gpt-4", &theme).is_empty());
         assert_eq!(list_highlight_style(&theme).bg, Some(theme.selection_bg));
         assert_eq!(dim_style(&theme).fg, Some(theme.fg_dim));
         assert_eq!(accent_style(&theme).fg, Some(theme.accent));

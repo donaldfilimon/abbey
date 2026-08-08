@@ -347,8 +347,20 @@ pub fn run_cli(cli: Cli, state: AbbeyState, mut cfg: AgentConfig) -> Result<i32>
             print_permissions(&cfg);
             Ok(0)
         }
-        Some(Commands::Config) => {
+        Some(Commands::Config { init }) => {
             let ac = config::AbbeyConfig::load().unwrap_or_default();
+            if init {
+                let existed = config::AbbeyConfig::config_path().is_file();
+                let path = ac.ensure_default_file()?;
+                if existed {
+                    eprintln!(
+                        "abbey: config already exists, left untouched: {}",
+                        path.display()
+                    );
+                } else {
+                    eprintln!("abbey: wrote default config {}", path.display());
+                }
+            }
             print_config(&state, &cfg);
             for line in ac.status_lines() {
                 println!("{line}");

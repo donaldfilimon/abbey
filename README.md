@@ -92,7 +92,10 @@ ABBEY_BACKEND=abi abbey                              # full TUI on abi; Ctrl-B c
 ```
 
 Make a backend the persistent default with `backend = "abi"` in
-`~/.config/abbey/config.toml` (`ABBEY_BACKEND` still wins when set).
+`~/.config/abbey/config.toml` (`ABBEY_BACKEND` still wins when set). Run
+`abbey config --init` to scaffold an annotated config with every key commented;
+it never overwrites an existing file, and an unrecognised `backend` value warns
+rather than silently falling back to cursor-agent.
 
 Under `fm`, conversations are kept as transcript files in `<state>/fm/` (it has no
 server-side chat ids), and `ask`/`plan` become `--instructions`. Account/session verbs

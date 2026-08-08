@@ -117,7 +117,10 @@ impl AbbeyConfig {
         self
     }
 
-    #[allow(dead_code)]
+    /// Write the annotated default config if none exists yet.
+    ///
+    /// Returns the path either way; the caller reports whether it was created.
+    /// Never overwrites — a config file is user-authored state.
     pub fn ensure_default_file(&self) -> Result<PathBuf> {
         let path = Self::config_path();
         if path.is_file() {
@@ -153,7 +156,6 @@ impl AbbeyConfig {
     }
 }
 
-#[allow(dead_code)]
 fn default_toml_text() -> &'static str {
     r#"# Abbey hybrid config — role bindings are cursor-agent model ids/aliases,
 # NOT local Qwen/Gemma weights.
@@ -161,6 +163,15 @@ fn default_toml_text() -> &'static str {
 persona_policy = "auto"
 default_role = "auto"
 memory_backend = "sqlite"
+
+# Default executor backend: "cursor" (default) | "grok" | "fm" | "abi".
+# ABBEY_BACKEND overrides this. "abi" runs every surface through the sibling
+# `abi complete` CLI with no cursor-agent installed.
+# backend = "abi"
+
+# Path to a real `abi` binary (a shell alias will not do). Required by the abi
+# backend above and by the `abbey wdbx` bridge; ABBEY_ABI_BIN overrides.
+# abi_bin = "/path/to/abi"
 
 [roles]
 max = "fable"
@@ -248,6 +259,72 @@ mod tests {
         assert_eq!(cfg.roles.max, "fable");
         assert_eq!(cfg.roles.gemma, "composer");
         assert_eq!(cfg.memory_backend, "sqlite");
+        // The scaffold must not *activate* anything the user didn't choose:
+        // backend/abi_bin ship commented out, so a fresh config still means
+        // cursor + PATH lookup.
+        assert_eq!(cfg.backend, None);
+        assert_eq!(cfg.abi_bin, None);
+    }
+
+    /// No *commented* line may look like a real assignment for a different
+    /// key, or uncommenting one key silently activates another. Found live:
+    /// the `abi_bin` note began `# backend = "abi" and for …`, so a user (or
+    /// a sed) uncommenting `backend` matched both lines and parsed the prose
+    /// as the value.
+    #[test]
+    fn no_comment_line_masquerades_as_an_assignment() {
+        for line in default_toml_text().lines() {
+            let Some(body) = line.trim().strip_prefix("# ") else {
+                continue;
+            };
+            let Some((key, _)) = body.split_once('=') else {
+                continue;
+            };
+            let key = key.trim();
+            // A commented-out example is fine (`# backend = "abi"`); prose that
+            // merely *starts* like one is the hazard, so require the line to be
+            // a clean `key = value` with nothing trailing the quoted value.
+            if [
+                "persona_policy",
+                "default_role",
+                "memory_backend",
+                "backend",
+                "abi_bin",
+                "max",
+                "gemma",
+            ]
+            .contains(&key)
+            {
+                let value = body.split_once('=').unwrap().1.trim();
+                assert!(
+                    value.starts_with('"') && value.ends_with('"') && value.len() > 1,
+                    "commented line for `{key}` is prose, not a clean example: {line}"
+                );
+            }
+        }
+    }
+
+    /// The scaffold is the only documentation many users will read, so every
+    /// key `parse_toml_lite` understands must appear in it (commented is fine).
+    /// Without this, a new key ships invisible — exactly how `backend` was
+    /// missing from the template it was added alongside.
+    #[test]
+    fn scaffold_mentions_every_supported_key() {
+        let text = default_toml_text();
+        for key in [
+            "persona_policy",
+            "default_role",
+            "memory_backend",
+            "backend",
+            "abi_bin",
+            "max",
+            "gemma",
+        ] {
+            assert!(
+                text.contains(key),
+                "default config scaffold never mentions `{key}`"
+            );
+        }
     }
 
     #[test]
