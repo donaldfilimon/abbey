@@ -99,17 +99,32 @@ pub enum AgentBackend {
 }
 
 impl AgentBackend {
-    pub fn from_env() -> Self {
-        match std::env::var("ABBEY_BACKEND")
-            .unwrap_or_default()
-            .to_ascii_lowercase()
-            .as_str()
-        {
-            "grok" | "grok-build" | "xai" => Self::Grok,
-            "fm" | "apple" | "foundation" | "on-device" => Self::Fm,
-            "abi" | "abi-cli" => Self::Abi,
-            _ => Self::Cursor,
+    /// Parse a backend token from env or config. `None` for unknown/empty.
+    pub fn parse(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "cursor" | "cursor-agent" => Some(Self::Cursor),
+            "grok" | "grok-build" | "xai" => Some(Self::Grok),
+            "fm" | "apple" | "foundation" | "on-device" => Some(Self::Fm),
+            "abi" | "abi-cli" => Some(Self::Abi),
+            _ => None,
         }
+    }
+
+    /// Backend precedence: `ABBEY_BACKEND` env > config `backend` key > cursor.
+    ///
+    /// A *set but unknown* env value still means cursor (long-standing
+    /// behaviour) — it does not fall through to the config key, so a typo in
+    /// the env var cannot silently activate a config-chosen backend.
+    pub fn from_env() -> Self {
+        if let Ok(v) = std::env::var("ABBEY_BACKEND") {
+            if !v.trim().is_empty() {
+                return Self::parse(&v).unwrap_or(Self::Cursor);
+            }
+        }
+        crate::config::AbbeyConfig::load()
+            .ok()
+            .and_then(|c| c.backend.as_deref().and_then(Self::parse))
+            .unwrap_or(Self::Cursor)
     }
 
     pub fn label(self) -> &'static str {
@@ -317,10 +332,35 @@ impl AgentConfig {
         Ok(id)
     }
 
-    /// Transcript file backing one Abbey chat id under the `fm` backend.
-    pub fn fm_transcript_path(&self, chat_id: &str) -> Option<PathBuf> {
+    /// Transcript file backing one Abbey chat id (`fm` natively via
+    /// `--resume`/`--save-transcript`; `abi` Abbey-side).
+    pub fn transcript_path(&self, chat_id: &str) -> Option<PathBuf> {
         let dir = self.transcript_dir.as_ref()?;
         Some(dir.join(format!("{chat_id}.transcript")))
+    }
+
+    /// Record one abi turn so the next run can carry bounded context.
+    /// Best-effort: a failed write must not fail the run that produced it.
+    pub fn append_abi_transcript(&self, chat_id: &str, prompt: &[String], output: &str) {
+        let Some(path) = self.transcript_path(chat_id) else {
+            return;
+        };
+        if let Some(dir) = path.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        let entry = format!(
+            "### user\n{}\n### abbey\n{}\n",
+            prompt.join(" ").trim(),
+            output.trim()
+        );
+        use std::io::Write as _;
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+        {
+            let _ = f.write_all(entry.as_bytes());
+        }
     }
 
     /// Interactive hand-off: inherit stdio (full TUI agent session).
@@ -497,9 +537,17 @@ fn run_once(
     prompt_and_rest: &[String],
     capture_print: bool,
 ) -> Result<i32> {
-    if capture_print {
+    // `abi complete` is one-shot and non-interactive — always capture, both
+    // for clean emit and so the turn can be recorded for Abbey-side
+    // continuity (the context prefix the next build_args_abi reads).
+    if capture_print || cfg.backend == AgentBackend::Abi {
         let (st, out, err) = cfg.run_capture(resume_id, prompt_and_rest)?;
         eprint!("{err}");
+        if cfg.backend == AgentBackend::Abi && st.success() {
+            if let Some(id) = resume_id.filter(|i| !i.is_empty()) {
+                cfg.append_abi_transcript(id, prompt_and_rest, &out);
+            }
+        }
         if let Some(path) = &cfg.cot_path {
             if let Err(e) = crate::surfaces::save_cot(path, &out) {
                 eprintln!("abbey: cot save failed: {e:#}");

@@ -48,7 +48,9 @@ Accelerator **host detection** (`abbey platform compute`) is Current. GPU/NPU/TP
 
 ## Config
 
-- `$ABBEY_CONFIG` or `~/.config/abbey/config.toml`
+- `$ABBEY_CONFIG` or `~/.config/abbey/config.toml` — keys: `persona_policy`,
+  `default_role`, `[roles]` max/gemma, `memory_backend`, `abi_bin`,
+  `backend` (default executor: `cursor`|`grok`|`fm`|`abi`; env wins)
 - Env: `ABBEY_MODEL`, `ABBEY_ROLE`, `ABBEY_PERSONA`, `ABBEY_MEMORY_BACKEND`, `ABBEY_AGENT`, `ABBEY_BACKEND`, `ABBEY_ABI_BIN`, `ABBEY_FORCE`, `ABBEY_PER_CWD`, `ABBEY_STATE_DIR`
 
 ## State locations

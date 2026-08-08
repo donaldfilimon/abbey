@@ -1,7 +1,14 @@
 # Goals
 
 ## Fully independent TUI + agent runtime
-status: in_progress
+status: done
+- Closed 2026-08-08 on the **abi-backed-independence** reading: Abbey runs CLI,
+  slash, and the full TUI with no cursor-agent present (`ABBEY_BACKEND=abi` or
+  config `backend = "abi"`), including Abbey-side conversation continuity. The
+  windowed-GUI and Abbey-as-own-runtime readings are **not** closed — they are
+  recorded as boundaries below and in `tasks/todo.md`, exactly like multi-node
+  and semantic embeddings were for earlier goals. Every buildable slice under
+  the accepted reading is shipped, gate-green, and live-verified.
 
 Captured 2026-07-31: "fully independent tui and runtime similar to claude code or
 codex" — executor slice in progress (see below); TUI/GUI modernization still open.
@@ -90,12 +97,40 @@ decision appears immediately — the same records `abbey routes` prints, audit
 only. Gate green (154+5+7 / 160+5+7). This delivers the "richer multi-pane"
 reading for Home; same TTY caveat as the other TUI slices.
 
-**Named residuals (open, not laundered):** any *windowed* GUI (egui or similar —
-would be a new claims-gate row and a new dep tree, so it needs an explicit gate
-amendment, not a continue); whether cursor-agent should ever stop being the
-default; abi-side chat continuity (`abi complete` is stateless one-shot by
-design); further TUI panes beyond Home if wanted. "More modern" is unbounded by
-construction — closing the goal needs an acceptance statement, not more slices.
+**Continuity + default-backend slice (2026-08-08, final):** the last two
+buildable residuals landed, so the goal closes on evidence rather than on a
+green gate alone.
+
+- **Abbey-side continuity under abi.** Turns append to
+  `<state>/abi/<chat>.transcript`; a bounded 8 KiB tail rides into the next
+  turn as a context element *after* the `--` separator. `abi complete` itself
+  remains a stateless one-shot — the continuity is Abbey's, and the claims
+  gate says exactly that. Verified live by argv probe: turn 1 (fresh chat) has
+  no context element; turn 2 carries `Previous conversation …` with turn 1's
+  text, and both turns share one transcript.
+- **Default backend is now the user's config choice**, not a code decision:
+  `backend = "cursor"|"grok"|"fm"|"abi"` in `config.toml`, precedence
+  `ABBEY_BACKEND` env > config > cursor. A *set but unknown* env value still
+  means cursor, so an env typo cannot silently activate a config backend.
+  Verified live: config-only selection activates abi; env `cursor` overrides it.
+- **Two defects found live by this slice, both fixed** (neither was reachable
+  from the unit tests): (1) `read_chat` adopted `CURSOR_AGENT_CHAT_ID` under
+  every backend — running `abbey -c` under abi *inside a cursor session*
+  resumed the cursor id, so each turn wrote a fresh transcript and continuity
+  silently never happened; it is now gated on `has_server_sessions()`.
+  (2) `abbey doctor` printed `ABBEY_BACKEND=<label>` unconditionally, which
+  lied whenever the backend came from the config key or the default; it now
+  names the real source (`from config backend=abi` / `from default`).
+
+**Boundaries — deliberately not built (decisions, not pending work).** Reopening
+one means amending the claims gate in `AGENTS.md` first, not ticking a box:
+
+| Reading | Status | Why it stays closed |
+|---|---|---|
+| Windowed GUI (egui/winit) | **Proposed** | A new dependency tree and a new claims-gate row. Abbey's surface is a terminal CLI/TUI; "advanced/modern" was satisfied in-terminal (multi-pane Home, routing audit, backend switcher). Needs an explicit gate amendment, not a `continue` |
+| Abbey as her own agent runtime (own tool loop / model APIs direct) | **Out of scope** | Unchanged from 2026-07-31: contradicts "backend is cursor-agent, not a reimplementation" and would require deleting shipped refusals (`abbey runtime` exit 2, `src/surfaces.rs`, `src/claims.rs`). `ABBEY_BACKEND=abi` satisfies independence *without* that |
+| cursor-agent stops being the shipped default | **Decision, not built** | Now moot as a code question — the default is a config key, so each user picks. Changing the *shipped* default would silently re-point existing installs |
+| Semantic recall from abi continuity | **Proposed** | The context prefix is delivered; whether the model uses it is the model's business. abi's local transport is a deterministic persona template (it echoes, it does not answer), so recall is only as good as the selected transport |
 
 Found live 2026-07-31 while verifying `improve status`: `abbey memory map | head -2`
 printed a Rust panic (`failed printing to stdout: Broken pipe`) instead of exiting

@@ -17,6 +17,10 @@ pub struct AbbeyConfig {
     pub memory_backend: String,
     #[serde(default)]
     pub abi_bin: Option<PathBuf>,
+    /// Default executor backend (`cursor` | `grok` | `fm` | `abi`).
+    /// Precedence: `ABBEY_BACKEND` env > this key > cursor.
+    #[serde(default)]
+    pub backend: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -46,6 +50,7 @@ impl Default for AbbeyConfig {
             roles: RoleBindings::default(),
             memory_backend: default_memory_backend(),
             abi_bin: None,
+            backend: None,
         }
     }
 }
@@ -134,6 +139,10 @@ impl AbbeyConfig {
             format!("role.gemma →     {}", self.roles.gemma),
             format!("memory_backend:  {}", self.memory_backend),
             format!(
+                "backend:         {}",
+                self.backend.as_deref().unwrap_or("(cursor default)")
+            ),
+            format!(
                 "abi_bin:         {}",
                 self.abi_bin
                     .as_ref()
@@ -193,6 +202,7 @@ fn parse_toml_lite(text: &str) -> Result<AbbeyConfig> {
                 "default_role" => cfg.default_role = v,
                 "memory_backend" => cfg.memory_backend = v,
                 "abi_bin" => cfg.abi_bin = Some(PathBuf::from(v)),
+                "backend" => cfg.backend = Some(v.to_ascii_lowercase()),
                 _ => {}
             }
         }

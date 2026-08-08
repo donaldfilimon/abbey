@@ -113,10 +113,11 @@ pub const CLAIMS: &[Claim] = &[
     Claim {
         name: "abi backend (ABBEY_BACKEND=abi) — no cursor-agent required",
         status: Status::Current,
-        note: "stateless one-shot `abi complete`: deterministic persona-template locally by default; \
+        note: "one-shot `abi complete`: deterministic persona-template locally by default; \
                bare claude-* / live|anthropic opt into abi's Anthropic transport (abi credentials); \
                cursor role/thinking bindings stay local (no silent --live); needs a real `abi` binary; \
-               account/MCP/gen refuse; no chat continuity",
+               account/MCP/gen refuse; Abbey-side transcript continuity (bounded context prefix — \
+               abi itself stays stateless); default backend selectable via config `backend` key",
         instead: None,
     },
     Claim {

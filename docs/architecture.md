@@ -89,7 +89,11 @@ Status key: **Current** = shipped · **Proposed** = designed, not claimed live �
   a real `--` separator; deterministic persona-template locally by default; bare
   `claude-*` / `live`/`anthropic` opt into abi's Anthropic transport; cursor
   role/thinking bindings stay local (no silent `--live`); account/MCP/gen refuse;
-  needs a real `abi` binary (`ABBEY_ABI_BIN` / `abi_bin`)
+  needs a real `abi` binary (`ABBEY_ABI_BIN` / `abi_bin`). Abbey-side continuity:
+  turns append to `<state>/abi/<chat>.transcript` and a bounded (8 KiB) tail rides
+  into the next turn as a context prefix — abi itself stays a stateless one-shot.
+  Persistent default via config `backend = "cursor"|"grok"|"fm"|"abi"`
+  (`ABBEY_BACKEND` env wins); in-TUI Ctrl-B cycles resolvable backends
 - 3-D memory map (`abbey memory map` / `near`) on both memory backends; mirrored into
   WDBX `SpatialRecord`s under `--features wdbx`
 - Prompt argv clamp + please-fix capture summarizer (avoids E2BIG on cursor-agent)

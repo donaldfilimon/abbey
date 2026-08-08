@@ -82,17 +82,29 @@ abbey completion zsh > ~/.zsh/completions/_abbey_clap
 | cursor-agent | `cursor` (default) | hosted models, full tool surface |
 | Grok Build | `grok` | passthrough |
 | **On-device** | `fm` | Apple Foundation Models CLI, **macOS 26+** — no cursor-agent, no network |
+| **abi** | `abi` | sibling `abi` CLI (`abi complete`) — **no cursor-agent required**; local persona-template by default, `claude-*`/`live` opt into abi's Anthropic transport |
 
 ```bash
 ABBEY_BACKEND=fm abbey -p "summarise this error"     # runs on-device
 ABBEY_BACKEND=fm abbey doctor                        # reports model availability
+ABBEY_BACKEND=abi abbey -p "hello"                   # through the abi CLI (no cursor-agent)
+ABBEY_BACKEND=abi abbey                              # full TUI on abi; Ctrl-B cycles backends
 ```
+
+Make a backend the persistent default with `backend = "abi"` in
+`~/.config/abbey/config.toml` (`ABBEY_BACKEND` still wins when set).
 
 Under `fm`, conversations are kept as transcript files in `<state>/fm/` (it has no
 server-side chat ids), and `ask`/`plan` become `--instructions`. Account/session verbs
 (`status`, `ls`, `login`, `logout`, `mcp`) have no on-device equivalent and refuse with
 exit 2 rather than forwarding. **Max and Gemma both resolve to the `system` model there,
 so the role distinction is carried by the prompt, not the model.**
+
+Under `abi`, each turn is a one-shot `abi complete` (needs a **real** `abi` binary —
+`ABBEY_ABI_BIN` or `abi_bin`; a shell alias won't do). Abbey keeps continuity itself:
+turns are recorded in `<state>/abi/<chat>.transcript` and a bounded tail rides into the
+next turn as context. Account/MCP/generation verbs refuse with exit 2; roles are
+prompt-only, and cursor role/thinking bindings never silently select the live transport.
 
 ## The 3-D memory map
 

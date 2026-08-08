@@ -16,8 +16,13 @@ use abi_ai::AgentProfile;
 use anyhow::{Result, bail};
 
 pub fn apply_global_flags(cli: &Cli, state: &AbbeyState, cfg: &mut AgentConfig) -> Result<()> {
-    // `fm` keeps conversations in transcript files under the state dir.
-    cfg.transcript_dir = Some(state.state_dir.join("fm"));
+    // `fm` and `abi` keep conversations in transcript files under the state
+    // dir — `fm` natively (--resume/--save-transcript), `abi` Abbey-side
+    // (bounded context prefix; `abi complete` itself is a stateless one-shot).
+    cfg.transcript_dir = Some(state.state_dir.join(match cfg.backend {
+        AgentBackend::Abi => "abi",
+        _ => "fm",
+    }));
     if cfg.backend == AgentBackend::Abi {
         // Do not expand through cursor aliases: `fable` → claude-*-thinking-*
         // would look like an explicit Anthropic live request under abi.

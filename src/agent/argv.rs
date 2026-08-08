@@ -96,6 +96,21 @@ pub fn abi_transport(requested: &str) -> AbiTransport {
     AbiTransport::Local
 }
 
+/// How much transcript tail rides into an abi turn as context.
+pub const ABI_CONTEXT_TAIL_BYTES: usize = 8 * 1024;
+
+/// The trailing ≤ `max_bytes` of `s`, cut on a UTF-8 boundary.
+pub fn utf8_tail(s: &str, max_bytes: usize) -> &str {
+    if s.len() <= max_bytes {
+        return s;
+    }
+    let mut start = s.len() - max_bytes;
+    while start < s.len() && !s.is_char_boundary(start) {
+        start += 1;
+    }
+    &s[start..]
+}
+
 /// Truncate `s` on a UTF-8 boundary so its byte length is ≤ `max_bytes`.
 pub fn truncate_utf8_bytes(s: &str, max_bytes: usize) -> String {
     if s.len() <= max_bytes {
@@ -205,7 +220,7 @@ impl AgentConfig {
             args.push("--no-stream".into());
         }
         if let Some(id) = resume_id.filter(|i| !i.is_empty()) {
-            if let Some(path) = self.fm_transcript_path(id) {
+            if let Some(path) = self.transcript_path(id) {
                 if path.is_file() {
                     args.push("--resume".into());
                     args.push(path.display().to_string());
@@ -225,7 +240,7 @@ impl AgentConfig {
     /// `abi complete` is a stateless one-shot with no instruction channel and
     /// no resume — the mode note rides in the input text, `resume_id` is
     /// ignored, and the prompt always follows a real `--` separator.
-    fn build_args_abi(&self, prompt_and_rest: &[String]) -> Vec<String> {
+    fn build_args_abi(&self, resume_id: Option<&str>, prompt_and_rest: &[String]) -> Vec<String> {
         let prompts = clamp_prompt_args(prompt_and_rest);
         let mut args = vec!["complete".to_string()];
         // Normalize at the argv choke point so every call site (hybrid, TUI,
@@ -243,6 +258,23 @@ impl AgentConfig {
             }
         }
         args.push("--".into());
+        // Abbey-side continuity: `abi complete` has no resume surface, so the
+        // previous turns ride in as a bounded context prefix read from the
+        // transcript this chat id maps to. Best-effort — a missing or
+        // unreadable transcript simply means a context-free turn.
+        if let Some(id) = resume_id.filter(|i| !i.is_empty()) {
+            if let Some(path) = self.transcript_path(id) {
+                if let Ok(prev) = std::fs::read_to_string(&path) {
+                    let tail = utf8_tail(&prev, ABI_CONTEXT_TAIL_BYTES);
+                    if !tail.trim().is_empty() {
+                        args.push(format!(
+                            "Previous conversation (context, oldest first, may be truncated):\n\
+                             {tail}\n--- end of context; answer the next message ---"
+                        ));
+                    }
+                }
+            }
+        }
         if let Some(mode) = &self.mode {
             args.push(match mode.as_str() {
                 "ask" => "Answer the question. Do not modify files.".into(),
@@ -259,7 +291,7 @@ impl AgentConfig {
             return self.build_args_fm(resume_id, prompt_and_rest);
         }
         if self.backend == AgentBackend::Abi {
-            return self.build_args_abi(prompt_and_rest);
+            return self.build_args_abi(resume_id, prompt_and_rest);
         }
         let prompts = clamp_prompt_args(prompt_and_rest);
         let mut args = Vec::new();
@@ -540,6 +572,63 @@ mod tests {
         );
         let model_i = argv.iter().position(|a| a == "--model").unwrap();
         assert_eq!(argv[model_i + 1], "local");
+    }
+
+    #[test]
+    fn abi_resume_carries_bounded_transcript_context() {
+        let dir = std::env::temp_dir().join(format!("abbey-abi-ctx-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut cfg = maximal_cursor_config();
+        cfg.backend = AgentBackend::Abi;
+        cfg.mode = None;
+        cfg.model = "auto".into();
+        cfg.transcript_dir = Some(dir.clone());
+
+        // No transcript yet → context-free turn, prompt still after `--`.
+        let argv = cfg.build_args(Some("chat-9"), &["next".into()]);
+        assert!(!argv.iter().any(|a| a.contains("Previous conversation")));
+
+        // With a transcript, the tail rides in as a context element before
+        // the prompt — and stays bounded for oversized histories.
+        std::fs::write(
+            dir.join("chat-9.transcript"),
+            format!(
+                "### user\nremember the word xyzzy\n### abbey\nnoted\n{}",
+                "pad ".repeat(4000)
+            ),
+        )
+        .unwrap();
+        let argv = cfg.build_args(Some("chat-9"), &["next".into()]);
+        let ctx = argv
+            .iter()
+            .find(|a| a.contains("Previous conversation"))
+            .expect("context element");
+        assert!(
+            ctx.len() <= ABI_CONTEXT_TAIL_BYTES + 200,
+            "context unbounded: {}",
+            ctx.len()
+        );
+        let dashdash = argv.iter().position(|a| a == "--").unwrap();
+        let ctx_pos = argv
+            .iter()
+            .position(|a| a.contains("Previous conversation"))
+            .unwrap();
+        assert!(
+            ctx_pos > dashdash,
+            "context must be input text, not options"
+        );
+        assert_eq!(argv.last().unwrap(), "next");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn utf8_tail_respects_char_boundaries() {
+        let s = "é".repeat(100); // 2 bytes each
+        let tail = utf8_tail(&s, 5);
+        assert!(tail.len() <= 5);
+        assert!(tail.chars().all(|c| c == 'é'));
+        assert_eq!(utf8_tail("short", 100), "short");
     }
 
     #[test]

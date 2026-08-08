@@ -302,6 +302,25 @@ pub fn print_config(state: &AbbeyState, cfg: &AgentConfig) {
     print_permissions(cfg);
 }
 
+/// Where the active backend choice came from — env, config key, or default.
+///
+/// Printing `ABBEY_BACKEND=<label>` unconditionally used to lie whenever the
+/// backend came from the config key (or was the plain default).
+fn backend_source() -> String {
+    if let Ok(v) = std::env::var("ABBEY_BACKEND") {
+        if !v.trim().is_empty() {
+            return format!("ABBEY_BACKEND={}", v.trim());
+        }
+    }
+    match config::AbbeyConfig::load()
+        .ok()
+        .and_then(|c| c.backend.clone())
+    {
+        Some(v) => format!("config backend={v}"),
+        None => "default".into(),
+    }
+}
+
 pub fn cmd_doctor(state: &AbbeyState, cfg: &AgentConfig) -> Result<i32> {
     let chat = state.read_chat().unwrap_or_else(|| "(none)".into());
     for line in build_info::lines() {
@@ -323,9 +342,9 @@ pub fn cmd_doctor(state: &AbbeyState, cfg: &AgentConfig) -> Result<i32> {
         "tui:       ratatui (rust nightly, edition 2024)".into(),
         "parity:    Grok · Codex · Claude · ABI personas · parallel lanes · OS control".into(),
         format!(
-            "backend:   {} (ABBEY_BACKEND={})",
+            "backend:   {} (from {})",
             agent::AgentBackend::from_env().label(),
-            std::env::var("ABBEY_BACKEND").unwrap_or_else(|_| "cursor".into())
+            backend_source()
         ),
     ];
     for line in &lines {
@@ -419,7 +438,7 @@ pub fn cmd_doctor(state: &AbbeyState, cfg: &AgentConfig) -> Result<i32> {
     let _ = output::println(match config::resolve_abi_bin(&abbey_cfg) {
         Some(p) if backend == agent::AgentBackend::Abi => format!(
             "abi backend: active (ABBEY_BACKEND=abi → {}) — local persona-template; \
-             claude-*/live models use abi's Anthropic transport; stateless turns",
+             claude-*/live models use abi's Anthropic transport; Abbey-side transcript continuity",
             p.display()
         ),
         Some(p) => format!(
