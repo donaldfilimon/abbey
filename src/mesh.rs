@@ -26,7 +26,7 @@ use std::time::Instant;
 pub const MIN_NODES: usize = 3;
 pub const MAX_NODES: usize = 9;
 pub const PROOF_LABEL: &str = "authenticated_local_multi_process";
-pub const STORAGE_PROOF_SCOPE: &str = "isolated_in_process_exact_transaction_replicas";
+pub const STORAGE_PROOF_SCOPE: &str = "isolated_child_process_exact_transaction_replicas";
 pub const ABBEY_SCOPE: &str = "single_host_authenticated_local_multi_process_only";
 pub const EXCLUDED_CLAIMS: [&str; 2] = ["production_multi_host", "shared_compute"];
 
