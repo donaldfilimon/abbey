@@ -2,21 +2,56 @@ name: Rust
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
-
+  gate:
     runs-on: ubuntu-latest
-
     steps:
-    - uses: actions/checkout@v4
-    - name: Build
-      run: cargo build --verbose
-    - name: Run tests
-      run: cargo test --verbose
+      # Abbey path-depends on the sibling ABI workspace
+      # (`abi-ai = { path = "../abi/crates/abi-ai" }`, plus `abi-wdbx` under
+      # --features wdbx). A lone checkout cannot even *resolve* the manifest:
+      # `cargo metadata` fails with "no matching package named `abi-ai`" before
+      # a single crate compiles. So both repos are checked out as siblings.
+      - name: Check out abbey
+        uses: actions/checkout@v4
+        with:
+          path: abbey
+
+      - name: Check out sibling abi
+        uses: actions/checkout@v4
+        with:
+          repository: donaldfilimon/abi
+          path: abi
+
+      # rust-toolchain.toml pins nightly and requests rustfmt + clippy, so
+      # rustup installs the right toolchain and components on first use.
+      # `../abi` requires rust-version 1.99, which nightly satisfies.
+      - name: Install pinned toolchain
+        working-directory: abbey
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          rustc --version && cargo --version
+
+      - name: Cache cargo registry and target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            abbey/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('abbey/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      # check.sh is the project's merge bar: toolchain probe, fmt, clippy -D
+      # warnings, tests — the last two for BOTH feature sets, because a bare
+      # `cargo test` never compiles src/memory/wdbx.rs — then the file-size
+      # guard. Cross-compile smoke is soft and skips when targets are absent.
+      - name: Gate (./check.sh)
+        working-directory: abbey
+        run: ./check.sh
