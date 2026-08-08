@@ -167,6 +167,11 @@ Buildable residuals closed 2026-07-30; Proposed/OOS stay deferred above.
 - [x] `AgentBackend::Abi` → `abi complete`; own argv grammar with real `--` separator
 - [x] Live opt-in only (`live`/`anthropic`/bare `claude-*`); cursor thinking/role leftovers stay local
 - [x] Binary resolution: `ABBEY_ABI_BIN`/`abi_bin` first; abi candidates never include cursor-agent
+- [x] TUI backend honesty: Home `backend` chip · status-bar backend (warn when off-default) ·
+      Doctor backend/roles lines (prompt-only under fm/abi) · Models tab static prefetch so
+      the cursor alias table never shows under abi/fm
+- [ ] "Modern TUI" beyond honesty (richer panes/layout) — needs a design pick (see goals.md
+      residuals); windowed GUI would be a claims-gate amendment first
 - [x] Account/MCP/gen refuse; no stale-chat retry; doctor + claims + docs honesty
 - [x] Unit tests: no flag leak, `--` prompt position, normalize thinking→local, abi candidate paths
 

@@ -57,6 +57,17 @@ module path error (`E0603`) that `cargo test`'s lib pass never compiled — the
 `/bin/echo` argv probe is what exposed it. Argv echo confirmed:
 `complete --model local -- <persona/role-wrapped prompt>`.
 
+**TUI backend-visibility slice (2026-08-08, /goal continue):** the TUI now tells
+the truth about which executor runs the next prompt — `backend` KPI chip on Home,
+backend name in the status bar (warn-coloured whenever it is not the cursor
+default), a Doctor `backend:` line naming the active executor and its transport
+rules, and a Doctor roles line that stops claiming "cursor-agent bindings" under
+`fm`/`abi` (prompt-only there). Models tab prefetches the static model list for
+non-cursor backends so it never falls back to the cursor alias table under
+`abi`/`fm`. Helpers are pure free functions with unit tests (152/158 with wdbx,
+gate green). TUI *rendering* was not driven live (no TTY in this session) — the
+claim is compile + unit-tested helpers, not a screenshot.
+
 **Named residuals (open, not laundered):** richer/multi-pane "modern" TUI and any
 windowed GUI (egui or similar — would be a new claims-gate row and a new dep
 tree); whether cursor-agent should ever stop being the default; abi-side chat

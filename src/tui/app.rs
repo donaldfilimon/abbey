@@ -94,6 +94,11 @@ impl App {
         app.refresh_personas();
         app.refresh_memory();
         app.refresh_skills();
+        // Non-cursor backends answer `models` statically (no exec) — prefetch
+        // so the Models tab never falls back to the cursor alias table there.
+        if !app.cfg.backend.supports_account_surface() {
+            app.refresh_models_live();
+        }
         Ok(app)
     }
 
@@ -213,6 +218,7 @@ impl App {
             .map(|c| c.to_string())
             .unwrap_or_else(|| "—".into());
         vec![
+            ("backend".into(), self.cfg.backend.label().to_string()),
             ("model".into(), self.cfg.model.clone()),
             ("chat".into(), chat),
             ("persona".into(), persona),

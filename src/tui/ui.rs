@@ -324,12 +324,24 @@ fn draw_status(f: &mut Frame, area: Rect, app: &App) {
             Style::default().fg(app.theme.warn),
         )
     };
+    // Off-default executors get the warn colour: which binary runs the next
+    // prompt is the one thing a TUI user must never be surprised by.
+    let backend = app.cfg.backend;
+    let backend_span = Span::styled(
+        format!("{} ", backend.label()),
+        if backend == crate::agent::AgentBackend::Cursor {
+            dim_style(&app.theme)
+        } else {
+            Style::default().fg(app.theme.warn)
+        },
+    );
     let line = Line::from(vec![
         Span::styled(" ▸ ", accent_style(&app.theme)),
         Span::styled(
             format!("{} ", app.focus.label()),
             Style::default().fg(app.theme.accent_dim),
         ),
+        backend_span,
         Span::styled(format!("{} ", app.theme_id.as_str()), dim_style(&app.theme)),
         filter,
         Span::raw(app.status.clone()),
