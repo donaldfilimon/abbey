@@ -11,6 +11,7 @@ if [ ! -f "$BIN" ] && [ -f "${CARGO_TARGET_DIR:-target}/release/abbey.exe" ]; th
 fi
 
 DEST_DIR="${ABBEY_INSTALL_DIR:-${HOME}/.local/bin}"
+COMPLETION_HOME="${ABBEY_COMPLETION_HOME:-${HOME}}"
 mkdir -p "$DEST_DIR"
 # Stage beside the destination so the final rename is atomic on one filesystem.
 # `install(1)` is not assumed because minimal images and Git Bash may omit it.
@@ -43,13 +44,13 @@ write_completion() {
 }
 
 # Zsh completions (if modular zsh dir exists)
-if [ -d "${HOME}/.zsh/completions" ]; then
-  if write_completion zsh "${HOME}/.zsh/completions/_abbey_clap"; then
-    echo "wrote ~/.zsh/completions/_abbey_clap (run: rm -f ~/.zcompdump; compinit)"
+if [ -d "${COMPLETION_HOME}/.zsh/completions" ]; then
+  if write_completion zsh "${COMPLETION_HOME}/.zsh/completions/_abbey_clap"; then
+    echo "wrote ${COMPLETION_HOME}/.zsh/completions/_abbey_clap (refresh compinit cache if needed)"
   fi
 fi
-if [ -d "${HOME}/.bash_completion.d" ] || mkdir -p "${HOME}/.local/share/bash-completion/completions" 2>/dev/null; then
-  if write_completion bash "${HOME}/.local/share/bash-completion/completions/abbey"; then
-    echo "wrote ~/.local/share/bash-completion/completions/abbey"
+if [ -d "${COMPLETION_HOME}/.bash_completion.d" ] || mkdir -p "${COMPLETION_HOME}/.local/share/bash-completion/completions" 2>/dev/null; then
+  if write_completion bash "${COMPLETION_HOME}/.local/share/bash-completion/completions/abbey"; then
+    echo "wrote ${COMPLETION_HOME}/.local/share/bash-completion/completions/abbey"
   fi
 fi

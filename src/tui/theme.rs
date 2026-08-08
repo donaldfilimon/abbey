@@ -38,15 +38,15 @@ impl ThemeId {
     /// Resolve order: `ABBEY_TUI_THEME` env > `{state_dir}/tui-theme` file >
     /// [`ThemeId::Ink`].
     pub fn resolve(state_dir: &Path) -> Self {
-        if let Ok(raw) = std::env::var(ENV_THEME) {
-            if let Some(id) = Self::parse(&raw) {
-                return id;
-            }
+        if let Ok(raw) = std::env::var(ENV_THEME)
+            && let Some(id) = Self::parse(&raw)
+        {
+            return id;
         }
-        if let Ok(contents) = fs::read_to_string(theme_file_path(state_dir)) {
-            if let Some(id) = Self::parse(&contents) {
-                return id;
-            }
+        if let Ok(contents) = fs::read_to_string(theme_file_path(state_dir))
+            && let Some(id) = Self::parse(&contents)
+        {
+            return id;
         }
         Self::Ink
     }

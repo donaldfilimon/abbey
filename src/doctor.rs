@@ -493,10 +493,10 @@ pub fn print_config(state: &AbbeyState, cfg: &AgentConfig) {
 /// Printing `ABBEY_BACKEND=<label>` unconditionally used to lie whenever the
 /// backend came from the config key (or was the plain default).
 fn backend_source() -> String {
-    if let Ok(v) = std::env::var("ABBEY_BACKEND") {
-        if !v.trim().is_empty() {
-            return format!("ABBEY_BACKEND={}", v.trim());
-        }
+    if let Ok(v) = std::env::var("ABBEY_BACKEND")
+        && !v.trim().is_empty()
+    {
+        return format!("ABBEY_BACKEND={}", v.trim());
     }
     match config::AbbeyConfig::load()
         .ok()

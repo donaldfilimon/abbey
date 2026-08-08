@@ -303,7 +303,7 @@ fn draw_input(f: &mut Frame, area: Rect, app: &App) {
         " Prompt (Ctrl-L / ` to focus) "
     };
 
-    let caret_on = app.tick % 2 == 0;
+    let caret_on = app.tick.is_multiple_of(2);
     let mut spans = Vec::new();
     let (before, after) = app.input.split_at(app.cursor.min(app.input.len()));
     spans.push(Span::raw(before.to_string()));

@@ -159,16 +159,16 @@ pub fn route_decision(input: &str, override_role: Option<WorkerRole>) -> RouteDe
             class,
         };
     }
-    if let Ok(v) = std::env::var("ABBEY_ROLE") {
-        if let Some(r) = WorkerRole::parse(&v).filter(|r| *r != WorkerRole::Auto) {
-            return RouteDecision {
-                primary: r,
-                confidence: 0.9,
-                alternate: None,
-                fallback: None,
-                class,
-            };
-        }
+    if let Ok(v) = std::env::var("ABBEY_ROLE")
+        && let Some(r) = WorkerRole::parse(&v).filter(|r| *r != WorkerRole::Auto)
+    {
+        return RouteDecision {
+            primary: r,
+            confidence: 0.9,
+            alternate: None,
+            fallback: None,
+            class,
+        };
     }
 
     match class {

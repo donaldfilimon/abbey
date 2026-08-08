@@ -124,26 +124,26 @@ pub fn build_prompt(explicit: &[String]) -> Result<String> {
     if !explicit.is_empty() {
         return Ok(truncate_utf8_bytes(&explicit.join(" "), cap));
     }
-    if let Ok(path) = std::env::var("CURSOR_AGENT_COMPLETED_PATH") {
-        if let Ok(text) = std::fs::read_to_string(&path) {
-            let lines: Vec<&str> = text.lines().collect();
-            if lines.len() >= 2 {
-                let cmd = lines[0];
-                let code = lines[lines.len() - 1];
-                let raw = lines[1..lines.len() - 1].join("\n");
-                let out = summarize_capture(&raw);
-                eprintln!(
-                    "abbey: please-fix capture {} bytes → {} bytes summarized",
-                    raw.len(),
-                    out.len()
-                );
-                return Ok(truncate_utf8_bytes(
-                    &format!(
-                        "I just ran the command: \"{cmd}\", which exited with code {code}. The output was:\n\n{out}\n\nPlease help me fix it."
-                    ),
-                    cap,
-                ));
-            }
+    if let Ok(path) = std::env::var("CURSOR_AGENT_COMPLETED_PATH")
+        && let Ok(text) = std::fs::read_to_string(&path)
+    {
+        let lines: Vec<&str> = text.lines().collect();
+        if lines.len() >= 2 {
+            let cmd = lines[0];
+            let code = lines[lines.len() - 1];
+            let raw = lines[1..lines.len() - 1].join("\n");
+            let out = summarize_capture(&raw);
+            eprintln!(
+                "abbey: please-fix capture {} bytes → {} bytes summarized",
+                raw.len(),
+                out.len()
+            );
+            return Ok(truncate_utf8_bytes(
+                &format!(
+                    "I just ran the command: \"{cmd}\", which exited with code {code}. The output was:\n\n{out}\n\nPlease help me fix it."
+                ),
+                cap,
+            ));
         }
     }
     if !io::stdin().is_terminal() {

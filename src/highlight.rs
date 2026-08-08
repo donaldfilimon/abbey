@@ -75,15 +75,15 @@ fn find_syntax<'a>(
         }
     }
     if let Some(path) = path {
-        if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-            if let Some(s) = ps.find_syntax_by_extension(ext) {
-                return s;
-            }
+        if let Some(ext) = path.extension().and_then(|e| e.to_str())
+            && let Some(s) = ps.find_syntax_by_extension(ext)
+        {
+            return s;
         }
-        if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-            if let Some(s) = ps.find_syntax_by_extension(name) {
-                return s;
-            }
+        if let Some(name) = path.file_name().and_then(|n| n.to_str())
+            && let Some(s) = ps.find_syntax_by_extension(name)
+        {
+            return s;
         }
     }
     ps.find_syntax_plain_text()

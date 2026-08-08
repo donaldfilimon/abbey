@@ -115,12 +115,12 @@ impl AbbeyState {
         // running `abbey -c` under `abi` inside a cursor session resumed the
         // cursor id, so every turn wrote a fresh transcript and continuity
         // silently never happened.
-        if backend.has_server_sessions() {
-            if let Ok(id) = std::env::var("CURSOR_AGENT_CHAT_ID") {
-                let id = id.trim().to_string();
-                if !id.is_empty() {
-                    return Some(id);
-                }
+        if backend.has_server_sessions()
+            && let Ok(id) = std::env::var("CURSOR_AGENT_CHAT_ID")
+        {
+            let id = id.trim().to_string();
+            if !id.is_empty() {
+                return Some(id);
             }
         }
         let file = self.active_chat_file();
@@ -160,11 +160,9 @@ impl AbbeyState {
             let _ = fs::remove_file(&self.chat_file);
             let _ = fs::remove_file(self.chat_file.with_extension("export"));
         }
-        if all {
-            if let Ok(entries) = fs::read_dir(&self.cwd_dir) {
-                for e in entries.flatten() {
-                    let _ = fs::remove_file(e.path());
-                }
+        if all && let Ok(entries) = fs::read_dir(&self.cwd_dir) {
+            for e in entries.flatten() {
+                let _ = fs::remove_file(e.path());
             }
         }
         Ok(())

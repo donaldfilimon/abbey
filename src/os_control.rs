@@ -71,14 +71,13 @@ pub fn run_os(args: &[String], prefer_abi: bool) -> Result<i32> {
             args.first().map(String::as_str),
             Some("allowlist" | "policy" | "list" | "unrestricted" | "refuse" | "yolo")
         )
+        && let Some(abi) = crate::agent::which_bin("abi")
     {
-        if let Some(abi) = crate::agent::which_bin("abi") {
-            let mut cmd = Command::new(abi);
-            cmd.arg("agent").arg("os");
-            cmd.args(args);
-            let st = cmd.status()?;
-            return Ok(st.code().unwrap_or(1));
-        }
+        let mut cmd = Command::new(abi);
+        cmd.arg("agent").arg("os");
+        cmd.args(args);
+        let st = cmd.status()?;
+        return Ok(st.code().unwrap_or(1));
     }
     local_os(args)
 }

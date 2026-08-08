@@ -490,8 +490,10 @@ fn decode_vector(bytes: &[u8], dimension: usize) -> Result<Vec<f32>> {
         bail!("stored embedding BLOB length does not match its dimension");
     }
     let vector = bytes
-        .chunks_exact(size_of::<f32>())
-        .map(|chunk| f32::from_le_bytes(chunk.try_into().expect("four-byte chunk")))
+        .as_chunks::<{ size_of::<f32>() }>()
+        .0
+        .iter()
+        .map(|chunk| f32::from_le_bytes(*chunk))
         .collect::<Vec<_>>();
     if !vector.iter().all(|value| value.is_finite()) {
         bail!("stored embedding BLOB contains a non-finite value");

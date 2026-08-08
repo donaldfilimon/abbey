@@ -144,50 +144,50 @@ impl AbbeyConfig {
     }
 
     pub fn with_env_overrides(mut self) -> Self {
-        if let Ok(v) = std::env::var("ABBEY_ROLE") {
-            if !v.trim().is_empty() {
-                self.default_role = v.trim().to_ascii_lowercase();
-            }
+        if let Ok(v) = std::env::var("ABBEY_ROLE")
+            && !v.trim().is_empty()
+        {
+            self.default_role = v.trim().to_ascii_lowercase();
         }
-        if let Ok(v) = std::env::var("ABBEY_PERSONA") {
-            if !v.trim().is_empty() {
-                self.persona_policy = v.trim().to_ascii_lowercase();
-            }
+        if let Ok(v) = std::env::var("ABBEY_PERSONA")
+            && !v.trim().is_empty()
+        {
+            self.persona_policy = v.trim().to_ascii_lowercase();
         }
-        if let Ok(v) = std::env::var("ABBEY_MEMORY_BACKEND") {
-            if !v.trim().is_empty() {
-                self.memory_backend = v.trim().to_ascii_lowercase();
-            }
+        if let Ok(v) = std::env::var("ABBEY_MEMORY_BACKEND")
+            && !v.trim().is_empty()
+        {
+            self.memory_backend = v.trim().to_ascii_lowercase();
         }
-        if let Ok(v) = std::env::var("ABBEY_ABI_BIN") {
-            if !v.trim().is_empty() {
-                self.abi_bin = Some(PathBuf::from(v));
-            }
+        if let Ok(v) = std::env::var("ABBEY_ABI_BIN")
+            && !v.trim().is_empty()
+        {
+            self.abi_bin = Some(PathBuf::from(v));
         }
-        if let Ok(v) = std::env::var("ABBEY_EMBEDDING_PROVIDER") {
-            if !v.trim().is_empty() {
-                self.embeddings.provider = v.trim().to_ascii_lowercase();
-            }
+        if let Ok(v) = std::env::var("ABBEY_EMBEDDING_PROVIDER")
+            && !v.trim().is_empty()
+        {
+            self.embeddings.provider = v.trim().to_ascii_lowercase();
         }
-        if let Ok(v) = std::env::var("ABBEY_EMBEDDING_ENDPOINT") {
-            if !v.trim().is_empty() {
-                self.embeddings.endpoint = v.trim().to_string();
-            }
+        if let Ok(v) = std::env::var("ABBEY_EMBEDDING_ENDPOINT")
+            && !v.trim().is_empty()
+        {
+            self.embeddings.endpoint = v.trim().to_string();
         }
-        if let Ok(v) = std::env::var("ABBEY_EMBEDDING_MODEL") {
-            if !v.trim().is_empty() {
-                self.embeddings.model = v.trim().to_string();
-            }
+        if let Ok(v) = std::env::var("ABBEY_EMBEDDING_MODEL")
+            && !v.trim().is_empty()
+        {
+            self.embeddings.model = v.trim().to_string();
         }
         if let Ok(v) = std::env::var("ABBEY_EMBEDDING_DIMENSION") {
             // Preserve fail-closed provider validation: an invalid explicit
             // override must not silently keep the configured/default dimension.
             self.embeddings.dimension = v.trim().parse::<usize>().unwrap_or(0);
         }
-        if let Ok(v) = std::env::var("ABBEY_EMBEDDING_LANGUAGE") {
-            if !v.trim().is_empty() {
-                self.embeddings.language = v.trim().to_string();
-            }
+        if let Ok(v) = std::env::var("ABBEY_EMBEDDING_LANGUAGE")
+            && !v.trim().is_empty()
+        {
+            self.embeddings.language = v.trim().to_string();
         }
         self
     }
@@ -343,10 +343,10 @@ fn strip_toml_str(s: &str) -> String {
 }
 
 pub fn resolve_abi_bin(cfg: &AbbeyConfig) -> Option<PathBuf> {
-    if let Some(p) = &cfg.abi_bin {
-        if p.is_file() {
-            return Some(p.clone());
-        }
+    if let Some(p) = &cfg.abi_bin
+        && p.is_file()
+    {
+        return Some(p.clone());
     }
     crate::agent::which_bin("abi")
 }

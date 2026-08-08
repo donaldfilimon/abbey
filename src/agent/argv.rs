@@ -219,15 +219,15 @@ impl AgentConfig {
             // Streaming interleaves partial output; capture wants one clean body.
             args.push("--no-stream".into());
         }
-        if let Some(id) = resume_id.filter(|i| !i.is_empty()) {
-            if let Some(path) = self.transcript_path(id) {
-                if path.is_file() {
-                    args.push("--resume".into());
-                    args.push(path.display().to_string());
-                }
-                args.push("--save-transcript".into());
+        if let Some(id) = resume_id.filter(|i| !i.is_empty())
+            && let Some(path) = self.transcript_path(id)
+        {
+            if path.is_file() {
+                args.push("--resume".into());
                 args.push(path.display().to_string());
             }
+            args.push("--save-transcript".into());
+            args.push(path.display().to_string());
         }
         args.extend(prompts);
         args
@@ -264,17 +264,16 @@ impl AgentConfig {
         // previous turns ride in as a bounded context prefix read from the
         // transcript this chat id maps to. Best-effort — a missing or
         // unreadable transcript simply means a context-free turn.
-        if let Some(id) = resume_id.filter(|i| !i.is_empty()) {
-            if let Some(path) = self.transcript_path(id) {
-                if let Ok(prev) = std::fs::read_to_string(&path) {
-                    let tail = utf8_tail(&prev, ABI_CONTEXT_TAIL_BYTES);
-                    if !tail.trim().is_empty() {
-                        args.push(format!(
-                            "Previous conversation (context, oldest first, may be truncated):\n\
-                             {tail}\n--- end of context; answer the next message ---"
-                        ));
-                    }
-                }
+        if let Some(id) = resume_id.filter(|i| !i.is_empty())
+            && let Some(path) = self.transcript_path(id)
+            && let Ok(prev) = std::fs::read_to_string(&path)
+        {
+            let tail = utf8_tail(&prev, ABI_CONTEXT_TAIL_BYTES);
+            if !tail.trim().is_empty() {
+                args.push(format!(
+                    "Previous conversation (context, oldest first, may be truncated):\n\
+                     {tail}\n--- end of context; answer the next message ---"
+                ));
             }
         }
         if let Some(mode) = &self.mode {
@@ -338,11 +337,11 @@ impl AgentConfig {
             args.push(sb.clone());
         }
         args.extend(self.extra_args.iter().cloned());
-        if let Some(id) = resume_id {
-            if !id.is_empty() {
-                args.push("--resume".into());
-                args.push(id.to_string());
-            }
+        if let Some(id) = resume_id
+            && !id.is_empty()
+        {
+            args.push("--resume".into());
+            args.push(id.to_string());
         }
         args.extend(prompts);
         args
