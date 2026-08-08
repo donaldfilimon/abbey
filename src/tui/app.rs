@@ -316,7 +316,11 @@ pub fn run_tui(state: AbbeyState, cfg: AgentConfig) -> Result<i32> {
                         }
                         PendingAction::Slash(cmd) => {
                             was_slash = true;
-                            match crate::dispatch_slash(&cmd, &app.state, &mut app.cfg) {
+                            match crate::slash_dispatch::dispatch_slash(
+                                &cmd,
+                                &app.state,
+                                &mut app.cfg,
+                            ) {
                                 Ok(c) => {
                                     app.status = format!("{cmd} → exit {c}");
                                     c

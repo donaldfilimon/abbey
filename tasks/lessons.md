@@ -1,5 +1,5 @@
 # Lessons
-<!-- abbey-claims-sha256: 2fffdf8023126682617e747e8489a26cb3cc76aafa3e042e6e3ff7f8bea2d7b5 -->
+<!-- abbey-claims-sha256: 1cff4b9922dd6eb1a09eced94a8452478a0e071cb0835fdf788dd9cbec335282 -->
 
 - Abbey `/init` should stay offline-first (filesystem scan); `--agent` is optional refinement only.
 - Keep parity claims honest: cursor-agent is the default backend; `/cost` N/A; Max/Gemma = bindings.
@@ -34,3 +34,11 @@
   their backend, while the opt-in OpenAI-compatible embedding provider intentionally reads
   an environment key. The security invariant is no persistence, logs, config storage, or
   argv exposure—not the impossible claim that Abbey never reads a credential.
+- **A second Cargo binary makes implicit package commands ambiguous.** Once `abbeyd`
+  joined `abbey`, the claims validator's bare `cargo run` stopped selecting a target.
+  Set `default-run = "abbey"`, and make automation/CI name `--bin abbey` explicitly;
+  human convenience and reproducible automation are separate concerns.
+- **A shared contract is not an owned runtime.** The Current app-core/daemon slice
+  advertises only Status and Claims. Defining approval or run identifiers does not
+  grant execution capability, and a Unix socket does not prove durable jobs, model
+  workers, MCP hosting, memory ownership, or Windows named-pipe support.

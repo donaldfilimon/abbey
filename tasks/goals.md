@@ -1,5 +1,5 @@
 # Goals
-<!-- abbey-claims-sha256: 2fffdf8023126682617e747e8489a26cb3cc76aafa3e042e6e3ff7f8bea2d7b5 -->
+<!-- abbey-claims-sha256: 1cff4b9922dd6eb1a09eced94a8452478a0e071cb0835fdf788dd9cbec335282 -->
 
 Ledger snapshot after the 2026-08-08 scope migration: **25 goals** — 23 done,
 1 blocked, 1 proposed. Recount when adding or changing a `##` goal/status.
@@ -201,6 +201,15 @@ verification bars live in `tasks/todo.md`. Every existing refusal remains exit 2
 its corresponding implementation and evidence land. Vendor-runtime reimplementation,
 fake accounting, shipped-edition allowlist bypass, hidden CoT, and bundled cloud speech
 remain Out of scope.
+
+**Current foundation (2026-08-08):** Abbey is now a library plus thin CLI binary,
+with stable versioned application IDs, Status/Claims commands and events, and a
+standard-edition read-only policy. The separate `abbeyd` binary serves only those
+two operations over a 64 KiB-bounded, authenticated, owner-only Unix socket and
+fails closed elsewhere. This is source/test/live-scratch evidence for a reusable
+application/control-plane seam—not completion of the Proposed owned executor/tool
+runtime, durable background jobs, memory ownership, Windows named pipes, desktop,
+or personal edition.
 
 Found live 2026-07-31 while verifying `improve status`: `abbey memory map | head -2`
 printed a Rust panic (`failed printing to stdout: Broken pipe`) instead of exiting

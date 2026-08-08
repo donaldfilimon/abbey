@@ -1,5 +1,5 @@
 # Abbey production readiness
-<!-- abbey-claims-sha256: 2fffdf8023126682617e747e8489a26cb3cc76aafa3e042e6e3ff7f8bea2d7b5 -->
+<!-- abbey-claims-sha256: 1cff4b9922dd6eb1a09eced94a8452478a0e071cb0835fdf788dd9cbec335282 -->
 
 ## Toolchain
 
@@ -11,7 +11,7 @@
 
 ```bash
 ./check.sh          # fmt + clippy -D warnings + test, for BOTH feature sets
-./install.sh        # Unix/macOS → ~/.local/bin/abbey
+./install.sh        # Unix/macOS → ~/.local/bin/abbey + abbeyd
 .\install.ps1       # Windows → %LOCALAPPDATA%\abbey\bin\abbey.exe
 abbey doctor        # build stamp + persona/role/memory/os honesty
 abbey platform paths
@@ -71,6 +71,15 @@ dedicated process group and can terminate every descendant on timeout or output 
 It fails before spawning on Windows and other non-Unix hosts; Windows Job Object support
 has not been implemented or runtime-verified.
 
+`abbeyd` is also Unix-only in this slice. Its parent directory must be owned by
+the effective user with mode `0700`, its socket is forced to `0600`, and requests
+use a 4-byte big-endian length prefix capped at 64 KiB plus read/write deadlines.
+Set exactly one of `ABBEYD_BEARER_TOKEN_FILE` (recommended, owner-only regular
+file) or `ABBEYD_BEARER_TOKEN`; neither source belongs in `config.toml` or logs.
+The daemon exposes only `Status` and `Claims` through `abbey::app_core`; it owns
+no memory handle, agent process, tool registry, durable job, or shell. Windows
+named-pipe support remains unimplemented and fails closed.
+
 Accelerator **host detection** (`abbey platform compute`) is Current. GPU/NPU/TPU
 **runtimes inside Abbey** are Proposed and unavailable — see `abbey claims proposed`.
 
@@ -94,7 +103,7 @@ Accelerator **host detection** (`abbey platform compute`) is Current. GPU/NPU/TP
   `[embeddings]` provider/endpoint/model/dimension/language.
   `abbey config --init` scaffolds it (never overwrites); an unrecognised
   `backend` warns instead of silently using cursor-agent.
-- Env: `ABBEY_MODEL`, `ABBEY_ROLE`, `ABBEY_PERSONA`, `ABBEY_MEMORY_BACKEND`, `ABBEY_AGENT`, `ABBEY_BACKEND`, `ABBEY_ABI_BIN`, `ABBEY_FORCE`, `ABBEY_PER_CWD`, `ABBEY_STATE_DIR`, and the `ABBEY_EMBEDDING_*` provider settings. The opt-in OpenAI-compatible embedding provider reads its credential only from `ABBEY_EMBEDDING_API_KEY` or `OPENAI_API_KEY`; never put it in `config.toml`, persisted state, logs, or subprocess argv.
+- Env: `ABBEY_MODEL`, `ABBEY_ROLE`, `ABBEY_PERSONA`, `ABBEY_MEMORY_BACKEND`, `ABBEY_AGENT`, `ABBEY_BACKEND`, `ABBEY_ABI_BIN`, `ABBEY_FORCE`, `ABBEY_PER_CWD`, `ABBEY_STATE_DIR`, the `ABBEY_EMBEDDING_*` provider settings, and `ABBEYD_SOCKET_PATH` plus exactly one daemon bearer source. The opt-in OpenAI-compatible embedding provider reads its credential only from `ABBEY_EMBEDDING_API_KEY` or `OPENAI_API_KEY`; never put it or the daemon bearer in `config.toml`, persisted diagnostics, logs, or subprocess argv.
 
 ## State locations
 
@@ -105,6 +114,7 @@ Accelerator **host detection** (`abbey platform compute`) is Current. GPU/NPU/TP
   `embedding-spaces-v2/<space_id>` stores. Legacy `embedding-spaces/` indexes are
   retained untouched and require an explicit backfill into v2.
 - `fm` transcripts (backend `fm`): `…/abbey/fm/<chat-id>.transcript`
+- `abbeyd` socket and recommended bearer: `…/abbey/daemon/` (owner-only; bearer is local state, never repository content)
 - Never commit state dirs
 
 ## Safety

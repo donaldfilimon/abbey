@@ -18,6 +18,7 @@ mkdir -p "$DEST_DIR"
 STAGED_BIN=$(mktemp "$DEST_DIR/.abbey.XXXXXX")
 cleanup_staged() {
   [ -z "${STAGED_BIN:-}" ] || rm -f -- "$STAGED_BIN"
+  [ -z "${STAGED_DAEMON:-}" ] || rm -f -- "$STAGED_DAEMON"
   [ -z "${STAGED_COMPLETION:-}" ] || rm -f -- "$STAGED_COMPLETION"
 }
 trap cleanup_staged EXIT HUP INT TERM
@@ -27,6 +28,18 @@ chmod 755 "$STAGED_BIN"
 mv -f "$STAGED_BIN" "$DEST_DIR/abbey"
 STAGED_BIN=""
 echo "installed: $DEST_DIR/abbey ($("$DEST_DIR/abbey" --version))"
+
+# The daemon is Unix-only until the named-pipe transport lands. It is staged
+# independently so an interrupted install never truncates either good binary.
+DAEMON_BIN="${CARGO_TARGET_DIR:-target}/release/abbeyd"
+if [ -f "$DAEMON_BIN" ]; then
+  STAGED_DAEMON=$(mktemp "$DEST_DIR/.abbeyd.XXXXXX")
+  cp "$DAEMON_BIN" "$STAGED_DAEMON"
+  chmod 755 "$STAGED_DAEMON"
+  mv -f "$STAGED_DAEMON" "$DEST_DIR/abbeyd"
+  STAGED_DAEMON=""
+  echo "installed: $DEST_DIR/abbeyd (read-only Unix daemon; explicit bearer required)"
+fi
 
 write_completion() {
   shell_name="$1"

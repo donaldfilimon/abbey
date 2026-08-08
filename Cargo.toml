@@ -3,6 +3,7 @@ name = "abbey"
 version = "2.6.0"
 edition = "2024"
 rust-version = "1.99"
+default-run = "abbey"
 description = "Abbey — hybrid persona/role CLI/TUI with OS control, parallel lanes, skills/plugins inventory, self-learn"
 license = "MIT"
 authors = ["Donald Filimon"]
@@ -52,7 +53,7 @@ fs4 = { version = "0.13", optional = true }
 # build. Unix-gated: Windows has no SIGPIPE.
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
-nix = { version = "0.30", features = ["process", "signal"] }
+nix = { version = "0.30", features = ["process", "signal", "user"] }
 
 [features]
 default = []

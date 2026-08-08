@@ -1,5 +1,5 @@
 # Abbey identity (distilled)
-<!-- abbey-claims-sha256: 2fffdf8023126682617e747e8489a26cb3cc76aafa3e042e6e3ff7f8bea2d7b5 -->
+<!-- abbey-claims-sha256: 1cff4b9922dd6eb1a09eced94a8452478a0e071cb0835fdf788dd9cbec335282 -->
 
 Canonical product spec: [ABI `abbey-core-identity.mdx` at the integrated revision](https://github.com/donaldfilimon/abi/blob/32e372d7f522f5a6c9c0ef92c5b9612b52cfea05/docs/spec/abbey-core-identity.mdx).
 Executable contracts: [ABI `identity.rs` at the integrated revision](https://github.com/donaldfilimon/abi/blob/32e372d7f522f5a6c9c0ef92c5b9612b52cfea05/crates/abi-ai/src/identity.rs).
@@ -91,6 +91,7 @@ Routing decisions record **confidence**, **alternate**, and **fallback** on `rou
 | Host platform matrix + thread/GPU/NPU/TPU detect | **Current** — `abbey platform` (not accelerator runtime) |
 | GPU/NPU/TPU compilation/training/inference inside Abbey | **Proposed, unavailable** |
 | Tauri 2 + React/TypeScript desktop GUI | **Proposed**; ratatui TUI remains Current |
+| Shared application core + authenticated read-only `abbeyd` | **Current on Unix** — Status/Claims only; not model/tool execution, durable jobs, or an MCP host |
 
 ---
 

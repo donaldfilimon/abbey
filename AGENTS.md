@@ -1,5 +1,5 @@
 # AGENTS.md
-<!-- abbey-claims-sha256: 2fffdf8023126682617e747e8489a26cb3cc76aafa3e042e6e3ff7f8bea2d7b5 -->
+<!-- abbey-claims-sha256: 1cff4b9922dd6eb1a09eced94a8452478a0e071cb0835fdf788dd9cbec335282 -->
 
 Guidance for AI coding agents in this repository.
 
@@ -9,7 +9,7 @@ Guidance for AI coding agents in this repository.
 - Purpose: Hybrid coding-agent CLI/TUI — personas, Max/Gemma roles, parallel lanes, OS control, skills/plugins inventory, self-learn — backed by **cursor-agent** (+ optional `abi`)
 - Stack: Rust nightly, edition 2024, `ratatui`, `clap`, path-dep `abi-ai`
 - Root: `/Users/donaldfilimon/abbey`
-- Install: `./install.sh` → `~/.local/bin/abbey`
+- Install: `./install.sh` → `~/.local/bin/abbey` + Unix `abbeyd`
 - Gate: `./check.sh` (fmt + clippy -D warnings + test + file-size)
 
 ## Spec
@@ -27,7 +27,12 @@ Guidance for AI coding agents in this repository.
 ## Layout
 
 ```
-src/main.rs           thin entry (<200 lines)
+src/main.rs           pre-Clap SIGPIPE + library entry (<200 lines)
+src/lib.rs            private implementation graph + narrow public API
+src/entry.rs          CLI/TUI routing behind the library boundary
+src/app_core/         typed read-only Status/Claims application contracts
+src/bin/abbeyd.rs     bounded authenticated Unix daemon entry
+src/daemon/           owner-only UDS protocol/server (no execution or memory ownership)
 src/cli.rs            clap Cli/Subcommand definitions
 src/commands.rs       clap dispatch
 src/output.rs         stdout helpers (broken pipe = success)
@@ -81,6 +86,7 @@ CLI: `abbey claims` · `abbey claims partial|proposed|blocked|oos` · `abbey cla
 | WDBX in-process and cross-process lock | Current | Feature is off by default; fs4 maps to Unix `flock` and Windows `LockFileEx`. |
 | Hybrid loop, parallel lanes, multi-subagents, same-host PATH peers | Current | Does not prove a production multi-VM mesh. |
 | Goal-driven improve (`abbey improve` + `check.sh`) | Current | Bounded local apply; does not auto-mark goals done. |
+| Shared application core + authenticated read-only `abbeyd` | Current | Versioned Status/Claims only over owner-only Unix socket; not the Proposed owned agent/tool runtime. |
 | Portable Linux/macOS/Windows source surfaces | Current | macOS is locally exercised; Linux/Windows runtime proof remains open. |
 | GPU/NPU/TPU host detection | Current | Inventory only, not accelerator execution. |
 | CoT transcript viewer and structured `reason` wrap | Current | Abbey-owned hidden CoT engine/UI remains Out of scope. |

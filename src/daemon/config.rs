@@ -1,0 +1,227 @@
+use std::fmt;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
+
+use thiserror::Error;
+
+pub const DEFAULT_MAX_FRAME_LEN: usize = 64 * 1024;
+const MIN_BEARER_LEN: usize = 32;
+const MAX_BEARER_LEN: usize = 4096;
+
+/// Authentication material whose `Debug` implementation is always redacted.
+#[derive(Clone)]
+pub struct BearerSecret(Vec<u8>);
+
+impl BearerSecret {
+    pub fn parse(value: impl AsRef<[u8]>) -> Result<Self, ConfigError> {
+        let value = trim_line_ending(value.as_ref());
+        if !(MIN_BEARER_LEN..=MAX_BEARER_LEN).contains(&value.len()) {
+            return Err(ConfigError::BearerLength);
+        }
+        if value.iter().any(|byte| byte.is_ascii_control()) {
+            return Err(ConfigError::BearerControlCharacter);
+        }
+        Ok(Self(value.to_vec()))
+    }
+
+    pub(crate) fn matches(&self, candidate: &[u8]) -> bool {
+        // Compare all bytes when lengths match rather than returning on the
+        // first mismatch. This is a small local-IPC hardening measure; it is
+        // not advertised as a general-purpose constant-time primitive.
+        if self.0.len() != candidate.len() {
+            return false;
+        }
+        self.0
+            .iter()
+            .zip(candidate)
+            .fold(0_u8, |difference, (left, right)| {
+                difference | (left ^ right)
+            })
+            == 0
+    }
+}
+
+impl fmt::Debug for BearerSecret {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("BearerSecret([REDACTED])")
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct DaemonConfig {
+    pub socket_path: PathBuf,
+    pub bearer: BearerSecret,
+    pub max_frame_len: usize,
+    pub read_timeout: Duration,
+    pub write_timeout: Duration,
+    pub accept_poll_interval: Duration,
+}
+
+impl DaemonConfig {
+    /// Load a fail-closed daemon configuration.
+    ///
+    /// `ABBEYD_BEARER_TOKEN` and `ABBEYD_BEARER_TOKEN_FILE` are mutually
+    /// exclusive. Private key material is never read from Abbey's TOML config.
+    pub fn from_env() -> Result<Self, ConfigError> {
+        let socket_path = std::env::var_os("ABBEYD_SOCKET_PATH")
+            .map(PathBuf::from)
+            .unwrap_or_else(default_socket_path);
+        let bearer_env = std::env::var_os("ABBEYD_BEARER_TOKEN");
+        let bearer_file = std::env::var_os("ABBEYD_BEARER_TOKEN_FILE");
+
+        let bearer = match (bearer_env, bearer_file) {
+            (Some(_), Some(_)) => return Err(ConfigError::ConflictingBearerSources),
+            (Some(value), None) => {
+                let value = value
+                    .into_string()
+                    .map_err(|_| ConfigError::BearerNotUtf8)?;
+                BearerSecret::parse(value)
+            }
+            (None, Some(path)) => load_bearer_file(Path::new(&path)),
+            (None, None) => Err(ConfigError::MissingBearer),
+        }?;
+
+        Ok(Self {
+            socket_path,
+            bearer,
+            max_frame_len: DEFAULT_MAX_FRAME_LEN,
+            read_timeout: Duration::from_secs(5),
+            write_timeout: Duration::from_secs(5),
+            accept_poll_interval: Duration::from_millis(25),
+        })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn for_test(socket_path: PathBuf, bearer: &[u8]) -> Self {
+        Self {
+            socket_path,
+            bearer: BearerSecret::parse(bearer).expect("valid test bearer"),
+            max_frame_len: DEFAULT_MAX_FRAME_LEN,
+            read_timeout: Duration::from_millis(300),
+            write_timeout: Duration::from_millis(300),
+            accept_poll_interval: Duration::from_millis(5),
+        }
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum ConfigError {
+    #[error("set exactly one of ABBEYD_BEARER_TOKEN or ABBEYD_BEARER_TOKEN_FILE")]
+    MissingBearer,
+    #[error("ABBEYD_BEARER_TOKEN and ABBEYD_BEARER_TOKEN_FILE cannot both be set")]
+    ConflictingBearerSources,
+    #[error("daemon bearer token must be valid UTF-8")]
+    BearerNotUtf8,
+    #[error("daemon bearer token must contain 32 through 4096 bytes")]
+    BearerLength,
+    #[error("daemon bearer token must not contain control characters")]
+    BearerControlCharacter,
+    #[error("bearer file must be a regular file, not a symlink: {0}")]
+    BearerFileType(PathBuf),
+    #[error("bearer file must be owned by the current user: {0}")]
+    BearerFileOwner(PathBuf),
+    #[error("bearer file must not grant group or other permissions: {0}")]
+    BearerFilePermissions(PathBuf),
+    #[error("cannot inspect bearer file {path}: {source}")]
+    InspectBearer {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+    #[error("cannot read bearer file {path}: {source}")]
+    ReadBearer {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+}
+
+fn default_socket_path() -> PathBuf {
+    if let Some(root) = std::env::var_os("ABBEY_STATE_DIR") {
+        return PathBuf::from(root).join("daemon/abbeyd.sock");
+    }
+    dirs::state_dir()
+        .or_else(dirs::data_local_dir)
+        .unwrap_or_else(std::env::temp_dir)
+        .join("abbey/daemon/abbeyd.sock")
+}
+
+fn trim_line_ending(mut bytes: &[u8]) -> &[u8] {
+    if bytes.ends_with(b"\n") {
+        bytes = &bytes[..bytes.len() - 1];
+    }
+    if bytes.ends_with(b"\r") {
+        bytes = &bytes[..bytes.len() - 1];
+    }
+    bytes
+}
+
+#[cfg(unix)]
+fn load_bearer_file(path: &Path) -> Result<BearerSecret, ConfigError> {
+    use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
+
+    let metadata =
+        std::fs::symlink_metadata(path).map_err(|source| ConfigError::InspectBearer {
+            path: path.to_owned(),
+            source,
+        })?;
+    if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
+        return Err(ConfigError::BearerFileType(path.to_owned()));
+    }
+    if metadata.uid() != nix::unistd::Uid::effective().as_raw() {
+        return Err(ConfigError::BearerFileOwner(path.to_owned()));
+    }
+    if metadata.permissions().mode() & 0o077 != 0 {
+        return Err(ConfigError::BearerFilePermissions(path.to_owned()));
+    }
+    let bytes = std::fs::read(path).map_err(|source| ConfigError::ReadBearer {
+        path: path.to_owned(),
+        source,
+    })?;
+    BearerSecret::parse(bytes)
+}
+
+#[cfg(not(unix))]
+fn load_bearer_file(path: &Path) -> Result<BearerSecret, ConfigError> {
+    let _ = path;
+    Err(ConfigError::BearerFilePermissions(path.to_owned()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn debug_never_reveals_secret() {
+        let secret = BearerSecret::parse(b"0123456789abcdef0123456789abcdef").unwrap();
+        let rendered = format!("{secret:?}");
+        assert_eq!(rendered, "BearerSecret([REDACTED])");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn bearer_file_rejects_group_permissions() {
+        use std::io::Write as _;
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let root = scratch_dir("bearer-permissions");
+        let path = root.join("bearer");
+        let mut file = std::fs::File::create(&path).unwrap();
+        file.write_all(b"0123456789abcdef0123456789abcdef").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o640)).unwrap();
+        assert!(matches!(
+            load_bearer_file(&path),
+            Err(ConfigError::BearerFilePermissions(_))
+        ));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    fn scratch_dir(label: &str) -> PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "abbeyd-{label}-{}-{}",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir(&path).unwrap();
+        path
+    }
+}

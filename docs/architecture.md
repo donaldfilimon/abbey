@@ -1,5 +1,5 @@
 # Abbey architecture (production)
-<!-- abbey-claims-sha256: 2fffdf8023126682617e747e8489a26cb3cc76aafa3e042e6e3ff7f8bea2d7b5 -->
+<!-- abbey-claims-sha256: 1cff4b9922dd6eb1a09eced94a8452478a0e071cb0835fdf788dd9cbec335282 -->
 
 Status key: **Current** = shipped · **Partial** = some shipped surface with stated gaps ·
 **Proposed** = approved direction, not claimed live · **Blocked** = waiting on an external
@@ -9,7 +9,10 @@ prerequisite or proof · **Out of scope** = explicitly excluded.
 
 ```text
 ┌─────────────────────────────────────────────────────────┐
-│  CLI (clap)  ·  TUI (ratatui)  ·  slash catalog         │
+│  CLI (clap) · TUI (ratatui) · slash · abbeyd read API   │
+├─────────────────────────────────────────────────────────┤
+│  app_core — versioned Status/Claims contracts + policy  │
+│  daemon — bounded authenticated owner-only Unix socket  │
 ├─────────────────────────────────────────────────────────┤
 │  actions::run_agent — canonical RunSpec for CLI/slash/TUI │
 │  session::hybrid_run — persona + role + prefs + route   │
@@ -32,7 +35,9 @@ prerequisite or proof · **Out of scope** = explicitly excluded.
 
 | Module | Responsibility |
 |--------|----------------|
-| `main` | Entry + early routing (TUI / slash / continue) |
+| `main` / `entry` | Pre-Clap SIGPIPE shim + library-owned CLI/TUI/slash routing |
+| `lib` / `app_core` | Private implementation graph plus public versioned Status/Claims contracts and standard-edition policy |
+| `daemon` / `bin/abbeyd` | Authenticated 64 KiB length-prefixed read-only Unix socket; no model/tool/memory/job ownership; non-Unix fails closed |
 | `actions` | `RunSpec` + `run_agent` / review / commit / pr (one path) |
 | `commands` | Clap subcommand match → actions |
 | `slash` / `slash_dispatch` | Catalog + shared slash handler → actions |
@@ -127,6 +132,10 @@ prerequisite or proof · **Out of scope** = explicitly excluded.
   does not auto-mark goals done; not a multi-node mesh
 - Claims gate CLI: `abbey claims` / `refuse` for Partial, Proposed, Blocked, and
   Out-of-scope surfaces. Approved roadmap verbs still return exit 2 until proven.
+- Shared application library plus `abbeyd`: exact versioned Status/Claims events
+  over an owner-only Unix socket with bounded frames/timeouts and bearer-file
+  authentication. This is a read-only control-plane foundation, not an owned
+  agent/tool runtime, durable job manager, MCP host, or Windows named-pipe proof.
 - Platform inventory: `abbey platform` / `compute` — linux/macos/windows matrix,
   threads, host GPU/NPU/TPU detect (not Abbey accelerator kernels)
 - MCP/ACP surfaces: `abbey mcp status|paths|view` reads provider-aware JSON/TOML config;

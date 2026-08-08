@@ -19,7 +19,7 @@ cd ~/abbey
 ./install.sh
 # or:
 cargo build --release
-./install.sh          # Unix/macOS → ~/.local/bin/abbey
+./install.sh          # Unix/macOS → ~/.local/bin/abbey + abbeyd
 # Windows:  powershell -File .\install.ps1  → %LOCALAPPDATA%\abbey\bin\abbey.exe
 ```
 
@@ -68,6 +68,24 @@ abbey wdbx stats                             # in-process (needs --features wdbx
 abbey mesh local-demo --nodes 3 --json       # authenticated Unix same-host ABI process proof
 abbey completion zsh > ~/.zsh/completions/_abbey_clap
 ```
+
+### Read-only application daemon
+
+Abbey also ships a narrow `abbeyd` foundation on Unix. It exposes only the
+versioned `status` and `claims` application contracts over a length-prefixed,
+owner-only Unix socket; it does not own model workers, tools, memory, jobs, or
+shell execution. Create a private bearer file and start it explicitly:
+
+```bash
+umask 077
+mkdir -p "${XDG_STATE_HOME:-$HOME/.local/state}/abbey/daemon"
+openssl rand -hex 32 > "${XDG_STATE_HOME:-$HOME/.local/state}/abbey/daemon/bearer"
+ABBEYD_BEARER_TOKEN_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/abbey/daemon/bearer" abbeyd
+```
+
+The socket defaults to `<state>/daemon/abbeyd.sock`. Windows fails closed until
+a named-pipe transport and runtime proof exist. This substrate is not the
+Proposed Abbey-owned agent/tool runtime or MCP host.
 
 ### Slash (CLI or TUI prompt)
 

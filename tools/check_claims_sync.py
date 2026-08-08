@@ -15,6 +15,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parent.parent
 DOCUMENTS = (
     ROOT / "AGENTS.md",
+    ROOT / "CLAUDE.md",
     ROOT / "tasks/goals.md",
     ROOT / "tasks/todo.md",
     ROOT / "tasks/lessons.md",
@@ -57,12 +58,16 @@ FORBIDDEN_DRIFT = {
         "OOS honesty pack — `oos`/`lora`/`weights`/`accel`/`shell`/`host`",
     ),
     ROOT / "tasks/goals.md": ("accelerator runtimes stay OOS",),
+    ROOT / "CLAUDE.md": (
+        "weights/engine/host OOS",
+        "OOS honesty pack — lora/weights/accel/shell/host",
+    ),
 }
 
 
 def canonical_manifest() -> tuple[list[dict[str, object]], str]:
     result = subprocess.run(
-        ["cargo", "run", "--quiet", "--", "claims", "manifest"],
+        ["cargo", "run", "--quiet", "--bin", "abbey", "--", "claims", "manifest"],
         cwd=ROOT,
         check=True,
         capture_output=True,

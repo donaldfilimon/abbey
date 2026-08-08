@@ -640,7 +640,10 @@ mod tests {
             "#!/bin/sh\nsleep 30 &\necho $! > \"$0.child\"\nwait\n",
         );
         let started = Instant::now();
-        let error = run_local_demo_with_bin_timeout(&bin, 3, Duration::from_millis(200))
+        // Parallel full-suite runs can briefly delay the shell before it writes
+        // the descendant PID. Keep the total two-second bar while allowing a
+        // bounded startup window that does not depend on scheduler speed.
+        let error = run_local_demo_with_bin_timeout(&bin, 3, Duration::from_millis(500))
             .unwrap_err()
             .to_string();
         assert!(error.contains("timed out"), "{error}");

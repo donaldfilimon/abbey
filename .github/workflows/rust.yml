@@ -79,7 +79,7 @@ jobs:
         env:
           ABBEY_ABI_BIN: ${{ github.workspace }}/abi/target/debug/abi
           ABBEY_STATE_DIR: ${{ runner.temp }}/abbey-mesh-state
-        run: cargo run --release -- mesh local-demo --nodes 3 --json
+        run: cargo run --release --bin abbey -- mesh local-demo --nodes 3 --json
 
   gate-macos:
     name: gate (macOS ARM64 adjunct)
@@ -138,4 +138,4 @@ jobs:
         env:
           ABBEY_ABI_BIN: ${{ github.workspace }}/abi/target/debug/abi
           ABBEY_STATE_DIR: ${{ runner.temp }}/abbey-mesh-state
-        run: cargo run --release -- mesh local-demo --nodes 3 --json
+        run: cargo run --release --bin abbey -- mesh local-demo --nodes 3 --json

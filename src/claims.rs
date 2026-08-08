@@ -113,6 +113,12 @@ pub const CLAIMS: &[Claim] = &[
         instead: Some("abbey improve status|plan|run --confirm"),
     },
     Claim {
+        name: "shared application core + authenticated read-only abbeyd",
+        status: Status::Current,
+        note: "versioned read-only status/claims contracts over an owner-only bounded Unix socket; Windows named pipes, durable jobs, model/tool execution, and memory ownership are not implemented",
+        instead: Some("abbey::app_core · abbeyd with an owner-only bearer file"),
+    },
+    Claim {
         name: "MCP/ACP inventory + voice + highlight + media/imagine",
         status: Status::Current,
         note: "inventory/peer launch and delegated media surfaces; no Abbey-owned tool host or local neural media models yet",
@@ -555,7 +561,7 @@ mod tests {
 
     #[test]
     fn gate_has_all_five_statuses() {
-        assert_eq!(by_status(Status::Current).count(), 23);
+        assert_eq!(by_status(Status::Current).count(), 24);
         assert_eq!(by_status(Status::Partial).count(), 1);
         assert_eq!(by_status(Status::Proposed).count(), 8);
         assert_eq!(by_status(Status::Blocked).count(), 1);
@@ -571,6 +577,23 @@ mod tests {
         assert_eq!(semantic.status, Status::Current);
         assert!(semantic.note.contains("opt-in"));
         assert!(semantic.note.contains("remote live call unverified"));
+    }
+
+    #[test]
+    fn app_core_daemon_claim_stays_narrower_than_owned_runtime() {
+        let daemon = CLAIMS
+            .iter()
+            .find(|claim| claim.name.starts_with("shared application core"))
+            .expect("app-core daemon claim");
+        assert_eq!(daemon.status, Status::Current);
+        assert!(daemon.note.contains("read-only"));
+        assert!(daemon.note.contains("not implemented"));
+
+        let owned_runtime = CLAIMS
+            .iter()
+            .find(|claim| claim.name.starts_with("provider-neutral Abbey-owned"))
+            .expect("owned runtime claim");
+        assert_eq!(owned_runtime.status, Status::Proposed);
     }
 
     #[test]

@@ -1,7 +1,7 @@
 # Todo
-<!-- abbey-claims-sha256: 2fffdf8023126682617e747e8489a26cb3cc76aafa3e042e6e3ff7f8bea2d7b5 -->
+<!-- abbey-claims-sha256: 1cff4b9922dd6eb1a09eced94a8452478a0e071cb0835fdf788dd9cbec335282 -->
 
-Ledger snapshot after the 2026-08-08 scope migration: **110 checked, 10 open**.
+Ledger snapshot after the 2026-08-08 scope migration: **111 checked, 10 open**.
 The 10 open items are two externally blocked CI proofs plus eight approved
 Proposed implementation slices; recount when changing checkboxes.
 
@@ -29,6 +29,10 @@ the parent capability to Current.
 - [ ] **1. Runtime contracts:** define provider-neutral executor, tool-call, permission,
       cancellation, transcript, and audit interfaces; adapt current cursor/abi/fm/grok
       backends behind them without reimplementing vendor runtimes.
+  - [x] Foundation: extract a reusable library, stable `AppCommand`/`AppEvent`/ID/status/
+        capability contracts, standard read-only policy, and authenticated bounded Unix
+        `abbeyd` Status/Claims transport. This does not complete executor/tool/cancellation,
+        durable-job, Windows named-pipe, or memory-ownership work.
 - [ ] **2. Owned tool host:** implement capability-scoped tool registry plus MCP/ACP host
       adapters, schema validation, bounded subprocess/network policy, consent, and audit;
       preserve current inventory/peer-launch behavior during migration.
