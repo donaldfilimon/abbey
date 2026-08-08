@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import stat
 import subprocess
 import tempfile
 from typing import Any
@@ -82,6 +83,20 @@ FORBIDDEN_DRIFT = {
 }
 
 
+def is_stable_kebab_id(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    parts = value.split("-")
+    return bool(parts) and all(
+        bool(part)
+        and all(
+            character.isascii() and (character.islower() or character.isdigit())
+            for character in part
+        )
+        for part in parts
+    )
+
+
 def canonical_manifest() -> tuple[dict[str, Any], str]:
     result = subprocess.run(
         ["cargo", "run", "--quiet", "--bin", "abbey", "--", "claims", "manifest"],
@@ -127,7 +142,7 @@ def normalize_manifest(raw: object) -> dict[str, Any]:
             raise ValueError(f"claim {index} missing fields: {sorted(missing)}")
         claim_id = claim["id"]
         name = claim["name"]
-        if not isinstance(claim_id, str) or not claim_id:
+        if not is_stable_kebab_id(claim_id):
             raise ValueError(f"claim {index} has an invalid id")
         if claim_id in ids:
             raise ValueError(f"duplicate claim id: {claim_id}")
@@ -273,6 +288,8 @@ def parse_goal_metadata(text: str) -> list[dict[str, str]]:
         if missing:
             raise ValueError(f"goal `{title}` missing metadata: {sorted(missing)}")
         goal_id = metadata["id"]
+        if not is_stable_kebab_id(goal_id):
+            raise ValueError(f"goal `{title}` has invalid stable id `{goal_id}`")
         if goal_id in ids:
             raise ValueError(f"duplicate goal id: {goal_id}")
         ids.add(goal_id)
@@ -398,7 +415,11 @@ def replace_generated_region(text: str, mode: str, replacement: str) -> str:
     generated_begins = [
         line.strip() for line in text.splitlines() if line.strip().startswith(BEGIN_PREFIX)
     ]
+    generated_ends = [
+        line.strip() for line in text.splitlines() if line.strip().startswith(END_PREFIX)
+    ]
     unknown = [marker for marker in generated_begins if marker != begin]
+    unknown.extend(marker for marker in generated_ends if marker != end)
     if unknown:
         raise ValueError(f"unknown generated claims region: {unknown[0]}")
     if text.count(begin) > 1 or text.count(end) > 1:
@@ -426,8 +447,10 @@ def replace_generated_region(text: str, mode: str, replacement: str) -> str:
 
 def atomic_write(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else 0o644
     descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     try:
+        os.fchmod(descriptor, mode)
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
             handle.write(text)
             handle.flush()

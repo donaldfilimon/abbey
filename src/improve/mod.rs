@@ -270,7 +270,7 @@ fn cmd_status(state: &AbbeyState, opts: &ImproveOpts) -> Result<i32> {
         println!("next actionable todo: none (remaining open items are blocked)");
     }
     let hint = opts.goal_hint.first().map(String::as_str);
-    let focus = pick_work(&ledger, hint, opts.gate_only);
+    let focus = pick_work(&ledger, hint, opts.gate_only)?;
     println!("focus:   {}", focus.summary());
     println!(
         "gate:    {} (run `abbey improve run` to execute; --confirm to apply)",
@@ -295,7 +295,7 @@ fn cmd_plan(state: &AbbeyState, opts: &ImproveOpts) -> Result<i32> {
     let root = require_tasks_root(&state.cwd)?;
     let ledger = Ledger::load(&root)?;
     let hint = join_hint(&opts.goal_hint);
-    let focus = pick_work(&ledger, hint.as_deref(), opts.gate_only);
+    let focus = pick_work(&ledger, hint.as_deref(), opts.gate_only)?;
     let diag = diagnose_prompt(&focus, None);
     let impl_p = implement_prompt(&focus, "(diagnose output here)", None, opts.confirm);
     println!("abbey improve plan");
@@ -317,7 +317,7 @@ fn cmd_run(cfg: &AgentConfig, state: &AbbeyState, opts: &ImproveOpts) -> Result<
     let root = require_tasks_root(&state.cwd)?;
     let ledger = Ledger::load(&root)?;
     let hint = join_hint(&opts.goal_hint);
-    let mut focus = pick_work(&ledger, hint.as_deref(), opts.gate_only);
+    let mut focus = pick_work(&ledger, hint.as_deref(), opts.gate_only)?;
     let correlation = Uuid::new_v4().to_string();
     let started = Instant::now();
     let budget = Duration::from_secs(opts.max_minutes.saturating_mul(60));
@@ -388,7 +388,7 @@ fn cmd_run(cfg: &AgentConfig, state: &AbbeyState, opts: &ImproveOpts) -> Result<
         // Refresh focus each round unless gate-only.
         if !opts.gate_only {
             let fresh = Ledger::load(&root).unwrap_or_else(|_| ledger.clone());
-            focus = pick_work(&fresh, hint.as_deref(), opts.gate_only);
+            focus = pick_work(&fresh, hint.as_deref(), opts.gate_only)?;
         }
 
         let gate_excerpt = last_gate

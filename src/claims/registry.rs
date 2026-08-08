@@ -369,7 +369,7 @@ pub const CLAIMS: &[Claim] = &[
         Some("abbey memory semantic · memory embed status|--all"),
         impl: ["src/memory/embedding.rs", "src/memory/semantic.rs", "src/memory/sqlite.rs", "src/memory/wdbx.rs"],
         tests: ["src/memory/semantic.rs::tests::spaces_are_isolated_in_search_and_status", "src/memory/embedding.rs::tests::configured_provider_never_falls_back"],
-        local: EvidenceState::Verified(&["Apple provider paraphrase-ranking smoke recorded in the canonical claim note"]),
+        local: EvidenceState::Verified(&["tasks/goals.md::learned-semantic-memory (Apple 512-dimensional paraphrase-ranking smoke)"]),
         external: EvidenceState::NotRequired("a paid OpenAI live call is explicitly unverified and excluded from Current scope"),
         next: "obtain and record separate credentialed OpenAI live-call evidence when available",
         owner: None,

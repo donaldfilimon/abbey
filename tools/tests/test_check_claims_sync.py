@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+import stat
 import tempfile
 import unittest
 
@@ -24,7 +25,7 @@ def fixture_manifest() -> dict[str, object]:
         "schema_version": 1,
         "claims": [
             {
-                "id": "example.current",
+                "id": "example-current",
                 "name": "Example current capability",
                 "status": "current",
                 "note": "A deterministic example.",
@@ -49,6 +50,10 @@ class ClaimsSyncTests(unittest.TestCase):
         unknown["claims"][0]["status"] = "mystery"
         with self.assertRaisesRegex(ValueError, "unknown status"):
             claims_sync.normalize_manifest(unknown)
+        invalid = fixture_manifest()
+        invalid["claims"][0]["id"] = "example.invalid"
+        with self.assertRaisesRegex(ValueError, "invalid id"):
+            claims_sync.normalize_manifest(invalid)
 
     def test_generated_region_is_semantic_and_idempotent(self) -> None:
         manifest = fixture_manifest()
@@ -61,7 +66,7 @@ class ClaimsSyncTests(unittest.TestCase):
             once = claims_sync.replace_generated_region(source, "table", region)
             twice = claims_sync.replace_generated_region(once, "table", region)
             self.assertEqual(once, twice)
-            self.assertIn("`example.current`", once)
+            self.assertIn("`example-current`", once)
             self.assertIn("Example current capability", once)
 
     def test_tampered_generated_row_is_repaired(self) -> None:
@@ -91,6 +96,9 @@ class ClaimsSyncTests(unittest.TestCase):
         unknown = "<!-- BEGIN abbey-generated:claims-table -->\n"
         with self.assertRaisesRegex(ValueError, "unknown"):
             claims_sync.replace_generated_region(unknown, "summary", region)
+        orphan_end = "<!-- END abbey-generated:claims-table -->\n"
+        with self.assertRaisesRegex(ValueError, "unknown"):
+            claims_sync.replace_generated_region(orphan_end, "summary", region)
 
     def test_evidence_document_contains_all_evidence_classes(self) -> None:
         rendered = claims_sync.render_evidence_document(
@@ -101,6 +109,17 @@ class ClaimsSyncTests(unittest.TestCase):
         self.assertIn("Local/live evidence", rendered)
         self.assertIn("External evidence required", rendered)
         self.assertIn("Blocker owner", rendered)
+
+    def test_atomic_write_preserves_existing_mode_and_defaults_new_files(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            existing = Path(directory) / "existing.md"
+            existing.write_text("old", encoding="utf-8")
+            existing.chmod(0o640)
+            claims_sync.atomic_write(existing, "new")
+            self.assertEqual(stat.S_IMODE(existing.stat().st_mode), 0o640)
+            created = Path(directory) / "created.md"
+            claims_sync.atomic_write(created, "new")
+            self.assertEqual(stat.S_IMODE(created.stat().st_mode), 0o644)
 
     def test_goal_metadata_is_strict_and_counts_workflow(self) -> None:
         goals = """# Goals
@@ -123,6 +142,8 @@ Body.
         )
         with self.assertRaisesRegex(ValueError, "unknown status"):
             claims_sync.parse_goal_metadata(goals.replace("in_progress", "mystery"))
+        with self.assertRaisesRegex(ValueError, "invalid stable id"):
+            claims_sync.parse_goal_metadata(goals.replace("id: active", "id: ../not-kebab"))
 
 
 if __name__ == "__main__":

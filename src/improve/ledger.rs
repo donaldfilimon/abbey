@@ -186,8 +186,13 @@ impl Ledger {
                 {
                     return Some(g);
                 }
+                return None;
             }
         }
+        self.default_goal()
+    }
+
+    fn default_goal(&self) -> Option<&Goal> {
         self.goals
             .iter()
             .find(|g| g.status == GoalStatus::InProgress)
@@ -199,7 +204,7 @@ impl Ledger {
     }
 
     pub fn next_actionable_todo(&self) -> Option<&TodoItem> {
-        if let Some(goal) = self.pick_goal(None)
+        if let Some(goal) = self.default_goal()
             && let Some(todo) = self
                 .actionable_todos()
                 .find(|todo| todo.text.contains(goal.next_action.trim()))
@@ -270,33 +275,40 @@ impl WorkFocus {
 
 /// Pick work: gate-only → stabilize; else open goal/todo; else stabilize when
 /// ledger closed (or empty) so a red gate still has something to heal.
-pub fn pick_work(ledger: &Ledger, hint: Option<&str>, gate_only: bool) -> WorkFocus {
-    if gate_only {
-        return WorkFocus::Stabilize;
+pub fn pick_work(ledger: &Ledger, hint: Option<&str>, gate_only: bool) -> Result<WorkFocus> {
+    let goal = ledger.pick_goal(hint);
+    if goal.is_none() && hint.is_some_and(|value| !value.trim().is_empty()) {
+        bail!(
+            "improve: unknown goal hint `{}`",
+            hint.unwrap_or_default().trim()
+        );
     }
-    if let Some(g) = ledger.pick_goal(hint) {
+    if gate_only {
+        return Ok(WorkFocus::Stabilize);
+    }
+    if let Some(g) = goal {
         let todo = if hint.is_some() {
             ledger.open_todo_for(g)
         } else {
             ledger.actionable_todo_for(g)
         }
         .map(|t| t.text.clone());
-        return WorkFocus::Goal {
+        return Ok(WorkFocus::Goal {
             title: g.title.clone(),
             status: g.status,
             body: g.runtime_context(),
             todo,
-        };
+        });
     }
     if let Some(t) = ledger.next_actionable_todo() {
-        return WorkFocus::Goal {
+        return Ok(WorkFocus::Goal {
             title: "open todo (no open goal)".into(),
             status: GoalStatus::InProgress,
             body: String::new(),
             todo: Some(t.text.clone()),
-        };
+        });
     }
-    WorkFocus::Stabilize
+    Ok(WorkFocus::Stabilize)
 }
 
 const GOAL_METADATA_OPEN: &str = "<!-- abbey-goal";
@@ -419,6 +431,11 @@ pub fn parse_goals(text: &str) -> Result<Vec<Goal>> {
         }
 
         let id = require_metadata(metadata.id, "id", title, heading_line)?;
+        if !is_valid_goal_id(&id) {
+            bail!(
+                "goals.md:{heading_line}: invalid goal id `{id}`; expected lowercase ASCII kebab-case"
+            );
+        }
         if !ids.insert(id.clone()) {
             bail!("goals.md:{heading_line}: duplicate goal id `{id}`");
         }
@@ -479,6 +496,16 @@ fn require_metadata(
     value.ok_or_else(|| {
         anyhow::anyhow!("goals.md:{heading_line}: goal `{title}` is missing `{key}`")
     })
+}
+
+fn is_valid_goal_id(id: &str) -> bool {
+    !id.is_empty()
+        && !id.starts_with('-')
+        && !id.ends_with('-')
+        && !id.contains("--")
+        && id
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
 }
 
 /// Whether a `todo.md` heading marks capabilities Abbey deliberately does not
@@ -545,6 +572,10 @@ pub fn require_tasks_root(cwd: &Path) -> Result<PathBuf> {
     }
     bail!("improve: no tasks/ or check.sh under {}", cwd.display())
 }
+
+#[cfg(test)]
+#[path = "ledger/tests.rs"]
+mod strict_tests;
 
 #[cfg(test)]
 mod tests {
@@ -642,7 +673,7 @@ next-action: await roadmap approval
         assert_eq!(ledger.open_goals().count(), 1);
         assert!(ledger.pick_goal(None).is_none());
         assert!(matches!(
-            pick_work(&ledger, None, false),
+            pick_work(&ledger, None, false).expect("default selection"),
             WorkFocus::Stabilize
         ));
 
@@ -802,7 +833,7 @@ next-action: owner provisions runner
                 section: "Phase".into(),
             }],
         };
-        let w = pick_work(&ledger, None, false);
+        let w = pick_work(&ledger, None, false).expect("default selection");
         match w {
             WorkFocus::Goal { title, todo, .. } => {
                 assert_eq!(title, "Active");
@@ -825,11 +856,11 @@ next-action: owner provisions runner
             }],
         };
         assert!(matches!(
-            pick_work(&ledger, None, false),
+            pick_work(&ledger, None, false).expect("default selection"),
             WorkFocus::Stabilize
         ));
         assert!(matches!(
-            pick_work(&ledger, None, true),
+            pick_work(&ledger, None, true).expect("gate-only selection"),
             WorkFocus::Stabilize
         ));
     }
@@ -854,7 +885,7 @@ next-action: owner provisions runner
         assert_eq!(ledger.open_todo_count(), 0, "deferred items are not work");
         assert!(ledger.next_open_todo().is_none());
         assert!(matches!(
-            pick_work(&ledger, None, false),
+            pick_work(&ledger, None, false).expect("default selection"),
             WorkFocus::Stabilize
         ));
     }
@@ -883,7 +914,7 @@ next-action: owner provisions runner
             ledger.next_actionable_todo().map(|todo| todo.text.as_str()),
             Some("**Phase 3 — Claims and ledgers as executable specifications**")
         );
-        let focus = pick_work(&ledger, None, false);
+        let focus = pick_work(&ledger, None, false).expect("default selection");
         match focus {
             WorkFocus::Goal { title, todo, .. } => {
                 assert_eq!(title, "Current program");
@@ -930,11 +961,11 @@ next-action: owner provisions runner
         assert!(ledger.pick_goal(None).is_none());
         assert!(ledger.next_actionable_todo().is_none());
         assert!(matches!(
-            pick_work(&ledger, None, false),
+            pick_work(&ledger, None, false).expect("default selection"),
             WorkFocus::Stabilize
         ));
 
-        let explicit = pick_work(&ledger, Some("working ci"), false);
+        let explicit = pick_work(&ledger, Some("working ci"), false).expect("known explicit goal");
         match explicit {
             WorkFocus::Goal {
                 title,
