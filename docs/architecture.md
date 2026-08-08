@@ -38,7 +38,7 @@ Status key: **Current** = shipped · **Proposed** = designed, not claimed live �
 | `prompts` | Review/commit prompt builders |
 | `persona` / `roles` / `route_log` | Hybrid routing spine (`route_decision` → confidence/alt/fb on JSONL) |
 | `memory` | Records/filters plus explicit learned providers and space-isolated semantic index; SQLite default, WDBX under `--features wdbx` |
-| `mesh` | Typed, bounded bridge to ABI's authenticated 3–9-process loopback proof; not production multi-host |
+| `mesh` | Typed, bounded Unix bridge to ABI's authenticated 3–9-process loopback proof; non-Unix fails before spawn; not production multi-host |
 | `hybrid_loop` | Two-stage Gemma→Max run, correlated in the route log |
 | `wdbx_bridge` | `abbey wdbx` — `abi wdbx` passthrough + in-process `stats`/`checkpoint` |
 | `please_fix` | Last-failure prompt; capture summarizer (argv-safe) |
@@ -105,8 +105,9 @@ Status key: **Current** = shipped · **Proposed** = designed, not claimed live �
 - Opt-in learned semantic memory (`none|apple|openai`): summary+subject-tags privacy
   boundary, stable provider/model/revision/dimension/normalization spaces, SQLite vector
   table, and WDBX v2 sub-store per space; no cross-provider fallback
-- `abbey mesh local-demo --nodes 3..9`: typed authenticated local ABI process proof with
-  quorum/conflict/read-repair/child-teardown evidence; explicitly not production multi-host
+- `abbey mesh local-demo --nodes 3..9`: typed authenticated Unix-local ABI process proof
+  with quorum/conflict/read-repair/process-group teardown evidence; non-Unix fails before
+  spawn; explicitly not production multi-host
 - Prompt argv clamp + please-fix capture summarizer (avoids E2BIG on cursor-agent)
 - Media path attach (`--image`/`--video`/`/image`/`/video`) + thinking aliases
   (`--thinking`/`/think`) + `--approve-mcps` tool passthrough

@@ -631,7 +631,7 @@ pub fn cmd_doctor(state: &AbbeyState, cfg: &AgentConfig) -> Result<i32> {
     let _ = output::println(embedding_line);
     let mesh = crate::mesh::status(&abbey_cfg);
     let _ = output::println(format!(
-        "mesh proof: {} (authenticated local multi-process only; not production multi-host)",
+        "mesh proof: {} (authenticated Unix local multi-process only; not production multi-host)",
         if mesh.available {
             "available"
         } else {

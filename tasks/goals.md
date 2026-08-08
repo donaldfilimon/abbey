@@ -324,7 +324,8 @@ status: done
 `abbey subagents` catalog + `run --lanes/--peers/--jobs/--synthesize`. Abbey lanes
 (max/gemma/aviva/abbey/abi/reviewer/security/planner) via cursor-agent; peers
 (gemini/opencode/claude/codex) as same-host PATH CLIs. `parallel` remains the
-default-lane alias. `mesh local-demo` adds authenticated same-host process proof;
+default-lane alias. `mesh local-demo` adds authenticated same-host process proof on
+Unix, where process-group teardown is available; non-Unix fails before spawn and
 production multi-host stays Proposed.
 
 ## Proposed / OOS claims surface
@@ -464,11 +465,13 @@ paid OpenAI-compatible call remains unverified because no credential was supplie
 ## Authenticated local ABI multi-process proof
 status: done
 
-`abbey mesh status|nodes|local-demo --nodes 3..9 [--json]` resolves a real ABI binary,
-invokes the bounded authenticated loopback proof, validates quorum/election/failover/
-sharding/conflicts/read-repair/child teardown, and adds explicit `not_proof_of` fields.
-This is Current local evidence only; production separate-host/shared-compute operation
-remains Proposed.
+`abbey mesh status|nodes|local-demo --nodes 3..9 [--json]` resolves a real ABI binary on
+Unix, invokes the bounded authenticated loopback proof, validates quorum/election/
+failover/sharding/conflicts/read-repair/child teardown, and adds explicit
+`not_proof_of` fields. Timeout/overflow termination covers the complete process group;
+non-Unix fails before spawn because Windows Job Object teardown is not implemented.
+This is Current Unix-local evidence only; production separate-host/shared-compute
+operation remains Proposed.
 
 ## Skills, plugins, MCP, installers, and hooks cleanup
 status: done

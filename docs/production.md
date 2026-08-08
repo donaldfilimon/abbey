@@ -59,6 +59,11 @@ workflow is verified only by reproducing its checkout layout locally (fresh
 Windows OS allowlist is real System32 tools only (`whoami`, `hostname`, `where`,
 `systeminfo`) — not cmd builtins. Install via `install.ps1`.
 
+`abbey mesh local-demo` is Current only on Unix hosts, where Abbey starts ABI in a
+dedicated process group and can terminate every descendant on timeout or output overflow.
+It fails before spawning on Windows and other non-Unix hosts; Windows Job Object support
+has not been implemented or runtime-verified.
+
 Accelerator **host detection** (`abbey platform compute`) is Current. GPU/NPU/TPU
 **runtimes inside Abbey** are Out of scope — see `abbey claims oos`.
 

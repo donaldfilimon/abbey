@@ -2,18 +2,26 @@
 //!
 //! This module never invokes a shell, so a shell alias named `abi` cannot be
 //! mistaken for an executable. The proof is exact local process evidence on
-//! one host; it is not production multi-host deployment or shared compute.
+//! one Unix host, where Abbey can terminate the complete ABI process group;
+//! it is not production multi-host deployment or shared compute.
 
 use crate::config::{self, AbbeyConfig};
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
-use std::io::{self, Read};
 use std::ops::RangeInclusive;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
+
+#[cfg(unix)]
+use std::io::{self, Read};
+#[cfg(unix)]
 use std::process::{Child, Command, ExitStatus, Stdio};
+#[cfg(unix)]
 use std::sync::mpsc;
+#[cfg(unix)]
 use std::thread;
-use std::time::{Duration, Instant};
+#[cfg(unix)]
+use std::time::Instant;
 
 pub const MIN_NODES: usize = 3;
 pub const MAX_NODES: usize = 9;
@@ -22,17 +30,22 @@ pub const STORAGE_PROOF_SCOPE: &str = "isolated_in_process_exact_transaction_rep
 pub const ABBEY_SCOPE: &str = "single_host_authenticated_local_multi_process_only";
 pub const EXCLUDED_CLAIMS: [&str; 2] = ["production_multi_host", "shared_compute"];
 
+#[cfg(unix)]
 const MAX_PROOF_JSON_BYTES: usize = 1024 * 1024;
+#[cfg(unix)]
 const MAX_PROOF_STDERR_BYTES: usize = 1024 * 1024;
 const LOCAL_DEMO_TIMEOUT: Duration = Duration::from_secs(60);
+#[cfg(unix)]
 const CHILD_POLL_INTERVAL: Duration = Duration::from_millis(10);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg(unix)]
 enum StreamName {
     Stdout,
     Stderr,
 }
 
+#[cfg(unix)]
 impl std::fmt::Display for StreamName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -42,12 +55,14 @@ impl std::fmt::Display for StreamName {
     }
 }
 
+#[cfg(unix)]
 struct CapturedStream {
     name: StreamName,
     bytes: Vec<u8>,
     overflowed: bool,
 }
 
+#[cfg(unix)]
 struct BoundedOutput {
     status: ExitStatus,
     stdout: Vec<u8>,
@@ -116,7 +131,7 @@ struct AbiMeshProof {
 pub fn status(cfg: &AbbeyConfig) -> MeshStatus {
     let abi_bin = resolve_abi_bin(cfg);
     MeshStatus {
-        available: abi_bin.is_some(),
+        available: cfg!(unix) && abi_bin.is_some(),
         abi_bin: abi_bin.map(|path| path.display().to_string()),
         nodes_min: MIN_NODES,
         nodes_max: MAX_NODES,
@@ -133,6 +148,8 @@ pub fn nodes() -> RangeInclusive<usize> {
 
 /// Run `abi wdbx cluster local-demo <nodes> --json` and validate its evidence.
 pub fn local_demo(cfg: &AbbeyConfig, node_count: usize) -> Result<MeshProof> {
+    let _ = build_local_demo_argv(node_count)?;
+    ensure_local_demo_platform()?;
     let Some(bin) = resolve_abi_bin(cfg) else {
         bail!(
             "a real `abi` binary is required for the local mesh proof; set \
@@ -233,6 +250,7 @@ fn run_local_demo_with_bin(bin: &Path, node_count: usize) -> Result<MeshProof> {
     run_local_demo_with_bin_timeout(bin, node_count, LOCAL_DEMO_TIMEOUT)
 }
 
+#[cfg(unix)]
 fn run_local_demo_with_bin_timeout(
     bin: &Path,
     node_count: usize,
@@ -251,6 +269,17 @@ fn run_local_demo_with_bin_timeout(
     parse_proof(&output.stdout, node_count)
 }
 
+#[cfg(not(unix))]
+fn run_local_demo_with_bin_timeout(
+    _bin: &Path,
+    _node_count: usize,
+    _timeout: Duration,
+) -> Result<MeshProof> {
+    ensure_local_demo_platform()?;
+    unreachable!("unsupported platforms return an error")
+}
+
+#[cfg(unix)]
 fn run_bounded_child(bin: &Path, argv: &[String], timeout: Duration) -> Result<BoundedOutput> {
     let mut command = Command::new(bin);
     command
@@ -330,6 +359,7 @@ fn run_bounded_child(bin: &Path, argv: &[String], timeout: Duration) -> Result<B
     })
 }
 
+#[cfg(unix)]
 fn spawn_bounded_reader<R>(
     reader: R,
     name: StreamName,
@@ -342,6 +372,7 @@ where
     thread::spawn(move || read_bounded(reader, name, cap, &overflow_tx))
 }
 
+#[cfg(unix)]
 fn read_bounded<R: Read>(
     mut reader: R,
     name: StreamName,
@@ -376,6 +407,7 @@ fn read_bounded<R: Read>(
     })
 }
 
+#[cfg(unix)]
 fn join_reader(
     handle: thread::JoinHandle<io::Result<CapturedStream>>,
     name: StreamName,
@@ -397,10 +429,16 @@ fn kill_and_wait(child: &mut Child) {
     let _ = child.wait();
 }
 
+#[cfg(unix)]
+fn ensure_local_demo_platform() -> Result<()> {
+    Ok(())
+}
+
 #[cfg(not(unix))]
-fn kill_and_wait(child: &mut Child) {
-    let _ = child.kill();
-    let _ = child.wait();
+fn ensure_local_demo_platform() -> Result<()> {
+    bail!(
+        "mesh local-demo is supported only on Unix hosts because safe descendant-process teardown requires process groups"
+    )
 }
 
 fn parse_proof(json: &[u8], requested_nodes: usize) -> Result<MeshProof> {
@@ -510,6 +548,15 @@ mod tests {
         for invalid in [0, 2, 10, usize::MAX] {
             assert!(build_local_demo_argv(invalid).is_err());
         }
+    }
+
+    #[cfg(not(unix))]
+    #[test]
+    fn local_demo_fails_closed_before_resolving_or_spawning_abi() {
+        let error = local_demo(&AbbeyConfig::default(), 3)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("supported only on Unix hosts"), "{error}");
     }
 
     #[test]

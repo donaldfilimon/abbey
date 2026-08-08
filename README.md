@@ -63,7 +63,7 @@ abbey learn-review · abbey learn-stats       # aliases
 abbey os · abbey allowlist                   # allowlist panel (execute needs --confirm)
 abbey wdbx query                             # → `abi wdbx query <abbey store> --json`
 abbey wdbx stats                             # in-process (needs --features wdbx)
-abbey mesh local-demo --nodes 3 --json       # authenticated same-host ABI process proof
+abbey mesh local-demo --nodes 3 --json       # authenticated Unix same-host ABI process proof
 abbey completion zsh > ~/.zsh/completions/_abbey_clap
 ```
 
@@ -287,7 +287,7 @@ src/
   gitops.rs       local git helpers
   agent/          cursor · grok · fm · abi executors (argv.rs = per-backend grammars)
   memory/         trait + sqlite · wdbx + map · learned embedding providers/index
-  mesh.rs         typed bridge to ABI authenticated local multi-process proof
+  mesh.rs         typed Unix bridge to ABI authenticated local multi-process proof
   hybrid_loop.rs  Gemma interpret → Max implement
   wdbx_bridge.rs  abbey wdbx → abi wdbx
   please_fix.rs  last-failure prompt + capture summarizer

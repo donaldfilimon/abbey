@@ -249,7 +249,7 @@ pub enum Commands {
         #[command(subcommand)]
         cmd: Option<MemoryCmd>,
     },
-    /// Authenticated local ABI multi-process mesh proof (not production multi-host)
+    /// Authenticated local ABI multi-process proof on Unix (not production multi-host)
     Mesh {
         #[command(subcommand)]
         cmd: MeshCmd,
@@ -660,7 +660,7 @@ pub enum MeshCmd {
     Status,
     /// Show the bounded node counts accepted by local-demo
     Nodes,
-    /// Run ABI's authenticated loopback multi-process proof
+    /// Run ABI's authenticated loopback multi-process proof (Unix only)
     #[command(name = "local-demo")]
     LocalDemo {
         /// Independent ABI processes to spawn (3 through 9)

@@ -81,7 +81,7 @@ Routing decisions record **confidence**, **alternate**, and **fallback** on `rou
 | Full markdown renderer / LSP semantic highlight | **Out of scope** |
 | Multi-subagent fan-out (`abbey subagents` / `parallel`) | **Current** — named lanes + optional `--synthesize` |
 | Local distributed peers (`--peers gemini,claude,…`) | **Current** — PATH CLIs on this host |
-| ABI authenticated local multi-process proof (`abbey mesh local-demo`) | **Current** — one host, 3–9 processes |
+| ABI authenticated local multi-process proof (`abbey mesh local-demo`) | **Current on Unix** — one host, 3–9 processes; non-Unix fails before spawn |
 | Production multi-host / multi-GPU shared-compute mesh | **Proposed** (not established by local-demo) |
 | Host platform matrix + thread/GPU/NPU/TPU detect | **Current** — `abbey platform` (not accelerator runtime) |
 | GPU/NPU/TPU kernels inside Abbey | **Out of scope** |

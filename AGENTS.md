@@ -113,7 +113,7 @@ CLI: `abbey claims` · `abbey claims proposed|oos` · `abbey claims refuse lora|
 | Lexical similarity search (`memory similar`, n-gram cosine) | ✓ | | learned/semantic ranking |
 | Semantic/learned memory (`none|apple|openai`, opt-in) | ✓ | | paid remote-call proof without credentials |
 | Memory filter by source / timestamp / project | ✓ | | |
-| ABI authenticated local multi-process proof (`mesh local-demo`) | ✓ | | production multi-host proof |
+| ABI authenticated local multi-process proof (`mesh local-demo`, Unix only) | ✓ | | Windows process-tree support; production multi-host proof |
 | Production multi-host · multi-GPU · shared compute mesh | | ✓ | |
 | GPU/NPU/TPU compilation, training, inference in Abbey | | | ✓ |
 | Autonomous OS/service operation (no allowlist) | | | ✓ |

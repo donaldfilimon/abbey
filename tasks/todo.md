@@ -140,7 +140,7 @@ next slice, which would have sent Max to build a capability `claims refuse` exit
 |---|---|---|
 | Semantic memory search (**learned** embedding space) | **Current (opt-in)** | Explicit `none|apple|openai`, stable isolated spaces, SQLite/WDBX persistence, stale detection, pending/backfill, no fallback. Apple paraphrase proof passed locally; paid remote call remains unverified. |
 | Memory project/source/time filtering | **Current (local)** | `MemoryFilter` applies identical exact metadata and inclusive parsed RFC 3339 semantics to SQLite and WDBX. `memory put/search/similar/semantic/map/near/export` expose the shared metadata/filter flags. |
-| ABI authenticated local multi-process proof | **Current (single host)** | `abbey mesh local-demo --nodes 3..9`; typed quorum/failover/conflict/repair/teardown proof from the real ABI binary. |
+| ABI authenticated local multi-process proof | **Current (Unix single host)** | `abbey mesh local-demo --nodes 3..9`; typed quorum/failover/conflict/repair/process-group teardown proof from the real ABI binary. Non-Unix fails before spawn. |
 | Production multi-host · multi-GPU · shared compute mesh | **Proposed** | Loopback independent processes do not establish separate-host deployment or shared accelerator scheduling. |
 | GPU/NPU/TPU compilation · training · inference *in Abbey* | **Out of scope** | Abbey detects accelerators (`abbey platform`) but runs no kernels. Contradicts "backend is `cursor-agent`, not a reimplementation" (CLAUDE.md) |
 | Autonomous operation of services and the OS | **Out of scope** | Contradicts the safety invariant in CLAUDE.md: OS execution "must never run without `--confirm`, and only against the allowlist — this is a safety invariant, not a default to relax" |
@@ -154,7 +154,7 @@ next slice, which would have sent Max to build a capability `claims refuse` exit
 - [x] Stale/obsolete filtering, explicit one/all/force backfill, and write-preserving pending behavior
 - [x] Apple 512-dimensional English runtime and paraphrase-ranking proof; OpenAI-compatible mock contract
 - [x] Shared metadata/timestamp filters, fractional bound correctness, and zero-limit backend parity
-- [x] Authenticated bounded `mesh local-demo` bridge with typed 3–9-process proof and claim boundary
+- [x] Authenticated bounded Unix `mesh local-demo` bridge with typed 3–9-process proof, process-group teardown, non-Unix fail-closed behavior, and claim boundary
 - [x] Subagent decomposition, hybrid-stage deduplication, backend-aware capture audit, and shared slash/jobs parsing
 - [x] Skill provenance/divergence reporting; provider-explicit plugin inventory; secret-safe MCP inventory
 - [x] Proven broken shared Codex `computer-use` MCP entry removed; auth-needed/disabled entries retained

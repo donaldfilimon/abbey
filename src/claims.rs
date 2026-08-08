@@ -184,7 +184,7 @@ pub const CLAIMS: &[Claim] = &[
     Claim {
         name: "ABI WDBX authenticated local multi-process proof",
         status: Status::Current,
-        note: "abbey mesh local-demo; 3..=9 loopback ABI processes; not production multi-host",
+        note: "abbey mesh local-demo on Unix; 3..=9 loopback ABI processes; not production multi-host",
         instead: Some("ABBEY_ABI_BIN=<real binary> abbey mesh local-demo --nodes 3"),
     },
     // —— Proposed ——
@@ -363,7 +363,7 @@ pub fn refuse(verb: &str) -> Result<i32> {
         ),
         "multinode" | "multi-node" | "cluster" | "mesh" | "multi-gpu" | "distributed-mesh" => (
             "multi-host",
-            "Production multi-host / multi-GPU shared compute is Proposed. The authenticated local multi-process proof is Current.",
+            "Production multi-host / multi-GPU shared compute is Proposed. The authenticated local multi-process proof is Current on Unix hosts.",
         ),
         "npu" | "tpu" | "gpu" | "cuda" | "metal" | "ane" => (
             "GPU/NPU/TPU",
