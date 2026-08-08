@@ -13,17 +13,20 @@ Full agent guidance lives in [AGENTS.md](AGENTS.md) — read it too; this file d
 ```bash
 cargo build --release              # build
 cargo build --features wdbx        # + in-process WDBX memory backend (off by default)
-./install.sh                       # build + install to ~/.local/bin/abbey
+./install.sh                       # build + install to ~/.local/bin/abbey (Windows: install.ps1)
 ./check.sh                         # production gate — see below
 cargo test                         # default-feature tests only
 cargo test --features wdbx         # includes src/memory/wdbx.rs
 cargo test <test_name>             # single test
+cargo test --test cli_surface      # binary-level integration tests only
 cargo clippy --all-targets -- -D warnings
 cargo fmt --all
 abbey doctor                       # build stamp + persona/role/memory/os honesty check
 ```
 
-`./check.sh` is the merge bar — always run it before considering work done. It is fmt-check + clippy `-D warnings` + tests **for both feature sets**, plus the file-size guard. A bare `cargo test` never compiles `src/memory/wdbx.rs`, so it can pass while the gated backend is broken; that is exactly why the gate runs twice.
+`./check.sh` is the merge bar — always run it before considering work done. In order: a toolchain probe (a cheap `cargo check` that trips the `rust-version` gate during unit-graph construction, so a shadowed Homebrew cargo fails fast with the remedy printed), fmt-check, clippy `-D warnings`, tests — the last two **for both feature sets** — the file-size guard, then *soft* cross-compile checks for `x86_64-pc-windows-gnu` / `x86_64-unknown-linux-gnu` (skipped when the target isn't installed, and never a hard failure). A bare `cargo test` never compiles `src/memory/wdbx.rs`, so it can pass while the gated backend is broken; that is exactly why the gate runs twice.
+
+`tests/` holds two integration files that drive the **built binary** (`CARGO_BIN_EXE_abbey`), because some guarantees only exist once the process runs — real exit codes, real stdout/stderr, the SIGPIPE reset that happens before `main`. `cli_surface.rs` covers those, and runs every test under a throwaway `ABBEY_STATE_DIR` so nothing touches the developer's real chat id, memory store, or route log; keep that property when adding to it. `slash_parse.rs` covers the slash/CLI surface and does **not** override the state dir — it is only safe because its cases are read-only or `current_dir`-scoped to a temp project, so a state-mutating test does not belong there without adding the override first.
 
 ## Toolchain
 
@@ -67,6 +70,7 @@ Key modules (`src/`):
 | `cli.rs` | clap `Cli`/`Subcommand` definitions (Grok Build/Codex/Claude Code parity surface) |
 | `actions.rs` | `RunSpec` + `run_agent` — the one path every surface calls |
 | `commands.rs` | clap subcommand match → actions |
+| `prompts.rs` | review/commit prompt builders over `gitops` diffs |
 | `output.rs` | stdout helpers that treat a broken pipe as success (`abbey doctor \| head`) |
 | `build_info.rs` | build-stamp constants from `build.rs` (version/git/target/profile/host) |
 | `improve/` (`mod.rs`, `gate.rs`, `ledger.rs`, `report.rs`) | `abbey improve` — goal-ledger pick + local subagent lanes + `check.sh` gate; stops on green + no open slice, never auto-closes a goal to done |
@@ -85,7 +89,7 @@ Key modules (`src/`):
 | `surfaces.rs` | vision/cot/runtime honesty (viewer + matrix; weights/engine/host OOS) |
 | `deferred.rs` | OOS honesty pack — lora/weights/accel/shell/host (+ `abbey oos` index) |
 | `host.rs` | portable PATH/PATHEXT lookup, argv clamp, install/state path helpers |
-| `memory/` (`mod.rs`, `sqlite.rs`, `wdbx.rs`) | `MemoryStore` trait, shared reflect/validation, backend dispatch; add new backends here and they work everywhere |
+| `memory/` (`mod.rs`, `sqlite.rs`, `wdbx.rs`, `map.rs`, `similarity.rs`) | `MemoryStore` trait, shared reflect/validation, backend dispatch (add new backends here and they work everywhere); `map.rs` = deterministic 3-D map (topic × recency × consolidation), `similarity.rs` = `memory similar` over `abi_ai::text_embedding` feature-hash vectors — **lexical, not learned**; both axes and distances answer surface-form questions, never semantic ones |
 | `hybrid_loop.rs` | two-stage Gemma→Max run; stages linked by `correlation` in the route log |
 | `wdbx_bridge.rs` | `abbey wdbx` — passthrough to `abi wdbx`, plus in-process `stats`/`checkpoint` |
 | `learn.rs` | self-learn capture/digest/review/stats into `train_candidate` |
