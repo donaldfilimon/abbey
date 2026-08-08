@@ -81,11 +81,13 @@ design subtask never promotes the parent capability to Current.
     warning-denied cross-targets, gateway/membership/cluster/codec/compute/plugin/doc/
     skill checks, scratch WDBX init/compaction/reopen/cluster/Metal/CoreML smokes;
     check-work verifier until exact `VERDICT: PASS` (max 3 fix-and-rerun cycles)
-    — *partial 2026-08-08: `git diff --check` PASS, `./tools/check.sh` PASS (sizes, fmt,
-    clippy -D, build, workspace tests, bench guard, docs), dep-scan PASS (cargo-audit
-    0.22.2, 341 deps, only the two documented TFHE-rs ignores). NOT run this slice:
-    `check_full_fhe.sh`, cross-targets, Metal/CoreML smokes, check-work verifier —
-    separate evidence classes, still open*
+    — *verified 2026-08-08 on the committed ABI candidate: `git diff --check`, sizes,
+    `./tools/check.sh`, `check_full_fhe.sh`, RustSec with only the two documented
+    optional TFHE-rs exceptions, gateway/cluster/codec/compute/plugin/docs/skills,
+    Windows warning-denied foundation+WDBX and Linux foundation cross-checks, and the
+    independent check-work verifier all passed. Scratch WDBX/cluster and local Metal/
+    CoreML output-oracle smokes passed; CUDA/Vulkan runtime, separate-platform runtime,
+    and ANE residency remain explicitly unverified evidence classes.*
   - Preserve the two-review-unit commit structure (amend the unpublished code commit for
     the nested-help fix); fast-forward ABI local main only after PASS; publish on
     `codex/abbey-runtime-foundation`; record the exact merged ABI commit SHA
@@ -101,9 +103,11 @@ design subtask never promotes the parent capability to Current.
   - Rebuild Abbey against the pinned ABI commit; `./check.sh`, warning-denied rustdoc,
     release installation, semantic-memory/mesh/MCP/plugin/isolated-state smokes;
     repairs only via a temporary `codex/` integration branch + new check-work PASS
-    — *partial 2026-08-08: `./check.sh` green on the merged PR #4 state (pre-daemon-WIP
-    tree) against local ABI at the pinned SHA; rustdoc/release-install/smoke suite and
-    check-work PASS still open*
+    — *verified 2026-08-08 against the pinned ABI SHA: `./check.sh`, warning-denied
+    rustdoc in default+WDBX modes, RustSec, locked release build, isolated Unix installer,
+    Apple/SQLite/WDBX semantic persistence, real three-node ABI mesh, provider-explicit
+    plugin/MCP inventory, and isolated state smokes passed. The later daemon-client wave
+    has its own independent verifier and does not reopen this completed baseline.*
 - [ ] **Phase 2 — Self-hosted runners replace the broken hosted-CI assumption:**
   - Primary Ubuntu ARM64 VM runner (self-hosted, Linux, ARM64, abbey) + macOS adjunct
     runner + Win11 ARM evidence runner when provisioning/signing prerequisites exist;
@@ -129,7 +133,7 @@ design subtask never promotes the parent capability to Current.
     language with the fs4 boundary (flock Unix / `LockFileEx` Windows); restate the CI
     blocker narrative as observed facts (Actions enabled, `startup_failure`, zero jobs,
     floating sibling ABI dep as reproducibility defect), not a billing diagnosis
-    — *audited 2026-08-08: counts verified accurate (26 goals / 111+21 todos), TUI
+    — *audited 2026-08-08: counts verified accurate (26 goals / 112+20 todos), TUI
     narrative already reconciled under the abi-backed-independence reading, all lock
     language already states the fs4 flock/`LockFileEx` boundary, and every CI mention
     states observed facts with no billing diagnosis; no drift found*
