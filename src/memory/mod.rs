@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 pub use map::{coordinates, nearest_to, primary_topic};
-pub use similarity::{similar_to_id, similar_to_text};
+pub use similarity::{similar_to_id_filtered, similar_to_text, similar_to_text_filtered};
 pub use sqlite::SqliteMemory;
 #[cfg(feature = "wdbx")]
 pub use wdbx::{WdbxMemory, lock_store_dir};

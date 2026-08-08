@@ -201,6 +201,36 @@ impl MemoryStore for SqliteMemory {
         Ok(out)
     }
 
+    fn search_keyword_with(
+        &self,
+        query: &str,
+        filter: &MemoryFilter,
+        limit: usize,
+    ) -> Result<Vec<MemoryRecord>> {
+        let q = format!("%{}%", query.replace('%', ""));
+        let conn = self.conn.lock().expect("sqlite lock");
+        let mut stmt = conn.prepare(
+            "SELECT id, source_type, source_ref, timestamp, origin, payload, summary,
+                    tags_json, embedding_ref, confidence, provenance, retention,
+                    supersedes, classification, obsolete, project
+             FROM memory
+             WHERE obsolete=0 AND (summary LIKE ?1 OR payload LIKE ?1 OR provenance LIKE ?1)
+             ORDER BY timestamp DESC",
+        )?;
+        let rows = stmt.query_map(params![q], Self::row_to_rec)?;
+        let mut out = Vec::new();
+        for row in rows {
+            let record = row?;
+            if filter.matches(&record) {
+                out.push(record);
+                if out.len() >= limit {
+                    break;
+                }
+            }
+        }
+        Ok(out)
+    }
+
     fn filter_with(&self, filter: &MemoryFilter, limit: usize) -> Result<Vec<MemoryRecord>> {
         let conn = self.conn.lock().expect("sqlite lock");
         let mut stmt = conn.prepare(
@@ -281,6 +311,35 @@ mod tests {
         let record = db.get("legacy").unwrap().unwrap();
         assert_eq!(record.summary, "kept");
         assert_eq!(record.project, "");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn filtered_keyword_search_limits_after_the_keyword_predicate() {
+        let dir = std::env::temp_dir().join(format!("abbey-mem-deep-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = SqliteMemory::open(&SqliteMemory::path_for_state_dir(&dir)).unwrap();
+        let mut base = MemoryRecord::new_stm("ordinary", "payload");
+        base.project = "project-a".into();
+        base.provenance = "test".into();
+        for index in 0..1001 {
+            let mut record = base.clone();
+            record.id = format!("newer-{index:04}");
+            record.timestamp = format!("2026-08-08T12:{:02}:00Z", index % 60);
+            db.store(record).unwrap();
+        }
+        let mut older_match = base;
+        older_match.id = "older-match".into();
+        older_match.summary = "needle".into();
+        older_match.timestamp = "2026-08-01T00:00:00Z".into();
+        db.store(older_match).unwrap();
+        let filter =
+            MemoryFilter::new(None, None, None, None, Some("project-a".into()), None, None)
+                .unwrap();
+        let hits = db.search_keyword_with("needle", &filter, 1).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].id, "older-match");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

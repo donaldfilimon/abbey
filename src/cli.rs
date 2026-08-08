@@ -603,6 +603,8 @@ pub enum MemoryCmd {
         id: Option<String>,
         #[arg(long, default_value_t = 10)]
         limit: usize,
+        #[command(flatten)]
+        filter: MemoryFilterArgs,
     },
     /// Export layer as JSONL (train_candidate requires provenance on records)
     Export {

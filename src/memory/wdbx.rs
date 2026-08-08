@@ -30,9 +30,6 @@ use std::time::{Duration, Instant};
 /// KV key namespace for Abbey memory records inside a shared WDBX store.
 const KEY_PREFIX: &str = "mem/";
 
-/// Scan ceiling, mirroring `SqliteMemory::filter`'s `LIMIT 1000`.
-const SCAN_LIMIT: usize = 1000;
-
 /// How long to wait for another process to finish before giving up.
 const LOCK_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -98,7 +95,6 @@ impl WdbxMemory {
             .collect();
         // BTreeMap iterates by key (uuid) — impose the SQLite backend's ordering.
         out.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
-        out.truncate(SCAN_LIMIT);
         out
     }
 
@@ -210,6 +206,26 @@ impl MemoryStore for WdbxMemory {
                 r.summary.to_ascii_lowercase().contains(&needle)
                     || r.payload.to_ascii_lowercase().contains(&needle)
                     || r.provenance.to_ascii_lowercase().contains(&needle)
+            })
+            .take(limit)
+            .collect())
+    }
+
+    fn search_keyword_with(
+        &self,
+        query: &str,
+        filter: &MemoryFilter,
+        limit: usize,
+    ) -> Result<Vec<MemoryRecord>> {
+        let needle = query.to_ascii_lowercase();
+        Ok(self
+            .scan()
+            .into_iter()
+            .filter(|record| !record.obsolete && filter.matches(record))
+            .filter(|record| {
+                record.summary.to_ascii_lowercase().contains(&needle)
+                    || record.payload.to_ascii_lowercase().contains(&needle)
+                    || record.provenance.to_ascii_lowercase().contains(&needle)
             })
             .take(limit)
             .collect())

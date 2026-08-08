@@ -243,20 +243,26 @@ pub fn cmd_memory_store(state: &AbbeyState, cmd: MemoryCmd) -> Result<i32> {
             }
             Ok(0)
         }
-        MemoryCmd::Similar { query, id, limit } => {
+        MemoryCmd::Similar {
+            query,
+            id,
+            limit,
+            filter,
+        } => {
+            let filter = query_filter(filter, None)?;
             let hits = match id {
                 Some(anchor) => {
                     let Some(rec) = mem.get(&anchor)? else {
                         bail!("memory id not found: {anchor}");
                     };
                     println!("anchor  {}", rec.summary);
-                    memory::similar_to_id(mem.as_ref(), &anchor, limit)?
+                    memory::similar_to_id_filtered(mem.as_ref(), &anchor, &filter, limit)?
                 }
                 None => {
                     if query.trim().is_empty() {
                         bail!("usage: abbey memory similar <query> | --id <id>");
                     }
-                    memory::similar_to_text(mem.as_ref(), &query, limit)?
+                    memory::similar_to_text_filtered(mem.as_ref(), &query, &filter, limit)?
                 }
             };
             if hits.is_empty() {
