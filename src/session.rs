@@ -3,7 +3,7 @@
 use crate::agent::{AgentBackend, AgentConfig, Worktree, abi_normalize_model, run_resilient};
 use crate::cli::{Cli, ExecMode};
 use crate::config;
-use crate::hybrid_loop::{self, STAGE_IMPLEMENT, STAGE_INTERPRET};
+use crate::hybrid_loop::{self, STAGE_IMPLEMENT, STAGE_INTERPRET, StageRequest};
 use crate::learn;
 use crate::media;
 use crate::memory::{self, MemoryRecord, MemoryStore};
@@ -14,7 +14,6 @@ use crate::route_log;
 use crate::state::AbbeyState;
 use abi_ai::AgentProfile;
 use anyhow::{Result, bail};
-use std::process::ExitStatus;
 
 pub fn apply_global_flags(cli: &Cli, state: &AbbeyState, cfg: &mut AgentConfig) -> Result<()> {
     // `fm` and `abi` keep conversations in transcript files under the state
@@ -170,52 +169,6 @@ fn record_activity(
     }
 }
 
-struct LoopStageResult {
-    status: ExitStatus,
-    output: String,
-    model: String,
-}
-
-#[allow(clippy::too_many_arguments)]
-fn run_loop_stage(
-    base: &AgentConfig,
-    state: &AbbeyState,
-    persona: AgentProfile,
-    role: WorkerRole,
-    requested_model: &str,
-    body: &str,
-    prefs: &str,
-    cwd: &str,
-    correlation: &str,
-    stage: &str,
-) -> Result<LoopStageResult> {
-    let mut stage_cfg = base.clone();
-    stage_cfg.print = true;
-    // Foundation Models and ABI use role text, not cursor model bindings.
-    if !matches!(stage_cfg.backend, AgentBackend::Fm | AgentBackend::Abi) {
-        stage_cfg.model = requested_model.to_string();
-    }
-    let prompt = assemble_prompt(persona, role, body, prefs);
-    let (status, output, stderr) = stage_cfg.run_capture(None, &[prompt])?;
-    if !stderr.trim().is_empty() {
-        eprint!("{stderr}");
-    }
-    hybrid_loop::log_stage(
-        &state.state_dir,
-        cwd,
-        correlation,
-        stage,
-        role,
-        &stage_cfg.model,
-        persona.label(),
-    )?;
-    Ok(LoopStageResult {
-        status,
-        output,
-        model: stage_cfg.model,
-    })
-}
-
 pub fn hybrid_run(
     cfg: &mut AgentConfig,
     state: &AbbeyState,
@@ -323,24 +276,22 @@ pub fn hybrid_loop_run(
     record_activity(state, persona, WorkerRole::Gemma, &user, &gemma);
 
     // ---- stage 1: Gemma interprets ----
-    let stage1 = run_loop_stage(
+    let stage1_body = hybrid_loop::interpret_body(&user);
+    let stage1 = hybrid_loop::run_stage(
         cfg,
         state,
-        persona,
-        WorkerRole::Gemma,
-        &gemma,
-        &hybrid_loop::interpret_body(&user),
-        &prefs,
-        &cwd,
-        &correlation,
-        STAGE_INTERPRET,
+        StageRequest {
+            persona,
+            role: WorkerRole::Gemma,
+            requested_model: &gemma,
+            body: &stage1_body,
+            prefs: &prefs,
+            cwd: &cwd,
+            correlation: &correlation,
+            stage: STAGE_INTERPRET,
+        },
     )?;
-    if stage1.output.trim().is_empty() {
-        bail!(
-            "hybrid-loop: interpret stage produced no output (exit {})",
-            stage1.status.code().unwrap_or(1)
-        );
-    }
+    hybrid_loop::require_interpretation(&stage1)?;
     println!(
         "===== stage:interpret role:gemma model:{} =====",
         stage1.model
@@ -349,17 +300,20 @@ pub fn hybrid_loop_run(
     println!();
 
     // ---- stage 2: Max implements ----
-    let stage2 = run_loop_stage(
+    let stage2_body = hybrid_loop::implement_body(&user, &stage1.output);
+    let stage2 = hybrid_loop::run_stage(
         cfg,
         state,
-        persona,
-        WorkerRole::Max,
-        &max,
-        &hybrid_loop::implement_body(&user, &stage1.output),
-        &prefs,
-        &cwd,
-        &correlation,
-        STAGE_IMPLEMENT,
+        StageRequest {
+            persona,
+            role: WorkerRole::Max,
+            requested_model: &max,
+            body: &stage2_body,
+            prefs: &prefs,
+            cwd: &cwd,
+            correlation: &correlation,
+            stage: STAGE_IMPLEMENT,
+        },
     )?;
     println!(
         "\n===== stage:implement role:max model:{} =====",

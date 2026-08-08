@@ -2,7 +2,7 @@
 //!
 //! Single machine-readable source for honesty. Docs and `AGENTS.md` stay the
 //! human table; this module powers `abbey claims` and refuse paths so Proposed
-//! items (embeddings, multi-node) and OOS items (LoRA, local weights) are never
+//! items (production multi-host) and OOS items (LoRA, local weights) are never
 //! silently implied by a missing error.
 
 use crate::output;
@@ -165,29 +165,34 @@ pub const CLAIMS: &[Claim] = &[
     Claim {
         name: "lexical similarity search over memory (feature-hash cosine)",
         status: Status::Current,
-        note: "abi-ai n-gram hash + cosine at query time — no trained semantics",
+        note: "abi-ai n-gram hash + cosine at query time — independent of learned providers",
         instead: Some("abbey memory similar <query> | --id <id>"),
+    },
+    Claim {
+        name: "semantic / learned memory embedding space",
+        status: Status::Current,
+        note: "opt-in apple|openai provider; space-isolated SQLite/WDBX persistence; \
+               Apple paraphrase ranking locally verified; remote live call unverified",
+        instead: Some("abbey memory semantic · memory embed status|--all"),
+    },
+    Claim {
+        name: "memory filter by source / timestamp / project",
+        status: Status::Current,
+        note: "shared exact metadata plus inclusive RFC 3339 bounds on SQLite and WDBX",
+        instead: Some("memory search|similar|semantic|map|near|export filter flags"),
+    },
+    Claim {
+        name: "ABI WDBX authenticated local multi-process proof",
+        status: Status::Current,
+        note: "abbey mesh local-demo; 3..=9 loopback ABI processes; not production multi-host",
+        instead: Some("ABBEY_ABI_BIN=<real binary> abbey mesh local-demo --nodes 3"),
     },
     // —— Proposed ——
     Claim {
-        name: "semantic / learned memory embedding space",
+        name: "production multi-host · multi-GPU · shared compute mesh",
         status: Status::Proposed,
-        note: "in-process embedder is a deterministic n-gram hash, not trained; \
-               same-idea-different-words still misses",
-        instead: Some("abbey memory similar (lexical) · map|near|search"),
-    },
-    Claim {
-        name: "WDBX vector put_vector / embedding search",
-        status: Status::Proposed,
-        note: "vectors are computed per query and never stored; abi-wdbx vector \
-               storage stays unwired",
-        instead: Some("abbey memory similar · abbey wdbx query (KV)"),
-    },
-    Claim {
-        name: "multi-node · multi-GPU · shared compute mesh",
-        status: Status::Proposed,
-        note: "abi-wdbx has cluster/remote_compute refs; Abbey does not orchestrate nodes",
-        instead: Some("abbey subagents --peers (local PATH CLIs)"),
+        note: "the authenticated local multi-process proof does not establish separate-host deployment",
+        instead: Some("abbey mesh local-demo · abbey subagents --peers (same host)"),
     },
     // —— Out of scope ——
     Claim {
@@ -335,7 +340,7 @@ fn print_claim(c: &Claim) {
 
 fn print_footer() {
     println!(
-        "\nrefuse:  abbey claims refuse <embeddings|lora|multinode|…>  (exit 2)\n\
+        "\nrefuse:  abbey claims refuse <lora|multinode|npu|…>  (exit 2)\n\
          docs:    AGENTS.md claims gate · docs/architecture.md · docs/identity.md\n\
          rule:    Proposed/OOS verbs must fail honestly — never silent success"
     );
@@ -345,18 +350,20 @@ fn print_footer() {
 pub fn refuse(verb: &str) -> Result<i32> {
     let key = verb.trim().to_ascii_lowercase();
     let (claim_key, detail) = match key.as_str() {
-        "embed" | "embedding" | "embeddings" | "semantic" | "vector" | "vectors" => (
-            "embedding",
-            "Learned/semantic embeddings are Proposed. Abbey's in-process embedder \
-             is a deterministic n-gram hash — try `abbey memory similar`.",
-        ),
+        "embed" | "embedding" | "embeddings" | "semantic" | "vector" | "vectors" => {
+            eprintln!(
+                "abbey: semantic embeddings are Current when an explicit apple|openai provider \
+                 is configured; use `abbey memory embed status`"
+            );
+            return Ok(0);
+        }
         "lora" | "finetune" | "fine-tune" | "fine_tune" | "train-weights" => (
             "lora",
             "Fine-tuning / LoRA is Out of scope. train_candidate is curation only.",
         ),
         "multinode" | "multi-node" | "cluster" | "mesh" | "multi-gpu" | "distributed-mesh" => (
-            "multi-node",
-            "Multi-node / multi-GPU mesh is Proposed. Local PATH peers are Current.",
+            "multi-host",
+            "Production multi-host / multi-GPU shared compute is Proposed. The authenticated local multi-process proof is Current.",
         ),
         "npu" | "tpu" | "gpu" | "cuda" | "metal" | "ane" => (
             "GPU/NPU/TPU",
@@ -393,7 +400,7 @@ pub fn refuse(verb: &str) -> Result<i32> {
         other => {
             eprintln!(
                 "abbey: unknown refuse topic `{other}`\n\
-                 try: embeddings · lora · multinode · npu · weights · shell · cost · mcp-host"
+                 try: lora · multinode · npu · weights · shell · cost · mcp-host"
             );
             return Ok(2);
         }
@@ -432,7 +439,8 @@ pub fn dispatch(args: &[String]) -> Result<i32> {
                    abbey claims <keyword>    # search\n\
                    abbey claims refuse <topic>\n\
                  \n\
-                 topics: embeddings · lora · multinode · npu · weights · shell · cost · mcp-host"
+                 topics: lora · multinode · npu · weights · shell · cost · mcp-host\n\
+                 note: embeddings are Current; `claims refuse embeddings` reports that status"
             );
             return Ok(0);
         }
@@ -443,7 +451,7 @@ pub fn dispatch(args: &[String]) -> Result<i32> {
         "refuse" | "no" | "deny" => {
             let topic = args.get(1).map(String::as_str).unwrap_or("");
             if topic.is_empty() {
-                bail!("usage: abbey claims refuse <embeddings|lora|multinode|…>");
+                bail!("usage: abbey claims refuse <lora|multinode|npu|…>");
             }
             refuse(topic)
         }
@@ -468,22 +476,19 @@ mod tests {
     #[test]
     fn gate_has_all_three_statuses() {
         assert!(by_status(Status::Current).count() >= 14);
-        assert!(by_status(Status::Proposed).count() >= 3);
+        assert!(by_status(Status::Proposed).next().is_some());
         assert!(by_status(Status::OutOfScope).count() >= 5);
     }
 
     #[test]
-    fn embeddings_are_proposed_not_current() {
+    fn embeddings_are_current_and_explicitly_scoped() {
         let semantic = CLAIMS
             .iter()
             .find(|c| c.name.starts_with("semantic"))
             .expect("semantic embedding claim");
-        assert_eq!(semantic.status, Status::Proposed);
-        assert!(
-            lookup("embedding")
-                .iter()
-                .any(|c| c.status == Status::Proposed)
-        );
+        assert_eq!(semantic.status, Status::Current);
+        assert!(semantic.note.contains("opt-in"));
+        assert!(semantic.note.contains("remote live call unverified"));
     }
 
     #[test]
@@ -503,8 +508,8 @@ mod tests {
     }
 
     #[test]
-    fn refuse_embeddings_exits_two() {
-        assert_eq!(refuse("embeddings").unwrap(), 2);
+    fn refuse_only_rejects_proposed_or_out_of_scope_topics() {
+        assert_eq!(refuse("embeddings").unwrap(), 0);
         assert_eq!(refuse("lora").unwrap(), 2);
         assert_eq!(refuse("multinode").unwrap(), 2);
         assert_eq!(refuse("shell").unwrap(), 2);
@@ -514,8 +519,8 @@ mod tests {
     }
 
     #[test]
-    fn lookup_multinode() {
-        let hits = lookup("multi-node");
+    fn lookup_production_multihost() {
+        let hits = lookup("multi-host");
         assert!(hits.iter().any(|c| c.status == Status::Proposed));
     }
 }

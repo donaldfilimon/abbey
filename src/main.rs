@@ -21,6 +21,7 @@ mod inventory;
 mod learn;
 mod media;
 mod memory;
+mod mesh;
 mod models;
 mod os_control;
 mod output;
@@ -94,7 +95,10 @@ fn main() -> ExitCode {
 fn real_main() -> Result<i32> {
     let cli = Cli::parse();
     let state = AbbeyState::load()?;
-    let mut cfg = AgentConfig::default().with_resolved_agent()?;
+    let mut cfg = AgentConfig::default();
+    if command_needs_executor(&cli) {
+        cfg = cfg.with_resolved_agent()?;
+    }
 
     apply_global_flags(&cli, &state, &mut cfg)?;
 
@@ -126,4 +130,45 @@ fn real_main() -> Result<i32> {
     }
 
     commands::run_cli(cli, state, cfg)
+}
+
+/// Local inventory/index/proof commands do not execute the selected model
+/// backend and therefore must remain usable when that backend is unavailable.
+fn command_needs_executor(cli: &Cli) -> bool {
+    !matches!(
+        &cli.command,
+        Some(
+            Commands::Memory { .. }
+                | Commands::Mesh { .. }
+                | Commands::Agents
+                | Commands::Skills { .. }
+                | Commands::Plugins { .. }
+                | Commands::Mcp { .. }
+                | Commands::Acp { .. }
+        )
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn local_control_plane_commands_do_not_resolve_the_model_executor() {
+        for args in [
+            &["abbey", "mcp", "status"][..],
+            &["abbey", "plugins"][..],
+            &["abbey", "memory", "embed", "status"][..],
+            &["abbey", "mesh", "status"][..],
+        ] {
+            let cli = Cli::try_parse_from(args).unwrap();
+            assert!(!command_needs_executor(&cli), "args={args:?}");
+        }
+    }
+
+    #[test]
+    fn generation_still_requires_the_selected_executor() {
+        let cli = Cli::try_parse_from(["abbey", "print", "hello"]).unwrap();
+        assert!(command_needs_executor(&cli));
+    }
 }

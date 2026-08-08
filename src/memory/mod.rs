@@ -1,6 +1,8 @@
 //! Replaceable memory backends (SQLite interim; WDBX later).
 
+pub mod embedding;
 pub mod map;
+pub mod semantic;
 pub mod similarity;
 mod sqlite;
 #[cfg(feature = "wdbx")]
@@ -10,11 +12,18 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-pub use map::{coordinates, nearest_to, primary_topic};
+pub use embedding::build_embedder;
+pub use map::{coordinates, nearest, primary_topic};
+pub use semantic::{
+    backfill_with_force as backfill_embeddings_with_force, embed_one_if_needed,
+    search as search_semantic, status as embedding_status,
+};
 pub use similarity::{similar_to_id_filtered, similar_to_text, similar_to_text_filtered};
 pub use sqlite::SqliteMemory;
 #[cfg(feature = "wdbx")]
 pub use wdbx::{WdbxMemory, lock_store_dir};
+
+use semantic::{EmbeddingStatus, SemanticHit, StoredEmbedding};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoryRecord {
@@ -105,11 +114,15 @@ impl MemoryFilter {
     ) -> anyhow::Result<Self> {
         let since = normalize_bound(since, "since")?;
         let until = normalize_bound(until, "until")?;
-        if since
-            .as_ref()
-            .zip(until.as_ref())
-            .is_some_and(|(a, b)| a > b)
-        {
+        let reversed = since
+            .as_deref()
+            .zip(until.as_deref())
+            .is_some_and(|(a, b)| {
+                let a = chrono::DateTime::parse_from_rfc3339(a).expect("normalized since");
+                let b = chrono::DateTime::parse_from_rfc3339(b).expect("normalized until");
+                a > b
+            });
+        if reversed {
             anyhow::bail!("memory filter --since must not be later than --until");
         }
         Ok(Self {
@@ -344,6 +357,9 @@ pub trait MemoryStore {
         filter: &MemoryFilter,
         limit: usize,
     ) -> anyhow::Result<Vec<MemoryRecord>> {
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
         let needle = query.to_ascii_lowercase();
         Ok(self
             .filter_with(filter, 1000)?
@@ -377,6 +393,23 @@ pub trait MemoryStore {
     /// Store `new_rec` and mark `old_id` obsolete, preserving both.
     fn supersede(&self, old_id: &str, new_rec: MemoryRecord) -> anyhow::Result<()>;
     fn reflect(&self) -> anyhow::Result<ReflectReport>;
+    /// Upsert a learned vector in its exact provider/model space.
+    fn put_embedding(&self, embedding: StoredEmbedding) -> anyhow::Result<()>;
+    /// Live memories whose vector in `space_id` is absent or content-stale.
+    fn embedding_candidates(
+        &self,
+        space_id: &str,
+        limit: usize,
+    ) -> anyhow::Result<Vec<MemoryRecord>>;
+    fn embedding_status(&self, space_id: &str) -> anyhow::Result<EmbeddingStatus>;
+    fn embedding_is_current(&self, memory_id: &str, space_id: &str) -> anyhow::Result<bool>;
+    fn semantic_search(
+        &self,
+        space_id: &str,
+        query: &[f32],
+        filter: &MemoryFilter,
+        limit: usize,
+    ) -> anyhow::Result<Vec<SemanticHit>>;
 }
 
 #[cfg(test)]
@@ -424,6 +457,36 @@ mod filter_tests {
                 Some("2026-08-08T00:00:00Z".into()),
             )
             .is_err()
+        );
+    }
+
+    #[test]
+    fn reversed_fractional_offset_bounds_compare_instants_not_strings() {
+        // Lexically, `...00.9Z` sorts before `...00.10Z`; temporally it is later.
+        assert!(
+            MemoryFilter::new(
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some("2026-08-08T00:00:00.9Z".into()),
+                Some("2026-08-08T00:00:00.10Z".into()),
+            )
+            .is_err()
+        );
+        // Different offsets that denote equal instants remain a valid inclusive range.
+        assert!(
+            MemoryFilter::new(
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some("2026-08-08T08:00:00-04:00".into()),
+                Some("2026-08-08T12:00:00Z".into()),
+            )
+            .is_ok()
         );
     }
 }

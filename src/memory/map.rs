@@ -1,8 +1,8 @@
 //! Interpretable 3-D memory map: topic × recency × consolidation.
 //!
-//! Axes are deterministic — Abbey has no embedder, so distances answer
-//! "same subject / around this time / this consolidation depth", not semantic
-//! similarity in a learned space.
+//! Axes are deterministic and separate from the optional learned provider, so
+//! distances answer "same subject / around this time / this consolidation
+//! depth", not semantic similarity in an embedding space.
 
 use super::MemoryRecord;
 
@@ -91,6 +91,7 @@ pub fn nearest(
 }
 
 /// Neighbours of `anchor_id` in the 3-D map (anchor itself excluded).
+#[allow(dead_code)] // retained compatibility API; current CLI applies filters via `nearest`
 pub fn nearest_to(
     store: &dyn super::MemoryStore,
     anchor_id: &str,

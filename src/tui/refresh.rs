@@ -57,9 +57,8 @@ impl App {
     }
 
     pub fn refresh_memory(&mut self) {
-        let backend = config::AbbeyConfig::load()
-            .unwrap_or_default()
-            .memory_backend;
+        let abbey_cfg = config::AbbeyConfig::load().unwrap_or_default();
+        let backend = abbey_cfg.memory_backend.clone();
         let mut lines = vec![memory::backend_status(&self.state.state_dir, &backend)];
         let opened = memory::open_backend_with_timeout(
             &self.state.state_dir,
@@ -68,6 +67,23 @@ impl App {
         );
         match opened {
             Ok(mem) => {
+                match memory::build_embedder(&abbey_cfg.embeddings) {
+                    Ok(embedder) if embedder.space().provider == "none" => {
+                        lines.push("semantic disabled (lexical search remains available)".into());
+                    }
+                    Ok(embedder) => match memory::embedding_status(mem.as_ref(), embedder.as_ref())
+                    {
+                        Ok(status) => lines.push(format!(
+                            "semantic {} {}d ready={} pending={}",
+                            embedder.space().provider,
+                            embedder.space().dimension,
+                            status.ready,
+                            status.pending()
+                        )),
+                        Err(error) => lines.push(format!("semantic index unavailable: {error}")),
+                    },
+                    Err(error) => lines.push(format!("semantic provider unavailable: {error}")),
+                }
                 for layer in ["stm", "ltm", "activity", "train_candidate"] {
                     let n = mem
                         .filter(Some(layer), None, 500)

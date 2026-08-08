@@ -1,28 +1,17 @@
-//! MCP + ACP inventory and management helpers.
+//! MCP configuration/provider views and ACP peer launch helpers.
 //!
-//! Abbey is **not** an MCP host or ACP host runtime. This module:
-//! - reads configured MCP servers from standard config files
-//! - discovers ACP-capable peer agents on PATH
-//! - forwards `abbey mcp …` management verbs to cursor-agent when needed
-//!
-//! Runtime tool use during a generation still happens inside cursor-agent
-//! (see `--approve-mcps`).
+//! Abbey is not an MCP or ACP host runtime. Local MCP inventory is available
+//! under every Abbey model backend; mutations are routed only after the caller
+//! names a concrete external provider.
+
+pub mod mcp;
 
 use crate::agent::{AgentConfig, which_bin};
 use anyhow::{Context, Result, bail};
-use serde_json::Value;
-use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
-#[derive(Debug, Clone)]
-pub struct McpServerEntry {
-    pub name: String,
-    pub command: String,
-    pub args: Vec<String>,
-    pub source: PathBuf,
-    pub disabled: bool,
-}
+pub use mcp::{McpProvider, load_mcp_inventory, load_mcp_servers, mcp_config_sources};
 
 #[derive(Debug, Clone)]
 pub struct AcpPeer {
@@ -34,120 +23,87 @@ pub struct AcpPeer {
     pub note: &'static str,
 }
 
-/// Config files cursor-agent / common hosts consult.
-pub fn mcp_config_candidates(cwd: &Path) -> Vec<PathBuf> {
-    let mut out = Vec::new();
-    out.push(cwd.join(".cursor/mcp.json"));
-    out.push(cwd.join(".mcp.json"));
-    if let Some(home) = dirs::home_dir() {
-        out.push(home.join(".cursor/mcp.json"));
-        out.push(home.join(".claude/mcp.json"));
-        out.push(home.join(".claude.json"));
-        out.push(home.join("Library/Application Support/Claude/claude_desktop_config.json"));
-        out.push(home.join(".config/claude/mcp.json"));
-    }
-    out
-}
-
-fn extract_servers(value: &Value, source: &Path) -> Vec<McpServerEntry> {
-    let Some(map) = value
-        .get("mcpServers")
-        .or_else(|| value.get("mcp_servers"))
-        .and_then(|v| v.as_object())
-    else {
-        return Vec::new();
-    };
-    let mut out = Vec::new();
-    for (name, cfg) in map {
-        let disabled = cfg
-            .get("disabled")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        let command = cfg
-            .get("command")
-            .and_then(|v| v.as_str())
-            .unwrap_or("(missing command)")
-            .to_string();
-        let args = cfg
-            .get("args")
-            .and_then(|v| v.as_array())
-            .map(|a| {
-                a.iter()
-                    .filter_map(|x| x.as_str().map(str::to_string))
-                    .collect()
-            })
-            .unwrap_or_default();
-        out.push(McpServerEntry {
-            name: name.clone(),
-            command,
-            args,
-            source: source.to_path_buf(),
-            disabled,
-        });
-    }
-    out
-}
-
-pub fn load_mcp_servers(cwd: &Path) -> Result<Vec<(PathBuf, Vec<McpServerEntry>)>> {
-    let mut groups = Vec::new();
-    for path in mcp_config_candidates(cwd) {
-        if !path.is_file() {
-            continue;
-        }
-        let text = fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
-        let value: Value =
-            serde_json::from_str(&text).with_context(|| format!("parse {}", path.display()))?;
-        let servers = extract_servers(&value, &path);
-        groups.push((path, servers));
-    }
-    Ok(groups)
-}
-
 pub fn print_mcp_status(cwd: &Path) -> Result<i32> {
-    println!("abbey mcp — config inventory (not an MCP host runtime)");
+    println!("abbey mcp — configured inventory (Abbey is not an MCP host)");
     println!("cwd: {}", cwd.display());
-    let groups = load_mcp_servers(cwd)?;
-    if groups.is_empty() {
-        println!("(no mcp.json files found)");
-        println!(
-            "tip: create ~/.cursor/mcp.json with an `mcpServers` object,\n\
-             then: abbey mcp list   # cursor-agent view"
-        );
+    let inventory = load_mcp_inventory(cwd);
+    if inventory.groups.is_empty() && inventory.diagnostics.is_empty() {
+        println!("(no MCP configuration files found)");
+        println!("tip: abbey mcp paths");
         return Ok(0);
     }
+
     let mut total = 0usize;
-    for (path, servers) in &groups {
-        println!("\n{}  ({} server(s))", path.display(), servers.len());
-        if servers.is_empty() {
-            println!("  (empty mcpServers object)");
-            continue;
+    for group in &inventory.groups {
+        println!(
+            "\n{}  [{}; {} server(s)]",
+            group.source.path.display(),
+            group
+                .source
+                .providers
+                .iter()
+                .map(|provider| provider.label())
+                .collect::<Vec<_>>()
+                .join("+"),
+            group.servers.len()
+        );
+        if group.servers.is_empty() {
+            println!("  (configured file has no MCP servers)");
         }
-        for s in servers {
+        for server in &group.servers {
             total += 1;
-            let mark = if s.disabled { "off" } else { "on " };
-            let args = if s.args.is_empty() {
-                String::new()
+            let state = if server.disabled {
+                "configured, disabled"
             } else {
-                format!(" {}", s.args.join(" "))
+                "configured, enabled"
+            };
+            let arguments = if server.args.is_empty() {
+                ""
+            } else {
+                " (arguments redacted)"
             };
             println!(
-                "  [{mark}] {:<20} {}{args}  [{}]",
-                s.name,
-                s.command,
-                s.source.file_name().and_then(|n| n.to_str()).unwrap_or("?")
+                "  {:<24} {:<20} {:<10} {}{} [{}; {}]",
+                server.name,
+                state,
+                server.transport.label(),
+                server.safe_target(),
+                arguments,
+                server.provider.label(),
+                server.source.display()
             );
         }
     }
-    println!("\ntotal configured: {total}");
-    println!("management: abbey mcp list|enable|disable|list-tools <id>  → cursor-agent");
-    println!("runtime:    abbey --approve-mcps \"…\"  (tools run inside cursor-agent)");
+    for diagnostic in &inventory.diagnostics {
+        eprintln!(
+            "warning: skipped malformed MCP config {}: {}",
+            diagnostic.path.display(),
+            diagnostic.message
+        );
+    }
+    println!("\ntotal configured entries: {total}");
+    println!("management: abbey mcp <cursor|codex|claude> <list|enable|disable|login …>");
+    println!("runtime: provider-owned; Abbey is an inventory/router, not an MCP host");
     Ok(0)
 }
 
 pub fn print_mcp_paths(cwd: &Path) -> Result<i32> {
-    for path in mcp_config_candidates(cwd) {
-        let mark = if path.is_file() { "ok " } else { "—  " };
-        println!("{mark} {}", path.display());
+    for source in mcp_config_sources(cwd) {
+        let mark = if source.path.is_file() {
+            "ok "
+        } else {
+            "—  "
+        };
+        println!(
+            "{mark} {:<14} {}",
+            source
+                .providers
+                .iter()
+                .map(|provider| provider.label())
+                .collect::<Vec<_>>()
+                .join("+"),
+            source.path.display()
+        );
     }
     Ok(0)
 }
@@ -169,13 +125,6 @@ pub fn acp_peers() -> Vec<AcpPeer> {
             path: which_bin("opencode"),
             note: "OpenCode `acp` subcommand",
         },
-        AcpPeer {
-            name: "abi-mcp",
-            bin: "abi-mcp",
-            acp_args: &[],
-            path: which_bin("abi-mcp"),
-            note: "ABI MCP stdio server (MCP, not ACP — listed for adjacency)",
-        },
     ]
 }
 
@@ -183,31 +132,25 @@ pub fn print_acp_status() -> Result<i32> {
     println!("abbey acp — Agent Client Protocol peer inventory");
     println!("note: Abbey does not host ACP sessions; it discovers/launches peer servers.\n");
     println!("{:<12} {:<10} detail", "peer", "status");
-    for p in acp_peers() {
-        match &p.path {
+    for peer in acp_peers() {
+        match &peer.path {
             Some(path) => {
-                let mode = if p.acp_args.is_empty() {
-                    "stdio".into()
-                } else {
-                    format!("{} {}", p.bin, p.acp_args.join(" "))
-                };
                 println!(
-                    "{:<12} {:<10} {} — {}",
-                    p.name,
+                    "{:<12} {:<10} {} — {} {}",
+                    peer.name,
                     "present",
                     path.display(),
-                    mode
+                    peer.bin,
+                    peer.acp_args.join(" ")
                 );
-                println!("{:<12} {:<10} {}", "", "", p.note);
+                println!("{:<12} {:<10} {}", "", "", peer.note);
             }
-            None => {
-                println!("{:<12} {:<10} {}", p.name, "missing", p.note);
-            }
+            None => println!("{:<12} {:<10} {}", peer.name, "missing", peer.note),
         }
     }
     println!(
-        "\nlaunch:  abbey acp run gemini|opencode   # stdio ACP server (for hosts that speak ACP)\n\
-         bridge:  use an MCP↔ACP bridge (e.g. mcacp) if your host only speaks MCP"
+        "\nlaunch: abbey acp run gemini|opencode\n\
+         note: abi-mcp is MCP, not an ACP peer, and is intentionally absent here"
     );
     Ok(0)
 }
@@ -216,9 +159,9 @@ pub fn print_acp_status() -> Result<i32> {
 pub fn run_acp_peer(name: &str) -> Result<i32> {
     let peer = acp_peers()
         .into_iter()
-        .find(|p| p.name.eq_ignore_ascii_case(name) && !p.acp_args.is_empty())
+        .find(|peer| peer.name.eq_ignore_ascii_case(name))
         .with_context(|| format!("unknown ACP peer `{name}` (try: abbey acp list)"))?;
-    let bin = peer
+    let binary = peer
         .path
         .clone()
         .with_context(|| format!("{} not on PATH", peer.bin))?;
@@ -228,23 +171,21 @@ pub fn run_acp_peer(name: &str) -> Result<i32> {
         peer.bin,
         peer.acp_args.join(" ")
     );
-    let st = Command::new(bin)
+    let status = Command::new(binary)
         .args(peer.acp_args)
-        .stdin(std::process::Stdio::inherit())
-        .stdout(std::process::Stdio::inherit())
-        .stderr(std::process::Stdio::inherit())
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
         .status()?;
-    Ok(st.code().unwrap_or(1))
+    Ok(status.code().unwrap_or(1))
 }
 
-pub fn dispatch_mcp(cfg: &AgentConfig, cwd: &Path, args: &[String]) -> Result<i32> {
-    if !cfg.backend.supports_account_surface() {
-        eprintln!(
-            "abbey: `mcp` is not applicable under the on-device backend (ABBEY_BACKEND=fm).\n\
-             Unset ABBEY_BACKEND to use cursor-agent MCP management."
-        );
-        return Ok(2);
-    }
+/// Compatibility entry point used by current command dispatch.
+///
+/// `cfg` intentionally does not gate local status/paths: those are filesystem
+/// reads and remain valid under `fm` and `abi`. Provider management is selected
+/// from the arguments, never inferred from the active generation backend.
+pub fn dispatch_mcp(_cfg: &AgentConfig, cwd: &Path, args: &[String]) -> Result<i32> {
     if args.is_empty() {
         return print_mcp_status(cwd);
     }
@@ -252,32 +193,118 @@ pub fn dispatch_mcp(cfg: &AgentConfig, cwd: &Path, args: &[String]) -> Result<i3
         "status" | "inventory" | "show" => print_mcp_status(cwd),
         "paths" => print_mcp_paths(cwd),
         "host" | "refuse" => crate::claims::refuse("mcp-host"),
+        "provider" | "view" => {
+            let provider = args
+                .get(1)
+                .and_then(|value| McpProvider::parse(value))
+                .ok_or_else(|| anyhow::anyhow!("usage: abbey mcp view <cursor|codex|claude>"))?;
+            print_provider_view(cwd, provider)
+        }
         "help" | "-h" | "--help" => {
             println!(
-                "abbey mcp — MCP config inventory + cursor-agent management\n\n\
-                 Local:\n\
-                   abbey mcp              status / inventory\n\
+                "abbey mcp — local MCP config inventory + explicit provider management\n\n\
+                 Local (works under cursor/grok/fm/abi backends):\n\
                    abbey mcp status\n\
                    abbey mcp paths\n\
-                   abbey mcp refuse       # OOS: Abbey as MCP host\n\n\
-                 Via cursor-agent:\n\
-                   abbey mcp list\n\
-                   abbey mcp list-tools <id>\n\
-                   abbey mcp enable|disable <id>\n\
-                   abbey mcp login <id>\n\n\
-                 Runtime tools: abbey --approve-mcps \"…\"\n\
-                 honesty: abbey host · abbey runtime"
+                   abbey mcp view codex\n\n\
+                 Provider management:\n\
+                   abbey mcp cursor list\n\
+                   abbey mcp codex list\n\
+                   abbey mcp claude list\n\
+                   abbey mcp <provider> enable|disable|login <id>\n\n\
+                 Abbey does not host MCP; management support is provider-owned."
             );
             Ok(0)
         }
-        // Everything else → cursor-agent mcp …
-        _ => {
-            let mut a = vec!["mcp".into()];
-            a.extend(args.iter().cloned());
-            let st = cfg.passthrough(&a)?;
-            Ok(st.code().unwrap_or(1))
+        provider if McpProvider::parse(provider).is_some() => {
+            let provider = McpProvider::parse(provider).expect("guarded above");
+            run_mcp_for_provider(provider, &args[1..])
+        }
+        other => {
+            eprintln!(
+                "abbey: MCP management command `{other}` has no provider.\n\
+                 Use: abbey mcp <cursor|codex|claude> {other} …"
+            );
+            Ok(2)
         }
     }
+}
+
+fn print_provider_view(cwd: &Path, provider: McpProvider) -> Result<i32> {
+    if provider == McpProvider::Codex {
+        let view = mcp::provider_mcp_view_with(
+            provider,
+            &crate::inventory::SystemPluginRunner,
+            std::time::Duration::from_secs(8),
+        );
+        if !view.groups.is_empty() || !view.diagnostics.is_empty() {
+            for group in view.groups {
+                for server in group.servers {
+                    let state = if server.disabled {
+                        "disabled"
+                    } else {
+                        "enabled"
+                    };
+                    println!(
+                        "{:<24} {:<8} {:<10} {}",
+                        server.name,
+                        state,
+                        server.transport.label(),
+                        server.safe_target()
+                    );
+                }
+            }
+            if let Some(error) = view.diagnostics.first() {
+                eprintln!("codex MCP view: {}", error.message);
+                return Ok(2);
+            }
+            return Ok(0);
+        }
+    }
+    let inventory = load_mcp_inventory(cwd);
+    for group in inventory.groups {
+        if !group.source.providers.contains(&provider)
+            && !group.source.providers.contains(&McpProvider::Shared)
+        {
+            continue;
+        }
+        for server in group.servers {
+            let state = if server.disabled {
+                "configured, disabled"
+            } else {
+                "configured, enabled"
+            };
+            println!(
+                "{:<24} {:<20} {:<10} {}",
+                server.name,
+                state,
+                server.transport.label(),
+                server.safe_target()
+            );
+        }
+    }
+    Ok(0)
+}
+
+pub fn run_mcp_for_provider(provider: McpProvider, args: &[String]) -> Result<i32> {
+    if !provider.supports_management() {
+        bail!("{} does not expose MCP management", provider.label());
+    }
+    let binary = which_bin(provider.binary())
+        .with_context(|| format!("{} is not on PATH", provider.binary()))?;
+    let management_args = if args.is_empty() {
+        &["list".into()][..]
+    } else {
+        args
+    };
+    let status = Command::new(binary)
+        .arg("mcp")
+        .args(management_args)
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()?;
+    Ok(status.code().unwrap_or(1))
 }
 
 pub fn dispatch_acp(args: &[String]) -> Result<i32> {
@@ -289,7 +316,7 @@ pub fn dispatch_acp(args: &[String]) -> Result<i32> {
         "run" | "serve" => {
             let name = args
                 .get(1)
-                .map(|s| s.as_str())
+                .map(String::as_str)
                 .ok_or_else(|| anyhow::anyhow!("usage: abbey acp run <gemini|opencode>"))?;
             run_acp_peer(name)
         }
@@ -297,13 +324,10 @@ pub fn dispatch_acp(args: &[String]) -> Result<i32> {
         "help" | "-h" | "--help" => {
             println!(
                 "abbey acp — Agent Client Protocol peer inventory\n\n\
-                 abbey acp              list peers\n\
                  abbey acp list\n\
-                 abbey acp run gemini   start gemini --acp (stdio)\n\
-                 abbey acp run opencode start opencode acp (stdio)\n\
-                 abbey acp refuse       # OOS: Abbey as ACP host\n\n\
-                 Abbey is not an ACP host; pair with Zed/Claude/an MCP↔ACP bridge.\n\
-                 honesty: abbey host · abbey runtime"
+                 abbey acp run gemini\n\
+                 abbey acp run opencode\n\n\
+                 Abbey is not an ACP host; abi-mcp is MCP, not ACP."
             );
             Ok(0)
         }
@@ -319,29 +343,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn extract_servers_from_mcp_json() {
-        let v: Value = serde_json::from_str(
-            r#"{
-              "mcpServers": {
-                "docs": { "command": "npx", "args": ["-y", "ctx7"] },
-                "off": { "command": "true", "disabled": true }
-              }
-            }"#,
-        )
-        .unwrap();
-        let got = extract_servers(&v, Path::new("/tmp/mcp.json"));
-        assert_eq!(got.len(), 2);
-        let docs = got.iter().find(|s| s.name == "docs").unwrap();
-        assert_eq!(docs.command, "npx");
-        assert_eq!(docs.args, vec!["-y", "ctx7"]);
-        assert!(!docs.disabled);
-        assert!(got.iter().find(|s| s.name == "off").unwrap().disabled);
-    }
-
-    #[test]
-    fn acp_peer_table_includes_gemini_and_opencode() {
-        let names: Vec<_> = acp_peers().iter().map(|p| p.name).collect();
+    fn acp_peer_table_has_only_actual_acp_peers() {
+        let names: Vec<_> = acp_peers().iter().map(|peer| peer.name).collect();
         assert!(names.contains(&"gemini"));
         assert!(names.contains(&"opencode"));
+        assert!(!names.contains(&"abi-mcp"));
     }
 }

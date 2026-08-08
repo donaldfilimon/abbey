@@ -58,10 +58,15 @@ fn out_of_scope_verbs_refuse_with_exit_2() {
     // than pretending to succeed. Exit 2 distinguishes "refused on principle"
     // from an ordinary error (1).
     let s = Scratch::new("refuse");
-    for topic in ["embeddings", "lora", "multinode"] {
+    for topic in ["lora", "multinode"] {
         let (code, _, _) = run(&s, &["claims", "refuse", topic]);
         assert_eq!(code, 2, "claims refuse {topic} should exit 2");
     }
+    assert_eq!(
+        run(&s, &["claims", "refuse", "embeddings"]).0,
+        0,
+        "the legacy refuse topic must report that semantic embeddings are now Current"
+    );
     assert_eq!(run(&s, &["runtime", "refuse"]).0, 2);
     assert_eq!(run(&s, &["vision", "refuse"]).0, 2);
     // The informational panels are not refusals.

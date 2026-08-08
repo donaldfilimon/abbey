@@ -2,6 +2,25 @@
 
 use std::fmt::Write as _;
 
+/// Split slash-command arguments consistently for local dispatchers.
+pub fn split_args(rest: &str) -> Vec<String> {
+    rest.split_whitespace().map(String::from).collect()
+}
+
+/// Parse a `--jobs` value shared by slash and CLI-style local dispatchers.
+pub fn parse_jobs_value(value: Option<&str>) -> anyhow::Result<usize> {
+    let Some(value) = value else {
+        anyhow::bail!("--jobs needs a positive integer");
+    };
+    let jobs = value
+        .parse::<usize>()
+        .map_err(|error| anyhow::anyhow!("--jobs: {error}"))?;
+    if jobs == 0 {
+        anyhow::bail!("--jobs must be >= 1");
+    }
+    Ok(jobs)
+}
+
 /// Catalog entry for help / TUI.
 #[derive(Debug, Clone, Copy)]
 pub struct SlashCmd {
@@ -406,5 +425,22 @@ mod tests {
     fn lookup_is_case_insensitive() {
         assert!(lookup("INIT").is_some());
         assert_eq!(lookup("INIT").unwrap().name, "init");
+    }
+
+    #[test]
+    fn split_args_normalizes_all_ascii_whitespace() {
+        assert_eq!(
+            split_args("  --jobs\t3\nfix it "),
+            ["--jobs", "3", "fix", "it"]
+        );
+        assert!(split_args(" \t\n").is_empty());
+    }
+
+    #[test]
+    fn jobs_parser_covers_missing_zero_malformed_and_valid() {
+        assert!(parse_jobs_value(None).is_err());
+        assert!(parse_jobs_value(Some("0")).is_err());
+        assert!(parse_jobs_value(Some("many")).is_err());
+        assert_eq!(parse_jobs_value(Some("3")).unwrap(), 3);
     }
 }

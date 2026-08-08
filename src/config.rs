@@ -21,6 +21,40 @@ pub struct AbbeyConfig {
     /// Precedence: `ABBEY_BACKEND` env > this key > cursor.
     #[serde(default)]
     pub backend: Option<String>,
+    /// Learned-memory embedding provider. API credentials are environment-only.
+    #[serde(default)]
+    pub embeddings: EmbeddingConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EmbeddingConfig {
+    /// `none` (default) | `apple` | `openai`.
+    #[serde(default = "default_embedding_provider")]
+    pub provider: String,
+    /// OpenAI-compatible base URL or full `/v1/embeddings` URL.
+    #[serde(default = "default_embedding_endpoint")]
+    pub endpoint: String,
+    /// Provider model identity. Pin a revision here when the provider supports it.
+    #[serde(default = "default_embedding_model")]
+    pub model: String,
+    /// Exact output dimensions expected from the provider.
+    #[serde(default = "default_embedding_dimension")]
+    pub dimension: usize,
+    /// BCP-47/NLLanguage code used by Apple NaturalLanguage.
+    #[serde(default = "default_embedding_language")]
+    pub language: String,
+}
+
+impl Default for EmbeddingConfig {
+    fn default() -> Self {
+        Self {
+            provider: default_embedding_provider(),
+            endpoint: default_embedding_endpoint(),
+            model: default_embedding_model(),
+            dimension: default_embedding_dimension(),
+            language: default_embedding_language(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -51,6 +85,7 @@ impl Default for AbbeyConfig {
             memory_backend: default_memory_backend(),
             abi_bin: None,
             backend: None,
+            embeddings: EmbeddingConfig::default(),
         }
     }
 }
@@ -69,6 +104,21 @@ fn default_max_model() -> String {
 }
 fn default_gemma_model() -> String {
     "composer".into()
+}
+fn default_embedding_provider() -> String {
+    "none".into()
+}
+fn default_embedding_endpoint() -> String {
+    "https://api.openai.com".into()
+}
+fn default_embedding_model() -> String {
+    "text-embedding-3-small".into()
+}
+fn default_embedding_dimension() -> usize {
+    1536
+}
+fn default_embedding_language() -> String {
+    "en".into()
 }
 
 impl AbbeyConfig {
@@ -114,6 +164,31 @@ impl AbbeyConfig {
                 self.abi_bin = Some(PathBuf::from(v));
             }
         }
+        if let Ok(v) = std::env::var("ABBEY_EMBEDDING_PROVIDER") {
+            if !v.trim().is_empty() {
+                self.embeddings.provider = v.trim().to_ascii_lowercase();
+            }
+        }
+        if let Ok(v) = std::env::var("ABBEY_EMBEDDING_ENDPOINT") {
+            if !v.trim().is_empty() {
+                self.embeddings.endpoint = v.trim().to_string();
+            }
+        }
+        if let Ok(v) = std::env::var("ABBEY_EMBEDDING_MODEL") {
+            if !v.trim().is_empty() {
+                self.embeddings.model = v.trim().to_string();
+            }
+        }
+        if let Ok(v) = std::env::var("ABBEY_EMBEDDING_DIMENSION") {
+            // Preserve fail-closed provider validation: an invalid explicit
+            // override must not silently keep the configured/default dimension.
+            self.embeddings.dimension = v.trim().parse::<usize>().unwrap_or(0);
+        }
+        if let Ok(v) = std::env::var("ABBEY_EMBEDDING_LANGUAGE") {
+            if !v.trim().is_empty() {
+                self.embeddings.language = v.trim().to_string();
+            }
+        }
         self
     }
 
@@ -141,6 +216,9 @@ impl AbbeyConfig {
             format!("role.max →       {}", self.roles.max),
             format!("role.gemma →     {}", self.roles.gemma),
             format!("memory_backend:  {}", self.memory_backend),
+            format!("embedding:       {}", self.embeddings.provider),
+            format!("embedding_model: {}", self.embeddings.model),
+            format!("embedding_dim:   {}", self.embeddings.dimension),
             format!(
                 "backend:         {}",
                 self.backend.as_deref().unwrap_or("(cursor default)")
@@ -164,6 +242,15 @@ persona_policy = "auto"
 default_role = "auto"
 memory_backend = "sqlite"
 
+# Learned semantic memory is opt-in. Credentials are never stored here: the
+# OpenAI-compatible provider reads ABBEY_EMBEDDING_API_KEY or OPENAI_API_KEY.
+[embeddings]
+provider = "none"
+endpoint = "https://api.openai.com"
+model = "text-embedding-3-small"
+dimension = 1536
+language = "en"
+
 # Default executor backend: "cursor" (default) | "grok" | "fm" | "abi".
 # ABBEY_BACKEND overrides this. "abi" runs every surface through the sibling
 # `abi complete` CLI with no cursor-agent installed.
@@ -182,18 +269,29 @@ gemma = "composer"
 /// Minimal TOML subset parser for our flat + one-table config (no full toml crate required).
 fn parse_toml_lite(text: &str) -> Result<AbbeyConfig> {
     let mut cfg = AbbeyConfig::default();
-    let mut in_roles = false;
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum Section {
+        Root,
+        Roles,
+        Embeddings,
+        Unknown,
+    }
+    let mut section = Section::Root;
     for line in text.lines() {
         let line = line.split('#').next().unwrap_or("").trim();
         if line.is_empty() {
             continue;
         }
         if line == "[roles]" {
-            in_roles = true;
+            section = Section::Roles;
+            continue;
+        }
+        if line == "[embeddings]" {
+            section = Section::Embeddings;
             continue;
         }
         if line.starts_with('[') {
-            in_roles = false;
+            section = Section::Unknown;
             continue;
         }
         let Some((k, v)) = line.split_once('=') else {
@@ -201,21 +299,33 @@ fn parse_toml_lite(text: &str) -> Result<AbbeyConfig> {
         };
         let k = k.trim();
         let v = strip_toml_str(v.trim());
-        if in_roles {
-            match k {
+        match section {
+            Section::Roles => match k {
                 "max" => cfg.roles.max = v,
                 "gemma" => cfg.roles.gemma = v,
                 _ => {}
-            }
-        } else {
-            match k {
+            },
+            Section::Embeddings => match k {
+                "provider" => cfg.embeddings.provider = v.to_ascii_lowercase(),
+                "endpoint" => cfg.embeddings.endpoint = v,
+                "model" => cfg.embeddings.model = v,
+                "dimension" => {
+                    cfg.embeddings.dimension = v.parse::<usize>().with_context(|| {
+                        format!("embedding dimension must be a non-negative integer, got {v:?}")
+                    })?;
+                }
+                "language" => cfg.embeddings.language = v,
+                _ => {}
+            },
+            Section::Root => match k {
                 "persona_policy" => cfg.persona_policy = v,
                 "default_role" => cfg.default_role = v,
                 "memory_backend" => cfg.memory_backend = v,
                 "abi_bin" => cfg.abi_bin = Some(PathBuf::from(v)),
                 "backend" => cfg.backend = Some(v.to_ascii_lowercase()),
                 _ => {}
-            }
+            },
+            Section::Unknown => {}
         }
     }
     Ok(cfg)
@@ -259,6 +369,8 @@ mod tests {
         assert_eq!(cfg.roles.max, "fable");
         assert_eq!(cfg.roles.gemma, "composer");
         assert_eq!(cfg.memory_backend, "sqlite");
+        assert_eq!(cfg.embeddings.provider, "none");
+        assert_eq!(cfg.embeddings.dimension, 1536);
         // The scaffold must not *activate* anything the user didn't choose:
         // backend/abi_bin ship commented out, so a fresh config still means
         // cursor + PATH lookup.
@@ -292,6 +404,11 @@ mod tests {
                 "abi_bin",
                 "max",
                 "gemma",
+                "provider",
+                "endpoint",
+                "model",
+                "dimension",
+                "language",
             ]
             .contains(&key)
             {
@@ -319,6 +436,11 @@ mod tests {
             "abi_bin",
             "max",
             "gemma",
+            "provider",
+            "endpoint",
+            "model",
+            "dimension",
+            "language",
         ] {
             assert!(
                 text.contains(key),
@@ -335,5 +457,24 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(cfg.default_role, "max");
+    }
+
+    #[test]
+    fn parses_embedding_table_without_storing_a_key() {
+        let cfg = parse_toml_lite(
+            r#"[embeddings]
+provider = "apple"
+endpoint = "https://unused.example"
+model = "sentence"
+dimension = 512
+language = "fr"
+api_key = "must-be-ignored"
+"#,
+        )
+        .unwrap();
+        assert_eq!(cfg.embeddings.provider, "apple");
+        assert_eq!(cfg.embeddings.dimension, 512);
+        assert_eq!(cfg.embeddings.language, "fr");
+        assert!(!format!("{cfg:?}").contains("must-be-ignored"));
     }
 }

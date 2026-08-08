@@ -1,6 +1,9 @@
 //! SQLite interim memory backend (not WDBX).
 
-use super::{MemoryFilter, MemoryRecord, MemoryStore, ReflectReport};
+use super::{
+    EmbeddingStatus, MemoryFilter, MemoryRecord, MemoryStore, ReflectReport, SemanticHit,
+    StoredEmbedding,
+};
 use anyhow::{Context, Result, bail};
 use rusqlite::{Connection, OptionalExtension, params};
 use std::path::{Path, PathBuf};
@@ -43,6 +46,18 @@ impl SqliteMemory {
             );
             CREATE INDEX IF NOT EXISTS idx_memory_retention ON memory(retention);
             CREATE INDEX IF NOT EXISTS idx_memory_summary ON memory(summary);
+            CREATE TABLE IF NOT EXISTS memory_embeddings (
+                memory_id TEXT NOT NULL,
+                space_id TEXT NOT NULL,
+                content_hash TEXT NOT NULL,
+                dimension INTEGER NOT NULL,
+                vector_json TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (memory_id, space_id),
+                FOREIGN KEY (memory_id) REFERENCES memory(id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_memory_embeddings_space
+                ON memory_embeddings(space_id);
             "#,
         )?;
         let has_project = {
@@ -207,6 +222,9 @@ impl MemoryStore for SqliteMemory {
         filter: &MemoryFilter,
         limit: usize,
     ) -> Result<Vec<MemoryRecord>> {
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
         let q = format!("%{}%", query.replace('%', ""));
         let conn = self.conn.lock().expect("sqlite lock");
         let mut stmt = conn.prepare(
@@ -232,6 +250,9 @@ impl MemoryStore for SqliteMemory {
     }
 
     fn filter_with(&self, filter: &MemoryFilter, limit: usize) -> Result<Vec<MemoryRecord>> {
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
         let conn = self.conn.lock().expect("sqlite lock");
         let mut stmt = conn.prepare(
             "SELECT id, source_type, source_ref, timestamp, origin, payload, summary,
@@ -274,6 +295,189 @@ impl MemoryStore for SqliteMemory {
 
     fn reflect(&self) -> Result<ReflectReport> {
         Ok(super::reflect_over(&self.filter(None, None, 500)?))
+    }
+
+    fn put_embedding(&self, embedding: StoredEmbedding) -> Result<()> {
+        if embedding.dimension == 0 || embedding.vector.len() != embedding.dimension {
+            bail!("invalid stored embedding dimension");
+        }
+        if !embedding.vector.iter().all(|value| value.is_finite()) {
+            bail!("stored embedding contains a non-finite value");
+        }
+        let vector_json = serde_json::to_string(&embedding.vector)?;
+        let mut conn = self.conn.lock().expect("sqlite lock");
+        let tx = conn.transaction()?;
+        let current = {
+            let mut statement = tx.prepare(
+                "SELECT id, source_type, source_ref, timestamp, origin, payload, summary,
+                        tags_json, embedding_ref, confidence, provenance, retention,
+                        supersedes, classification, obsolete, project
+                 FROM memory WHERE id=?1",
+            )?;
+            statement
+                .query_row(params![embedding.memory_id], Self::row_to_rec)
+                .optional()?
+        };
+        let Some(record) = current else {
+            bail!("memory id not found: {}", embedding.memory_id);
+        };
+        if record.obsolete {
+            bail!(
+                "cannot attach an embedding to obsolete memory: {}",
+                record.id
+            );
+        }
+        if super::semantic::content_hash(&record) != embedding.content_hash {
+            bail!("memory changed while it was being embedded: {}", record.id);
+        }
+        tx.execute(
+            r#"INSERT INTO memory_embeddings (
+                    memory_id, space_id, content_hash, dimension, vector_json, updated_at
+               ) VALUES (?1,?2,?3,?4,?5,?6)
+               ON CONFLICT(memory_id, space_id) DO UPDATE SET
+                    content_hash=excluded.content_hash,
+                    dimension=excluded.dimension,
+                    vector_json=excluded.vector_json,
+                    updated_at=excluded.updated_at"#,
+            params![
+                embedding.memory_id,
+                embedding.space_id,
+                embedding.content_hash,
+                embedding.dimension as i64,
+                vector_json,
+                embedding.updated_at,
+            ],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    fn embedding_candidates(&self, space_id: &str, limit: usize) -> Result<Vec<MemoryRecord>> {
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
+        let conn = self.conn.lock().expect("sqlite lock");
+        let mut statement = conn.prepare(
+            "SELECT id, source_type, source_ref, timestamp, origin, payload, summary,
+                    tags_json, embedding_ref, confidence, provenance, retention,
+                    supersedes, classification, obsolete, project,
+                    (SELECT content_hash FROM memory_embeddings e
+                     WHERE e.memory_id=memory.id AND e.space_id=?1)
+             FROM memory WHERE obsolete=0 ORDER BY timestamp DESC",
+        )?;
+        let rows = statement.query_map(params![space_id], |row| {
+            Ok((Self::row_to_rec(row)?, row.get::<_, Option<String>>(16)?))
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            let (record, stored_hash) = row?;
+            if stored_hash.as_deref() != Some(super::semantic::content_hash(&record).as_str()) {
+                out.push(record);
+                if out.len() == limit {
+                    break;
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    fn embedding_status(&self, space_id: &str) -> Result<EmbeddingStatus> {
+        let conn = self.conn.lock().expect("sqlite lock");
+        let mut statement = conn.prepare(
+            "SELECT id, source_type, source_ref, timestamp, origin, payload, summary,
+                    tags_json, embedding_ref, confidence, provenance, retention,
+                    supersedes, classification, obsolete, project,
+                    (SELECT content_hash FROM memory_embeddings e
+                     WHERE e.memory_id=memory.id AND e.space_id=?1)
+             FROM memory WHERE obsolete=0",
+        )?;
+        let rows = statement.query_map(params![space_id], |row| {
+            Ok((Self::row_to_rec(row)?, row.get::<_, Option<String>>(16)?))
+        })?;
+        let mut status = EmbeddingStatus::default();
+        for row in rows {
+            let (record, stored_hash) = row?;
+            status.total += 1;
+            match stored_hash {
+                None => status.missing += 1,
+                Some(hash) if hash == super::semantic::content_hash(&record) => status.ready += 1,
+                Some(_) => status.stale += 1,
+            }
+        }
+        Ok(status)
+    }
+
+    fn embedding_is_current(&self, memory_id: &str, space_id: &str) -> Result<bool> {
+        let conn = self.conn.lock().expect("sqlite lock");
+        let mut statement = conn.prepare(
+            "SELECT id, source_type, source_ref, timestamp, origin, payload, summary,
+                    tags_json, embedding_ref, confidence, provenance, retention,
+                    supersedes, classification, obsolete, project,
+                    (SELECT content_hash FROM memory_embeddings e
+                     WHERE e.memory_id=memory.id AND e.space_id=?2)
+             FROM memory WHERE id=?1",
+        )?;
+        let found = statement
+            .query_row(params![memory_id, space_id], |row| {
+                Ok((Self::row_to_rec(row)?, row.get::<_, Option<String>>(16)?))
+            })
+            .optional()?;
+        let Some((record, stored_hash)) = found else {
+            bail!("memory id not found: {memory_id}");
+        };
+        Ok(!record.obsolete
+            && stored_hash.as_deref() == Some(super::semantic::content_hash(&record).as_str()))
+    }
+
+    fn semantic_search(
+        &self,
+        space_id: &str,
+        query: &[f32],
+        filter: &MemoryFilter,
+        limit: usize,
+    ) -> Result<Vec<SemanticHit>> {
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
+        let conn = self.conn.lock().expect("sqlite lock");
+        let mut statement = conn.prepare(
+            "SELECT m.id, m.source_type, m.source_ref, m.timestamp, m.origin, m.payload,
+                    m.summary, m.tags_json, m.embedding_ref, m.confidence, m.provenance,
+                    m.retention, m.supersedes, m.classification, m.obsolete, m.project,
+                    e.content_hash, e.dimension, e.vector_json
+             FROM memory m JOIN memory_embeddings e ON e.memory_id=m.id
+             WHERE m.obsolete=0 AND e.space_id=?1",
+        )?;
+        let rows = statement.query_map(params![space_id], |row| {
+            Ok((
+                Self::row_to_rec(row)?,
+                row.get::<_, String>(16)?,
+                row.get::<_, i64>(17)?,
+                row.get::<_, String>(18)?,
+            ))
+        })?;
+        let mut hits = Vec::new();
+        for row in rows {
+            let (record, stored_hash, dimension, vector_json) = row?;
+            if !filter.matches(&record)
+                || stored_hash != super::semantic::content_hash(&record)
+                || dimension < 0
+                || dimension as usize != query.len()
+            {
+                continue;
+            }
+            let vector: Vec<f32> = serde_json::from_str(&vector_json)?;
+            if vector.len() != dimension as usize || !vector.iter().all(|value| value.is_finite()) {
+                continue;
+            }
+            hits.push(SemanticHit {
+                score: super::semantic::cosine(&vector, query)?,
+                record,
+            });
+        }
+        hits.sort_by(|a, b| b.score.total_cmp(&a.score));
+        hits.truncate(limit);
+        Ok(hits)
     }
 }
 
@@ -458,6 +662,27 @@ mod tests {
         rec.retention = "train_candidate".into();
         rec.provenance.clear();
         assert!(db.store(rec).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn zero_limit_is_empty_for_every_filtered_surface() {
+        let dir = std::env::temp_dir().join(format!("abbey-mem-zero-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = SqliteMemory::open(&SqliteMemory::path_for_state_dir(&dir)).unwrap();
+        db.store(MemoryRecord::new_stm("needle", "needle")).unwrap();
+        assert!(
+            db.filter_with(&MemoryFilter::default(), 0)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            db.search_keyword_with("needle", &MemoryFilter::default(), 0)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(db.embedding_candidates("space", 0).unwrap().is_empty());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

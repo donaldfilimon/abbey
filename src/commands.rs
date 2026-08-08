@@ -4,7 +4,7 @@ use crate::actions::{RunSpec, fork_prompt, run_agent, run_commit, run_pr, run_re
 use crate::agent::{AgentConfig, run_resilient};
 use crate::build_info;
 use crate::claims;
-use crate::cli::{Cli, Commands, GenerateCmd, MemoryCmd, Shell};
+use crate::cli::{Cli, Commands, GenerateCmd, MemoryCmd, MeshCmd, Shell};
 use crate::config;
 use crate::deferred;
 use crate::doctor::{
@@ -17,6 +17,7 @@ use crate::highlight;
 use crate::improve;
 use crate::inventory;
 use crate::learn;
+use crate::mesh;
 use crate::models::{alias_table, resolve_model};
 use crate::os_control;
 use crate::output;
@@ -225,6 +226,16 @@ pub fn run_cli(cli: Cli, state: AbbeyState, mut cfg: AgentConfig) -> Result<i32>
             }
             Some(other) => cmd_memory_store(&state, other),
         },
+        Some(Commands::Mesh { cmd }) => {
+            let ac = config::AbbeyConfig::load().unwrap_or_default();
+            match cmd {
+                MeshCmd::Status => mesh::dispatch(&ac, &["status".into()], false),
+                MeshCmd::Nodes => mesh::dispatch(&ac, &["nodes".into()], false),
+                MeshCmd::LocalDemo { nodes, json } => {
+                    mesh::dispatch(&ac, &["local-demo".into(), nodes.to_string()], json)
+                }
+            }
+        }
         Some(Commands::Persona { name }) => cmd_persona(name.as_deref()),
         Some(Commands::Role { name }) => cmd_role(name.as_deref()),
         Some(Commands::Routes { n, correlation }) => {
@@ -331,8 +342,12 @@ pub fn run_cli(cli: Cli, state: AbbeyState, mut cfg: AgentConfig) -> Result<i32>
             }
             Ok(0)
         }
-        Some(Commands::Skills) => {
-            inventory::print_skills()?;
+        Some(Commands::Skills { all }) => {
+            if all {
+                inventory::print_skills_all()?;
+            } else {
+                inventory::print_skills()?;
+            }
             Ok(0)
         }
         Some(Commands::Plugins { args }) => inventory::run_plugin_passthrough(&args),
@@ -390,7 +405,6 @@ pub fn run_cli(cli: Cli, state: AbbeyState, mut cfg: AgentConfig) -> Result<i32>
         Some(Commands::Logout) => passthrough_or_refuse(&cfg, "logout", &["logout".into()]),
         Some(Commands::Mcp { args }) => protocols::dispatch_mcp(&cfg, &state.cwd, &args),
         Some(Commands::Acp { args }) => protocols::dispatch_acp(&args),
-        Some(Commands::Plugin { args }) => inventory::run_plugin_passthrough(&args),
         Some(Commands::Completion { shell }) => {
             let mut cmd = Cli::command();
             let sh = match shell {
@@ -409,7 +423,6 @@ pub fn run_cli(cli: Cli, state: AbbeyState, mut cfg: AgentConfig) -> Result<i32>
                 "logout",
                 "update",
                 "mcp",
-                "plugin",
                 "worker",
                 "about",
                 "list-models",

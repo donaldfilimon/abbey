@@ -128,7 +128,7 @@ pub fn cmd_memory_store(state: &AbbeyState, cmd: MemoryCmd) -> Result<i32> {
                 rec.timestamp = MemoryFilter::normalize_timestamp(&timestamp)?;
             }
             let id = rec.id.clone();
-            mem.store(rec)?;
+            store_record_with_selected_embedding(mem.as_ref(), rec)?;
             println!("{id}");
             Ok(0)
         }
@@ -170,14 +170,27 @@ pub fn cmd_memory_store(state: &AbbeyState, cmd: MemoryCmd) -> Result<i32> {
             payload,
             provenance,
             tags,
+            source,
+            source_ref,
+            project,
+            timestamp,
         } => {
             let mut rec = MemoryRecord::new_stm(summary, payload);
             rec.retention = retention;
             rec.provenance = provenance;
             rec.origin = "user".into();
             rec.tags.extend(tags);
+            rec.source_type = source;
+            rec.source_ref = source_ref.unwrap_or_default();
+            if let Some(project) = project {
+                rec.project = project;
+            }
+            if let Some(timestamp) = timestamp {
+                rec.timestamp = MemoryFilter::normalize_timestamp(&timestamp)?;
+            }
             let new_id = rec.id.clone();
             mem.supersede(&old_id, rec)?;
+            embed_existing_with_selected_provider(mem.as_ref(), &new_id)?;
             println!("superseded {old_id} → {new_id} (old marked obsolete)");
             Ok(0)
         }
@@ -225,19 +238,25 @@ pub fn cmd_memory_store(state: &AbbeyState, cmd: MemoryCmd) -> Result<i32> {
             }
             Ok(0)
         }
-        MemoryCmd::Near { id, limit } => {
+        MemoryCmd::Near { id, limit, filter } => {
             let Some(anchor) = mem.get(&id)? else {
                 bail!("memory id not found: {id}");
             };
             let target = memory::coordinates(&anchor);
+            let filter = query_filter(filter, None)?;
+            let records = mem.filter_with(&filter, 1_000)?;
             println!(
                 "anchor  ({:.0}, {:.2}, {:.2})  {}",
                 target.x, target.y, target.z, anchor.summary
             );
-            for (dist, r) in memory::nearest_to(mem.as_ref(), &id, limit)? {
+            for (dist, r) in memory::nearest(&records, target, limit.saturating_add(1))
+                .into_iter()
+                .filter(|(_, record)| record.id != id)
+                .take(limit)
+            {
                 println!(
                     "{dist:>7.2}  {:<16} {}",
-                    memory::primary_topic(&r),
+                    memory::primary_topic(r),
                     r.summary
                 );
             }
@@ -279,7 +298,27 @@ pub fn cmd_memory_store(state: &AbbeyState, cmd: MemoryCmd) -> Result<i32> {
                     r.summary
                 );
             }
-            println!("note: lexical n-gram cosine — learned/semantic embeddings stay Proposed");
+            println!(
+                "note: lexical n-gram cosine — use `memory semantic` for the explicitly configured learned space"
+            );
+            Ok(0)
+        }
+        MemoryCmd::Semantic {
+            query,
+            limit,
+            filter,
+        } => {
+            let cfg = config::AbbeyConfig::load()?;
+            let embedder = memory::build_embedder(&cfg.embeddings)?;
+            let filter = query_filter(filter, None)?;
+            let hits =
+                memory::search_semantic(mem.as_ref(), embedder.as_ref(), &query, &filter, limit)?;
+            for hit in hits {
+                println!(
+                    "{:.6}\t{}\t{}",
+                    hit.score, hit.record.id, hit.record.summary
+                );
+            }
             Ok(0)
         }
         MemoryCmd::Export { layer, filter } => {
@@ -289,8 +328,114 @@ pub fn cmd_memory_store(state: &AbbeyState, cmd: MemoryCmd) -> Result<i32> {
             }
             Ok(0)
         }
-        MemoryCmd::Embed { .. } => crate::claims::refuse("embeddings"),
+        MemoryCmd::Embed { id, all, force } => {
+            let cfg = config::AbbeyConfig::load()?;
+            let embedder = memory::build_embedder(&cfg.embeddings)?;
+            if id.as_deref() == Some("status") && !all && !force {
+                let status = memory::embedding_status(mem.as_ref(), embedder.as_ref())?;
+                println!("provider:  {}", embedder.space().provider);
+                println!("model:     {}", embedder.space().model);
+                println!("space_id:  {}", embedder.space().space_id);
+                println!("dimension: {}", embedder.space().dimension);
+                println!("total:     {}", status.total);
+                println!("ready:     {}", status.ready);
+                println!("missing:   {}", status.missing);
+                println!("stale:     {}", status.stale);
+                println!("pending:   {}", status.pending());
+                return Ok(0);
+            }
+            if all {
+                let status = memory::embedding_status(mem.as_ref(), embedder.as_ref())?;
+                let report = memory::backfill_embeddings_with_force(
+                    mem.as_ref(),
+                    embedder.as_ref(),
+                    if force {
+                        status.total
+                    } else {
+                        status.pending()
+                    },
+                    force,
+                )?;
+                println!("attempted: {}", report.attempted);
+                println!("embedded:  {}", report.embedded);
+                println!("failed:    {}", report.failed);
+                for error in report.errors {
+                    eprintln!("abbey: embedding warning: {}", concise_error(&error));
+                }
+                return Ok(i32::from(report.failed > 0));
+            }
+            let id = id.ok_or_else(|| {
+                anyhow::anyhow!(
+                    "usage: abbey memory embed status | <id> [--force] | --all [--force]"
+                )
+            })?;
+            let embedded =
+                memory::embed_one_if_needed(mem.as_ref(), &id, embedder.as_ref(), force)?;
+            if embedded {
+                println!("embedded {id} into {}", embedder.space().space_id);
+            } else {
+                println!("already current: {id} ({})", embedder.space().space_id);
+            }
+            Ok(0)
+        }
     }
+}
+
+fn store_record_with_selected_embedding(
+    store: &dyn memory::MemoryStore,
+    record: MemoryRecord,
+) -> Result<()> {
+    let cfg = config::AbbeyConfig::load()?;
+    if cfg.embeddings.provider.eq_ignore_ascii_case("none") {
+        return store.store(record);
+    }
+    match memory::build_embedder(&cfg.embeddings) {
+        Ok(embedder) => {
+            let outcome = memory::semantic::store_with_embedding(store, record, embedder.as_ref())?;
+            if let Some(error) = outcome.embedding_error {
+                eprintln!(
+                    "abbey: memory {} stored; embedding pending: {}",
+                    outcome.memory_id,
+                    concise_error(&error)
+                );
+            }
+        }
+        Err(error) => {
+            let id = record.id.clone();
+            store.store(record)?;
+            eprintln!(
+                "abbey: memory {id} stored; embedding pending: {}",
+                concise_error(&format!("{error:#}"))
+            );
+        }
+    }
+    Ok(())
+}
+
+fn embed_existing_with_selected_provider(store: &dyn memory::MemoryStore, id: &str) -> Result<()> {
+    let cfg = config::AbbeyConfig::load()?;
+    if cfg.embeddings.provider.eq_ignore_ascii_case("none") {
+        return Ok(());
+    }
+    let result = memory::build_embedder(&cfg.embeddings)
+        .and_then(|embedder| memory::semantic::embed_one(store, id, embedder.as_ref()));
+    if let Err(error) = result {
+        eprintln!(
+            "abbey: memory {id} stored; embedding pending: {}",
+            concise_error(&format!("{error:#}"))
+        );
+    }
+    Ok(())
+}
+
+fn concise_error(error: &str) -> String {
+    error
+        .lines()
+        .next()
+        .unwrap_or("embedding failed")
+        .chars()
+        .take(240)
+        .collect()
 }
 
 fn query_filter(args: MemoryFilterArgs, retention: Option<String>) -> Result<MemoryFilter> {
@@ -418,7 +563,7 @@ pub fn cmd_doctor(state: &AbbeyState, cfg: &AgentConfig) -> Result<i32> {
         "reasoning:  abbey reason|/reason + --thinking|/think → Cursor *-thinking-* (structured wrap)",
     );
     let _ = output::println(
-        "tools/mcp:  abbey mcp status|list + --approve-mcps (inventory + cursor-agent; not an MCP host)",
+        "tools/mcp:  abbey mcp status|paths|view + explicit provider management; not an MCP host",
     );
     let _ = output::println(
         "acp:        abbey acp list|run gemini|opencode (peer ACP servers; Abbey is not an ACP host)",
@@ -463,6 +608,36 @@ pub fn cmd_doctor(state: &AbbeyState, cfg: &AgentConfig) -> Result<i32> {
         &abbey_cfg.memory_backend,
     ));
     let _ = output::println(memory::feature_status());
+    let embedding_line = match memory::build_embedder(&abbey_cfg.embeddings) {
+        Ok(embedder) if embedder.space().provider == "none" => {
+            "semantic:  disabled (embedding provider none; lexical search remains available)"
+                .to_string()
+        }
+        Ok(embedder) => match open_memory(state)
+            .and_then(|store| memory::embedding_status(store.as_ref(), embedder.as_ref()))
+        {
+            Ok(status) => format!(
+                "semantic:  {} {}d ready={} pending={} space={}",
+                embedder.space().provider,
+                embedder.space().dimension,
+                status.ready,
+                status.pending(),
+                embedder.space().space_id
+            ),
+            Err(error) => format!("semantic:  configured but index unavailable: {error}"),
+        },
+        Err(error) => format!("semantic:  configured but provider unavailable: {error}"),
+    };
+    let _ = output::println(embedding_line);
+    let mesh = crate::mesh::status(&abbey_cfg);
+    let _ = output::println(format!(
+        "mesh proof: {} (authenticated local multi-process only; not production multi-host)",
+        if mesh.available {
+            "available"
+        } else {
+            "unavailable — set ABBEY_ABI_BIN"
+        }
+    ));
     let backend = agent::AgentBackend::from_env();
     if backend.is_on_device() {
         let _ = output::println(format!("on-device: {}", cfg.fm_availability()));

@@ -55,22 +55,22 @@ pub fn dispatch_slash(input: &str, state: &AbbeyState, cfg: &mut AgentConfig) ->
             Ok(0)
         }
         "claims" | "roadmap" | "scope" => {
-            let args: Vec<String> = rest.split_whitespace().map(String::from).collect();
+            let args = slash::split_args(rest);
             crate::claims::dispatch(&args)
         }
         "platform" | "targets" | "compute" => {
-            let mut args: Vec<String> = rest.split_whitespace().map(String::from).collect();
+            let mut args = slash::split_args(rest);
             if cmd == "compute" {
                 args.insert(0, "compute".into());
             }
             crate::platform::dispatch(&args)
         }
         "vision" => {
-            let args: Vec<String> = rest.split_whitespace().map(String::from).collect();
+            let args = slash::split_args(rest);
             crate::surfaces::dispatch_vision(&args)
         }
         "cot" => {
-            let args: Vec<String> = rest.split_whitespace().map(String::from).collect();
+            let args = slash::split_args(rest);
             if args.first().map(String::as_str) == Some("run") {
                 let prompt: Vec<String> = args.iter().skip(1).cloned().collect();
                 generate::run_reason(cfg, state, &prompt, None)
@@ -79,11 +79,11 @@ pub fn dispatch_slash(input: &str, state: &AbbeyState, cfg: &mut AgentConfig) ->
             }
         }
         "runtime" => {
-            let args: Vec<String> = rest.split_whitespace().map(String::from).collect();
+            let args = slash::split_args(rest);
             crate::surfaces::dispatch_runtime(&args)
         }
         "oos" | "deferred" => {
-            let args: Vec<String> = rest.split_whitespace().map(String::from).collect();
+            let args = slash::split_args(rest);
             crate::deferred::dispatch_oos(&args)
         }
         "lora" | "weights" | "accel" | "npu" | "tpu" | "shell" | "unrestricted" | "host" => {
@@ -92,7 +92,7 @@ pub fn dispatch_slash(input: &str, state: &AbbeyState, cfg: &mut AgentConfig) ->
                 "unrestricted" => "shell",
                 other => other,
             };
-            let args: Vec<String> = rest.split_whitespace().map(String::from).collect();
+            let args = slash::split_args(rest);
             crate::deferred::dispatch_topic(key, &args)
         }
         "doctor" | "debug" => {
@@ -153,7 +153,9 @@ pub fn dispatch_slash(input: &str, state: &AbbeyState, cfg: &mut AgentConfig) ->
                 for (score, r) in memory::similar_to_text(mem.as_ref(), q, 20)? {
                     println!("{score:.2}\t{}\t{}", r.retention, r.summary);
                 }
-                println!("note: lexical n-gram cosine — learned embeddings stay Proposed");
+                println!(
+                    "note: lexical n-gram cosine — use `abbey memory semantic` for the configured learned space"
+                );
                 return Ok(0);
             }
             let n: usize = rest.parse().unwrap_or(15);
@@ -269,7 +271,7 @@ pub fn dispatch_slash(input: &str, state: &AbbeyState, cfg: &mut AgentConfig) ->
             let args: Vec<String> = if rest.is_empty() {
                 vec!["status".into()]
             } else {
-                rest.split_whitespace().map(String::from).collect()
+                slash::split_args(rest)
             };
             voice::dispatch(state, cfg, &args)
         }
@@ -281,7 +283,7 @@ pub fn dispatch_slash(input: &str, state: &AbbeyState, cfg: &mut AgentConfig) ->
             let args: Vec<String> = if rest.is_empty() {
                 Vec::new()
             } else {
-                rest.split_whitespace().map(String::from).collect()
+                slash::split_args(rest)
             };
             inventory::run_plugin_passthrough(&args)
         }
@@ -290,11 +292,11 @@ pub fn dispatch_slash(input: &str, state: &AbbeyState, cfg: &mut AgentConfig) ->
             Ok(0)
         }
         "os" => {
-            let args: Vec<String> = rest.split_whitespace().map(String::from).collect();
+            let args = slash::split_args(rest);
             os_control::run_os(&args, true)
         }
         "learn" => {
-            let args: Vec<String> = rest.split_whitespace().map(String::from).collect();
+            let args = slash::split_args(rest);
             learn::dispatch(state, &args)
         }
         "learn-review" | "train-review" => {
@@ -326,11 +328,11 @@ pub fn dispatch_slash(input: &str, state: &AbbeyState, cfg: &mut AgentConfig) ->
         }
         "subagents" | "swarm" | "distribute" => {
             let ac = config::AbbeyConfig::load().unwrap_or_default();
-            let args: Vec<String> = rest.split_whitespace().map(String::from).collect();
+            let args = slash::split_args(rest);
             crate::subagents::dispatch(cfg, state, &args, &ac.roles.max, &ac.roles.gemma)
         }
         "improve" | "smart-improve" | "prod-ready" => {
-            let args: Vec<String> = rest.split_whitespace().map(String::from).collect();
+            let args = slash::split_args(rest);
             crate::improve::dispatch(cfg, state, &args)
         }
         "permissions" => {
@@ -354,15 +356,15 @@ pub fn dispatch_slash(input: &str, state: &AbbeyState, cfg: &mut AgentConfig) ->
             Ok(st.code().unwrap_or(1))
         }
         "mcp" => {
-            let args: Vec<String> = rest.split_whitespace().map(String::from).collect();
+            let args = slash::split_args(rest);
             protocols::dispatch_mcp(cfg, &state.cwd, &args)
         }
         "acp" => {
-            let args: Vec<String> = rest.split_whitespace().map(String::from).collect();
+            let args = slash::split_args(rest);
             protocols::dispatch_acp(&args)
         }
         "highlight" | "hl" => {
-            let args: Vec<String> = rest.split_whitespace().map(String::from).collect();
+            let args = slash::split_args(rest);
             crate::highlight::dispatch(&args)
         }
         "plan" => {

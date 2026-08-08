@@ -35,7 +35,8 @@ impl ThemeId {
         }
     }
 
-    /// Resolve order: `ABBEY_TUI_THEME` env > `{state_dir}/tui-theme` file > [`Ink`].
+    /// Resolve order: `ABBEY_TUI_THEME` env > `{state_dir}/tui-theme` file >
+    /// [`ThemeId::Ink`].
     pub fn resolve(state_dir: &Path) -> Self {
         if let Ok(raw) = std::env::var(ENV_THEME) {
             if let Some(id) = Self::parse(&raw) {

@@ -19,9 +19,14 @@
 //! The OS drops the lock when the handle closes, including on process death, so
 //! a crashed process cannot wedge the store the way a lock *file* would.
 
-use super::{MemoryFilter, MemoryRecord, MemoryStore, ReflectReport};
-use abi_wdbx::DurableStore;
+use super::{
+    EmbeddingStatus, MemoryFilter, MemoryRecord, MemoryStore, ReflectReport, SemanticHit,
+    StoredEmbedding,
+};
+use abi_wdbx::{DurableStore, RecordId, StorePaths, VersionedStore};
 use anyhow::{Result, anyhow, bail};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -29,6 +34,7 @@ use std::time::{Duration, Instant};
 
 /// KV key namespace for Abbey memory records inside a shared WDBX store.
 const KEY_PREFIX: &str = "mem/";
+const EMBEDDING_MAP_PREFIX: &str = "map/";
 
 /// How long to wait for another process to finish before giving up.
 const LOCK_TIMEOUT: Duration = Duration::from_secs(10);
@@ -39,6 +45,12 @@ pub struct WdbxMemory {
     store: Mutex<DurableStore>,
     dir: PathBuf,
     _lock: File,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct VectorMapping {
+    vector_id: RecordId,
+    embedding: StoredEmbedding,
 }
 
 impl WdbxMemory {
@@ -76,11 +88,53 @@ impl WdbxMemory {
         let json = serde_json::to_string(rec)?;
         let mut store = self.store.lock().expect("wdbx lock");
         // Coordinates live in the JSON record; Abbey's `near` recomputes them
-        // via `memory::nearest_to`. DurableStore can `put_spatial` but has no
+        // via `memory::map::nearest_to`. DurableStore can `put_spatial` but has no
         // public nearest query, so a dual write would be dead weight.
         store
             .put(&Self::key(&rec.id), &json)
             .map_err(|e| anyhow!("wdbx put {}: {e}", rec.id))
+    }
+
+    fn space_dir(&self, space_id: &str) -> Result<PathBuf> {
+        if space_id.is_empty()
+            || !space_id
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
+        {
+            bail!("invalid embedding space id: {space_id:?}");
+        }
+        // Never open the abandoned legacy semantic sub-stores here. Their v1
+        // HNSW width cap rejected real Apple 512-d vectors. The sibling v2
+        // namespace is intentionally fresh and old directories remain intact.
+        Ok(self.dir.join("embedding-spaces-v2").join(space_id))
+    }
+
+    fn open_space(&self, space_id: &str, create: bool) -> Result<Option<VersionedStore>> {
+        let path = self.space_dir(space_id)?;
+        if !create && !path.exists() {
+            return Ok(None);
+        }
+        std::fs::create_dir_all(&path)?;
+        VersionedStore::open(StorePaths::new(&path))
+            .map(Some)
+            .map_err(|error| anyhow!("open WDBX embedding space {}: {error}", path.display()))
+    }
+
+    fn mappings(
+        space: &VersionedStore,
+        records: &[MemoryRecord],
+    ) -> HashMap<String, VectorMapping> {
+        // V2 deliberately has no public KV iterator. Authoritative memory IDs
+        // bound this scan and orphan mappings are ignored by construction.
+        records
+            .iter()
+            .filter_map(|record| {
+                space
+                    .get(&format!("{EMBEDDING_MAP_PREFIX}{}", record.id))
+                    .and_then(|value| serde_json::from_str::<VectorMapping>(&value).ok())
+                    .map(|mapping| (record.id.clone(), mapping))
+            })
+            .collect()
     }
 
     /// All live records, newest first — the shared basis for search/filter/reflect.
@@ -261,6 +315,176 @@ impl MemoryStore for WdbxMemory {
     fn reflect(&self) -> Result<ReflectReport> {
         Ok(super::reflect_over(&self.filter(None, None, 500)?))
     }
+
+    fn put_embedding(&self, embedding: StoredEmbedding) -> Result<()> {
+        if embedding.dimension == 0 || embedding.vector.len() != embedding.dimension {
+            bail!("invalid stored embedding dimension");
+        }
+        if !embedding.vector.iter().all(|value| value.is_finite()) {
+            bail!("stored embedding contains a non-finite value");
+        }
+        let Some(record) = self.get(&embedding.memory_id)? else {
+            bail!("memory id not found: {}", embedding.memory_id);
+        };
+        if record.obsolete {
+            bail!(
+                "cannot attach an embedding to obsolete memory: {}",
+                record.id
+            );
+        }
+        if super::semantic::content_hash(&record) != embedding.content_hash {
+            bail!("memory changed while it was being embedded: {}", record.id);
+        }
+        // One WDBX v2 store per exact semantic space gives each model/dimension
+        // an independent <=4096-d HNSW graph. Updates append a vector then move
+        // the current mapping; old IDs remain history but are never returned.
+        let mut space = self
+            .open_space(&embedding.space_id, true)?
+            .expect("create=true always opens a store");
+        let snapshot = space.snapshot();
+        if snapshot.vector_count() != 0 && snapshot.vector_dimensions() != Some(embedding.dimension)
+        {
+            bail!(
+                "WDBX semantic space {} has dimension {:?}; embedding requires {}",
+                embedding.space_id,
+                snapshot.vector_dimensions(),
+                embedding.dimension
+            );
+        }
+        let vector_id = space
+            .put_vector(&embedding.vector)
+            .map_err(|error| anyhow!("put WDBX semantic vector: {error}"))?;
+        let mapping = VectorMapping {
+            vector_id,
+            embedding,
+        };
+        let value = serde_json::to_string(&mapping)?;
+        space
+            .put(
+                &format!("{EMBEDDING_MAP_PREFIX}{}", mapping.embedding.memory_id),
+                &value,
+            )
+            .map_err(|error| anyhow!("put WDBX semantic vector mapping: {error}"))?;
+        Ok(())
+    }
+
+    fn embedding_candidates(&self, space_id: &str, limit: usize) -> Result<Vec<MemoryRecord>> {
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
+        let records = self.scan();
+        let mappings = self
+            .open_space(space_id, false)?
+            .as_ref()
+            .map(|space| Self::mappings(space, &records))
+            .unwrap_or_default();
+        Ok(records
+            .into_iter()
+            .filter(|record| !record.obsolete)
+            .filter(|record| {
+                mappings.get(&record.id).is_none_or(|mapping| {
+                    mapping.embedding.content_hash != super::semantic::content_hash(record)
+                })
+            })
+            .take(limit)
+            .collect())
+    }
+
+    fn embedding_status(&self, space_id: &str) -> Result<EmbeddingStatus> {
+        let records = self.scan();
+        let mappings = self
+            .open_space(space_id, false)?
+            .as_ref()
+            .map(|space| Self::mappings(space, &records))
+            .unwrap_or_default();
+        let mut status = EmbeddingStatus::default();
+        for record in records.into_iter().filter(|record| !record.obsolete) {
+            status.total += 1;
+            match mappings.get(&record.id) {
+                None => status.missing += 1,
+                Some(mapping)
+                    if mapping.embedding.content_hash == super::semantic::content_hash(&record) =>
+                {
+                    status.ready += 1;
+                }
+                Some(_) => status.stale += 1,
+            }
+        }
+        Ok(status)
+    }
+
+    fn embedding_is_current(&self, memory_id: &str, space_id: &str) -> Result<bool> {
+        let Some(record) = self.get(memory_id)? else {
+            bail!("memory id not found: {memory_id}");
+        };
+        if record.obsolete {
+            return Ok(false);
+        }
+        let mapping = self
+            .open_space(space_id, false)?
+            .as_ref()
+            .and_then(|space| space.get(&format!("{EMBEDDING_MAP_PREFIX}{memory_id}")))
+            .and_then(|value| serde_json::from_str::<VectorMapping>(&value).ok());
+        Ok(mapping.is_some_and(|mapping| {
+            mapping.embedding.content_hash == super::semantic::content_hash(&record)
+        }))
+    }
+
+    fn semantic_search(
+        &self,
+        space_id: &str,
+        query: &[f32],
+        filter: &MemoryFilter,
+        limit: usize,
+    ) -> Result<Vec<SemanticHit>> {
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
+        let Some(space) = self.open_space(space_id, false)? else {
+            return Ok(Vec::new());
+        };
+        let records = self.scan();
+        let mappings = Self::mappings(&space, &records);
+        let current_by_vector = mappings
+            .values()
+            .map(|mapping| (mapping.vector_id, mapping))
+            .collect::<HashMap<_, _>>();
+        let records = records
+            .into_iter()
+            .map(|record| (record.id.clone(), record))
+            .collect::<HashMap<_, _>>();
+        // Ask for every indexed vector so post-search project/source/staleness
+        // filters cannot hide an eligible older candidate behind stale history.
+        let indexed = space.stats().vectors;
+        let results = space
+            .search(query, indexed)
+            .map_err(|error| anyhow!("search WDBX semantic space: {error}"))?;
+        let mut hits = Vec::new();
+        for result in results {
+            let Some(mapping) = current_by_vector.get(&result.id) else {
+                continue;
+            };
+            let Some(record) = records.get(&mapping.embedding.memory_id) else {
+                continue;
+            };
+            if record.obsolete
+                || !filter.matches(record)
+                || mapping.embedding.space_id != space_id
+                || mapping.embedding.dimension != query.len()
+                || mapping.embedding.content_hash != super::semantic::content_hash(record)
+            {
+                continue;
+            }
+            hits.push(SemanticHit {
+                score: result.score,
+                record: record.clone(),
+            });
+            if hits.len() == limit {
+                break;
+            }
+        }
+        Ok(hits)
+    }
 }
 
 #[cfg(test)]
@@ -412,6 +636,136 @@ mod tests {
         )
         .unwrap();
         assert_eq!(db.filter_with(&filter, 10).unwrap().len(), 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn apple_sized_512d_semantic_vector_survives_reopen_and_searches() {
+        use crate::memory::{embedding::EmbeddingSpace, semantic::StoredEmbedding};
+
+        let dir = tmp("semantic-512-reopen");
+        let space = EmbeddingSpace::new("apple", "sentence:en", "r1", 512).unwrap();
+        let mut record = MemoryRecord::new_stm("semantic durable", "private payload");
+        record.tags.push("storage".into());
+        let id = record.id.clone();
+        let mut vector = vec![0.0; 512];
+        vector[0] = 1.0;
+        let legacy_dir = dir.join("embedding-spaces").join(&space.space_id);
+        std::fs::create_dir_all(&legacy_dir).unwrap();
+        std::fs::write(legacy_dir.join("sentinel"), b"leave legacy untouched").unwrap();
+        {
+            let db = WdbxMemory::open(&dir).unwrap();
+            db.store(record.clone()).unwrap();
+            db.put_embedding(StoredEmbedding::new(&record, &space, vector.clone()).unwrap())
+                .unwrap();
+            db.checkpoint().unwrap();
+        }
+        let db = WdbxMemory::open(&dir).unwrap();
+        assert_eq!(db.embedding_status(&space.space_id).unwrap().ready, 1);
+        let hits = db
+            .semantic_search(&space.space_id, &vector, &MemoryFilter::default(), 10)
+            .unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].record.id, id);
+        assert!(
+            dir.join("embedding-spaces-v2")
+                .join(&space.space_id)
+                .is_dir()
+        );
+        assert!(
+            legacy_dir.join("sentinel").is_file(),
+            "new semantic writes must not migrate or remove the legacy namespace"
+        );
+        assert_eq!(
+            std::fs::read(legacy_dir.join("sentinel")).unwrap(),
+            b"leave legacy untouched"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn semantic_space_isolation_and_staleness_survive_reopen() {
+        use crate::memory::{embedding::EmbeddingSpace, semantic::StoredEmbedding};
+
+        let dir = tmp("semantic-isolation");
+        let first = EmbeddingSpace::new("test", "model-a", "r1", 2).unwrap();
+        let second = EmbeddingSpace::new("test", "model-b", "r1", 2).unwrap();
+        let mut record = MemoryRecord::new_stm("original summary", "private payload");
+        let id = record.id.clone();
+        {
+            let db = WdbxMemory::open(&dir).unwrap();
+            db.store(record.clone()).unwrap();
+            db.put_embedding(StoredEmbedding::new(&record, &first, vec![1.0, 0.0]).unwrap())
+                .unwrap();
+        }
+        record.summary = "changed summary".into();
+        {
+            let db = WdbxMemory::open(&dir).unwrap();
+            db.update(record).unwrap();
+        }
+        let db = WdbxMemory::open(&dir).unwrap();
+        assert_eq!(db.embedding_status(&first.space_id).unwrap().stale, 1);
+        assert_eq!(db.embedding_status(&second.space_id).unwrap().missing, 1);
+        assert!(
+            db.semantic_search(&first.space_id, &[1.0, 0.0], &MemoryFilter::default(), 10,)
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(db.get(&id).unwrap().unwrap().summary, "changed summary");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn mixed_dimensions_fail_before_poisoning_an_existing_space() {
+        use crate::memory::{embedding::EmbeddingSpace, semantic::StoredEmbedding};
+
+        let dir = tmp("semantic-mixed-dimensions");
+        let space = EmbeddingSpace::new("test", "model-a", "r1", 2).unwrap();
+        let record = MemoryRecord::new_stm("dimension guard", "private payload");
+        let id = record.id.clone();
+        let db = WdbxMemory::open(&dir).unwrap();
+        db.store(record.clone()).unwrap();
+        db.put_embedding(StoredEmbedding::new(&record, &space, vec![1.0, 0.0]).unwrap())
+            .unwrap();
+
+        let mut invalid = StoredEmbedding::new(&record, &space, vec![1.0, 0.0]).unwrap();
+        invalid.dimension = 3;
+        invalid.vector = vec![1.0, 0.0, 0.0];
+        assert!(
+            db.put_embedding(invalid)
+                .unwrap_err()
+                .to_string()
+                .contains("embedding requires 3")
+        );
+
+        let hits = db
+            .semantic_search(&space.space_id, &[1.0, 0.0], &MemoryFilter::default(), 10)
+            .unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].record.id, id);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn zero_limit_matches_sqlite() {
+        let dir = tmp("zero");
+        let db = WdbxMemory::open(&dir).unwrap();
+        db.store(MemoryRecord::new_stm("needle", "needle")).unwrap();
+        assert!(
+            db.filter_with(&MemoryFilter::default(), 0)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            db.search_keyword_with("needle", &MemoryFilter::default(), 0)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            db.embedding_candidates("sem-v1-test", 0)
+                .unwrap()
+                .is_empty()
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

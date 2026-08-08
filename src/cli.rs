@@ -249,6 +249,11 @@ pub enum Commands {
         #[command(subcommand)]
         cmd: Option<MemoryCmd>,
     },
+    /// Authenticated local ABI multi-process mesh proof (not production multi-host)
+    Mesh {
+        #[command(subcommand)]
+        cmd: MeshCmd,
+    },
     /// Show or set persona (abbey|aviva|abi|auto)
     Persona { name: Option<String> },
     /// Show or set worker role (max|gemma|auto)
@@ -283,7 +288,7 @@ pub enum Commands {
     /// Generate an image via cursor-agent tools (not a local vision model)
     #[command(visible_alias = "gen-image")]
     Imagine {
-        /// Output path (default: ./abbey-gen-<timestamp>.png)
+        /// Output path (default: `./abbey-gen-<timestamp>.png`)
         #[arg(long, value_name = "PATH")]
         out: Option<PathBuf>,
         /// Aspect ratio hint: 1:1 · 16:9 · 9:16 · 4:3 · 3:4 · auto
@@ -358,10 +363,14 @@ pub enum Commands {
     /// Discover peer agentic tools on PATH
     #[command(visible_alias = "tools")]
     Agents,
-    /// List local skills (~/.grok|claude|cursor|abi-mega)
-    Skills,
+    /// List skills with provenance; default output is bounded
+    Skills {
+        /// Print every discovered divergent/versioned entry and diagnostic
+        #[arg(long)]
+        all: bool,
+    },
     /// Plugins inventory / passthrough (cursor-agent or abi)
-    #[command(visible_alias = "plug")]
+    #[command(visible_alias = "plugin", visible_alias = "plug")]
     Plugins {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
@@ -408,7 +417,7 @@ pub enum Commands {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Claims gate: Current / Proposed / Out of scope (embeddings, LoRA, multi-node…)
+    /// Claims gate: Current / Proposed / Out of scope (semantic, LoRA, multi-host…)
     #[command(visible_alias = "roadmap", visible_alias = "scope")]
     Claims {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
@@ -472,11 +481,6 @@ pub enum Commands {
     /// MCP/ACP host honesty (inventory Current; Abbey-as-host OOS)
     #[command(visible_alias = "tool-host")]
     Host {
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        args: Vec<String>,
-    },
-    /// Plugin management
-    Plugin {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
@@ -571,6 +575,18 @@ pub enum MemoryCmd {
         /// Subject tag for the replacement (repeatable)
         #[arg(long = "tag")]
         tags: Vec<String>,
+        /// Source category such as session, route, or import.
+        #[arg(long, default_value = "session")]
+        source: String,
+        /// Source-specific stable reference.
+        #[arg(long)]
+        source_ref: Option<String>,
+        /// Project root/name override (defaults to the current Git root).
+        #[arg(long)]
+        project: Option<String>,
+        /// Replacement timestamp in RFC 3339 form.
+        #[arg(long)]
+        timestamp: Option<String>,
     },
     /// Reflection report (duplicates / low confidence / superseded)
     Reflect,
@@ -589,6 +605,8 @@ pub enum MemoryCmd {
         id: String,
         #[arg(long, default_value_t = 10)]
         limit: usize,
+        #[command(flatten)]
+        filter: MemoryFilterArgs,
     },
     /// Lexical similarity search (feature-hash cosine — not learned semantics)
     ///
@@ -606,6 +624,14 @@ pub enum MemoryCmd {
         #[command(flatten)]
         filter: MemoryFilterArgs,
     },
+    /// Learned semantic search in the explicitly selected embedding space
+    Semantic {
+        query: String,
+        #[arg(long, default_value_t = 10)]
+        limit: usize,
+        #[command(flatten)]
+        filter: MemoryFilterArgs,
+    },
     /// Export layer as JSONL (train_candidate requires provenance on records)
     Export {
         #[arg(long, default_value = "ltm")]
@@ -613,12 +639,48 @@ pub enum MemoryCmd {
         #[command(flatten)]
         filter: MemoryFilterArgs,
     },
-    /// Proposed: semantic embeddings (honest refuse)
+    /// Inspect or explicitly populate the selected semantic embedding space
     #[command(visible_alias = "embedding", visible_alias = "vector")]
     Embed {
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        _args: Vec<String>,
+        /// Record id, or `status`; omit only with --all
+        #[arg(conflicts_with = "all")]
+        id: Option<String>,
+        /// Backfill every pending or stale record in the selected space
+        #[arg(long)]
+        all: bool,
+        /// Recompute an embedding even when the current mapping is fresh
+        #[arg(long)]
+        force: bool,
     },
+}
+
+#[derive(Debug, Clone, Subcommand)]
+pub enum MeshCmd {
+    /// Show the ABI binary resolution and local-proof claim boundary
+    Status,
+    /// Show the bounded node counts accepted by local-demo
+    Nodes,
+    /// Run ABI's authenticated loopback multi-process proof
+    #[command(name = "local-demo")]
+    LocalDemo {
+        /// Independent ABI processes to spawn (3 through 9)
+        #[arg(long, default_value_t = 3, value_parser = parse_mesh_nodes)]
+        nodes: usize,
+        /// Emit the parsed proof as JSON
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+fn parse_mesh_nodes(value: &str) -> Result<usize, String> {
+    let nodes = value
+        .parse::<usize>()
+        .map_err(|_| "nodes must be an integer from 3 through 9".to_string())?;
+    if (3..=9).contains(&nodes) {
+        Ok(nodes)
+    } else {
+        Err("nodes must be from 3 through 9".into())
+    }
 }
 
 /// Filters shared by memory query surfaces.

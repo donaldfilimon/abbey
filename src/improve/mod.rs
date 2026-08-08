@@ -103,7 +103,7 @@ fn print_help() {
            --gate-only            heal ./check.sh only (ignore open todos)\n\
            --ledger-only          drive open slices; still require green gate\n\
          \n\
-         honesty: same-host lanes/peers only — multi-node mesh is Proposed.\n\
+         honesty: same-host lanes/peers + local ABI process proof only — production multi-host is Proposed.\n\
          Abbey does not patch files itself; apply goes through cursor-agent Max.\n\
          OS allowlist execute still needs its own --confirm.\n\
          goals.md is never auto-marked done — close the ledger after evidence.\n\
@@ -165,10 +165,7 @@ fn parse_args(args: &[String]) -> Result<ImproveOpts> {
             }
             "--jobs" => {
                 i += 1;
-                let Some(v) = args.get(i) else {
-                    bail!("--jobs needs a positive integer");
-                };
-                opts.jobs = parse_positive(v, "--jobs")?;
+                opts.jobs = crate::slash::parse_jobs_value(args.get(i).map(String::as_str))?;
             }
             "--lanes" => {
                 i += 1;
@@ -193,7 +190,7 @@ fn parse_args(args: &[String]) -> Result<ImproveOpts> {
                     parse_positive(s.trim_start_matches("--max-minutes="), "--max-minutes")? as u64;
             }
             s if s.starts_with("--jobs=") => {
-                opts.jobs = parse_positive(s.trim_start_matches("--jobs="), "--jobs")?;
+                opts.jobs = crate::slash::parse_jobs_value(Some(s.trim_start_matches("--jobs=")))?;
             }
             s if s.starts_with("--lanes=") => {
                 opts.lanes = split_csv(s.trim_start_matches("--lanes="));

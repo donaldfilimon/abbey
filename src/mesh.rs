@@ -1,0 +1,543 @@
+//! Claim-bounded bridge to ABI's authenticated local multi-process WDBX proof.
+//!
+//! This module never invokes a shell, so a shell alias named `abi` cannot be
+//! mistaken for an executable. The proof is exact local process evidence on
+//! one host; it is not production multi-host deployment or shared compute.
+
+use crate::config::{self, AbbeyConfig};
+use anyhow::{Context, Result, bail};
+use serde::{Deserialize, Serialize};
+use std::io::{self, Read};
+use std::ops::RangeInclusive;
+use std::path::{Path, PathBuf};
+use std::process::{Child, Command, ExitStatus, Stdio};
+use std::sync::mpsc;
+use std::thread;
+use std::time::{Duration, Instant};
+
+pub const MIN_NODES: usize = 3;
+pub const MAX_NODES: usize = 9;
+pub const PROOF_LABEL: &str = "authenticated_local_multi_process";
+pub const STORAGE_PROOF_SCOPE: &str = "isolated_in_process_exact_transaction_replicas";
+pub const ABBEY_SCOPE: &str = "single_host_authenticated_local_multi_process_only";
+pub const EXCLUDED_CLAIMS: [&str; 2] = ["production_multi_host", "shared_compute"];
+
+const MAX_PROOF_JSON_BYTES: usize = 1024 * 1024;
+const MAX_PROOF_STDERR_BYTES: usize = 1024 * 1024;
+const LOCAL_DEMO_TIMEOUT: Duration = Duration::from_secs(60);
+const CHILD_POLL_INTERVAL: Duration = Duration::from_millis(10);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StreamName {
+    Stdout,
+    Stderr,
+}
+
+impl std::fmt::Display for StreamName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Stdout => f.write_str("stdout"),
+            Self::Stderr => f.write_str("stderr"),
+        }
+    }
+}
+
+struct CapturedStream {
+    name: StreamName,
+    bytes: Vec<u8>,
+    overflowed: bool,
+}
+
+struct BoundedOutput {
+    status: ExitStatus,
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct MeshStatus {
+    pub available: bool,
+    pub abi_bin: Option<String>,
+    pub nodes_min: usize,
+    pub nodes_max: usize,
+    pub proof: &'static str,
+    pub abbey_scope: &'static str,
+    pub not_proof_of: [&'static str; 2],
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ElectionProof {
+    pub leader: u64,
+    pub term: u64,
+    pub votes: usize,
+    pub quorum: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ReplicatedWriteProof {
+    pub acknowledgements: usize,
+    pub quorum: usize,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct MeshProof {
+    pub proof: String,
+    pub storage_proof_scope: String,
+    pub nodes: usize,
+    pub election: ElectionProof,
+    pub replicated_write: ReplicatedWriteProof,
+    pub shard_placement_verified: bool,
+    pub failover: ElectionProof,
+    pub conflicts_observed: bool,
+    pub read_repair_completed: bool,
+    pub children_reaped: bool,
+    pub abbey_scope: &'static str,
+    pub not_proof_of: [&'static str; 2],
+}
+
+#[derive(Debug, Deserialize)]
+struct AbiMeshProof {
+    proof: String,
+    storage_proof_scope: String,
+    nodes: usize,
+    election: ElectionProof,
+    replicated_write: ReplicatedWriteProof,
+    shard_placement_verified: bool,
+    failover: ElectionProof,
+    conflicts_observed: bool,
+    read_repair_completed: bool,
+    children_reaped: bool,
+}
+
+/// Resolve the configured executable path and report the exact claim boundary.
+///
+/// `AbbeyConfig::load()` applies `ABBEY_ABI_BIN` over `abi_bin`; the existing
+/// resolver then falls back to a real executable on PATH. No shell is involved.
+pub fn status(cfg: &AbbeyConfig) -> MeshStatus {
+    let abi_bin = resolve_abi_bin(cfg);
+    MeshStatus {
+        available: abi_bin.is_some(),
+        abi_bin: abi_bin.map(|path| path.display().to_string()),
+        nodes_min: MIN_NODES,
+        nodes_max: MAX_NODES,
+        proof: PROOF_LABEL,
+        abbey_scope: ABBEY_SCOPE,
+        not_proof_of: EXCLUDED_CLAIMS,
+    }
+}
+
+/// Supported local process counts.
+pub fn nodes() -> RangeInclusive<usize> {
+    MIN_NODES..=MAX_NODES
+}
+
+/// Run `abi wdbx cluster local-demo <nodes> --json` and validate its evidence.
+pub fn local_demo(cfg: &AbbeyConfig, node_count: usize) -> Result<MeshProof> {
+    let Some(bin) = resolve_abi_bin(cfg) else {
+        bail!(
+            "a real `abi` binary is required for the local mesh proof; set \
+             ABBEY_ABI_BIN or `abi_bin` in {}",
+            AbbeyConfig::config_path().display()
+        );
+    };
+    run_local_demo_with_bin(&bin, node_count)
+}
+
+/// Convenience dispatcher for root CLI/slash wiring.
+pub fn dispatch(cfg: &AbbeyConfig, args: &[String], json: bool) -> Result<i32> {
+    match args {
+        [] => emit_status(cfg, json),
+        [command] if command == "status" => emit_status(cfg, json),
+        [command] if command == "nodes" => {
+            if json {
+                println!(r#"{{"min":{MIN_NODES},"max":{MAX_NODES}}}"#);
+            } else {
+                println!("mesh local-demo nodes: {MIN_NODES}..={MAX_NODES}");
+            }
+            Ok(0)
+        }
+        [command] if command == "local-demo" => emit_demo(cfg, MIN_NODES, json),
+        [command, count] if command == "local-demo" => {
+            let node_count = count
+                .parse::<usize>()
+                .with_context(|| format!("mesh local-demo nodes `{count}`"))?;
+            emit_demo(cfg, node_count, json)
+        }
+        _ => bail!("usage: abbey mesh <status|nodes|local-demo [3..=9]> [--json]"),
+    }
+}
+
+fn emit_status(cfg: &AbbeyConfig, json: bool) -> Result<i32> {
+    let status = status(cfg);
+    if json {
+        println!("{}", serde_json::to_string(&status)?);
+    } else {
+        println!(
+            "mesh: {}\nabi: {}\nnodes: {}..={}\nproof: {}\nscope: {}\nnot proof of: {}",
+            if status.available {
+                "available"
+            } else {
+                "unavailable"
+            },
+            status
+                .abi_bin
+                .as_deref()
+                .unwrap_or("(real abi binary not found)"),
+            status.nodes_min,
+            status.nodes_max,
+            status.proof,
+            status.abbey_scope,
+            status.not_proof_of.join(", ")
+        );
+    }
+    Ok(i32::from(!status.available))
+}
+
+fn emit_demo(cfg: &AbbeyConfig, node_count: usize, json: bool) -> Result<i32> {
+    let proof = local_demo(cfg, node_count)?;
+    if json {
+        println!("{}", serde_json::to_string(&proof)?);
+    } else {
+        println!(
+            "proof: {}\nnodes: {}\nwrite acknowledgements: {}\nread repair: {}\nchildren reaped: {}\nscope: {}\nnot proof of: {}",
+            proof.proof,
+            proof.nodes,
+            proof.replicated_write.acknowledgements,
+            proof.read_repair_completed,
+            proof.children_reaped,
+            proof.abbey_scope,
+            proof.not_proof_of.join(", ")
+        );
+    }
+    Ok(0)
+}
+
+fn resolve_abi_bin(cfg: &AbbeyConfig) -> Option<PathBuf> {
+    config::resolve_abi_bin(cfg).filter(|path| path.is_file())
+}
+
+fn build_local_demo_argv(node_count: usize) -> Result<Vec<String>> {
+    if !nodes().contains(&node_count) {
+        bail!("mesh local-demo supports {MIN_NODES}..={MAX_NODES} nodes");
+    }
+    Ok(vec![
+        "wdbx".into(),
+        "cluster".into(),
+        "local-demo".into(),
+        node_count.to_string(),
+        "--json".into(),
+    ])
+}
+
+fn run_local_demo_with_bin(bin: &Path, node_count: usize) -> Result<MeshProof> {
+    run_local_demo_with_bin_timeout(bin, node_count, LOCAL_DEMO_TIMEOUT)
+}
+
+fn run_local_demo_with_bin_timeout(
+    bin: &Path,
+    node_count: usize,
+    timeout: Duration,
+) -> Result<MeshProof> {
+    let argv = build_local_demo_argv(node_count)?;
+    let output = run_bounded_child(bin, &argv, timeout)?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!(
+            "ABI local mesh proof failed (exit {}): {}",
+            output.status.code().unwrap_or(1),
+            stderr.trim()
+        );
+    }
+    parse_proof(&output.stdout, node_count)
+}
+
+fn run_bounded_child(bin: &Path, argv: &[String], timeout: Duration) -> Result<BoundedOutput> {
+    let mut child = Command::new(bin)
+        .args(argv)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .with_context(|| format!("run {} {}", bin.display(), argv.join(" ")))?;
+    let stdout = child.stdout.take().context("capture ABI mesh stdout")?;
+    let stderr = child.stderr.take().context("capture ABI mesh stderr")?;
+    let (overflow_tx, overflow_rx) = mpsc::channel();
+    let stdout_handle = spawn_bounded_reader(
+        stdout,
+        StreamName::Stdout,
+        MAX_PROOF_JSON_BYTES,
+        overflow_tx.clone(),
+    );
+    let stderr_handle = spawn_bounded_reader(
+        stderr,
+        StreamName::Stderr,
+        MAX_PROOF_STDERR_BYTES,
+        overflow_tx,
+    );
+
+    let deadline = Instant::now() + timeout;
+    let mut timed_out = false;
+    let mut observed_overflow = None;
+    let status = loop {
+        if let Ok(stream) = overflow_rx.try_recv() {
+            observed_overflow = Some(stream);
+            break None;
+        }
+        if let Some(status) = child.try_wait().context("poll ABI local mesh proof")? {
+            break Some(status);
+        }
+        let now = Instant::now();
+        if now >= deadline {
+            timed_out = true;
+            break None;
+        }
+        thread::sleep(CHILD_POLL_INTERVAL.min(deadline.saturating_duration_since(now)));
+    };
+
+    if timed_out || observed_overflow.is_some() {
+        kill_and_wait(&mut child);
+    }
+    let stdout = join_reader(stdout_handle, StreamName::Stdout)?;
+    let stderr = join_reader(stderr_handle, StreamName::Stderr)?;
+
+    if timed_out {
+        bail!(
+            "ABI local mesh proof timed out after {} ms",
+            timeout.as_millis()
+        );
+    }
+    let overflow = observed_overflow
+        .or_else(|| stdout.overflowed.then_some(stdout.name))
+        .or_else(|| stderr.overflowed.then_some(stderr.name));
+    if let Some(stream) = overflow {
+        let cap = match stream {
+            StreamName::Stdout => MAX_PROOF_JSON_BYTES,
+            StreamName::Stderr => MAX_PROOF_STDERR_BYTES,
+        };
+        bail!("ABI local mesh proof {stream} exceeds {cap} bytes");
+    }
+    let status = status.context("ABI local mesh proof ended without an exit status")?;
+    Ok(BoundedOutput {
+        status,
+        stdout: stdout.bytes,
+        stderr: stderr.bytes,
+    })
+}
+
+fn spawn_bounded_reader<R>(
+    reader: R,
+    name: StreamName,
+    cap: usize,
+    overflow_tx: mpsc::Sender<StreamName>,
+) -> thread::JoinHandle<io::Result<CapturedStream>>
+where
+    R: Read + Send + 'static,
+{
+    thread::spawn(move || read_bounded(reader, name, cap, &overflow_tx))
+}
+
+fn read_bounded<R: Read>(
+    mut reader: R,
+    name: StreamName,
+    cap: usize,
+    overflow_tx: &mpsc::Sender<StreamName>,
+) -> io::Result<CapturedStream> {
+    // Reserve the exact detection budget up front so Vec growth cannot
+    // transiently double well beyond the advertised stream cap.
+    let mut bytes = Vec::with_capacity(cap.saturating_add(1));
+    let mut buffer = [0_u8; 8192];
+    while bytes.len() <= cap {
+        let remaining = cap.saturating_add(1).saturating_sub(bytes.len());
+        if remaining == 0 {
+            break;
+        }
+        let chunk = remaining.min(buffer.len());
+        let read = reader.read(&mut buffer[..chunk])?;
+        if read == 0 {
+            break;
+        }
+        bytes.extend_from_slice(&buffer[..read]);
+    }
+    let overflowed = bytes.len() > cap;
+    if overflowed {
+        let _ = overflow_tx.send(name);
+        bytes.truncate(cap);
+    }
+    Ok(CapturedStream {
+        name,
+        bytes,
+        overflowed,
+    })
+}
+
+fn join_reader(
+    handle: thread::JoinHandle<io::Result<CapturedStream>>,
+    name: StreamName,
+) -> Result<CapturedStream> {
+    handle
+        .join()
+        .map_err(|_| anyhow::anyhow!("ABI local mesh proof {name} reader panicked"))?
+        .with_context(|| format!("read ABI local mesh proof {name}"))
+}
+
+fn kill_and_wait(child: &mut Child) {
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+fn parse_proof(json: &[u8], requested_nodes: usize) -> Result<MeshProof> {
+    let proof: AbiMeshProof =
+        serde_json::from_slice(json).context("parse ABI local mesh proof JSON")?;
+    if proof.proof != PROOF_LABEL {
+        bail!("unexpected ABI mesh proof label `{}`", proof.proof);
+    }
+    if proof.storage_proof_scope != STORAGE_PROOF_SCOPE {
+        bail!(
+            "unexpected ABI storage proof scope `{}`",
+            proof.storage_proof_scope
+        );
+    }
+    if proof.nodes != requested_nodes {
+        bail!(
+            "ABI mesh proof node mismatch: requested {requested_nodes}, reported {}",
+            proof.nodes
+        );
+    }
+    if proof.election.votes < proof.election.quorum
+        || proof.replicated_write.acknowledgements < proof.replicated_write.quorum
+        || proof.failover.votes < proof.failover.quorum
+        || !proof.shard_placement_verified
+        || !proof.conflicts_observed
+        || !proof.read_repair_completed
+        || !proof.children_reaped
+    {
+        bail!("ABI local mesh proof reported incomplete evidence");
+    }
+    Ok(MeshProof {
+        proof: proof.proof,
+        storage_proof_scope: proof.storage_proof_scope,
+        nodes: proof.nodes,
+        election: proof.election,
+        replicated_write: proof.replicated_write,
+        shard_placement_verified: proof.shard_placement_verified,
+        failover: proof.failover,
+        conflicts_observed: proof.conflicts_observed,
+        read_repair_completed: proof.read_repair_completed,
+        children_reaped: proof.children_reaped,
+        abbey_scope: ABBEY_SCOPE,
+        not_proof_of: EXCLUDED_CLAIMS,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(unix)]
+    fn write_fake_abi(tag: &str, script: &str) -> (PathBuf, PathBuf) {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let dir = std::env::temp_dir().join(format!(
+            "abbey-mesh-{tag}-{}-{}",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("test")
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let bin = dir.join("abi");
+        std::fs::write(&bin, script).unwrap();
+        let mut permissions = std::fs::metadata(&bin).unwrap().permissions();
+        permissions.set_mode(0o700);
+        std::fs::set_permissions(&bin, permissions).unwrap();
+        (dir, bin)
+    }
+
+    fn proof_json(nodes: usize) -> String {
+        format!(
+            r#"{{"proof":"{PROOF_LABEL}","storage_proof_scope":"{STORAGE_PROOF_SCOPE}","nodes":{nodes},"election":{{"leader":0,"term":1,"votes":{nodes},"quorum":2}},"replicated_write":{{"acknowledgements":{nodes},"quorum":2}},"shard_placement_verified":true,"failover":{{"leader":1,"term":2,"votes":2,"quorum":2}},"conflicts_observed":true,"read_repair_completed":true,"children_reaped":true}}"#
+        )
+    }
+
+    #[test]
+    fn node_range_and_argv_are_exact() {
+        assert_eq!(nodes(), MIN_NODES..=MAX_NODES);
+        assert_eq!(
+            build_local_demo_argv(3).unwrap(),
+            ["wdbx", "cluster", "local-demo", "3", "--json"]
+        );
+        for invalid in [0, 2, 10, usize::MAX] {
+            assert!(build_local_demo_argv(invalid).is_err());
+        }
+    }
+
+    #[test]
+    fn parser_requires_the_authenticated_complete_local_proof() {
+        let proof = parse_proof(proof_json(3).as_bytes(), 3).unwrap();
+        assert_eq!(proof.proof, PROOF_LABEL);
+        assert_eq!(proof.abbey_scope, ABBEY_SCOPE);
+        assert_eq!(proof.not_proof_of, EXCLUDED_CLAIMS);
+
+        let wrong_label = proof_json(3).replace(PROOF_LABEL, "production_cluster");
+        assert!(parse_proof(wrong_label.as_bytes(), 3).is_err());
+        assert!(parse_proof(proof_json(3).as_bytes(), 4).is_err());
+        let incomplete =
+            proof_json(3).replace("\"children_reaped\":true", "\"children_reaped\":false");
+        assert!(parse_proof(incomplete.as_bytes(), 3).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn fake_abi_binary_receives_exact_argv_and_returns_typed_proof() {
+        let script = format!(
+            "#!/bin/sh\n[ \"$*\" = \"wdbx cluster local-demo 3 --json\" ] || exit 23\nprintf '%s\\n' '{}'\n",
+            proof_json(3)
+        );
+        let (dir, bin) = write_fake_abi("success", &script);
+
+        let cfg = AbbeyConfig {
+            abi_bin: Some(bin.clone()),
+            ..AbbeyConfig::default()
+        };
+        let resolved = status(&cfg);
+        assert!(resolved.available);
+        assert_eq!(resolved.abi_bin, Some(bin.display().to_string()));
+
+        let proof = local_demo(&cfg, 3).unwrap();
+        assert_eq!(proof.nodes, 3);
+        assert_eq!(proof.proof, PROOF_LABEL);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn local_demo_timeout_kills_and_reaps_the_child() {
+        let script = "#!/bin/sh\nexec sleep 5\n";
+        let (dir, bin) = write_fake_abi("timeout", script);
+        let started = Instant::now();
+        let error = run_local_demo_with_bin_timeout(&bin, 3, Duration::from_millis(50))
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("timed out"), "{error}");
+        assert!(started.elapsed() < Duration::from_secs(2));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn local_demo_fails_closed_when_either_stream_exceeds_its_cap() {
+        for (tag, redirection, expected) in [
+            ("large-stdout", "2>/dev/null", "stdout exceeds"),
+            ("large-stderr", "1>&2 2>/dev/null", "stderr exceeds"),
+        ] {
+            let script = format!(
+                "#!/bin/sh\n[ \"$*\" = \"wdbx cluster local-demo 3 --json\" ] || exit 23\ndd if=/dev/zero bs={} count=1 {redirection}\n",
+                MAX_PROOF_JSON_BYTES + 1
+            );
+            let (dir, bin) = write_fake_abi(tag, &script);
+            let error = run_local_demo_with_bin_timeout(&bin, 3, Duration::from_secs(2))
+                .unwrap_err()
+                .to_string();
+            assert!(error.contains(expected), "{tag}: {error}");
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+    }
+}

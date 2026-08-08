@@ -10,14 +10,14 @@
 //! semantics, no subword vocabulary, no notion of meaning beyond surface form.
 //! Two records about the same idea in entirely different words will *not* match.
 //!
-//! Learned/semantic embedding space therefore stays **Proposed** — see
-//! `claims.rs` and `abbey claims refuse embeddings`, which still exits 2.
+//! Learned semantic search is a separate, explicitly configured and persisted
+//! provider space; this lexical path remains available when it is disabled.
 //!
 //! ## Why vectors are not persisted
 //!
 //! Embedding happens at query time over `store.filter(..)`, exactly as
 //! [`super::map::nearest_to`] recomputes coordinates. Nothing is written, so
-//! `abi-wdbx`'s `put_vector` storage stays genuinely unwired (still Proposed)
+//! This path does not use persisted vectors; the separate semantic module does.
 //! and there is no dual-write to drift. It also avoids persisting vectors next
 //! to Zig-written ones, where any hash change would silently corrupt recall.
 
