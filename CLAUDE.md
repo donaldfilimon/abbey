@@ -95,7 +95,7 @@ Key modules (`src/`):
 | `init/` (`mod.rs`, `detect.rs`, `probe.rs`) | `abbey init` — scans a project and writes `AGENTS.md` |
 | `tui/` (`app.rs`, `keys.rs`, `ui.rs`, `tabs.rs`, `overlay.rs`, `refresh.rs`, `theme.rs`, `widgets.rs`, `mod.rs`) | 7-tab ratatui app; `keys.rs` holds key/palette/editor/mouse input handling split out of `app.rs` |
 | `doctor.rs` | doctor/debug/persona/role/memory checks |
-| `agent.rs` / `models.rs` / `gitops.rs` / `state.rs` / `config.rs` | executor invocation (cursor · grok · on-device `fm`), model aliases, local git helpers, per-cwd state, config loading |
+| `agent/` (`mod.rs`, `argv.rs`) / `models.rs` / `gitops.rs` / `state.rs` / `config.rs` | executor invocation (cursor · grok · on-device `fm`; `argv.rs` holds the per-backend argv grammars + prompt/argv clamping), model aliases, local git helpers, per-cwd state, config loading |
 
 Personas (Abbey/Aviva/Abi) and Max/Gemma worker roles are defined in the sibling `abi-ai` crate (`../abi/crates/abi-ai/src/identity.rs`) — Abbey's own code consumes those contracts rather than redefining identity. See [docs/identity.md](docs/identity.md) for the distilled spec and Current/Proposed status of each claim.
 

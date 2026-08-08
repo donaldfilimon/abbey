@@ -49,7 +49,7 @@ src/host.rs          portable PATH/PATHEXT + argv clamp + install paths
 src/surfaces.rs      vision/cot/runtime honesty surfaces
 src/learn.rs os_control.rs parallel.rs inventory.rs
 src/tui/              7-tab ratatui
-src/init/ gitops.rs agent.rs models.rs state.rs config.rs
+src/init/ gitops.rs agent/ models.rs state.rs config.rs
 docs/                 identity · architecture · production
 tasks/                goals + todo
 ```

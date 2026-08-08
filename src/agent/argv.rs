@@ -1,0 +1,392 @@
+//! Backend argv construction and prompt/argv safety.
+//!
+//! Everything that shapes what the backend binary receives on its command line
+//! lives here: the per-backend argv grammars (`build_args` / `build_args_fm`),
+//! OS argv-limit clamping, flag-shaped-prompt detection, and the E2BIG exec
+//! error mapping. Second `impl AgentConfig` block — state and process
+//! execution stay in `agent/mod.rs`.
+
+use super::{AgentBackend, AgentConfig, Worktree, max_prompt_argv_bytes};
+use std::path::Path;
+
+/// Map an Abbey model/alias onto `fm`'s two-model vocabulary (`system` | `pcc`).
+///
+/// Exact aliases only — substring matching (`cloud`, `private`) would mis-route
+/// ordinary cursor-agent ids. Under `fm` the Max/Gemma distinction is carried by
+/// the prompt alone, not by the model.
+pub fn fm_model(requested: &str) -> &'static str {
+    match requested.trim().to_ascii_lowercase().as_str() {
+        "pcc" | "private-cloud-compute" | "private_cloud_compute" => "pcc",
+        _ => "system",
+    }
+}
+
+/// Truncate `s` on a UTF-8 boundary so its byte length is ≤ `max_bytes`.
+pub fn truncate_utf8_bytes(s: &str, max_bytes: usize) -> String {
+    if s.len() <= max_bytes {
+        return s.to_string();
+    }
+    let marker = format!(
+        "\n\n… [truncated for OS argv limit; kept {max_bytes} of {} bytes]",
+        s.len()
+    );
+    let budget = max_bytes.saturating_sub(marker.len());
+    let mut end = budget.min(s.len());
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    let mut out = s[..end].to_string();
+    out.push_str(&marker);
+    if out.len() > max_bytes {
+        let mut e = max_bytes;
+        while e > 0 && !out.is_char_boundary(e) {
+            e -= 1;
+        }
+        out.truncate(e);
+    }
+    out
+}
+
+/// Clamp every trailing prompt string so the child argv stays under the OS limit.
+/// Whether a prompt would reach the backend in option position.
+///
+/// Prompt words are appended to the backend's argv with no `--` separator, so a
+/// leading-dash prompt is parsed as flags rather than text: `abbey print --
+/// "--force …"` does not *ask about* `--force`, it hands cursor-agent its real
+/// `--force` (always-approve) flag.
+///
+/// Abbey's own generated prompts are unaffected — `please-fix` and the hybrid
+/// loop embed captured errors and model output mid-string, so that argv element
+/// always begins with prose. Only a user's own leading-dash prompt trips this.
+pub fn looks_like_flags(prompt_and_rest: &[String]) -> bool {
+    prompt_and_rest
+        .iter()
+        .find(|p| !p.trim().is_empty())
+        .is_some_and(|first| first.trim_start().starts_with('-'))
+}
+
+/// Warn once, at the spawn point, rather than rewriting the argv: whether the
+/// backend honours a `--` separator is unverified, and silently reshaping every
+/// invocation to find out is not worth the risk to the primary path.
+pub(super) fn warn_if_prompt_looks_like_flags(prompt_and_rest: &[String]) {
+    if looks_like_flags(prompt_and_rest) {
+        eprintln!(
+            "abbey: prompt begins with `-` — the backend will read it as options, \
+             not text (e.g. `--force` enables always-approve)"
+        );
+    }
+}
+
+pub fn clamp_prompt_args(prompt_and_rest: &[String]) -> Vec<String> {
+    let cap = max_prompt_argv_bytes();
+    prompt_and_rest
+        .iter()
+        .map(|s| truncate_utf8_bytes(s, cap))
+        .collect()
+}
+
+pub(super) fn map_exec_err(err: std::io::Error, agent_path: &Path) -> anyhow::Error {
+    let cap = max_prompt_argv_bytes();
+    // E2BIG — Darwin/Linux typically use errno 7; Windows CreateProcess uses other codes.
+    let too_long = err.raw_os_error() == Some(7)
+        || err.kind() == std::io::ErrorKind::InvalidInput
+        || err.to_string().to_ascii_lowercase().contains("too long");
+    if too_long {
+        return anyhow::anyhow!(
+            "exec {}: argument list / command line too long ({err}).\n\
+             Abbey clamps prompts to {cap} bytes on this host; if this still \
+             fires, shrink CURSOR_AGENT_COMPLETED_PATH / please-fix input or unset \
+             oversized environment variables.",
+            agent_path.display()
+        );
+    }
+    anyhow::Error::new(err).context(format!("exec {}", agent_path.display()))
+}
+
+impl AgentConfig {
+    /// `fm respond` argv. Deliberately built from scratch rather than filtered
+    /// from the cursor grammar: `fm` shares none of those flags, and a single
+    /// leaked `--force`/`--sandbox` would break the backend the first time a
+    /// user passed one.
+    fn build_args_fm(&self, resume_id: Option<&str>, prompt_and_rest: &[String]) -> Vec<String> {
+        let prompts = clamp_prompt_args(prompt_and_rest);
+        let mut args = vec![
+            "respond".to_string(),
+            "--model".into(),
+            fm_model(&self.model).into(),
+        ];
+        if let Some(mode) = &self.mode {
+            // Abbey's ask/plan modes have no `fm` equivalent; express them as
+            // instructions so the behaviour survives the backend switch.
+            args.push("--instructions".into());
+            args.push(match mode.as_str() {
+                "ask" => "Answer the question. Do not modify files.".into(),
+                "plan" => "Produce a plan only. Do not write the implementation.".into(),
+                other => format!("Mode: {other}."),
+            });
+        }
+        if self.print {
+            // Streaming interleaves partial output; capture wants one clean body.
+            args.push("--no-stream".into());
+        }
+        if let Some(id) = resume_id.filter(|i| !i.is_empty()) {
+            if let Some(path) = self.fm_transcript_path(id) {
+                if path.is_file() {
+                    args.push("--resume".into());
+                    args.push(path.display().to_string());
+                }
+                args.push("--save-transcript".into());
+                args.push(path.display().to_string());
+            }
+        }
+        args.extend(prompts);
+        args
+    }
+
+    pub fn build_args(&self, resume_id: Option<&str>, prompt_and_rest: &[String]) -> Vec<String> {
+        if self.backend == AgentBackend::Fm {
+            return self.build_args_fm(resume_id, prompt_and_rest);
+        }
+        let prompts = clamp_prompt_args(prompt_and_rest);
+        let mut args = Vec::new();
+        args.push("--model".into());
+        args.push(self.model.clone());
+        if self.auto_review {
+            args.push("--auto-review".into());
+        }
+        if self.trust {
+            args.push("--trust".into());
+        }
+        if self.force {
+            args.push("--force".into());
+        }
+        if let Some(mode) = &self.mode {
+            args.push("--mode".into());
+            args.push(mode.clone());
+        }
+        if self.print {
+            args.push("--print".into());
+            if let Some(fmt) = &self.output_format {
+                args.push("--output-format".into());
+                args.push(fmt.clone());
+            }
+        }
+        if let Some(wt) = &self.worktree {
+            args.push("--worktree".into());
+            if let Worktree::Named(name) = wt {
+                args.push(name.clone());
+            }
+        }
+        if let Some(ws) = &self.workspace {
+            args.push("--workspace".into());
+            args.push(ws.display().to_string());
+        }
+        for d in &self.add_dirs {
+            args.push("--add-dir".into());
+            args.push(d.display().to_string());
+        }
+        if let Some(sb) = &self.sandbox {
+            args.push("--sandbox".into());
+            args.push(sb.clone());
+        }
+        args.extend(self.extra_args.iter().cloned());
+        if let Some(id) = resume_id {
+            if !id.is_empty() {
+                args.push("--resume".into());
+                args.push(id.to_string());
+            }
+        }
+        args.extend(prompts);
+        args
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn flag_shaped_prompts_are_detected() {
+        // Only the first non-empty word matters — that is the one the backend
+        // sees in option position.
+        assert!(looks_like_flags(&["--force".to_string()]));
+        assert!(looks_like_flags(&["  ".to_string(), "-p".to_string()]));
+        assert!(!looks_like_flags(&["explain --force".to_string()]));
+        assert!(!looks_like_flags(&[]));
+    }
+
+    #[test]
+    fn abbey_generated_prompts_are_not_flagged() {
+        // please-fix and the hybrid loop wrap untrusted text mid-string, so the
+        // argv element begins with prose even when the text itself has flags.
+        assert!(!looks_like_flags(&[
+            "Please fix this failure:\n\n--force --yolo".to_string()
+        ]));
+        assert!(!looks_like_flags(&[
+            "Stage 2 of 2 (implement).\n--- interpretation ---\n--force".to_string()
+        ]));
+    }
+
+    /// A config with every cursor-agent knob turned on — the `fm` builder must
+    /// still emit only flags `fm respond` actually accepts.
+    fn maximal_cursor_config() -> AgentConfig {
+        AgentConfig {
+            agent_path: PathBuf::from("/usr/bin/fm"),
+            model: "claude-fable-5-thinking-high".into(),
+            auto_review: true,
+            trust: true,
+            force: true,
+            no_resume: true,
+            mode: Some("plan".into()),
+            print: true,
+            output_format: Some("json".into()),
+            worktree: Some(Worktree::Named("wt".into())),
+            workspace: Some(PathBuf::from("/ws")),
+            add_dirs: vec![PathBuf::from("/extra")],
+            sandbox: Some("enabled".into()),
+            extra_args: vec!["--debug".into(), "--max-turns".into(), "7".into()],
+            backend: AgentBackend::Fm,
+            transcript_dir: None,
+            media_note: None,
+            media_prefers_gemma: false,
+            force_capture: false,
+            cot_path: None,
+        }
+    }
+
+    #[test]
+    fn fm_argv_never_leaks_cursor_flags() {
+        let argv = maximal_cursor_config().build_args(None, &["hello".into()]);
+        // Every flag `fm respond` knows about.
+        let allowed = [
+            "respond",
+            "--model",
+            "system",
+            "pcc",
+            "--instructions",
+            "--no-stream",
+            "--resume",
+            "--save-transcript",
+            "hello",
+        ];
+        for a in &argv {
+            if a.starts_with("--") {
+                assert!(
+                    allowed.contains(&a.as_str()),
+                    "leaked non-fm flag {a:?} into argv {argv:?}"
+                );
+            }
+        }
+        for banned in [
+            "--auto-review",
+            "--trust",
+            "--force",
+            "--mode",
+            "--worktree",
+            "--workspace",
+            "--add-dir",
+            "--sandbox",
+            "--output-format",
+            "--print",
+            "--debug",
+            "--max-turns",
+        ] {
+            assert!(!argv.contains(&banned.to_string()), "{banned} leaked");
+        }
+    }
+
+    #[test]
+    fn fm_collapses_any_cursor_model_id_to_system() {
+        assert_eq!(fm_model("claude-fable-5-thinking-high"), "system");
+        assert_eq!(fm_model("composer-2.5"), "system");
+        assert_eq!(fm_model("auto"), "system");
+        assert_eq!(fm_model("pcc"), "pcc");
+        assert_eq!(fm_model("private-cloud-compute"), "pcc");
+        assert_eq!(fm_model("private_cloud_compute"), "pcc");
+        // Substrings must not hijack unrelated aliases.
+        assert_eq!(fm_model("Private Cloud Compute"), "system");
+        assert_eq!(fm_model("my-cloud-model"), "system");
+    }
+
+    #[test]
+    fn fm_mode_becomes_instructions() {
+        let mut cfg = maximal_cursor_config();
+        cfg.mode = Some("ask".into());
+        let argv = cfg.build_args(None, &["q".into()]);
+        let i = argv.iter().position(|a| a == "--instructions").unwrap();
+        assert!(argv[i + 1].contains("Do not modify files"));
+    }
+
+    #[test]
+    fn fm_resume_maps_a_chat_id_onto_a_transcript_file() {
+        let dir = std::env::temp_dir().join(format!("abbey-fm-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut cfg = maximal_cursor_config();
+        cfg.transcript_dir = Some(dir.clone());
+
+        // No transcript yet: save but do not resume from a file that isn't there.
+        let argv = cfg.build_args(Some("chat-1"), &["hi".into()]);
+        assert!(!argv.contains(&"--resume".to_string()));
+        let save = argv.iter().position(|a| a == "--save-transcript").unwrap();
+        assert!(argv[save + 1].ends_with("chat-1.transcript"));
+
+        // Once it exists, resume from it.
+        std::fs::write(dir.join("chat-1.transcript"), "{}").unwrap();
+        let argv = cfg.build_args(Some("chat-1"), &["hi".into()]);
+        let r = argv.iter().position(|a| a == "--resume").unwrap();
+        assert!(argv[r + 1].ends_with("chat-1.transcript"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn cursor_backend_argv_is_unchanged_by_the_fm_split() {
+        let mut cfg = maximal_cursor_config();
+        cfg.backend = AgentBackend::Cursor;
+        let argv = cfg.build_args(Some("abc"), &["hi".into()]);
+        for expected in [
+            "--auto-review",
+            "--trust",
+            "--force",
+            "--sandbox",
+            "--resume",
+        ] {
+            assert!(argv.contains(&expected.to_string()), "{expected} missing");
+        }
+    }
+
+    #[test]
+    fn truncate_utf8_bytes_respects_char_boundaries_and_cap() {
+        let cap = max_prompt_argv_bytes();
+        let s = "a".repeat(cap + 50_000);
+        let out = truncate_utf8_bytes(&s, cap);
+        assert!(out.len() <= cap);
+        assert!(out.contains("truncated for OS argv limit"));
+    }
+
+    #[test]
+    fn clamp_prompt_args_caps_each_trailing_string() {
+        let cap = max_prompt_argv_bytes();
+        let huge = "x".repeat(cap + 10_000);
+        let argv = clamp_prompt_args(&[huge, "ok".into()]);
+        assert!(argv[0].len() <= cap);
+        assert_eq!(argv[1], "ok");
+    }
+
+    #[test]
+    fn build_args_clamps_a_please_fix_sized_prompt() {
+        let mut cfg = maximal_cursor_config();
+        cfg.backend = AgentBackend::Cursor;
+        let cap = max_prompt_argv_bytes();
+        let huge = "y".repeat(cap + 80_000);
+        let argv = cfg.build_args(None, &[huge]);
+        let last = argv.last().expect("prompt");
+        assert!(
+            last.len() <= cap,
+            "prompt argv still too long: {}",
+            last.len()
+        );
+    }
+}
