@@ -160,7 +160,15 @@ Buildable residuals closed 2026-07-30; Proposed/OOS stay deferred above.
 
 - [x] `abbey imagine` / `generate image|video` / `/imagine` `/gen-video` — prompt + out path via agent tools
 - [x] `abbey reason` / `/reason` — Cursor thinking model + structured reasoning wrap
-- [x] Refuse generation under `ABBEY_BACKEND=fm`; docs/claims stay honest (no local gen weights)
+- [x] Refuse generation under `ABBEY_BACKEND=fm` or `abi`; docs/claims stay honest (no local gen weights)
+
+## Abi backend (`ABBEY_BACKEND=abi`)
+
+- [x] `AgentBackend::Abi` → `abi complete`; own argv grammar with real `--` separator
+- [x] Live opt-in only (`live`/`anthropic`/bare `claude-*`); cursor thinking/role leftovers stay local
+- [x] Binary resolution: `ABBEY_ABI_BIN`/`abi_bin` first; abi candidates never include cursor-agent
+- [x] Account/MCP/gen refuse; no stale-chat retry; doctor + claims + docs honesty
+- [x] Unit tests: no flag leak, `--` prompt position, normalize thinking→local, abi candidate paths
 
 ## High-quality voice I/O (macOS)
 

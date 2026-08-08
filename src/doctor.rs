@@ -416,6 +416,23 @@ pub fn cmd_doctor(state: &AbbeyState, cfg: &AgentConfig) -> Result<i32> {
             }
         ));
     }
+    let _ = output::println(match config::resolve_abi_bin(&abbey_cfg) {
+        Some(p) if backend == agent::AgentBackend::Abi => format!(
+            "abi backend: active (ABBEY_BACKEND=abi → {}) — local persona-template; \
+             claude-*/live models use abi's Anthropic transport; stateless turns",
+            p.display()
+        ),
+        Some(p) => format!(
+            "abi backend: available via ABBEY_BACKEND=abi ({})",
+            p.display()
+        ),
+        None if backend == agent::AgentBackend::Abi => {
+            "abi backend: ACTIVE BUT NO BINARY — build with `cargo build -p abi-cli` \
+             in ../abi, then set ABBEY_ABI_BIN"
+                .into()
+        }
+        None => "abi backend: unavailable (no `abi` binary; alias won't do)".into(),
+    });
     let _ = output::println(config::wdbx_cli_status(&abbey_cfg));
     let hist = state.history(5);
     if !hist.is_empty() {
@@ -431,7 +448,15 @@ pub fn cmd_debug(state: &AbbeyState, cfg: &AgentConfig) -> Result<i32> {
     cmd_doctor(state, cfg)?;
     println!("--- debug ---");
     println!("PATH agent candidates:");
-    for name in ["cursor-agent", "agent", "grok", "codex", "claude"] {
+    for name in [
+        "cursor-agent",
+        "agent",
+        "grok",
+        "codex",
+        "claude",
+        "abi",
+        "fm",
+    ] {
         match agent::which_bin(name) {
             Some(p) => println!("  {name}: {}", p.display()),
             None => println!("  {name}: (not found)"),

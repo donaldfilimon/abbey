@@ -1,20 +1,20 @@
 # Goals
 
 ## Fully independent TUI + agent runtime
-status: todo
+status: in_progress
 
 Captured 2026-07-31: "fully independent tui and runtime similar to claude code or
-codex" — not started this turn.
+codex" — executor slice in progress (see below); TUI/GUI modernization still open.
 
 **This collides with the project's central architecture decision, stated in
 CLAUDE.md and enforced throughout this session:** "Backend is `cursor-agent`, not
-a reimplementation of Grok/Codex/Claude runtimes." `AGENTS.md`'s claims gate carries
-"Abbey as MCP host / ACP host / tool runtime" as Out of scope (`src/claims.rs:214`),
-and `abbey runtime` actively **refuses** the reading "Abbey is a tool runtime" with
-exit 2 (`src/surfaces.rs:84`, tested). Closing this goal means amending that gate
-first — same precondition already stated for the other open boundaries — and, if the
-direct-model-API or local-weights reading is chosen, deleting a shipped refusal path
-rather than adding a feature next to it.
+a reimplementation of Grok/Codex/Claude runtimes." That still holds for the
+*default* path and for "Abbey as tool runtime / MCP host / ACP host" (OOS;
+`abbey runtime` still refuses with exit 2). The 2026-08-08 reading does **not**
+require deleting those refusals: `ABBEY_BACKEND=abi` is an alternate executor
+(`abi complete`), not Abbey becoming a tool runtime. Closing the *whole* goal
+still needs TUI/GUI modernization choices (richer ratatui vs windowed GUI) and
+an explicit decision if cursor-agent should ever stop being the default.
 
 The phrase is genuinely ambiguous between readings that differ by orders of
 magnitude (see the question asked in-session): a richer standalone TUI surface
@@ -30,16 +30,38 @@ abi."** This resolves part of the 2026-07-31 ambiguity: the chosen direction is
 Abbey standing alone on the **sibling `abi` workspace as the sole backend** — no
 cursor-agent requirement — with a modernized interactive CLI + TUI (and a GUI/TUI
 surface). Same coarse intention as this section, so recorded here rather than as a
-duplicate goal (ledger rule: one intention, one `##`). Not started this turn.
-Preconditions unchanged and still binding before any slice can close: amend the
-AGENTS.md claims gate first ("backend is cursor-agent" row, tool-runtime OOS rows,
-shipped refusal paths in `src/surfaces.rs`/`src/claims.rs`). Open scoping question
-for execute: what `abi` offers as a generation backend today — `abi-ai` (an
-existing unconditional dep) is deterministic identity/routing/embedding, not an
-LLM executor, so "abi as only backend" needs the executor story named (e.g.
-`abi-cli`/`abi-connectors`) before the first slice is cut. GUI reading also needs
-a pick: richer ratatui TUI vs. an actual windowed GUI (new stack, e.g. egui) —
-the latter would be a new claims-gate row, not a checkbox.
+duplicate goal (ledger rule: one intention, one `##`).
+
+**Executor slice (2026-08-08, Max):** `ABBEY_BACKEND=abi` → `abi complete` is now a
+real AgentBackend (own argv grammar, `--` separator, account/MCP/gen refuse, no
+stale-chat retry). Default transport is local persona-template; bare `claude-*` /
+`live`|`anthropic` opt into abi's Anthropic transport; cursor role/thinking
+bindings (e.g. Max→`claude-*-thinking-*` leftovers in state) stay local — no
+silent `--live`. Binary resolution prefers `ABBEY_ABI_BIN`/`abi_bin` and never
+falls through to cursor-agent candidate paths. Claims gate + AGENTS/docs aligned.
+This names the generation backend the earlier note asked for (`abi complete`), but
+does **not** close the whole goal: interactive CLI/TUI modernization and any
+windowed GUI remain open, and cursor-agent stays the default backend.
+
+**Verified 2026-08-08:** `./check.sh` green end-to-end (fmt · clippy · tests, both
+feature sets: 150+5+7 default, 156+5+7 wdbx · file-size guard). Live against a
+locally built `abi` release binary (`ABBEY_ABI_BIN`, `ABI_WDBX_PATH=:memory:` to
+skip the 94 MB store recovery that otherwise makes every `abi complete` open take
+minutes): `abbey -p` returns a persona-template completion with honest metadata
+(exit 0); `login` and `imagine` refuse with exit 2; `models` lists the abi
+vocabulary; a leading-dash prompt arrives as text (the `--` separator works);
+`doctor` names the active backend + resolved binary; `route.jsonl` gains rows, so
+the routing audit sees abi runs. Also caught live before commit: a stale binary
+routed `ABBEY_BACKEND=abi` to cursor-agent because the bin target had a private-
+module path error (`E0603`) that `cargo test`'s lib pass never compiled — the
+`/bin/echo` argv probe is what exposed it. Argv echo confirmed:
+`complete --model local -- <persona/role-wrapped prompt>`.
+
+**Named residuals (open, not laundered):** richer/multi-pane "modern" TUI and any
+windowed GUI (egui or similar — would be a new claims-gate row and a new dep
+tree); whether cursor-agent should ever stop being the default; abi-side chat
+continuity (`abi complete` is stateless one-shot by design). These need a design
+pick, not more code behind the current reading.
 
 Found live 2026-07-31 while verifying `improve status`: `abbey memory map | head -2`
 printed a Rust panic (`failed printing to stdout: Broken pipe`) instead of exiting

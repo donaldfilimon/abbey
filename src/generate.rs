@@ -3,7 +3,8 @@
 //! Abbey does **not** ship a local image or video model. These commands craft
 //! prompts that ask the backend agent to use whatever generation tools it has
 //! (built-in or MCP) and write files into the workspace. Under `ABBEY_BACKEND=fm`
-//! generation is refused — Foundation Models has no image/video tool surface.
+//! or `ABBEY_BACKEND=abi` generation is refused — those backends have no
+//! image/video tool surface.
 //!
 //! Reasoning is a Cursor `*-thinking-*` model + a structured reasoning wrap,
 //! not an Abbey-owned chain-of-thought UI.
@@ -23,11 +24,13 @@ pub enum GenKind {
     Video,
 }
 
-fn refuse_fm(kind: &str) -> Result<i32> {
+fn refuse_no_tools(backend: AgentBackend, kind: &str) -> Result<i32> {
     eprintln!(
         "abbey: `{kind}` needs cursor-agent tool access.\n\
-         The on-device backend (ABBEY_BACKEND=fm) has no image/video generation surface.\n\
-         Unset ABBEY_BACKEND to use cursor-agent."
+         The `{}` backend (ABBEY_BACKEND={}) has no image/video generation surface.\n\
+         Unset ABBEY_BACKEND to use cursor-agent.",
+        backend.label(),
+        backend.label(),
     );
     Ok(2)
 }
@@ -107,11 +110,14 @@ pub fn run_generate(
     aspect: Option<&str>,
     edit: Option<PathBuf>,
 ) -> Result<i32> {
-    if cfg.backend == AgentBackend::Fm {
-        return refuse_fm(match kind {
-            GenKind::Image => "imagine/generate image",
-            GenKind::Video => "generate video",
-        });
+    if matches!(cfg.backend, AgentBackend::Fm | AgentBackend::Abi) {
+        return refuse_no_tools(
+            cfg.backend,
+            match kind {
+                GenKind::Image => "imagine/generate image",
+                GenKind::Video => "generate video",
+            },
+        );
     }
     let desc = desc.join(" ");
     if desc.trim().is_empty() {

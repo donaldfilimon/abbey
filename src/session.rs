@@ -1,6 +1,6 @@
 //! Session orchestration: flags, hybrid persona/role run, history compact.
 
-use crate::agent::{AgentBackend, AgentConfig, Worktree, run_resilient};
+use crate::agent::{AgentBackend, AgentConfig, Worktree, abi_normalize_model, run_resilient};
 use crate::cli::{Cli, ExecMode};
 use crate::config;
 use crate::hybrid_loop::{self, STAGE_IMPLEMENT, STAGE_INTERPRET};
@@ -18,7 +18,23 @@ use anyhow::{Result, bail};
 pub fn apply_global_flags(cli: &Cli, state: &AbbeyState, cfg: &mut AgentConfig) -> Result<()> {
     // `fm` keeps conversations in transcript files under the state dir.
     cfg.transcript_dir = Some(state.state_dir.join("fm"));
-    if let Some(level) = &cli.thinking {
+    if cfg.backend == AgentBackend::Abi {
+        // Do not expand through cursor aliases: `fable` → claude-*-thinking-*
+        // would look like an explicit Anthropic live request under abi.
+        // Also skip `read_model()` (which itself resolve_models) so a persisted
+        // bare `claude-*` catalog id survives as live, not as a thinking binding.
+        if let Some(level) = &cli.thinking {
+            eprintln!(
+                "abbey: --thinking is a cursor-agent model alias; under ABBEY_BACKEND=abi \
+                 it has no effect (local persona-template). Requested level={level}"
+            );
+            cfg.model = "local".into();
+        } else if let Some(m) = &cli.model {
+            cfg.model = abi_normalize_model(m);
+        } else {
+            cfg.model = abi_normalize_model(&state.read_model_raw());
+        }
+    } else if let Some(level) = &cli.thinking {
         cfg.model = resolve_model(&format!("fable-thinking-{level}"));
     } else if let Some(m) = &cli.model {
         cfg.model = resolve_model(m);
@@ -121,8 +137,11 @@ fn assemble_prompt(
 }
 
 fn maybe_inject_role_model(cfg: &mut AgentConfig, state: &AbbeyState, model_alias: &str) {
-    // Never under `fm`: its vocabulary is system|pcc. Role distinction is prompt-only.
-    if cfg.backend != AgentBackend::Fm
+    // Never under `fm` (vocabulary is system|pcc) or `abi` (a cursor id like
+    // `claude-*` would read as an explicit live-transport request there —
+    // injection would silently turn a local run into a network call). Role
+    // distinction is prompt-only on both.
+    if !matches!(cfg.backend, AgentBackend::Fm | AgentBackend::Abi)
         && std::env::var("ABBEY_MODEL").is_err()
         && cfg.model == state.read_model()
     {
@@ -257,7 +276,7 @@ pub fn hybrid_loop_run(
     // ---- stage 1: Gemma interprets ----
     let mut g_cfg = cfg.clone();
     g_cfg.print = true;
-    if g_cfg.backend != AgentBackend::Fm {
+    if !matches!(g_cfg.backend, AgentBackend::Fm | AgentBackend::Abi) {
         g_cfg.model = gemma.clone();
     }
     let stage1 = assemble_prompt(
@@ -295,7 +314,7 @@ pub fn hybrid_loop_run(
     // ---- stage 2: Max implements ----
     let mut m_cfg = cfg.clone();
     m_cfg.print = true;
-    if m_cfg.backend != AgentBackend::Fm {
+    if !matches!(m_cfg.backend, AgentBackend::Fm | AgentBackend::Abi) {
         m_cfg.model = max.clone();
     }
     let stage2 = assemble_prompt(

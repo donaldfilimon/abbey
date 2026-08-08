@@ -1,10 +1,10 @@
 //! Backend argv construction and prompt/argv safety.
 //!
 //! Everything that shapes what the backend binary receives on its command line
-//! lives here: the per-backend argv grammars (`build_args` / `build_args_fm`),
-//! OS argv-limit clamping, flag-shaped-prompt detection, and the E2BIG exec
-//! error mapping. Second `impl AgentConfig` block — state and process
-//! execution stay in `agent/mod.rs`.
+//! lives here: the per-backend argv grammars (`build_args` / `build_args_fm` /
+//! `build_args_abi`), OS argv-limit clamping, flag-shaped-prompt detection, and
+//! the E2BIG exec error mapping. Second `impl AgentConfig` block — state and
+//! process execution stay in `agent/mod.rs`.
 
 use super::{AgentBackend, AgentConfig, Worktree, max_prompt_argv_bytes};
 use std::path::Path;
@@ -19,6 +19,81 @@ pub fn fm_model(requested: &str) -> &'static str {
         "pcc" | "private-cloud-compute" | "private_cloud_compute" => "pcc",
         _ => "system",
     }
+}
+
+/// Which `abi complete` transport an Abbey model/alias selects.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AbiTransport {
+    /// Deterministic persona-template completion in-process — no network.
+    Local,
+    /// Anthropic live transport (`--live`), with an explicit model id or
+    /// abi's own default when `None`.
+    Live(Option<String>),
+}
+
+/// Cursor role/thinking bindings look like Anthropic ids (`claude-*-thinking-*`,
+/// `claude-*-high`, …). Under `ABBEY_BACKEND=abi` those must stay Local —
+/// otherwise every Max-role leftover in state would silently select `--live`.
+fn cursor_style_binding(lower: &str) -> bool {
+    lower.contains("thinking")
+        || lower.ends_with("-fast")
+        || lower.ends_with("-high")
+        || lower.ends_with("-xhigh")
+        || lower.ends_with("-medium")
+        || lower.ends_with("-low")
+        || lower.ends_with("-max")
+}
+
+/// Normalize an Abbey model string for the abi backend.
+///
+/// Does **not** run cursor `resolve_model` expansion: `fable` must stay a local
+/// tag, not become `claude-fable-5-thinking-high` (which would look like live).
+/// State leftovers that are already cursor-expanded collapse to `local`.
+pub fn abi_normalize_model(requested: &str) -> String {
+    let t = requested.trim();
+    let lower = t.to_ascii_lowercase();
+    match lower.as_str() {
+        "live" | "anthropic" => "live".into(),
+        "local" | "auto" | "smart" | "default" | "abi" | "" => "local".into(),
+        s if s.starts_with("claude-") => {
+            if cursor_style_binding(s) {
+                "local".into()
+            } else {
+                t.to_string()
+            }
+        }
+        "fable" | "fable5" | "fable-5" | "max" | "composer" | "composer2" | "composer-2.5"
+        | "gemma" | "gemma4" | "qwen" | "kimi" | "opus" | "opus5" | "grok" | "codex" | "sol"
+        | "terra" => "local".into(),
+        other
+            if other.starts_with("cursor-")
+                || other.starts_with("gpt-")
+                || other.starts_with("composer-")
+                || other.starts_with("kimi-")
+                || other.contains("thinking") =>
+        {
+            "local".into()
+        }
+        other => other.to_string(),
+    }
+}
+
+/// Map an Abbey model/alias onto `abi complete`'s transports.
+///
+/// Live is opt-in and explicit — only a bare `claude-*` catalog id (not a
+/// Cursor thinking/speed binding) or the exact aliases `live` / `anthropic`
+/// select it. Everything else stays local, so no role alias or state leftover
+/// can silently turn a deterministic run into a network call.
+pub fn abi_transport(requested: &str) -> AbiTransport {
+    let normalized = abi_normalize_model(requested);
+    let t = normalized.to_ascii_lowercase();
+    if t == "live" || t == "anthropic" {
+        return AbiTransport::Live(None);
+    }
+    if t.starts_with("claude-") {
+        return AbiTransport::Live(Some(normalized));
+    }
+    AbiTransport::Local
 }
 
 /// Truncate `s` on a UTF-8 boundary so its byte length is ≤ `max_bytes`.
@@ -143,9 +218,48 @@ impl AgentConfig {
         args
     }
 
+    /// `abi complete` argv. Built from scratch like the `fm` grammar: `abi`
+    /// shares no flags with cursor-agent, and a leaked `--force`/`--sandbox`
+    /// would be parsed as (or joined into) completion input.
+    ///
+    /// `abi complete` is a stateless one-shot with no instruction channel and
+    /// no resume — the mode note rides in the input text, `resume_id` is
+    /// ignored, and the prompt always follows a real `--` separator.
+    fn build_args_abi(&self, prompt_and_rest: &[String]) -> Vec<String> {
+        let prompts = clamp_prompt_args(prompt_and_rest);
+        let mut args = vec!["complete".to_string()];
+        // Normalize at the argv choke point so every call site (hybrid, TUI,
+        // subagents) inherits the no-silent-live guarantee.
+        match abi_transport(&self.model) {
+            AbiTransport::Local => {
+                args.push("--model".into());
+                args.push(abi_normalize_model(&self.model));
+            }
+            AbiTransport::Live(None) => args.push("--live".into()),
+            AbiTransport::Live(Some(id)) => {
+                args.push("--live".into());
+                args.push("--model".into());
+                args.push(id);
+            }
+        }
+        args.push("--".into());
+        if let Some(mode) = &self.mode {
+            args.push(match mode.as_str() {
+                "ask" => "Answer the question. Do not modify files.".into(),
+                "plan" => "Produce a plan only. Do not write the implementation.".into(),
+                other => format!("Mode: {other}."),
+            });
+        }
+        args.extend(prompts);
+        args
+    }
+
     pub fn build_args(&self, resume_id: Option<&str>, prompt_and_rest: &[String]) -> Vec<String> {
         if self.backend == AgentBackend::Fm {
             return self.build_args_fm(resume_id, prompt_and_rest);
+        }
+        if self.backend == AgentBackend::Abi {
+            return self.build_args_abi(prompt_and_rest);
         }
         let prompts = clamp_prompt_args(prompt_and_rest);
         let mut args = Vec::new();
@@ -339,6 +453,105 @@ mod tests {
         assert!(argv[r + 1].ends_with("chat-1.transcript"));
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn abi_argv_never_leaks_cursor_or_fm_flags() {
+        let mut cfg = maximal_cursor_config();
+        cfg.backend = AgentBackend::Abi;
+        // resume_id must be ignored: `abi complete` has no resume surface.
+        let argv = cfg.build_args(Some("chat-1"), &["hello".into()]);
+        let dashdash = argv.iter().position(|a| a == "--").expect("-- separator");
+        for a in &argv[..dashdash] {
+            assert!(
+                ["complete", "--live", "--model"].contains(&a.as_str()) || !a.starts_with("--"),
+                "leaked non-abi flag {a:?} into argv {argv:?}"
+            );
+        }
+        for banned in [
+            "--auto-review",
+            "--trust",
+            "--force",
+            "--mode",
+            "--worktree",
+            "--workspace",
+            "--add-dir",
+            "--sandbox",
+            "--output-format",
+            "--print",
+            "--debug",
+            "--max-turns",
+            "--instructions",
+            "--no-stream",
+            "--save-transcript",
+            "--resume",
+        ] {
+            assert!(!argv.contains(&banned.to_string()), "{banned} leaked");
+        }
+        assert!(!argv.contains(&"chat-1".to_string()), "resume id leaked");
+    }
+
+    #[test]
+    fn abi_prompt_always_follows_a_double_dash() {
+        let mut cfg = maximal_cursor_config();
+        cfg.backend = AgentBackend::Abi;
+        cfg.mode = None;
+        cfg.model = "auto".into();
+        // A flag-shaped prompt must land after `--`, i.e. as text.
+        let argv = cfg.build_args(None, &["--force".into()]);
+        let dashdash = argv.iter().position(|a| a == "--").expect("-- separator");
+        let prompt = argv.iter().position(|a| a == "--force").expect("prompt");
+        assert!(prompt > dashdash, "prompt reached abi in option position");
+    }
+
+    #[test]
+    fn abi_transport_is_live_only_for_explicit_aliases() {
+        assert_eq!(abi_transport("auto"), AbiTransport::Local);
+        assert_eq!(abi_transport("fable"), AbiTransport::Local);
+        assert_eq!(abi_transport("composer-2.5"), AbiTransport::Local);
+        // Cursor leftovers / Max bindings must not silently select --live.
+        assert_eq!(
+            abi_transport("claude-fable-5-thinking-high"),
+            AbiTransport::Local
+        );
+        assert_eq!(abi_normalize_model("claude-fable-5-thinking-high"), "local");
+        assert_eq!(abi_normalize_model("fable"), "local");
+        // Substrings must not hijack unrelated ids into a network call.
+        assert_eq!(abi_transport("my-live-model"), AbiTransport::Local);
+        assert_eq!(abi_transport("anthropic-ish"), AbiTransport::Local);
+        assert_eq!(abi_transport("live"), AbiTransport::Live(None));
+        assert_eq!(abi_transport("anthropic"), AbiTransport::Live(None));
+        assert_eq!(
+            abi_transport("claude-fable-5"),
+            AbiTransport::Live(Some("claude-fable-5".into()))
+        );
+    }
+
+    #[test]
+    fn abi_local_argv_uses_normalized_model_not_cursor_binding() {
+        let mut cfg = maximal_cursor_config();
+        cfg.backend = AgentBackend::Abi;
+        cfg.mode = None;
+        cfg.model = "claude-fable-5-thinking-high".into();
+        let argv = cfg.build_args(None, &["hi".into()]);
+        assert!(
+            !argv.contains(&"--live".to_string()),
+            "silent live: {argv:?}"
+        );
+        let model_i = argv.iter().position(|a| a == "--model").unwrap();
+        assert_eq!(argv[model_i + 1], "local");
+    }
+
+    #[test]
+    fn abi_mode_rides_in_the_input_text() {
+        let mut cfg = maximal_cursor_config();
+        cfg.backend = AgentBackend::Abi;
+        cfg.mode = Some("ask".into());
+        let argv = cfg.build_args(None, &["q".into()]);
+        let dashdash = argv.iter().position(|a| a == "--").unwrap();
+        // No --instructions flag exists on abi; the note is input text.
+        assert!(argv[dashdash + 1].contains("Do not modify files"));
+        assert_eq!(argv.last().unwrap(), "q");
     }
 
     #[test]

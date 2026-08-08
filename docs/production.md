@@ -40,16 +40,16 @@ Accelerator **host detection** (`abbey platform compute`) is Current. GPU/NPU/TP
 
 | Dep | Required? | Notes |
 |-----|-----------|-------|
-| `cursor-agent` | Yes (default) | LLM executor |
+| `cursor-agent` | Yes (default when `ABBEY_BACKEND` unset) | Default LLM executor |
 | `fm` (`/usr/bin/fm`) | Only for `ABBEY_BACKEND=fm` | On-device Apple Foundation Model, macOS 26+ |
-| `abi` | Optional | Prefer for `os` / `plugin` / WDBX CLI |
+| `abi` (real binary) | Required for `ABBEY_BACKEND=abi`; optional for WDBX/os/plugin CLI | `abi complete` — shell alias will not do; set `ABBEY_ABI_BIN` / `abi_bin` |
 | git | Optional | diff/commit/pr/branch |
 | `nvidia-smi` / ROCm / TPU tools | Optional | improve `abbey platform` detect only |
 
 ## Config
 
 - `$ABBEY_CONFIG` or `~/.config/abbey/config.toml`
-- Env: `ABBEY_MODEL`, `ABBEY_ROLE`, `ABBEY_PERSONA`, `ABBEY_MEMORY_BACKEND`, `ABBEY_AGENT`, `ABBEY_BACKEND`, `ABBEY_FORCE`, `ABBEY_PER_CWD`, `ABBEY_STATE_DIR`
+- Env: `ABBEY_MODEL`, `ABBEY_ROLE`, `ABBEY_PERSONA`, `ABBEY_MEMORY_BACKEND`, `ABBEY_AGENT`, `ABBEY_BACKEND`, `ABBEY_ABI_BIN`, `ABBEY_FORCE`, `ABBEY_PER_CWD`, `ABBEY_STATE_DIR`
 
 ## State locations
 

@@ -199,8 +199,34 @@ impl AbbeyState {
         "auto".into()
     }
 
+    /// Raw model-file / `ABBEY_MODEL` text without cursor alias expansion.
+    ///
+    /// Used by `ABBEY_BACKEND=abi` so a persisted bare `claude-*` catalog id is
+    /// not rewritten into a Cursor `*-thinking-*` binding (which abi treats as
+    /// local, not live).
+    pub fn read_model_raw(&self) -> String {
+        if let Ok(m) = std::env::var("ABBEY_MODEL") {
+            let m = m.trim();
+            if !m.is_empty() {
+                return m.to_string();
+            }
+        }
+        if let Some(m) = read_first_line(&self.model_file) {
+            return m;
+        }
+        "local".into()
+    }
+
     pub fn save_model(&self, model: &str) -> Result<()> {
         let m = crate::models::resolve_model(model);
+        fs::write(&self.model_file, format!("{m}\n"))?;
+        Ok(())
+    }
+
+    /// Persist a model tag without cursor `resolve_model` expansion.
+    pub fn save_model_literal(&self, model: &str) -> Result<()> {
+        let m = model.trim();
+        anyhow::ensure!(!m.is_empty(), "model id must not be empty");
         fs::write(&self.model_file, format!("{m}\n"))?;
         Ok(())
     }
