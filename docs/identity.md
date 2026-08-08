@@ -27,9 +27,13 @@ Abbey is a personal AI assistant (she/her) created by Donald Filimon and The Don
 CLI: `abbey persona` · `/persona` · explicit `@Abbey` / `Aviva:` / `Abi:`.
 
 Local abi template completion remains deterministic (**Current** in ABI); hosted LLM quality
-comes from cursor-agent, or **on-device** from Apple's Foundation Models CLI under
-`ABBEY_BACKEND=fm` (**Current**, macOS 26+). On-device, Max and Gemma share one model
-(`system`), so the role difference is prompt-only — a real narrowing worth knowing.
+comes from cursor-agent, **on-device** from Apple's Foundation Models CLI under
+`ABBEY_BACKEND=fm` (**Current**, macOS 26+), or from the sibling `abi` CLI under
+`ABBEY_BACKEND=abi` (**Current** — `abi complete`: local persona-template by default;
+bare `claude-*` / `live` opt into abi's Anthropic transport with abi credentials).
+Under `fm` and `abi`, Max and Gemma share one local generation surface, so the role
+difference is prompt-only — a real narrowing worth knowing. Cursor role/thinking
+bindings left in state do **not** silently select abi `--live`.
 
 ---
 
@@ -70,7 +74,7 @@ Routing decisions record **confidence**, **alternate**, and **fallback** on `rou
 | `abbey mcp` / `/mcp` config inventory + cursor-agent management | **Current** (not an MCP host runtime) |
 | `abbey acp` peer inventory / `acp run` | **Current** — launches gemini/opencode ACP stdio; not an ACP host |
 | skills/plugins inventory | **Current** |
-| Tools / generation under `ABBEY_BACKEND=fm` | **N/A** — refuse with exit 2 |
+| Tools / generation under `ABBEY_BACKEND=fm` or `abi` | **N/A** — refuse with exit 2 |
 | `abbey voice` / `speak` / `listen` / `ask` | **Current (macOS)** — Premium/Enhanced `say` TTS + on-device Speech STT |
 | Cloud TTS/STT subscriptions · local neural voice weights | **Out of scope** (use System Settings downloads for Premium voices) |
 | Auto code highlighting (`-p`/print fences · `abbey highlight`) | **Current** — syntect ANSI on TTY; `NO_COLOR` / `ABBEY_HIGHLIGHT=0` off |

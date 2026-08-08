@@ -237,6 +237,7 @@ impl App {
             }
             PaletteAction::Refresh => self.refresh_all(),
             PaletteAction::CycleTheme => self.cycle_theme(),
+            PaletteAction::CycleBackend => self.cycle_backend(),
             PaletteAction::GotoDoctor => self.on_tab_enter(Tab::Doctor),
             PaletteAction::Quit => self.should_quit = true,
         }
@@ -307,6 +308,10 @@ impl App {
             }
             KeyCode::Char('t') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.cycle_theme();
+                return;
+            }
+            KeyCode::Char('b') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.cycle_backend();
                 return;
             }
             KeyCode::Char('l') if key.modifiers.contains(KeyModifiers::CONTROL) => {

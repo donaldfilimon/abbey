@@ -41,7 +41,7 @@ pub const CLAIMS: &[Claim] = &[
     Claim {
         name: "cursor-agent backend (CLI/TUI)",
         status: Status::Current,
-        note: "generation routes through cursor-agent (or fm/grok backends)",
+        note: "default executor; alternatives: ABBEY_BACKEND=fm|grok|abi",
         instead: None,
     },
     Claim {
@@ -108,6 +108,16 @@ pub const CLAIMS: &[Claim] = &[
         name: "On-device backend (ABBEY_BACKEND=fm)",
         status: Status::Current,
         note: "macOS 26+ Foundation Models CLI; account/MCP/gen refuse",
+        instead: None,
+    },
+    Claim {
+        name: "abi backend (ABBEY_BACKEND=abi) — no cursor-agent required",
+        status: Status::Current,
+        note: "one-shot `abi complete`: deterministic persona-template locally by default; \
+               bare claude-* / live|anthropic opt into abi's Anthropic transport (abi credentials); \
+               cursor role/thinking bindings stay local (no silent --live); needs a real `abi` binary; \
+               account/MCP/gen refuse; Abbey-side transcript continuity (bounded context prefix — \
+               abi itself stays stateless); default backend selectable via config `backend` key",
         instead: None,
     },
     Claim {
@@ -474,6 +484,16 @@ mod tests {
                 .iter()
                 .any(|c| c.status == Status::Proposed)
         );
+    }
+
+    #[test]
+    fn abi_backend_is_current() {
+        let claim = CLAIMS
+            .iter()
+            .find(|c| c.name.starts_with("abi backend"))
+            .expect("abi backend claim");
+        assert_eq!(claim.status, Status::Current);
+        assert!(claim.note.contains("abi complete"));
     }
 
     #[test]

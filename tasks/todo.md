@@ -160,7 +160,34 @@ Buildable residuals closed 2026-07-30; Proposed/OOS stay deferred above.
 
 - [x] `abbey imagine` / `generate image|video` / `/imagine` `/gen-video` — prompt + out path via agent tools
 - [x] `abbey reason` / `/reason` — Cursor thinking model + structured reasoning wrap
-- [x] Refuse generation under `ABBEY_BACKEND=fm`; docs/claims stay honest (no local gen weights)
+- [x] Refuse generation under `ABBEY_BACKEND=fm` or `abi`; docs/claims stay honest (no local gen weights)
+
+## Abi backend (`ABBEY_BACKEND=abi`)
+
+- [x] `AgentBackend::Abi` → `abi complete`; own argv grammar with real `--` separator
+- [x] Live opt-in only (`live`/`anthropic`/bare `claude-*`); cursor thinking/role leftovers stay local
+- [x] Binary resolution: `ABBEY_ABI_BIN`/`abi_bin` first; abi candidates never include cursor-agent
+- [x] TUI backend honesty: Home `backend` chip · status-bar backend (warn when off-default) ·
+      Doctor backend/roles lines (prompt-only under fm/abi) · Models tab static prefetch so
+      the cursor alias table never shows under abi/fm
+- [x] In-TUI backend switcher: Ctrl-B + palette "Cycle backend" via `resolve_agent_for`;
+      unresolvable backends skipped, honest status when nothing else resolves
+- [x] Home multi-pane: Session · recent chats · live Routes-audit pane
+      (`compact_route_line` tail of route.jsonl, refreshed after every run)
+- [x] Abbey-side continuity: `<state>/abi/<chat>.transcript` + bounded 8 KiB context prefix
+      after `--`; abi itself stays a stateless one-shot (claims gate says so)
+- [x] Config `backend` key (`cursor|grok|fm|abi`); precedence env > config > cursor;
+      unknown env value still means cursor (no silent config activation)
+- [x] Live-found fixes: `read_chat` no longer adopts `CURSOR_AGENT_CHAT_ID` under
+      sessionless backends; doctor names the real backend source instead of faking
+      `ABBEY_BACKEND=`
+
+**Boundaries for this goal — decisions, not checkboxes** (see `tasks/goals.md` table):
+windowed GUI stays **Proposed** (new dep tree + claims-gate row); Abbey as her own agent
+runtime stays **Out of scope** (would delete shipped refusals); the shipped default stays
+cursor-agent because the default is now a per-user config key.
+- [x] Account/MCP/gen refuse; no stale-chat retry; doctor + claims + docs honesty
+- [x] Unit tests: no flag leak, `--` prompt position, normalize thinking→local, abi candidate paths
 
 ## High-quality voice I/O (macOS)
 

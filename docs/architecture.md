@@ -20,7 +20,7 @@ Status key: **Current** = shipped · **Proposed** = designed, not claimed live �
 ├─────────────────────────────────────────────────────────┤
 │  abi-ai (path) — Abbey/Aviva/Abi contracts + router     │
 │  memory — SQLite (default) · WDBX (feature `wdbx`)      │
-│  agent — cursor-agent · grok · fm (on-device) executors │
+│  agent — cursor-agent · grok · fm (on-device) · abi (`abi complete`) executors │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -85,6 +85,15 @@ Status key: **Current** = shipped · **Proposed** = designed, not claimed live �
 - `abbey hybrid-loop` two-stage Gemma→Max run with correlated route records
 - On-device execution via `ABBEY_BACKEND=fm` (Apple Foundation Models CLI, macOS 26+):
   own argv grammar, chat id → transcript-file mapping, honest refusal of account verbs
+- Abi-backend execution via `ABBEY_BACKEND=abi` (`abi complete`): own argv grammar with
+  a real `--` separator; deterministic persona-template locally by default; bare
+  `claude-*` / `live`/`anthropic` opt into abi's Anthropic transport; cursor
+  role/thinking bindings stay local (no silent `--live`); account/MCP/gen refuse;
+  needs a real `abi` binary (`ABBEY_ABI_BIN` / `abi_bin`). Abbey-side continuity:
+  turns append to `<state>/abi/<chat>.transcript` and a bounded (8 KiB) tail rides
+  into the next turn as a context prefix — abi itself stays a stateless one-shot.
+  Persistent default via config `backend = "cursor"|"grok"|"fm"|"abi"`
+  (`ABBEY_BACKEND` env wins); in-TUI Ctrl-B cycles resolvable backends
 - 3-D memory map (`abbey memory map` / `near`) on both memory backends; mirrored into
   WDBX `SpatialRecord`s under `--features wdbx`
 - Prompt argv clamp + please-fix capture summarizer (avoids E2BIG on cursor-agent)

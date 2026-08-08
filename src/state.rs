@@ -100,10 +100,19 @@ impl AbbeyState {
     }
 
     pub fn read_chat(&self) -> Option<String> {
-        if let Ok(id) = std::env::var("CURSOR_AGENT_CHAT_ID") {
-            let id = id.trim().to_string();
-            if !id.is_empty() {
-                return Some(id);
+        // `CURSOR_AGENT_CHAT_ID` lets Abbey join the cursor session it was
+        // launched from — but it is a *cursor* chat id. Under a backend with
+        // no server sessions (`fm`, `abi`) it names nothing real, and adopting
+        // it hijacks the transcript this run should continue. Found live:
+        // running `abbey -c` under `abi` inside a cursor session resumed the
+        // cursor id, so every turn wrote a fresh transcript and continuity
+        // silently never happened.
+        if crate::agent::AgentBackend::from_env().has_server_sessions() {
+            if let Ok(id) = std::env::var("CURSOR_AGENT_CHAT_ID") {
+                let id = id.trim().to_string();
+                if !id.is_empty() {
+                    return Some(id);
+                }
             }
         }
         let file = self.active_chat_file();
@@ -199,8 +208,34 @@ impl AbbeyState {
         "auto".into()
     }
 
+    /// Raw model-file / `ABBEY_MODEL` text without cursor alias expansion.
+    ///
+    /// Used by `ABBEY_BACKEND=abi` so a persisted bare `claude-*` catalog id is
+    /// not rewritten into a Cursor `*-thinking-*` binding (which abi treats as
+    /// local, not live).
+    pub fn read_model_raw(&self) -> String {
+        if let Ok(m) = std::env::var("ABBEY_MODEL") {
+            let m = m.trim();
+            if !m.is_empty() {
+                return m.to_string();
+            }
+        }
+        if let Some(m) = read_first_line(&self.model_file) {
+            return m;
+        }
+        "local".into()
+    }
+
     pub fn save_model(&self, model: &str) -> Result<()> {
         let m = crate::models::resolve_model(model);
+        fs::write(&self.model_file, format!("{m}\n"))?;
+        Ok(())
+    }
+
+    /// Persist a model tag without cursor `resolve_model` expansion.
+    pub fn save_model_literal(&self, model: &str) -> Result<()> {
+        let m = model.trim();
+        anyhow::ensure!(!m.is_empty(), "model id must not be empty");
         fs::write(&self.model_file, format!("{m}\n"))?;
         Ok(())
     }

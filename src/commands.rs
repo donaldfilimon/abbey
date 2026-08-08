@@ -41,9 +41,11 @@ use std::io;
 fn passthrough_or_refuse(cfg: &AgentConfig, verb: &str, args: &[String]) -> Result<i32> {
     if !cfg.backend.supports_account_surface() {
         eprintln!(
-            "abbey: `{verb}` is not applicable under the on-device backend (ABBEY_BACKEND=fm).\n\
-             The Apple Foundation Models CLI has no account, session list, or MCP surface.\n\
-             Unset ABBEY_BACKEND to use cursor-agent."
+            "abbey: `{verb}` is not applicable under the `{}` backend (ABBEY_BACKEND={}).\n\
+             It has no account, session list, or MCP surface.\n\
+             Unset ABBEY_BACKEND to use cursor-agent.",
+            cfg.backend.label(),
+            cfg.backend.label(),
         );
         return Ok(2);
     }
@@ -158,10 +160,19 @@ pub fn run_cli(cli: Cli, state: AbbeyState, mut cfg: AgentConfig) -> Result<i32>
                 Ok(0)
             }
             Some(m) => {
-                let resolved = resolve_model(m);
-                state.save_model(&resolved)?;
-                eprintln!("abbey: default model set to {resolved}");
-                println!("{resolved}");
+                // Under abi, do not persist cursor-expanded `claude-*-thinking-*`
+                // ids — they would look like live requests / get collapsed wrongly.
+                if cfg.backend == crate::agent::AgentBackend::Abi {
+                    let resolved = crate::agent::abi_normalize_model(m);
+                    state.save_model_literal(&resolved)?;
+                    eprintln!("abbey: default model set to {resolved}");
+                    println!("{resolved}");
+                } else {
+                    let resolved = resolve_model(m);
+                    state.save_model(&resolved)?;
+                    eprintln!("abbey: default model set to {resolved}");
+                    println!("{resolved}");
+                }
                 Ok(0)
             }
         },

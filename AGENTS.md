@@ -99,6 +99,7 @@ CLI: `abbey claims` · `abbey claims proposed|oos` · `abbey claims refuse embed
 | Route confidence / alternate / fallback (audit only) | ✓ | | |
 | `learn review` / `stats` (train_candidate curation) | ✓ | | |
 | On-device backend (`ABBEY_BACKEND=fm`, macOS 26+) | ✓ | | |
+| abi backend (`ABBEY_BACKEND=abi`) — no cursor-agent required | ✓ | | |
 | 3-D memory map (topic × recency × consolidation) | ✓ | | |
 | please-fix capture summarizer + argv clamp | ✓ | | |
 | Media path attach (`--image`/`--video`/`/image`) | ✓ | | local vision/video weights |
@@ -133,8 +134,9 @@ CLI: `abbey claims` · `abbey claims proposed|oos` · `abbey claims refuse embed
   which runs both feature sets, or gated code rots unnoticed
 - Git helpers need a real repo history
 - OS execute always needs `--confirm`
-- `abi` on this machine is a **shell alias**, not a binary — the WDBX CLI bridge needs a real
-  one: `cargo build -p abi-cli` in `../abi`, then set `ABBEY_ABI_BIN`
+- `abi` on this machine is often a **shell alias**, not a binary — both the WDBX CLI
+  bridge and `ABBEY_BACKEND=abi` need a real one: `cargo build -p abi-cli` in `../abi`,
+  then set `ABBEY_ABI_BIN` (or `abi_bin` in config.toml)
 - `abi wdbx` paths are **base paths** (dir + base name); Abbey opens a directory. Abbey's
   `<state>/wdbx/` is `<state>/wdbx/wdbx` to `abi` — `wdbx_bridge` translates, don't re-break it
 - `DurableStore` has no cross-process locking; `WdbxMemory` adds an `fs4` advisory

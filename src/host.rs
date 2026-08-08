@@ -86,6 +86,22 @@ pub fn agent_candidate_paths(backend: &str, home: &Path) -> Vec<PathBuf> {
         "fm" => {
             out.push(PathBuf::from("/usr/bin/fm"));
         }
+        "abi" => {
+            // Never fall through to the cursor arm — that would make
+            // ABBEY_BACKEND=abi exec cursor-agent whenever it sits in
+            // ~/.local/bin (the common install layout).
+            out.push(home.join(".local/bin/abi"));
+            out.push(home.join(".cargo/bin/abi"));
+            out.push(PathBuf::from("/opt/homebrew/bin/abi"));
+            #[cfg(windows)]
+            {
+                out.push(home.join(".local\\bin\\abi.exe"));
+                out.push(home.join(".cargo\\bin\\abi.exe"));
+                if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+                    out.push(PathBuf::from(local).join("abi\\abi.exe"));
+                }
+            }
+        }
         // cursor (default)
         _ => {
             out.push(home.join(".local/bin/cursor-agent"));
@@ -199,5 +215,26 @@ mod tests {
         let home = PathBuf::from("/tmp/home");
         let d = default_install_dir(&home);
         assert!(!d.as_os_str().is_empty());
+    }
+
+    #[test]
+    fn abi_candidates_never_include_cursor_agent() {
+        let home = PathBuf::from("/tmp/home");
+        let paths = agent_candidate_paths("abi", &home);
+        assert!(
+            paths
+                .iter()
+                .any(|p| p.ends_with("abi") || p.ends_with("abi.exe")),
+            "expected an abi candidate, got {paths:?}"
+        );
+        for p in &paths {
+            let s = p.to_string_lossy();
+            assert!(
+                !s.contains("cursor-agent")
+                    && !s.ends_with("/agent")
+                    && !s.ends_with("\\agent.exe"),
+                "abi backend must not fall through to cursor paths: {s}"
+            );
+        }
     }
 }

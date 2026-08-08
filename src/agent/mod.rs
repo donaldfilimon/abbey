@@ -7,7 +7,7 @@ use argv::{map_exec_err, warn_if_prompt_looks_like_flags};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
 
-pub use argv::truncate_utf8_bytes;
+pub use argv::{abi_normalize_model, truncate_utf8_bytes};
 
 /// Grok `--worktree` with optional name (`-w` vs `-w mybranch`).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -92,18 +92,61 @@ pub enum AgentBackend {
     Grok,
     /// Apple Foundation Models CLI (`fm`) — on-device, no network, no third-party agent.
     Fm,
+    /// The sibling ABI framework's CLI (`abi complete`) — one-shot completion:
+    /// deterministic persona-template locally by default, Anthropic live
+    /// transport when a `claude-*`/`live` model is requested (abi credentials).
+    Abi,
 }
 
 impl AgentBackend {
+    /// Parse a backend token from env or config. `None` for unknown/empty.
+    pub fn parse(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "cursor" | "cursor-agent" => Some(Self::Cursor),
+            "grok" | "grok-build" | "xai" => Some(Self::Grok),
+            "fm" | "apple" | "foundation" | "on-device" => Some(Self::Fm),
+            "abi" | "abi-cli" => Some(Self::Abi),
+            _ => None,
+        }
+    }
+
+    /// Backend precedence: `ABBEY_BACKEND` env > config `backend` key > cursor.
+    ///
+    /// A *set but unknown* env value still means cursor (long-standing
+    /// behaviour) — it does not fall through to the config key, so a typo in
+    /// the env var cannot silently activate a config-chosen backend.
+    ///
+    /// Resolved once per process and cached: neither the environment nor the
+    /// config file changes mid-run, and `read_chat` (hence the TUI's per-frame
+    /// draw) calls this — without the cache every frame re-read `config.toml`
+    /// from disk. The TUI's Ctrl-B switch sets `AgentConfig::backend`
+    /// directly and does not depend on this.
     pub fn from_env() -> Self {
-        match std::env::var("ABBEY_BACKEND")
-            .unwrap_or_default()
-            .to_ascii_lowercase()
-            .as_str()
-        {
-            "grok" | "grok-build" | "xai" => Self::Grok,
-            "fm" | "apple" | "foundation" | "on-device" => Self::Fm,
-            _ => Self::Cursor,
+        static RESOLVED: std::sync::OnceLock<AgentBackend> = std::sync::OnceLock::new();
+        *RESOLVED.get_or_init(Self::resolve_from_env_and_config)
+    }
+
+    fn resolve_from_env_and_config() -> Self {
+        if let Ok(v) = std::env::var("ABBEY_BACKEND") {
+            if !v.trim().is_empty() {
+                return Self::parse(&v).unwrap_or(Self::Cursor);
+            }
+        }
+        crate::config::AbbeyConfig::load()
+            .ok()
+            .and_then(|c| c.backend.as_deref().and_then(Self::parse))
+            .unwrap_or(Self::Cursor)
+    }
+
+    /// State subdirectory holding this backend's conversation transcripts.
+    ///
+    /// Shared by `apply_global_flags` and the TUI's backend switch so a
+    /// mid-session switch cannot write one backend's transcripts into
+    /// another's directory.
+    pub fn transcript_subdir(self) -> &'static str {
+        match self {
+            Self::Abi => "abi",
+            _ => "fm",
         }
     }
 
@@ -112,17 +155,41 @@ impl AgentBackend {
             Self::Cursor => "cursor-agent",
             Self::Grok => "grok",
             Self::Fm => "fm",
+            Self::Abi => "abi",
         }
     }
 
     /// Whether this backend runs entirely on the local machine.
+    ///
+    /// `abi` is deliberately excluded: its default transport is local, but a
+    /// `claude-*`/`live` model selects a real network transport, so the label
+    /// would be conditional — and a conditional "on-device" reads as a promise.
     pub fn is_on_device(self) -> bool {
         matches!(self, Self::Fm)
     }
 
-    /// Account / session-list / MCP surface — `fm` has none of these.
+    /// Account / session-list / MCP surface — `fm` and `abi` have none of these.
     pub fn supports_account_surface(self) -> bool {
-        !matches!(self, Self::Fm)
+        !matches!(self, Self::Fm | Self::Abi)
+    }
+
+    /// Server-side chat sessions (`create-chat` / `--resume <id>`).
+    ///
+    /// `fm` backs Abbey's chat id with a local transcript file; `abi complete`
+    /// is a stateless one-shot — Abbey still mints a chat id so state plumbing
+    /// works, but no continuity rides on it and none is claimed.
+    pub fn has_server_sessions(self) -> bool {
+        matches!(self, Self::Cursor | Self::Grok)
+    }
+
+    /// The next backend in the fixed TUI switch order (wraps around).
+    pub fn cycle_next(self) -> Self {
+        match self {
+            Self::Cursor => Self::Grok,
+            Self::Grok => Self::Fm,
+            Self::Fm => Self::Abi,
+            Self::Abi => Self::Cursor,
+        }
     }
 }
 
@@ -156,12 +223,32 @@ pub fn resolve_agent() -> Result<PathBuf> {
             return Ok(p);
         }
     }
+    resolve_agent_for(AgentBackend::from_env())
+}
+
+/// Resolve the executor binary for a specific backend.
+///
+/// Unlike [`resolve_agent`], this ignores the `ABBEY_AGENT` path override —
+/// that override belongs to the env-chosen backend; honouring it while
+/// *switching* backends would hand every backend the same binary.
+pub fn resolve_agent_for(backend: AgentBackend) -> Result<PathBuf> {
     let home = dirs::home_dir().context("HOME")?;
-    let backend = AgentBackend::from_env();
+    // `abi` resolution matches the WDBX bridge: config `abi_bin` /
+    // ABBEY_ABI_BIN first, then known install paths, then PATH. Done *before*
+    // the shared candidate scan so a present cursor-agent can never win.
+    if backend == AgentBackend::Abi {
+        let from_cfg = crate::config::AbbeyConfig::load()
+            .ok()
+            .and_then(|c| crate::config::resolve_abi_bin(&c));
+        if let Some(path) = from_cfg {
+            return Ok(path);
+        }
+    }
     let key = match backend {
         AgentBackend::Grok => "grok",
         AgentBackend::Cursor => "cursor",
         AgentBackend::Fm => "fm",
+        AgentBackend::Abi => "abi",
     };
     let candidates = crate::host::agent_candidate_paths(key, &home);
     for c in &candidates {
@@ -199,6 +286,16 @@ pub fn resolve_agent() -> Result<PathBuf> {
                  CLI (macOS 26+). Unset ABBEY_BACKEND=fm to use cursor-agent."
             );
         }
+        AgentBackend::Abi => {
+            if let Some(path) = which_bin("abi") {
+                return Ok(path);
+            }
+            bail!(
+                "`abi` not found — ABBEY_BACKEND=abi needs a real `abi` binary (a shell \
+                 alias will not do). Build it with `cargo build -p abi-cli` in ../abi, \
+                 then set ABBEY_ABI_BIN or `abi_bin` in config.toml."
+            );
+        }
     }
     bail!(
         "{} not found (set ABBEY_AGENT or ABBEY_BACKEND=cursor|grok)",
@@ -230,9 +327,11 @@ impl AgentConfig {
     }
 
     pub fn create_chat(&self) -> Result<String> {
-        // `fm` has no server and no chat ids — Abbey mints one locally and
-        // backs it with a transcript file.
-        if self.backend == AgentBackend::Fm {
+        // `fm` and `abi` have no server and no chat ids — Abbey mints one
+        // locally. Under `fm` it is backed by a transcript file; under `abi`
+        // each turn is a stateless one-shot and the id only feeds state
+        // plumbing (no continuity is claimed).
+        if !self.backend.has_server_sessions() {
             let id = uuid::Uuid::new_v4().to_string();
             if let Some(dir) = &self.transcript_dir {
                 std::fs::create_dir_all(dir)?;
@@ -256,10 +355,35 @@ impl AgentConfig {
         Ok(id)
     }
 
-    /// Transcript file backing one Abbey chat id under the `fm` backend.
-    pub fn fm_transcript_path(&self, chat_id: &str) -> Option<PathBuf> {
+    /// Transcript file backing one Abbey chat id (`fm` natively via
+    /// `--resume`/`--save-transcript`; `abi` Abbey-side).
+    pub fn transcript_path(&self, chat_id: &str) -> Option<PathBuf> {
         let dir = self.transcript_dir.as_ref()?;
         Some(dir.join(format!("{chat_id}.transcript")))
+    }
+
+    /// Record one abi turn so the next run can carry bounded context.
+    /// Best-effort: a failed write must not fail the run that produced it.
+    pub fn append_abi_transcript(&self, chat_id: &str, prompt: &[String], output: &str) {
+        let Some(path) = self.transcript_path(chat_id) else {
+            return;
+        };
+        if let Some(dir) = path.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        let entry = format!(
+            "### user\n{}\n### abbey\n{}\n",
+            prompt.join(" ").trim(),
+            output.trim()
+        );
+        use std::io::Write as _;
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+        {
+            let _ = f.write_all(entry.as_bytes());
+        }
     }
 
     /// Interactive hand-off: inherit stdio (full TUI agent session).
@@ -268,7 +392,11 @@ impl AgentConfig {
         resume_id: Option<&str>,
         prompt_and_rest: &[String],
     ) -> Result<ExitStatus> {
-        warn_if_prompt_looks_like_flags(prompt_and_rest);
+        // The abi grammar passes the prompt after a real `--` separator, so a
+        // leading-dash prompt is text there, not options — no warning needed.
+        if self.backend != AgentBackend::Abi {
+            warn_if_prompt_looks_like_flags(prompt_and_rest);
+        }
         let args = self.build_args(resume_id, prompt_and_rest);
         let status = Command::new(&self.agent_path)
             .args(&args)
@@ -286,7 +414,9 @@ impl AgentConfig {
         resume_id: Option<&str>,
         prompt_and_rest: &[String],
     ) -> Result<(ExitStatus, String, String)> {
-        warn_if_prompt_looks_like_flags(prompt_and_rest);
+        if self.backend != AgentBackend::Abi {
+            warn_if_prompt_looks_like_flags(prompt_and_rest);
+        }
         let mut cfg = self.clone();
         cfg.print = true;
         let args = cfg.build_args(resume_id, prompt_and_rest);
@@ -314,6 +444,14 @@ impl AgentConfig {
     pub fn list_models_text(&self) -> Result<String> {
         if self.backend == AgentBackend::Fm {
             return Ok("system  on-device Apple Foundation Model\npcc     Apple Foundation Model on Private Cloud Compute\n".into());
+        }
+        if self.backend == AgentBackend::Abi {
+            return Ok(
+                "local     deterministic persona-template completion (abi-ai, no network)\n\
+                 claude-*  Anthropic via `abi complete --live` (needs abi credentials)\n\
+                 live      Anthropic live transport with abi's default model\n"
+                    .into(),
+            );
         }
         let out = Command::new(&self.agent_path).arg("models").output()?;
         Ok(String::from_utf8_lossy(&out.stdout).into_owned())
@@ -382,11 +520,11 @@ pub fn run_resilient(
         return Ok(0);
     }
 
-    // The retry exists because a server-side chat can go stale. `fm` has no
-    // server: a non-zero exit is a real failure (bad argument, unavailable
-    // model), and retrying would silently abandon the transcript and burn a new
-    // chat on every invocation.
-    if cfg.backend == AgentBackend::Fm {
+    // The retry exists because a server-side chat can go stale. `fm` and `abi`
+    // have no server: a non-zero exit is a real failure (bad argument,
+    // unavailable model, missing credentials), and retrying would silently
+    // abandon the transcript / burn a new chat on every invocation.
+    if !cfg.backend.has_server_sessions() {
         return Ok(code);
     }
     eprintln!("abbey: resume of {chat} failed (exit {code}); creating a new chat…");
@@ -422,9 +560,17 @@ fn run_once(
     prompt_and_rest: &[String],
     capture_print: bool,
 ) -> Result<i32> {
-    if capture_print {
+    // `abi complete` is one-shot and non-interactive — always capture, both
+    // for clean emit and so the turn can be recorded for Abbey-side
+    // continuity (the context prefix the next build_args_abi reads).
+    if capture_print || cfg.backend == AgentBackend::Abi {
         let (st, out, err) = cfg.run_capture(resume_id, prompt_and_rest)?;
         eprint!("{err}");
+        if cfg.backend == AgentBackend::Abi && st.success() {
+            if let Some(id) = resume_id.filter(|i| !i.is_empty()) {
+                cfg.append_abi_transcript(id, prompt_and_rest, &out);
+            }
+        }
         if let Some(path) = &cfg.cot_path {
             if let Err(e) = crate::surfaces::save_cot(path, &out) {
                 eprintln!("abbey: cot save failed: {e:#}");
@@ -459,10 +605,49 @@ mod tests {
     }
 
     #[test]
-    fn fm_refuses_account_surface() {
+    fn fm_and_abi_refuse_account_surface() {
         assert!(!AgentBackend::Fm.supports_account_surface());
+        assert!(!AgentBackend::Abi.supports_account_surface());
         assert!(AgentBackend::Cursor.supports_account_surface());
         assert!(AgentBackend::Grok.supports_account_surface());
+    }
+
+    #[test]
+    fn only_server_backends_get_the_stale_chat_retry() {
+        assert!(AgentBackend::Cursor.has_server_sessions());
+        assert!(AgentBackend::Grok.has_server_sessions());
+        assert!(!AgentBackend::Fm.has_server_sessions());
+        assert!(!AgentBackend::Abi.has_server_sessions());
+    }
+
+    #[test]
+    fn transcript_subdir_separates_abi_from_fm() {
+        assert_eq!(AgentBackend::Abi.transcript_subdir(), "abi");
+        assert_eq!(AgentBackend::Fm.transcript_subdir(), "fm");
+        // A mid-session switch must not land abi turns in fm's directory.
+        assert_ne!(
+            AgentBackend::Abi.transcript_subdir(),
+            AgentBackend::Fm.transcript_subdir()
+        );
+    }
+
+    #[test]
+    fn backend_cycle_visits_all_and_wraps() {
+        let mut b = AgentBackend::Cursor;
+        let mut seen = Vec::new();
+        for _ in 0..4 {
+            b = b.cycle_next();
+            seen.push(b);
+        }
+        assert_eq!(b, AgentBackend::Cursor, "cycle must wrap to the start");
+        for expect in [
+            AgentBackend::Grok,
+            AgentBackend::Fm,
+            AgentBackend::Abi,
+            AgentBackend::Cursor,
+        ] {
+            assert!(seen.contains(&expect), "{expect:?} missing from cycle");
+        }
     }
 
     #[test]

@@ -171,7 +171,32 @@ fn draw_home(f: &mut Frame, area: Rect, app: &App) {
         .wrap(Wrap { trim: false });
     f.render_widget(left, chunks[0]);
 
-    draw_recent_list(f, chunks[1], app);
+    let right = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
+        .split(chunks[1]);
+    draw_recent_list(f, right[0], app);
+    draw_routes_pane(f, right[1], app);
+}
+
+/// Tail of the routing audit (persona/role/model/confidence per run) — the
+/// same records `abbey routes` prints, compacted for a half-width pane.
+fn draw_routes_pane(f: &mut Frame, area: Rect, app: &App) {
+    let lines: Vec<Line> = if app.route_lines.is_empty() {
+        vec![Line::from(Span::styled(
+            "(no routes yet — run a prompt; audit only, no auto second agent)",
+            dim_style(&app.theme),
+        ))]
+    } else {
+        app.route_lines
+            .iter()
+            .map(|l| Line::from(Span::styled(l.clone(), dim_style(&app.theme))))
+            .collect()
+    };
+    let p = Paragraph::new(lines)
+        .block(rounded_block(" Routes · audit ", &app.theme, false))
+        .wrap(Wrap { trim: false });
+    f.render_widget(p, area);
 }
 
 fn draw_recent_list(f: &mut Frame, area: Rect, app: &App) {
@@ -324,12 +349,24 @@ fn draw_status(f: &mut Frame, area: Rect, app: &App) {
             Style::default().fg(app.theme.warn),
         )
     };
+    // Off-default executors get the warn colour: which binary runs the next
+    // prompt is the one thing a TUI user must never be surprised by.
+    let backend = app.cfg.backend;
+    let backend_span = Span::styled(
+        format!("{} ", backend.label()),
+        if backend == crate::agent::AgentBackend::Cursor {
+            dim_style(&app.theme)
+        } else {
+            Style::default().fg(app.theme.warn)
+        },
+    );
     let line = Line::from(vec![
         Span::styled(" ▸ ", accent_style(&app.theme)),
         Span::styled(
             format!("{} ", app.focus.label()),
             Style::default().fg(app.theme.accent_dim),
         ),
+        backend_span,
         Span::styled(format!("{} ", app.theme_id.as_str()), dim_style(&app.theme)),
         filter,
         Span::raw(app.status.clone()),

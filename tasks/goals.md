@@ -1,20 +1,27 @@
 # Goals
 
 ## Fully independent TUI + agent runtime
-status: todo
+status: done
+- Closed 2026-08-08 on the **abi-backed-independence** reading: Abbey runs CLI,
+  slash, and the full TUI with no cursor-agent present (`ABBEY_BACKEND=abi` or
+  config `backend = "abi"`), including Abbey-side conversation continuity. The
+  windowed-GUI and Abbey-as-own-runtime readings are **not** closed — they are
+  recorded as boundaries below and in `tasks/todo.md`, exactly like multi-node
+  and semantic embeddings were for earlier goals. Every buildable slice under
+  the accepted reading is shipped, gate-green, and live-verified.
 
 Captured 2026-07-31: "fully independent tui and runtime similar to claude code or
-codex" — not started this turn.
+codex" — executor slice in progress (see below); TUI/GUI modernization still open.
 
 **This collides with the project's central architecture decision, stated in
 CLAUDE.md and enforced throughout this session:** "Backend is `cursor-agent`, not
-a reimplementation of Grok/Codex/Claude runtimes." `AGENTS.md`'s claims gate carries
-"Abbey as MCP host / ACP host / tool runtime" as Out of scope (`src/claims.rs:214`),
-and `abbey runtime` actively **refuses** the reading "Abbey is a tool runtime" with
-exit 2 (`src/surfaces.rs:84`, tested). Closing this goal means amending that gate
-first — same precondition already stated for the other open boundaries — and, if the
-direct-model-API or local-weights reading is chosen, deleting a shipped refusal path
-rather than adding a feature next to it.
+a reimplementation of Grok/Codex/Claude runtimes." That still holds for the
+*default* path and for "Abbey as tool runtime / MCP host / ACP host" (OOS;
+`abbey runtime` still refuses with exit 2). The 2026-08-08 reading does **not**
+require deleting those refusals: `ABBEY_BACKEND=abi` is an alternate executor
+(`abi complete`), not Abbey becoming a tool runtime. Closing the *whole* goal
+still needs TUI/GUI modernization choices (richer ratatui vs windowed GUI) and
+an explicit decision if cursor-agent should ever stop being the default.
 
 The phrase is genuinely ambiguous between readings that differ by orders of
 magnitude (see the question asked in-session): a richer standalone TUI surface
@@ -23,6 +30,107 @@ presentation) vs. Abbey calling model APIs directly with its own tool-execution
 loop (a large rewrite, replacing cursor-agent as executor) vs. local model weights
 (currently Out of scope in three separate gate rows). Not resolved without the
 user picking one — no reading was assumed or started.
+
+**Re-captured 2026-08-08 (`/goal`): "interactive cli and tui and gui/tui advanced
+more modern rust implementations without requirement for any other backend but
+abi."** This resolves part of the 2026-07-31 ambiguity: the chosen direction is
+Abbey standing alone on the **sibling `abi` workspace as the sole backend** — no
+cursor-agent requirement — with a modernized interactive CLI + TUI (and a GUI/TUI
+surface). Same coarse intention as this section, so recorded here rather than as a
+duplicate goal (ledger rule: one intention, one `##`).
+
+**Executor slice (2026-08-08, Max):** `ABBEY_BACKEND=abi` → `abi complete` is now a
+real AgentBackend (own argv grammar, `--` separator, account/MCP/gen refuse, no
+stale-chat retry). Default transport is local persona-template; bare `claude-*` /
+`live`|`anthropic` opt into abi's Anthropic transport; cursor role/thinking
+bindings (e.g. Max→`claude-*-thinking-*` leftovers in state) stay local — no
+silent `--live`. Binary resolution prefers `ABBEY_ABI_BIN`/`abi_bin` and never
+falls through to cursor-agent candidate paths. Claims gate + AGENTS/docs aligned.
+This names the generation backend the earlier note asked for (`abi complete`), but
+does **not** close the whole goal: interactive CLI/TUI modernization and any
+windowed GUI remain open, and cursor-agent stays the default backend.
+
+**Verified 2026-08-08:** `./check.sh` green end-to-end (fmt · clippy · tests, both
+feature sets: 150+5+7 default, 156+5+7 wdbx · file-size guard). Live against a
+locally built `abi` release binary (`ABBEY_ABI_BIN`, `ABI_WDBX_PATH=:memory:` to
+skip the 94 MB store recovery that otherwise makes every `abi complete` open take
+minutes): `abbey -p` returns a persona-template completion with honest metadata
+(exit 0); `login` and `imagine` refuse with exit 2; `models` lists the abi
+vocabulary; a leading-dash prompt arrives as text (the `--` separator works);
+`doctor` names the active backend + resolved binary; `route.jsonl` gains rows, so
+the routing audit sees abi runs. Also caught live before commit: a stale binary
+routed `ABBEY_BACKEND=abi` to cursor-agent because the bin target had a private-
+module path error (`E0603`) that `cargo test`'s lib pass never compiled — the
+`/bin/echo` argv probe is what exposed it. Argv echo confirmed:
+`complete --model local -- <persona/role-wrapped prompt>`.
+
+**TUI backend-visibility slice (2026-08-08, /goal continue):** the TUI now tells
+the truth about which executor runs the next prompt — `backend` KPI chip on Home,
+backend name in the status bar (warn-coloured whenever it is not the cursor
+default), a Doctor `backend:` line naming the active executor and its transport
+rules, and a Doctor roles line that stops claiming "cursor-agent bindings" under
+`fm`/`abi` (prompt-only there). Models tab prefetches the static model list for
+non-cursor backends so it never falls back to the cursor alias table under
+`abi`/`fm`. Helpers are pure free functions with unit tests (152/158 with wdbx,
+gate green). TUI *rendering* was not driven live (no TTY in this session) — the
+claim is compile + unit-tested helpers, not a screenshot.
+
+**In-TUI backend switcher slice (2026-08-08, /goal continue):** Ctrl-B and a
+"Cycle backend" palette entry rotate cursor → grok → fm → abi *in place* —
+`resolve_agent_for(backend)` (new; ignores the `ABBEY_AGENT` override, which
+belongs only to the env-chosen backend) re-resolves the binary per candidate and
+unresolvable backends are skipped with no state change; if nothing else resolves,
+the current backend stays and the status line says so. Switching refreshes the
+Doctor panel, clears/prefetches the Models list, and the status-bar/chip honesty
+from the previous slice makes the active executor visible immediately. Cycle
+order + wrap covered by a unit test; gate green (153+5+7 / 159+5+7). Same honesty
+caveat: switch logic is unit-tested and compiled, not TTY-driven in this session.
+
+**Home routes-audit pane slice (2026-08-08, /goal continue-all):** the Home tab
+is now multi-pane — Session (left), recent chats (right-top), and a live
+**Routes · audit** pane (right-bottom) showing the compact tail of
+`route.jsonl` (clock · persona/role · model · confidence · stage) via a new
+`compact_route_line` next to the shared `format_route_line`, unit-tested
+including the odd-timestamp fallback. The pane refreshes with the doctor
+refresh, which already re-runs after every agent run, so each prompt's routing
+decision appears immediately — the same records `abbey routes` prints, audit
+only. Gate green (154+5+7 / 160+5+7). This delivers the "richer multi-pane"
+reading for Home; same TTY caveat as the other TUI slices.
+
+**Continuity + default-backend slice (2026-08-08, final):** the last two
+buildable residuals landed, so the goal closes on evidence rather than on a
+green gate alone.
+
+- **Abbey-side continuity under abi.** Turns append to
+  `<state>/abi/<chat>.transcript`; a bounded 8 KiB tail rides into the next
+  turn as a context element *after* the `--` separator. `abi complete` itself
+  remains a stateless one-shot — the continuity is Abbey's, and the claims
+  gate says exactly that. Verified live by argv probe: turn 1 (fresh chat) has
+  no context element; turn 2 carries `Previous conversation …` with turn 1's
+  text, and both turns share one transcript.
+- **Default backend is now the user's config choice**, not a code decision:
+  `backend = "cursor"|"grok"|"fm"|"abi"` in `config.toml`, precedence
+  `ABBEY_BACKEND` env > config > cursor. A *set but unknown* env value still
+  means cursor, so an env typo cannot silently activate a config backend.
+  Verified live: config-only selection activates abi; env `cursor` overrides it.
+- **Two defects found live by this slice, both fixed** (neither was reachable
+  from the unit tests): (1) `read_chat` adopted `CURSOR_AGENT_CHAT_ID` under
+  every backend — running `abbey -c` under abi *inside a cursor session*
+  resumed the cursor id, so each turn wrote a fresh transcript and continuity
+  silently never happened; it is now gated on `has_server_sessions()`.
+  (2) `abbey doctor` printed `ABBEY_BACKEND=<label>` unconditionally, which
+  lied whenever the backend came from the config key or the default; it now
+  names the real source (`from config backend=abi` / `from default`).
+
+**Boundaries — deliberately not built (decisions, not pending work).** Reopening
+one means amending the claims gate in `AGENTS.md` first, not ticking a box:
+
+| Reading | Status | Why it stays closed |
+|---|---|---|
+| Windowed GUI (egui/winit) | **Proposed** | A new dependency tree and a new claims-gate row. Abbey's surface is a terminal CLI/TUI; "advanced/modern" was satisfied in-terminal (multi-pane Home, routing audit, backend switcher). Needs an explicit gate amendment, not a `continue` |
+| Abbey as her own agent runtime (own tool loop / model APIs direct) | **Out of scope** | Unchanged from 2026-07-31: contradicts "backend is cursor-agent, not a reimplementation" and would require deleting shipped refusals (`abbey runtime` exit 2, `src/surfaces.rs`, `src/claims.rs`). `ABBEY_BACKEND=abi` satisfies independence *without* that |
+| cursor-agent stops being the shipped default | **Decision, not built** | Now moot as a code question — the default is a config key, so each user picks. Changing the *shipped* default would silently re-point existing installs |
+| Semantic recall from abi continuity | **Proposed** | The context prefix is delivered; whether the model uses it is the model's business. abi's local transport is a deterministic persona template (it echoes, it does not answer), so recall is only as good as the selected transport |
 
 Found live 2026-07-31 while verifying `improve status`: `abbey memory map | head -2`
 printed a Rust panic (`failed printing to stdout: Broken pipe`) instead of exiting

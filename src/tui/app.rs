@@ -41,6 +41,8 @@ pub struct App {
     pub should_quit: bool,
     pub pending: PendingAction,
     pub last_agent_code: Option<i32>,
+    /// Compact tail of `route.jsonl` for the Home Routes pane (audit only).
+    pub route_lines: Vec<String>,
     pub doctor_lines: Vec<String>,
     pub history: Vec<crate::state::HistoryEntry>,
     pub aliases: Vec<(String, String)>,
@@ -82,6 +84,7 @@ impl App {
             should_quit: false,
             pending: PendingAction::None,
             last_agent_code: None,
+            route_lines: Vec::new(),
             doctor_lines: Vec::new(),
             history,
             aliases,
@@ -94,6 +97,11 @@ impl App {
         app.refresh_personas();
         app.refresh_memory();
         app.refresh_skills();
+        // Non-cursor backends answer `models` statically (no exec) — prefetch
+        // so the Models tab never falls back to the cursor alias table there.
+        if !app.cfg.backend.supports_account_surface() {
+            app.refresh_models_live();
+        }
         Ok(app)
     }
 
@@ -112,6 +120,36 @@ impl App {
                 .filter(|l| !l.is_empty())
                 .collect();
         }
+    }
+
+    /// Switch to the next executor backend whose binary actually resolves.
+    ///
+    /// Unresolvable backends (no `fm` on this OS, `abi` only a shell alias)
+    /// are skipped with no state change; if nothing else resolves the current
+    /// backend stays and the status line says so. Chat ids are per-backend
+    /// artifacts — the next run under a server backend simply resumes or
+    /// mints as usual, and `fm`/`abi` mint locally.
+    pub fn cycle_backend(&mut self) {
+        let mut next = self.cfg.backend;
+        for _ in 0..3 {
+            next = next.cycle_next();
+            let Ok(path) = crate::agent::resolve_agent_for(next) else {
+                continue;
+            };
+            self.cfg.backend = next;
+            self.cfg.agent_path = path;
+            // Transcripts are per-backend; without this a switch to abi would
+            // append abi turns into the fm directory chosen at startup.
+            self.cfg.transcript_dir = Some(self.state.state_dir.join(next.transcript_subdir()));
+            self.live_models.clear();
+            if !next.supports_account_surface() {
+                self.refresh_models_live();
+            }
+            self.refresh_doctor();
+            self.status = format!("backend → {}", next.label());
+            return;
+        }
+        self.status = "backend: no other executor resolvable on this host".into();
     }
 
     pub fn refresh_all(&mut self) {
@@ -213,6 +251,7 @@ impl App {
             .map(|c| c.to_string())
             .unwrap_or_else(|| "—".into());
         vec![
+            ("backend".into(), self.cfg.backend.label().to_string()),
             ("model".into(), self.cfg.model.clone()),
             ("chat".into(), chat),
             ("persona".into(), persona),
