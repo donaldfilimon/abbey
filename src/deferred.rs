@@ -1,24 +1,20 @@
-//! Honesty surfaces for explicitly Out-of-scope capabilities.
+//! Honesty surfaces for approved-but-unavailable and out-of-scope capabilities.
 //!
-//! | Ask | Current substitute | Out of scope |
-//! |-----|--------------------|--------------|
-//! | LoRA / fine-tune | `learn review|stats|export` | weight updates in Abbey |
-//! | Local weights | Max/Gemma bindings · `ABBEY_BACKEND=fm` | bundled Qwen/Gemma / own weights |
-//! | NPU/TPU | `platform compute` detect | compile / train / infer on accelerators |
-//! | Unrestricted OS | allowlist + `--confirm` | autonomous unrestricted shell |
-//! | MCP/ACP host | inventory + `--approve-mcps` | Abbey as tool/MCP/ACP runtime |
+//! Four product expansions are Proposed; shipped-edition allowlist bypass is OOS.
 
 use crate::claims;
 use crate::os_control;
 use crate::platform;
 use anyhow::{Result, bail};
+use std::fmt::Write as _;
 
 #[derive(Debug, Clone, Copy)]
 struct Topic {
     key: &'static str,
     title: &'static str,
     current: &'static [&'static str],
-    oos: &'static str,
+    status: claims::Status,
+    unavailable: &'static str,
     instead: &'static str,
     refuse: &'static str,
 }
@@ -31,7 +27,8 @@ const TOPICS: &[Topic] = &[
             "abbey learn review|stats|export  — train_candidate curation only",
             "activity + corrections stay provenance substrate — not adapters",
         ],
-        oos: "fine-tuning / LoRA runners or any weight update inside Abbey",
+        status: claims::Status::Proposed,
+        unavailable: "fine-tuning / LoRA runners or any weight update inside Abbey",
         instead: "abbey learn review · abbey learn-stats",
         refuse: "lora",
     },
@@ -43,7 +40,8 @@ const TOPICS: &[Topic] = &[
             "ABBEY_BACKEND=fm → macOS 26+ Foundation Models (on-device, not bundled Qwen)",
             "vision/media: path attach + agent/MCP gen (`abbey vision`)",
         ],
-        oos: "local Qwen/Gemma weights, Abbey-own trained weights, or in-process VLM",
+        status: claims::Status::Proposed,
+        unavailable: "local Qwen/Gemma weights, Abbey-own trained weights, or in-process VLM",
         instead: "abbey role · ABBEY_BACKEND=fm · abbey vision",
         refuse: "weights",
     },
@@ -54,7 +52,8 @@ const TOPICS: &[Topic] = &[
             "abbey platform compute — host presence inventory (report-only)",
             "multi-thread subagents (--jobs) — CPU process/thread fan-out",
         ],
-        oos: "GPU/NPU/TPU compilation, training, or inference scheduled by Abbey",
+        status: claims::Status::Proposed,
+        unavailable: "GPU/NPU/TPU compilation, training, or inference scheduled by Abbey",
         instead: "abbey platform compute · abbey compute",
         refuse: "npu",
     },
@@ -65,7 +64,8 @@ const TOPICS: &[Topic] = &[
             "abbey os allowlist|policy — named allowlist only",
             "abbey os execute <cmd> --confirm — never without --confirm",
         ],
-        oos: "autonomous OS / unrestricted shell / allowlist bypass",
+        status: claims::Status::OutOfScope,
+        unavailable: "autonomous OS / unrestricted shell / allowlist bypass",
         instead: "abbey allowlist · abbey os execute --confirm …",
         refuse: "shell",
     },
@@ -77,7 +77,8 @@ const TOPICS: &[Topic] = &[
             "abbey runtime — who executes what during a turn",
             "--approve-mcps — cursor-agent auto-approves MCP tools (not Abbey)",
         ],
-        oos: "Abbey as MCP host, ACP host, or in-process tool runtime",
+        status: claims::Status::Proposed,
+        unavailable: "Abbey as MCP host, ACP host, or in-process tool runtime",
         instead: "abbey runtime · abbey mcp · abbey acp · --approve-mcps",
         refuse: "mcp-host",
     },
@@ -108,29 +109,46 @@ fn topic(key: &str) -> Option<&'static Topic> {
 }
 
 fn print_topic(t: &Topic) -> Result<i32> {
-    println!("abbey {} — {} (honest)\n", t.key, t.title);
-    println!("Current:");
-    for line in t.current {
-        println!("  · {line}");
-    }
-    println!();
-    println!("Out of scope:");
-    println!("  ✗ {}", t.oos);
-    println!();
-    println!("instead: {}", t.instead);
-    println!(
-        "refuse:  abbey {} refuse · abbey claims refuse {}",
-        t.key, t.refuse
-    );
+    crate::output::print(render_topic(t))?;
     Ok(0)
 }
 
+fn render_topic(t: &Topic) -> String {
+    let mut text = format!("abbey {} — {} (honest)\n\nCurrent:\n", t.key, t.title);
+    for line in t.current {
+        let _ = writeln!(text, "  · {line}");
+    }
+    let mark = if t.status == claims::Status::Proposed {
+        "·"
+    } else {
+        "✗"
+    };
+    let _ = write!(
+        text,
+        "\n{}:\n  {mark} {}\n\ninstead: {}\nrefuse:  abbey {} refuse · abbey claims refuse {}\n",
+        t.status.label(),
+        t.unavailable,
+        t.instead,
+        t.key,
+        t.refuse,
+    );
+    text
+}
+
 pub fn print_index() -> Result<i32> {
-    println!("abbey oos — Out-of-scope honesty index (not an implementation plan)\n");
-    println!("{:<10} {:<28} Current substitute", "cmd", "topic");
+    println!("abbey oos — deferred-capability honesty index (not implementation)\n");
+    println!(
+        "{:<10} {:<28} {:<14} Current substitute",
+        "cmd", "topic", "status"
+    );
     for t in TOPICS {
         let sub = t.instead.split('·').next().unwrap_or(t.instead).trim();
-        println!("{:<10} {:<28} {sub}", t.key, t.title);
+        println!(
+            "{:<10} {:<28} {:<14} {sub}",
+            t.key,
+            t.title,
+            t.status.label()
+        );
     }
     println!(
         "\nusage:  abbey oos <lora|weights|accel|shell|host>\n\
@@ -157,7 +175,7 @@ pub fn dispatch_topic(key: &str, args: &[String]) -> Result<i32> {
             println!(
                 "abbey {k} — {title}\n\
                  usage: abbey {k} [status|refuse{extra}]\n\
-                 OOS: {oos}\n\
+                 {status}: {unavailable}\n\
                  instead: {instead}",
                 k = t.key,
                 title = t.title,
@@ -167,7 +185,8 @@ pub fn dispatch_topic(key: &str, args: &[String]) -> Result<i32> {
                     "host" => "|matrix",
                     _ => "",
                 },
-                oos = t.oos,
+                status = t.status.label(),
+                unavailable = t.unavailable,
                 instead = t.instead,
             );
             Ok(0)
@@ -184,7 +203,7 @@ pub fn dispatch_oos(args: &[String]) -> Result<i32> {
         None | Some("list") | Some("index") | Some("status") => print_index(),
         Some("-h") | Some("--help") => {
             println!(
-                "abbey oos — Out-of-scope honesty surfaces\n\
+                "abbey oos — deferred-capability honesty surfaces\n\
                  \n\
                  usage:\n\
                    abbey oos                         # index\n\
@@ -204,11 +223,11 @@ pub fn dispatch_oos(args: &[String]) -> Result<i32> {
 
 pub fn status_lines() -> Vec<String> {
     vec![
-        "lora:       learn curation only — LoRA runners OOS (`abbey lora`)".into(),
-        "weights:    Max/Gemma bindings · fm — local weights OOS (`abbey weights`)".into(),
-        "accel:      host detect only — NPU/TPU runtime OOS (`abbey accel`)".into(),
+        "lora:       learn curation only — LoRA pipeline Proposed (`abbey lora`)".into(),
+        "weights:    Max/Gemma bindings · fm — local weights Proposed (`abbey weights`)".into(),
+        "accel:      host detect only — accelerator runtime Proposed (`abbey accel`)".into(),
         "shell:      allowlist + --confirm — unrestricted OS OOS (`abbey shell`)".into(),
-        "host:       inventory + approve-mcps — MCP/ACP host OOS (`abbey host`)".into(),
+        "host:       inventory + approve-mcps — owned host Proposed (`abbey host`)".into(),
     ]
 }
 
@@ -234,5 +253,24 @@ mod tests {
         assert_eq!(dispatch_topic("accel", &["refuse".into()]).unwrap(), 2);
         assert_eq!(dispatch_topic("shell", &["refuse".into()]).unwrap(), 2);
         assert_eq!(dispatch_topic("host", &["refuse".into()]).unwrap(), 2);
+    }
+
+    #[test]
+    fn topic_statuses_match_the_canonical_claim_migration() {
+        for key in ["lora", "weights", "accel", "host"] {
+            assert_eq!(topic(key).unwrap().status, claims::Status::Proposed);
+        }
+        assert_eq!(topic("shell").unwrap().status, claims::Status::OutOfScope);
+    }
+
+    #[test]
+    fn rendered_topic_statuses_match_the_canonical_claim_migration() {
+        for key in ["lora", "weights", "accel", "host"] {
+            let rendered = render_topic(topic(key).unwrap());
+            assert!(rendered.contains("\nProposed:\n"), "{key}: {rendered}");
+            assert!(!rendered.contains("\nOut of scope:\n"));
+        }
+        let shell = render_topic(topic("shell").unwrap());
+        assert!(shell.contains("\nOut of scope:\n"));
     }
 }

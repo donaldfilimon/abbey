@@ -1,4 +1,5 @@
 # Abbey production readiness
+<!-- abbey-claims-sha256: 2fffdf8023126682617e747e8489a26cb3cc76aafa3e042e6e3ff7f8bea2d7b5 -->
 
 ## Toolchain
 
@@ -38,14 +39,15 @@ nightly also satisfies `../abi`'s `rust-version = 1.99`. CI runs `check.sh`
 rather than a bare `cargo build && cargo test` so the `wdbx` feature set is
 actually compiled and tested.
 
-**Known blocker (2026-08-08):** every Actions run on the private `abbey` repo
-ends in `startup_failure` at 0s with zero jobs scheduled — including GitHub's
-own default template and Dependabot, i.e. before workflow content matters. The
-same account's *public* `abi` repo runs Actions normally, which points at
-private-repo Actions minutes / spending limit rather than anything in this
-repository. Until that is resolved, `./check.sh` locally is the real gate; the
-workflow is verified only by reproducing its checkout layout locally (fresh
-`abbey` clone + sibling `abi` clone → `check.sh` exits 0), not by a green run.
+**CI evidence boundary (2026-08-08):** GitHub-hosted Actions runs on the private
+`abbey` repo still end in `startup_failure` at 0s with zero jobs scheduled,
+including GitHub's default template and Dependabot. The earlier unpublished-ABI
+dependency blocker is resolved by merged ABI
+`32e372d7f522f5a6c9c0ef92c5b9612b52cfea05`. A macOS ARM64 self-hosted runner is
+registered. A Linux ARM64 runner is not provisioned, so the Linux job is gated by
+an explicit repository variable until a real runner exists. Linux and Windows
+runtime proof therefore remain open. `./check.sh` locally remains the source gate;
+no zero-job or gated job is represented as green execution evidence.
 
 ## Primary host targets
 
@@ -70,13 +72,13 @@ It fails before spawning on Windows and other non-Unix hosts; Windows Job Object
 has not been implemented or runtime-verified.
 
 Accelerator **host detection** (`abbey platform compute`) is Current. GPU/NPU/TPU
-**runtimes inside Abbey** are Out of scope — see `abbey claims oos`.
+**runtimes inside Abbey** are Proposed and unavailable — see `abbey claims proposed`.
 
 ## Runtime deps
 
 | Dep | Required? | Notes |
 |-----|-----------|-------|
-| `cursor-agent` | Yes (default when `ABBEY_BACKEND` unset) | Default LLM executor |
+| `cursor-agent` | Required only for the default `cursor` route | Default LLM executor; another configured executor can run without it |
 | `fm` (`/usr/bin/fm`) | Only for `ABBEY_BACKEND=fm` | On-device Apple Foundation Model, macOS 26+ |
 | `abi` (real binary) | Required for `ABBEY_BACKEND=abi`; optional for WDBX/os/plugin CLI | `abi complete` — shell alias will not do; set `ABBEY_ABI_BIN` / `abi_bin` |
 | Swift + Apple NaturalLanguage | Only for `embedding_provider = "apple"` | macOS learned sentence space; runtime language availability varies |
@@ -92,7 +94,7 @@ Accelerator **host detection** (`abbey platform compute`) is Current. GPU/NPU/TP
   `[embeddings]` provider/endpoint/model/dimension/language.
   `abbey config --init` scaffolds it (never overwrites); an unrecognised
   `backend` warns instead of silently using cursor-agent.
-- Env: `ABBEY_MODEL`, `ABBEY_ROLE`, `ABBEY_PERSONA`, `ABBEY_MEMORY_BACKEND`, `ABBEY_AGENT`, `ABBEY_BACKEND`, `ABBEY_ABI_BIN`, `ABBEY_FORCE`, `ABBEY_PER_CWD`, `ABBEY_STATE_DIR`, and the `ABBEY_EMBEDDING_*` provider settings. Remote credentials are read only from `ABBEY_EMBEDDING_API_KEY` or `OPENAI_API_KEY`; never put them in `config.toml`.
+- Env: `ABBEY_MODEL`, `ABBEY_ROLE`, `ABBEY_PERSONA`, `ABBEY_MEMORY_BACKEND`, `ABBEY_AGENT`, `ABBEY_BACKEND`, `ABBEY_ABI_BIN`, `ABBEY_FORCE`, `ABBEY_PER_CWD`, `ABBEY_STATE_DIR`, and the `ABBEY_EMBEDDING_*` provider settings. The opt-in OpenAI-compatible embedding provider reads its credential only from `ABBEY_EMBEDDING_API_KEY` or `OPENAI_API_KEY`; never put it in `config.toml`, persisted state, logs, or subprocess argv.
 
 ## State locations
 
@@ -127,7 +129,10 @@ cargo doc --no-deps --document-private-items
 # open: target/doc/abbey/index.html  (or $CARGO_TARGET_DIR/doc/abbey/)
 ```
 
-## Checklist before tagging a release
+## Per-release checklist template
+
+Keep every item unchecked in source. A release owner checks a copied instance only after
+collecting the corresponding evidence; this template is not evidence that a release passed.
 
 - [ ] `./check.sh` green
 - [ ] `abbey doctor` shows expected stamp/persona/role/memory/routing/learn lines

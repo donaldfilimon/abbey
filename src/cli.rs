@@ -329,7 +329,7 @@ pub enum Commands {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         text: Vec<String>,
     },
-    /// Self-learn: correction|preference|routes|digest|export|review|stats (LoRA out of scope)
+    /// Self-learn: correction|preference|routes|digest|export|review|stats (LoRA Proposed)
     Learn {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
@@ -417,7 +417,7 @@ pub enum Commands {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Claims gate: Current / Proposed / Out of scope (semantic, LoRA, multi-host…)
+    /// Claims gate: Current / Partial / Proposed / Blocked / Out of scope
     #[command(visible_alias = "roadmap", visible_alias = "scope")]
     Claims {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
@@ -434,7 +434,7 @@ pub enum Commands {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Vision/media honesty (path attach + agent gen; local weights OOS)
+    /// Vision/media honesty (path attach + agent gen; local neural models Proposed)
     Vision {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
@@ -456,17 +456,17 @@ pub enum Commands {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// LoRA honesty (learn curation Current; runners OOS)
+    /// LoRA honesty (learn curation Current; training pipeline Proposed)
     Lora {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Local weights honesty (bindings/fm Current; bundled weights OOS)
+    /// Local weights honesty (bindings/fm Current; production weights Proposed)
     Weights {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// NPU/TPU/GPU honesty (host detect Current; Abbey accel runtime OOS)
+    /// NPU/TPU/GPU honesty (host detect Current; Abbey accelerator runtime Proposed)
     #[command(visible_alias = "npu", visible_alias = "tpu")]
     Accel {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
@@ -478,7 +478,7 @@ pub enum Commands {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// MCP/ACP host honesty (inventory Current; Abbey-as-host OOS)
+    /// MCP/ACP host honesty (inventory Current; Abbey-owned host Proposed)
     #[command(visible_alias = "tool-host")]
     Host {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]

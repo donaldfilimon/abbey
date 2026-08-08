@@ -1,4 +1,8 @@
 # Goals
+<!-- abbey-claims-sha256: 2fffdf8023126682617e747e8489a26cb3cc76aafa3e042e6e3ff7f8bea2d7b5 -->
+
+Ledger snapshot after the 2026-08-08 scope migration: **25 goals** — 23 done,
+1 blocked, 1 proposed. Recount when adding or changing a `##` goal/status.
 
 ## Working CI on GitHub
 status: blocked
@@ -22,27 +26,25 @@ silently skip the `wdbx` feature set. Same commit replaced the unedited template
 clone + sibling `abi` clone) → `cargo metadata` resolves and `./check.sh` exits
 0. **Not verified on `ubuntu-latest`**, because no run has ever executed.
 
-**Why blocked, not done:** every Actions run on this repo ends in
-`startup_failure` at 0s with **zero jobs scheduled** — including GitHub's own
-default template and the Dependabot run, i.e. before workflow content is even
-read. The same account's *public* `abi` repo runs Actions normally (jobs execute
-for 18–40s). That isolates the cause to private-repo Actions minutes / spending
-limit, which is an account setting outside this repository and not inspectable
-with the current token scopes.
+**Why blocked, not done:** GitHub-hosted runs still end in `startup_failure` at
+0s with **zero jobs scheduled**. The earlier unpublished-sibling dependency is
+no longer a blocker: ABI `32e372d7f522f5a6c9c0ef92c5b9612b52cfea05` is merged.
+A macOS ARM64 self-hosted runner is registered, but Linux ARM64 is not
+provisioned; the Linux job is deliberately gated by an explicit repository
+variable until a real runner exists. Linux and Windows runtime proof remain open.
 
-**Unblocks when** the owner checks github.com/settings/billing (Actions minutes
-+ spending limit). Deliberately *not* worked around by making the repo public —
-private was an explicit choice. Until then `./check.sh` locally remains the
-real gate, and no green-CI badge or claim may be added.
+**Unblocks when** a Linux ARM64 self-hosted runner is provisioned and registered,
+the repository variable is explicitly enabled, and the real Linux job succeeds;
+Windows still needs its own runtime evidence. Until then `./check.sh` locally and
+successful macOS ARM64 execution are narrower facts, not cross-platform CI proof.
 
 ## Fully independent TUI + agent runtime
 status: done
 - Closed 2026-08-08 on the **abi-backed-independence** reading: Abbey runs CLI,
   slash, and the full TUI with no cursor-agent present (`ABBEY_BACKEND=abi` or
   config `backend = "abi"`), including Abbey-side conversation continuity. The
-  windowed-GUI and Abbey-as-own-runtime readings are **not** closed — they are
-  recorded as boundaries below and in `tasks/todo.md`, exactly like multi-node
-  and semantic embeddings were for earlier goals. Every buildable slice under
+  windowed-GUI and Abbey-as-own-runtime readings were not part of that closure;
+  they are now approved as a separate Proposed roadmap below. Every buildable slice under
   the accepted reading is shipped, gate-green, and live-verified.
 - Merged to `main` 2026-08-08 (`d050c8e`), then reviewed at high effort with five
   independent reviewers. **Four findings, all fixed in `09c9a44`** — stays `done`
@@ -68,20 +70,20 @@ codex" — executor slice in progress (see below); TUI/GUI modernization still o
 **This collides with the project's central architecture decision, stated in
 CLAUDE.md and enforced throughout this session:** "Backend is `cursor-agent`, not
 a reimplementation of Grok/Codex/Claude runtimes." That still holds for the
-*default* path and for "Abbey as tool runtime / MCP host / ACP host" (OOS;
-`abbey runtime` still refuses with exit 2). The 2026-08-08 reading does **not**
-require deleting those refusals: `ABBEY_BACKEND=abi` is an alternate executor
-(`abi complete`), not Abbey becoming a tool runtime. Closing the *whole* goal
-still needs TUI/GUI modernization choices (richer ratatui vs windowed GUI) and
-an explicit decision if cursor-agent should ever stop being the default.
+*default* path and did not make Abbey a tool runtime. That surface is now Proposed,
+and `abbey runtime` still refuses with exit 2. `ABBEY_BACKEND=abi` remains an
+alternate executor (`abi complete`), not evidence that the owned runtime exists.
+The later scope approval selected a Tauri 2 + React/TypeScript desktop GUI while retaining the ratatui
+TUI; it did not silently change the shipped default backend.
 
 The phrase is genuinely ambiguous between readings that differ by orders of
 magnitude (see the question asked in-session): a richer standalone TUI surface
 (mostly tractable — Abbey's ratatui TUI already never touches cursor-agent's
 presentation) vs. Abbey calling model APIs directly with its own tool-execution
-loop (a large rewrite, replacing cursor-agent as executor) vs. local model weights
-(currently Out of scope in three separate gate rows). Not resolved without the
-user picking one — no reading was assumed or started.
+loop (a large rewrite, replacing cursor-agent as executor) vs. local model weights.
+This is a **superseded historical ambiguity**: the provider-neutral owned runtime
+and local weights are now Proposed, while vendor-runtime reimplementation remains
+Out of scope.
 
 **Re-captured 2026-08-08 (`/goal`): "interactive cli and tui and gui/tui advanced
 more modern rust implementations without requirement for any other backend but
@@ -174,15 +176,31 @@ green gate alone.
   lied whenever the backend came from the config key or the default; it now
   names the real source (`from config backend=abi` / `from default`).
 
-**Boundaries — deliberately not built (decisions, not pending work).** Reopening
-one means amending the claims gate in `AGENTS.md` first, not ticking a box:
+**Historical boundary record (superseded 2026-08-08).** The user subsequently
+approved the expansion directions below. This table preserves why the earlier
+goal closed narrowly; it is not the live scope decision:
 
 | Reading | Status | Why it stays closed |
 |---|---|---|
-| Windowed GUI (egui/winit) | **Proposed** | A new dependency tree and a new claims-gate row. Abbey's surface is a terminal CLI/TUI; "advanced/modern" was satisfied in-terminal (multi-pane Home, routing audit, backend switcher). Needs an explicit gate amendment, not a `continue` |
-| Abbey as her own agent runtime (own tool loop / model APIs direct) | **Out of scope** | Unchanged from 2026-07-31: contradicts "backend is cursor-agent, not a reimplementation" and would require deleting shipped refusals (`abbey runtime` exit 2, `src/surfaces.rs`, `src/claims.rs`). `ABBEY_BACKEND=abi` satisfies independence *without* that |
+| Windowed GUI (earlier `egui`/winit wording) | **Superseded** | The canonical approved desktop is now Tauri 2 + React/TypeScript; ratatui remains Current. |
+| Abbey-owned agent/tool runtime | **Now Proposed** | Approved as provider-neutral architecture, not as reimplementation of vendor runtimes. Refusals remain exit 2 until implemented. |
 | cursor-agent stops being the shipped default | **Decision, not built** | Now moot as a code question — the default is a config key, so each user picks. Changing the *shipped* default would silently re-point existing installs |
 | Semantic recall from abi continuity | **Proposed** | The context prefix is delivered; whether the model uses it is the model's business. abi's local transport is a deterministic persona template (it echoes, it does not answer), so recall is only as good as the selected transport |
+
+## Approved capability expansion roadmap
+status: proposed
+
+Approved 2026-08-08 as product direction, not Current capability: Tauri 2 +
+React/TypeScript desktop GUI;
+provider-neutral Abbey-owned agent/tool runtime and MCP/ACP host; production-capable
+local weights; LoRA/fine-tuning; accelerator compilation/training/inference; local
+neural speech/image/video; a separately packaged personal-unrestricted edition; and an
+authenticated local three-VM shared-compute proof on one Mac, followed later by
+production separate-physical-host/geographic-HA/multi-GPU operation. The implementation order and
+verification bars live in `tasks/todo.md`. Every existing refusal remains exit 2 until
+its corresponding implementation and evidence land. Vendor-runtime reimplementation,
+fake accounting, shipped-edition allowlist bypass, hidden CoT, and bundled cloud speech
+remain Out of scope.
 
 Found live 2026-07-31 while verifying `improve status`: `abbey memory map | head -2`
 printed a Rust panic (`failed printing to stdout: Broken pipe`) instead of exiting
@@ -216,7 +234,8 @@ status: done
   `check.sh` now gates both feature sets. Verified live: put/search/get/promote/export
   across separate processes, WAL recovery on reopen, `wdbx stats`/`checkpoint`
 - Phase 3 hardening: concurrent `abbey` processes corrupted the WDBX WAL beyond recovery
-  (20 writers → store permanently unreadable). Fixed with `flock(2)` per store; 40/40
+  (20 writers → store permanently unreadable). Fixed with an `fs4` advisory lock per
+  store (Unix `flock`, Windows `LockFileEx`); 40/40
   concurrent writes now land. Found by testing the case rather than assuming it
 - Phase 3 bridge verified live against a locally built `abi-cli` (`cargo build -p abi-cli`
   in `../abi`), including a cross-check that `abi wdbx query` reads the same records the
@@ -233,8 +252,9 @@ status: done
   verb refusals verified
 - Interpretable 3-D memory map (topic × recency × consolidation) on both backends;
   TUI Memory tab shows the map preview; `nearest_to` shared (no dead spatial dual-write)
-- Deferred by construction remain Out of scope / Proposed: multi-node training, NPU/TPU
-  learning, autonomous OS, semantic embedder
+- Approved but unimplemented roadmap work includes the staged VM/production mesh, accelerator
+  learning/runtime, local weights/LoRA, and the separate personal-unrestricted edition.
+  Semantic embedding is Current and opt-in, with paid remote live proof still unverified.
 
 ## Broader polish
 status: done
@@ -263,9 +283,12 @@ alternate / fallback on the route log (audit only — no second execution path);
 capture summarizer + argv clamp. Already-shipped Max/Gemma/personas/memory/hybrid-loop/
 fm/3-D map remain as before.
 
-**Residuals after the 2026-08-08 follow-up:** production multi-host/shared-compute
-mesh; NPU-TPU learning; autonomous OS; local weights / LoRA;
-CouchDB/Python second memory stack. Claims gate in AGENTS.md stays binding.
+**Residuals after the 2026-08-08 scope expansion:** authenticated local three-VM
+shared-compute proof, then production separate-host/geographic-HA/multi-GPU operation;
+accelerator execution; local weights / LoRA; the separately packaged
+personal-unrestricted edition; and a windowed GUI/owned runtime. These are Proposed,
+not shipped. CouchDB/Python second memory stack remains unapproved. The claims gate in
+AGENTS.md stays binding.
 
 **Review 2026-07-30 (`/goal /review`) — gap found; closed 2026-08-08:** the brief's
 memory interface names *filter by source*, *by timestamp*, and *by project/domain*
@@ -283,8 +306,9 @@ status: done
 
 Path-attach media (`--image`/`--video`/`/image`/`/video`), thinking aliases
 (`--thinking`/`/think` → Cursor model ids), and MCP/tool passthrough
-(`abbey mcp`, `--approve-mcps`). No local vision weights; no Abbey-owned CoT UI;
-tools remain cursor-agent's during a run.
+(`abbey mcp`, `--approve-mcps`). This Current slice has no local vision weights;
+the owned neural-media/tool runtime is Proposed. Abbey-owned hidden CoT UI remains
+Out of scope; tools currently remain delegated during a run.
 
 ## Image/video generation and reasoning
 status: done
@@ -299,8 +323,8 @@ status: done
 
 macOS `say` TTS with automatic Premium/Enhanced preference, on-device Apple
 Speech STT (`abbey-stt`), and `voice ask` (listen → agent → speak). Cloud TTS/STT
-SaaS and in-process neural voice weights stay Out of scope — download Apple
-Premium voices in System Settings for super-high quality.
+SaaS stays Out of scope; local neural speech is Proposed but unavailable — download
+Apple Premium voices in System Settings for the Current high-quality path.
 
 ## MCP and ACP server surfaces
 status: done
@@ -308,7 +332,8 @@ status: done
 Provider-aware inventory for MCP (`abbey mcp status|paths|view` over JSON and Codex
 TOML sources) plus explicit cursor/codex/claude management; ACP peer discovery/launch for gemini and
 opencode. Abbey remains a client-side CLI — not an MCP host or ACP host. Tool
-execution during runs stays inside cursor-agent (`--approve-mcps`).
+execution during current runs stays inside the selected delegated backend
+(`--approve-mcps`); an Abbey-owned host is Proposed.
 
 ## Auto code highlighting
 status: done
@@ -326,15 +351,18 @@ status: done
 (gemini/opencode/claude/codex) as same-host PATH CLIs. `parallel` remains the
 default-lane alias. `mesh local-demo` adds authenticated same-host process proof on
 Unix, where process-group teardown is available; non-Unix fails before spawn and
-production multi-host stays Proposed.
+the local three-VM proof stays Proposed, and production separate-host/geographic-HA/
+multi-GPU stays Proposed even after that proof.
 
 ## Proposed / OOS claims surface
 status: done
 
-`abbey claims` (+ `roadmap`/`scope`) prints the Current / Proposed / Out of scope
-gate from `src/claims.rs`; `refuse lora|multinode|…` exits 2 with substitutes.
+`abbey claims` (+ `roadmap`/`scope`) prints the Current / Partial / Proposed /
+Blocked / Out of scope gate from `src/claims.rs`; `refuse lora|multinode|…`
+exits 2 with substitutes.
 Semantic memory is Current only in its explicit-provider, space-isolated form;
-production multi-host stays Proposed; LoRA/weights/accelerator-runtime stay OOS.
+approved expansions including the staged VM/production mesh, LoRA/weights, owned tool runtime, GUI, and
+accelerator runtime stay Proposed and unavailable.
 
 ## Platform targets + compute inventory
 status: done
@@ -342,23 +370,25 @@ status: done
 `abbey platform` / `compute`: linux/macos/windows primary-target matrix for portable
 surfaces; `available_parallelism` thread budget driving subagent `--jobs`; GPU/NPU/TPU
 host detect (report-only). WDBX lock via `fs4` on Unix and Windows. Voice/fm remain
-macOS-only; Abbey still does not run GPU/NPU/TPU kernels.
+macOS-only; Abbey still does not run GPU/NPU/TPU kernels, which are Proposed.
 
 ## Vision / CoT / tool-runtime honesty
 status: done
 
 `abbey vision` · `abbey cot` · `abbey runtime` surface Current substitutes (path attach,
-agent gen, reason transcript viewer, responsibility matrix) while refusing local
-vision/video weights, Abbey-owned CoT engine/UI, and Abbey-as-tool-runtime (exit 2).
+agent gen, reason transcript viewer, responsibility matrix) while refusing the Proposed
+local neural media and owned tool runtime plus the Out-of-scope Abbey-owned hidden CoT
+engine/UI (exit 2).
 `abbey reason` saves a CoT transcript for `cot show`.
 
-## OOS honesty pack (LoRA · weights · NPU/TPU · unrestricted OS · MCP/ACP host)
+## Deferred-capability honesty pack (LoRA · weights · NPU/TPU · unrestricted OS · MCP/ACP host)
 status: done
 
 `abbey oos` index plus `abbey lora|weights|accel|shell|host` (and slash peers) print
 Current substitutes and refuse with exit 2. Does **not** implement LoRA runners, local
-weights, accelerator kernels, unrestricted shell, or Abbey-as-MCP/ACP-host — those stay
-Out of scope. Cross-links: `learn lora`, `os refuse`, `platform refuse`, `mcp|acp refuse`.
+weights, accelerator kernels, personal-unrestricted edition, or Abbey-as-MCP/ACP-host.
+Those are Proposed and unavailable; shipped-edition bypass remains Out of scope.
+Cross-links: `learn lora`, `os refuse`, `platform refuse`, `mcp|acp refuse`.
 
 ## learn review/stats + OS allowlist Current surfaces
 status: done
@@ -374,7 +404,8 @@ status: done
 PATHEXT-aware `which_bin`, Windows agent/install candidate paths, platform-aware argv
 clamp (CreateProcess-safe), Windows OS allowlist of real executables, `abbey platform
 paths` + this-host matrix column, `install.ps1`, softer `check.sh` cross-target smoke when
-targets are already installed. Voice/fm remain macOS-only; accelerator runtimes stay OOS.
+targets are already installed. Voice/fm remain macOS-only; accelerator runtimes are
+Proposed and unavailable.
 
 ## Lexical similarity search over memory
 status: done
@@ -406,7 +437,7 @@ status: done
 goals.md done; OS allowlist execute unchanged.
 
 **Closed 2026-07-31:** live-verified against the built binary — `abbey improve status`
-correctly parses the real ledger (18 goals / 86 todos) and picks focus; `abbey improve
+correctly parsed the then-current ledger snapshot (18 goals / 86 todos) and picked focus; `abbey improve
 plan` renders the diagnose + implement prompts with no apply — both against a green
 `./check.sh`. Also closed a gap found while verifying: `check.sh`'s file-size guard had
 an unreachable hard-fail branch (`elif n > 800` shadowed `elif n > 1000`), and

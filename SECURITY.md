@@ -34,8 +34,11 @@ network service:
 - **Prompt content reaching the backend in option position** is guarded (a
   leading-dash prompt is warned about, and the `abi` grammar uses a real `--`
   separator). A way to smuggle backend flags through prompt text is in scope.
-- **Credentials** are never stored by Abbey; the backend CLI owns them. Abbey
-  reading or logging a credential would be in scope.
+- **Credentials** are never persisted in Abbey config or state. Executor
+  credentials are owned by their backend CLI. The opt-in OpenAI-compatible
+  embedding provider intentionally reads `ABBEY_EMBEDDING_API_KEY` or
+  `OPENAI_API_KEY` from the environment for the request; persistence, logging,
+  or subprocess-argv exposure of those values is in scope.
 - **State** lives under `~/.local/state/abbey` (chat ids, memory store, route
   log). Anything that lets another local user or a prompt influence writes
   outside that directory is in scope.

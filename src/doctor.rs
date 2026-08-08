@@ -548,8 +548,9 @@ pub fn cmd_doctor(state: &AbbeyState, cfg: &AgentConfig) -> Result<i32> {
     let _ = output::println(
         "routing:    confidence/alternate/fallback on route.jsonl (audit only — no auto second agent)",
     );
-    let _ =
-        output::println("learn:      review|stats (+ learn-review/learn-stats aliases; LoRA OOS)");
+    let _ = output::println(
+        "learn:      review|stats (+ aliases; LoRA pipeline Proposed, unavailable)",
+    );
     let _ = output::println(
         "os:         allowlist + dry-run; execute --confirm only (`abbey allowlist`)",
     );

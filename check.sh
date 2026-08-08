@@ -58,6 +58,9 @@ cargo clippy --features wdbx --all-targets -- -D warnings
 echo "== test (--features wdbx) =="
 cargo test --features wdbx
 
+echo "== claims/docs synchronization =="
+python3 tools/check_claims_sync.py
+
 echo "== file size guard (main < 200, others warn > 800) =="
 python3 - <<'PY'
 from pathlib import Path
