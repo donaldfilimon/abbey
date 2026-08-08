@@ -263,17 +263,16 @@ alternate / fallback on the route log (audit only — no second execution path);
 capture summarizer + argv clamp. Already-shipped Max/Gemma/personas/memory/hybrid-loop/
 fm/3-D map remain as before.
 
-**Residuals stay Proposed / Out of scope (not laundered):** semantic embedding
-space; multi-node / NPU-TPU learning; autonomous OS; local weights / LoRA;
+**Residuals after the 2026-08-08 follow-up:** production multi-host/shared-compute
+mesh; NPU-TPU learning; autonomous OS; local weights / LoRA;
 CouchDB/Python second memory stack. Claims gate in AGENTS.md stays binding.
 
-**Review 2026-07-30 (`/goal /review`) — gap found, recorded not built:** the brief's
+**Review 2026-07-30 (`/goal /review`) — gap found; closed 2026-08-08:** the brief's
 memory interface names *filter by source*, *by timestamp*, and *by project/domain*
 (plus recency weighting and confidence thresholds in the retrieval layer).
-`MemoryStore::filter` only takes `(retention, tag, limit)`. Unlike semantic search
-these need no embedder, so they were neither shipped nor listed as residual — an
-honesty hole in this goal's close. Now **Proposed** in the claims gate. Goal stays
-`done`: this is a named future slice, not a re-opening.
+`MemoryFilter` now applies retention/tag/source/reference/project and inclusive parsed
+RFC 3339 bounds identically on SQLite and WDBX; search/similar/semantic/map/near/export
+share it. Fractional and offset bounds compare instants rather than strings.
 
 **Polish (2026-07-30):** CLI/slash route line parity via `format_route_line`;
 hybrid-loop stages record paired alt/fb; learn routes keep routing fields;
@@ -306,8 +305,8 @@ Premium voices in System Settings for super-high quality.
 ## MCP and ACP server surfaces
 status: done
 
-Config inventory for MCP (`abbey mcp status` over standard mcp.json paths) plus
-cursor-agent management passthrough; ACP peer discovery/launch for gemini and
+Provider-aware inventory for MCP (`abbey mcp status|paths|view` over JSON and Codex
+TOML sources) plus explicit cursor/codex/claude management; ACP peer discovery/launch for gemini and
 opencode. Abbey remains a client-side CLI — not an MCP host or ACP host. Tool
 execution during runs stays inside cursor-agent (`--approve-mcps`).
 
@@ -325,15 +324,16 @@ status: done
 `abbey subagents` catalog + `run --lanes/--peers/--jobs/--synthesize`. Abbey lanes
 (max/gemma/aviva/abbey/abi/reviewer/security/planner) via cursor-agent; peers
 (gemini/opencode/claude/codex) as same-host PATH CLIs. `parallel` remains the
-default-lane alias. Multi-node mesh stays Proposed.
+default-lane alias. `mesh local-demo` adds authenticated same-host process proof;
+production multi-host stays Proposed.
 
 ## Proposed / OOS claims surface
 status: done
 
 `abbey claims` (+ `roadmap`/`scope`) prints the Current / Proposed / Out of scope
-gate from `src/claims.rs`; `refuse embeddings|lora|multinode|…` and
-`memory embed` / `learn lora` exit 2 with substitutes. No claim laundering —
-embeddings and multi-node stay Proposed; LoRA/weights/accelerator-runtime stay OOS.
+gate from `src/claims.rs`; `refuse lora|multinode|…` exits 2 with substitutes.
+Semantic memory is Current only in its explicit-provider, space-isolated form;
+production multi-host stays Proposed; LoRA/weights/accelerator-runtime stay OOS.
 
 ## Platform targets + compute inventory
 status: done
@@ -390,13 +390,11 @@ time on both backends (mirrors how `map::nearest_to` recomputes coordinates). Si
 unit tests plus live verification: `memory search "chekpoint"` (typo) returns
 nothing where `memory similar "chekpoint"` ranks the intended record first at 0.44.
 
-**Deliberately NOT closed — learned/semantic embedding stays Proposed.** A feature
+**Historical boundary, superseded by the 2026-08-08 learned-provider goal below.** A feature
 hash has no trained semantics: it matches surface form, not meaning, so the same
 idea in different words still misses (observed live — an unrelated record scored
-0.47 against the wdbx anchor purely on shared trigrams). `abbey claims refuse
-embeddings` still exits 2, and its wording now names the real substitute instead of
-the now-false "Abbey has no embedder". Vectors are never persisted, so abi-wdbx's
-`put_vector` storage stays honestly unwired.
+0.47 against the wdbx anchor purely on shared trigrams). That remains true of
+`memory similar`; `memory semantic` is now a distinct learned, persisted space.
 
 ## Smart improve loop (ledger + gate, bounded auto)
 status: done
@@ -449,3 +447,37 @@ ledger looks unexpectedly bare — verified live in both the present and missing
 Most of these allows were added earlier the same session under gate pressure; the audit
 was resolving that, not new scope.
 
+## Learned semantic memory and provider isolation
+status: done
+
+Closed 2026-08-08. `embedding_provider = none|apple|openai` is explicit and defaults
+to `none`; providers never substitute for one another. Stable `space_id` includes
+provider/model/revision/dimension/normalization. SQLite uses `memory_embeddings`;
+WDBX uses an isolated v2 vector sub-store and UUID mapping per space. Stale content
+hashes and obsolete records are excluded; backfill is explicit and non-destructive.
+Provider failure preserves the memory and leaves it pending. Only summary plus subject
+tags is embedded. Local evidence: Apple NaturalLanguage returned 512 dimensions and a
+paraphrase ranked the intended record first while lexical substring search returned no
+result; default/WDBX persistence and provider/mock/error/filter suites are green. A live
+paid OpenAI-compatible call remains unverified because no credential was supplied.
+
+## Authenticated local ABI multi-process proof
+status: done
+
+`abbey mesh status|nodes|local-demo --nodes 3..9 [--json]` resolves a real ABI binary,
+invokes the bounded authenticated loopback proof, validates quorum/election/failover/
+sharding/conflicts/read-repair/child teardown, and adds explicit `not_proof_of` fields.
+This is Current local evidence only; production separate-host/shared-compute operation
+remains Proposed.
+
+## Skills, plugins, MCP, installers, and hooks cleanup
+status: done
+
+Skills retain provenance and divergent same-name manifests instead of silently choosing
+a stale mirror. Plugin inventory is provider-explicit and no longer calls the invalid
+Cursor `plugin list`; MCP inventory reads provider formats, redacts secrets, isolates
+malformed files, and reports configured state without inventing health. The one proven
+broken shared Codex `computer-use` entry was removed; auth-needed/disabled plugins were
+left intact. Unix/Windows installers use locked builds and atomic staging. ABI's existing
+hook lifecycle/force-push guards were repaired and independently verified; Abbey had no
+repository hook configuration to rewrite.

@@ -110,8 +110,8 @@
       `(untagged)` column rather than being hash-scattered into fake topics
 - [x] Recency axis tested with controlled timestamps (it was degenerate at 0.00 in every
       hand test because the records were seconds old), plus a drift case that must not panic
-- [x] Axes are deterministic, **not** a learned embedding space — Abbey has no embedder.
-      Semantic placement stays Proposed (see deferred section)
+- [x] Axes are deterministic and **not** the learned embedding space. Learned semantic
+      search is a separate explicit provider/index surface (see completion section)
 
 ### Slice 3 — TUI + argv safety (done)
 - [x] Memory tab shows a 3-D map preview (topic × recency × depth)
@@ -138,12 +138,29 @@ next slice, which would have sent Max to build a capability `claims refuse` exit
 
 | Capability | Status | Why it stays closed |
 |---|---|---|
-| Semantic memory search (**learned** embedding space) | **Proposed** | The lexical slice does *not* close this — a feature hash has no trained semantics, so the same idea in different words still misses. `claims refuse embeddings` exits 2; abi-wdbx `put_vector` stays unwired (nothing persisted) |
-| Memory project/source/time filtering | **Current (local)** | `MemoryFilter` applies identical exact metadata and inclusive RFC 3339 semantics to SQLite and WDBX. Existing SQLite stores migrate by adding `project`; WDBX JSON remains backward-compatible. `memory put/search/map/export` expose the new metadata/filter flags. |
-| Multi-node · multi-GPU · shared compute mesh | **Proposed** | Cannot be honestly verified from one host. `abi-wdbx` ships `cluster`/`remote_compute` references Abbey does not orchestrate; `subagents --peers` (same-host PATH) is the Current substitute |
+| Semantic memory search (**learned** embedding space) | **Current (opt-in)** | Explicit `none|apple|openai`, stable isolated spaces, SQLite/WDBX persistence, stale detection, pending/backfill, no fallback. Apple paraphrase proof passed locally; paid remote call remains unverified. |
+| Memory project/source/time filtering | **Current (local)** | `MemoryFilter` applies identical exact metadata and inclusive parsed RFC 3339 semantics to SQLite and WDBX. `memory put/search/similar/semantic/map/near/export` expose the shared metadata/filter flags. |
+| ABI authenticated local multi-process proof | **Current (single host)** | `abbey mesh local-demo --nodes 3..9`; typed quorum/failover/conflict/repair/teardown proof from the real ABI binary. |
+| Production multi-host · multi-GPU · shared compute mesh | **Proposed** | Loopback independent processes do not establish separate-host deployment or shared accelerator scheduling. |
 | GPU/NPU/TPU compilation · training · inference *in Abbey* | **Out of scope** | Abbey detects accelerators (`abbey platform`) but runs no kernels. Contradicts "backend is `cursor-agent`, not a reimplementation" (CLAUDE.md) |
 | Autonomous operation of services and the OS | **Out of scope** | Contradicts the safety invariant in CLAUDE.md: OS execution "must never run without `--confirm`, and only against the allowlist — this is a safety invariant, not a default to relax" |
 | Local Qwen/Gemma weights · LoRA · CouchDB-Python second stack | **Out of scope** | A decision, not a capability gap: `abi-nn` next door already ships `train_model`/`train_on_jsonl`, and Abbey deliberately does **not** depend on it. `train_candidate` stays curation substrate only |
+
+### 2026-08-08 capability and tooling completion
+
+- [x] Explicit `none|apple|openai` embedding providers; no cross-provider fallback or API key in config
+- [x] Stable provider/model/revision/dimension/normalization `space_id`; old spaces retained
+- [x] SQLite `memory_embeddings` migration and WDBX per-space v2 vector persistence/reopen
+- [x] Stale/obsolete filtering, explicit one/all/force backfill, and write-preserving pending behavior
+- [x] Apple 512-dimensional English runtime and paraphrase-ranking proof; OpenAI-compatible mock contract
+- [x] Shared metadata/timestamp filters, fractional bound correctness, and zero-limit backend parity
+- [x] Authenticated bounded `mesh local-demo` bridge with typed 3–9-process proof and claim boundary
+- [x] Subagent decomposition, hybrid-stage deduplication, backend-aware capture audit, and shared slash/jobs parsing
+- [x] Skill provenance/divergence reporting; provider-explicit plugin inventory; secret-safe MCP inventory
+- [x] Proven broken shared Codex `computer-use` MCP entry removed; auth-needed/disabled entries retained
+- [x] Locked/atomic Unix and Windows installer flows (PowerShell runtime remains unavailable locally)
+- [x] ABI hook lifecycle and force-push guards repaired; Abbey contains no repository hook config to rewrite
+- [x] HawkScan/DAST remains an explicit evidence gap: runtime and `HAWK_API_KEY` unavailable
 
 ## Hybrid model-routing architecture strategy
 
@@ -213,8 +230,10 @@ cursor-agent because the default is now a per-user config key.
 
 ## MCP / ACP protocol surfaces
 
-- [x] `protocols` module: parse `mcpServers` from standard mcp.json paths
-- [x] `abbey mcp status|paths` local inventory; other verbs → cursor-agent
+- [x] `protocols` module: provider-aware JSON/Codex TOML MCP inventory; malformed-file isolation,
+      configured/disabled state, transport classification, and secret-redacted display
+- [x] `abbey mcp status|paths|view` local inventory; management requires explicit
+      `cursor|codex|claude` and is independent of the selected generation backend
 - [x] `abbey acp list|run` for gemini/opencode ACP stdio peers
 - [x] Doctor + claims: Abbey is not an MCP/ACP host runtime
 

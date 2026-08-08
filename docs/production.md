@@ -69,6 +69,8 @@ Accelerator **host detection** (`abbey platform compute`) is Current. GPU/NPU/TP
 | `cursor-agent` | Yes (default when `ABBEY_BACKEND` unset) | Default LLM executor |
 | `fm` (`/usr/bin/fm`) | Only for `ABBEY_BACKEND=fm` | On-device Apple Foundation Model, macOS 26+ |
 | `abi` (real binary) | Required for `ABBEY_BACKEND=abi`; optional for WDBX/os/plugin CLI | `abi complete` — shell alias will not do; set `ABBEY_ABI_BIN` / `abi_bin` |
+| Swift + Apple NaturalLanguage | Only for `embedding_provider = "apple"` | macOS learned sentence space; runtime language availability varies |
+| modern `curl` | Only for `embedding_provider = "openai"` | HTTPS, bounded requests/timeouts; key is environment-only |
 | git | Optional | diff/commit/pr/branch |
 | `nvidia-smi` / ROCm / TPU tools | Optional | improve `abbey platform` detect only |
 
@@ -76,16 +78,18 @@ Accelerator **host detection** (`abbey platform compute`) is Current. GPU/NPU/TP
 
 - `$ABBEY_CONFIG` or `~/.config/abbey/config.toml` — keys: `persona_policy`,
   `default_role`, `[roles]` max/gemma, `memory_backend`, `abi_bin`,
-  `backend` (default executor: `cursor`|`grok`|`fm`|`abi`; env wins).
+  `backend` (default executor: `cursor`|`grok`|`fm`|`abi`; env wins), and
+  `[embeddings]` provider/endpoint/model/dimension/language.
   `abbey config --init` scaffolds it (never overwrites); an unrecognised
   `backend` warns instead of silently using cursor-agent.
-- Env: `ABBEY_MODEL`, `ABBEY_ROLE`, `ABBEY_PERSONA`, `ABBEY_MEMORY_BACKEND`, `ABBEY_AGENT`, `ABBEY_BACKEND`, `ABBEY_ABI_BIN`, `ABBEY_FORCE`, `ABBEY_PER_CWD`, `ABBEY_STATE_DIR`
+- Env: `ABBEY_MODEL`, `ABBEY_ROLE`, `ABBEY_PERSONA`, `ABBEY_MEMORY_BACKEND`, `ABBEY_AGENT`, `ABBEY_BACKEND`, `ABBEY_ABI_BIN`, `ABBEY_FORCE`, `ABBEY_PER_CWD`, `ABBEY_STATE_DIR`, and the `ABBEY_EMBEDDING_*` provider settings. Remote credentials are read only from `ABBEY_EMBEDDING_API_KEY` or `OPENAI_API_KEY`; never put them in `config.toml`.
 
 ## State locations
 
 - Chat/model/history/routes: `$XDG_STATE_HOME/abbey` (or `~/.local/state/abbey`)
 - Memory SQLite: `…/abbey/memory.sqlite`
-- Memory WDBX (feature `wdbx`): `…/abbey/wdbx/` (segments + WAL)
+- SQLite semantic vectors: `memory_embeddings` inside the same database
+- Memory WDBX (feature `wdbx`): `…/abbey/wdbx/` plus isolated `embedding-spaces/<space_id>` stores
 - `fm` transcripts (backend `fm`): `…/abbey/fm/<chat-id>.transcript`
 - Never commit state dirs
 
@@ -95,6 +99,8 @@ Accelerator **host detection** (`abbey platform compute`) is Current. GPU/NPU/TP
 - Allowlist only (see `abbey os allowlist`)
 - No fake cost/token claims
 - Self-learn train layer requires provenance
+- Semantic provider selection is explicit; failures preserve the memory and never trigger provider fallback
+- Non-loopback embedding endpoints require HTTPS; bearer credentials do not appear in subprocess argv
 
 ## Versioning
 

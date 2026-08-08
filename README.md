@@ -43,7 +43,7 @@ abbey init --print        # preview only
 abbey init --agent        # local scan, then refine with cursor-agent
 abbey doctor
 abbey claims                                 # Current / Proposed / Out of scope
-abbey claims proposed                        # embeddings, multi-node, …
+abbey claims proposed                        # production multi-host/shared compute, …
 abbey claims refuse lora                     # honest exit 2
 abbey platform                               # linux/macos/windows matrix + threads
 abbey compute                                # GPU/NPU/TPU host detect (not Abbey kernels)
@@ -63,6 +63,7 @@ abbey learn-review · abbey learn-stats       # aliases
 abbey os · abbey allowlist                   # allowlist panel (execute needs --confirm)
 abbey wdbx query                             # → `abi wdbx query <abbey store> --json`
 abbey wdbx stats                             # in-process (needs --features wdbx)
+abbey mesh local-demo --nodes 3 --json       # authenticated same-host ABI process proof
 abbey completion zsh > ~/.zsh/completions/_abbey_clap
 ```
 
@@ -99,15 +100,17 @@ rather than silently falling back to cursor-agent.
 
 Under `fm`, conversations are kept as transcript files in `<state>/fm/` (it has no
 server-side chat ids), and `ask`/`plan` become `--instructions`. Account/session verbs
-(`status`, `ls`, `login`, `logout`, `mcp`) have no on-device equivalent and refuse with
-exit 2 rather than forwarding. **Max and Gemma both resolve to the `system` model there,
+(`status`, `ls`, `login`, `logout`) have no on-device equivalent and refuse with exit 2
+rather than forwarding; local `mcp status|paths|view` remains available and management
+names its provider explicitly. **Max and Gemma both resolve to the `system` model there,
 so the role distinction is carried by the prompt, not the model.**
 
 Under `abi`, each turn is a one-shot `abi complete` (needs a **real** `abi` binary —
 `ABBEY_ABI_BIN` or `abi_bin`; a shell alias won't do). Abbey keeps continuity itself:
 turns are recorded in `<state>/abi/<chat>.transcript` and a bounded tail rides into the
-next turn as context. Account/MCP/generation verbs refuse with exit 2; roles are
-prompt-only, and cursor role/thinking bindings never silently select the live transport.
+next turn as context. Account/generation verbs refuse with exit 2; local MCP inventory is
+backend-independent and provider management is explicit. Roles are prompt-only, and cursor
+role/thinking bindings never silently select the live transport.
 
 ## The 3-D memory map
 
@@ -129,13 +132,43 @@ abbey memory invalidate <id>                     # mark obsolete, keep the recor
 abbey memory supersede <old-id> "corrected fact" # store the fix, retire the old
 ```
 
-Tag your memories — untagged ones share one visible `(untagged)` column. Under
-`--features wdbx` each point is mirrored into WDBX's spatial space, so `abi wdbx` sees
-the same map.
+Tag your memories — untagged ones share one visible `(untagged)` column. Both backends
+compute these coordinates from the stored record; WDBX uses KV JSON for the memory record
+and does not create a second spatial copy.
 
-This is a **deterministic layout, not a learned embedding space** — Abbey has no
-embedder, and calling the distances semantic would overstate them. The TUI Memory
-tab shows a short map preview; use the CLI for the full map.
+This map is a **deterministic layout, not a learned embedding space**. Learned semantic
+search is a separate, explicit provider/index surface; map distance must not be described
+as semantic distance. The TUI Memory tab shows a short map preview; use the CLI for the
+full map.
+
+## Semantic memory (opt-in)
+
+Semantic embeddings are disabled by default. Select exactly one provider in the generated
+config (`abbey config --init`) or with environment overrides; Abbey never falls back from
+Apple to a remote endpoint or vice versa:
+
+```toml
+[embeddings]
+provider = "apple"                  # none | apple | openai
+model = "english-sentence"
+dimension = 512
+language = "en"
+```
+
+```bash
+abbey memory embed status
+abbey memory embed --all             # explicit non-destructive backfill
+abbey memory semantic "brief terminal responses" --project "$PWD" --limit 10
+```
+
+The Apple provider uses the OS `NaturalLanguage.NLEmbedding` sentence space. The
+OpenAI-compatible provider calls `/v1/embeddings` with bounded batches and HTTPS (plain
+HTTP is accepted only for loopback tests); its key comes only from
+`ABBEY_EMBEDDING_API_KEY` or `OPENAI_API_KEY`. Only summary plus subject tags leave the
+process—never payload, provenance, project, or source references. SQLite persists vectors
+in `memory_embeddings`; WDBX uses an isolated v2 vector sub-store per provider/model/
+revision/dimension/normalization `space_id`. Provider failures preserve the memory and
+leave it pending for a later explicit backfill.
 
 ## Routing audit
 
@@ -168,7 +201,9 @@ abbey /reason compare sqlite vs wdbx for this workload
 # MCP / ACP
 abbey mcp                  # inventory ~/.cursor/mcp.json + project configs
 abbey mcp paths
-abbey mcp list             # cursor-agent's view / approval list
+abbey mcp view codex       # structured provider view
+abbey mcp cursor list      # explicit provider management
+abbey plugin codex list    # provider-explicit plugin management
 abbey --approve-mcps "…"   # tools run inside cursor-agent during a turn
 abbey acp                  # ACP peers (gemini --acp, opencode acp, …)
 abbey acp run gemini       # start ACP stdio server for an ACP host to attach
@@ -192,7 +227,8 @@ ABBEY_HIGHLIGHT=0 abbey -p "…"          # disable
 - Voice prefers **Premium → Enhanced → standard** `say` voices; download them in
   System Settings → Accessibility → Spoken Content. STT builds `scripts/abbey-stt.swift`
   on first listen (Xcode CLT + Mic + Speech Recognition permission).
-- Under `ABBEY_BACKEND=fm`, MCP/account/generation verbs refuse (exit 2).
+- Local MCP inventory works under every generation backend; account/generation verbs still
+  refuse under `ABBEY_BACKEND=fm`, and provider management is always explicit.
 
 ## Memory backends
 
@@ -220,7 +256,8 @@ does not extend to an `abi` invoked directly by you against the same store.
 - `abbey wdbx <query|db|…>` shells out to `abi`, which must be a **real binary** on PATH —
   a shell alias will not do (`cargo build -p abi-cli` in `../abi`, then set `ABBEY_ABI_BIN`).
   `stats`/`checkpoint` are answered in-process and need `--features wdbx`.
-- The WDBX backend uses the KV space; vector/embedding search through WDBX is not wired yet.
+- WDBX stores memory records in KV JSON and semantic vectors in a separate v2 sub-store per
+  `space_id`; incompatible providers/models/dimensions are never compared.
 - The WDBX cross-process lock uses `fs4` on Unix and Windows. GPU/NPU/TPU *host*
   detection is Current (`abbey platform`); accelerator runtimes inside Abbey are Out of scope.
 - Under WDBX lock contention a run's background STM/activity write is dropped silently (it is
@@ -230,7 +267,8 @@ does not extend to an `abi` invoked directly by you against the same store.
 - Personas, Max/Gemma bindings, memory, hybrid-loop, fm, and the 3-D map are **Current** — do not assume local Gemma/Qwen weights or LoRA.
 - `abbey learn review`/`stats` curate `train_candidate` provenance; they are not a trainer.
 - `/cost` is **N/A** (use Cursor account dashboard).
-- Full MCP/plugin UIs pass through to cursor-agent when available.
+- MCP/plugin management names its provider (`cursor|codex|claude`, plus `abi` for plugins);
+  inventory failures and marketplace visibility are not reported as installed/runtime proof.
 - Worktree isolation depends on cursor-agent `--worktree`.
 - `/init` local scan covers Rust/Node/Zig/Go/Python/Swift/Make/CMake; `--agent` refines via cursor-agent.
 
@@ -248,7 +286,8 @@ src/
   init/           /init project scan → AGENTS.md
   gitops.rs       local git helpers
   agent/          cursor · grok · fm · abi executors (argv.rs = per-backend grammars)
-  memory/         trait + sqlite · wdbx (feature-gated) + map
+  memory/         trait + sqlite · wdbx + map · learned embedding providers/index
+  mesh.rs         typed bridge to ABI authenticated local multi-process proof
   hybrid_loop.rs  Gemma interpret → Max implement
   wdbx_bridge.rs  abbey wdbx → abi wdbx
   please_fix.rs  last-failure prompt + capture summarizer

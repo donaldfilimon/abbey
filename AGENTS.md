@@ -68,7 +68,7 @@ See [docs/architecture.md](docs/architecture.md). Personas via `abi-ai`; Max/Gem
 
 ### Claims gate
 
-CLI: `abbey claims` · `abbey claims proposed|oos` · `abbey claims refuse embeddings|lora|multinode`
+CLI: `abbey claims` · `abbey claims proposed|oos` · `abbey claims refuse lora|multinode`
 (source: `src/claims.rs` — keep this table and that module aligned).
 
 | Claim | Current | Proposed | Out of scope |
@@ -90,7 +90,7 @@ CLI: `abbey claims` · `abbey claims proposed|oos` · `abbey claims refuse embed
 | Tool responsibility matrix (`abbey runtime`) | ✓ | | Abbey as tool runtime |
 | OOS honesty (`abbey oos` / lora|weights|accel|shell|host) | ✓ | | (surfaces refuse; do not implement) |
 | OS allowlist control | ✓ | | unrestricted shell |
-| Skills/plugins inventory | ✓ | | |
+| Provider-explicit skills/plugins inventory | ✓ | | |
 | Unique build stamp | ✓ | | |
 | Modular src/ (<1k files) | ✓ | | |
 | WDBX in-process (feature `wdbx`, **off by default**) | ✓ | | |
@@ -106,14 +106,15 @@ CLI: `abbey claims` · `abbey claims proposed|oos` · `abbey claims refuse embed
 | Image/video generation via agent tools (`imagine`/`generate`) | ✓ | | local vision/video weights |
 | Thinking aliases + `reason` structured wrap | ✓ | | Abbey-owned CoT engine |
 | macOS voice I/O (Premium/Enhanced TTS + on-device STT) | ✓ | | cloud TTS/STT SaaS |
-| MCP config inventory + cursor-agent mcp mgmt | ✓ | | Abbey as MCP host |
+| MCP config inventory + explicit provider mgmt | ✓ | | Abbey as MCP host |
 | ACP peer inventory / launch (`acp run`) | ✓ | | Abbey as ACP host |
 | MCP/tools during a run (`--approve-mcps`) | ✓ | | Abbey as tool runtime |
 | Auto code highlighting (fences on `-p`/print · `abbey highlight`) | ✓ | | full markdown UI / LSP |
 | Lexical similarity search (`memory similar`, n-gram cosine) | ✓ | | learned/semantic ranking |
-| Semantic/learned memory embedding space | | ✓ | |
-| Memory filter by source / timestamp / project | | ✓ | |
-| Multi-node · multi-GPU · shared compute mesh | | ✓ | |
+| Semantic/learned memory (`none|apple|openai`, opt-in) | ✓ | | paid remote-call proof without credentials |
+| Memory filter by source / timestamp / project | ✓ | | |
+| ABI authenticated local multi-process proof (`mesh local-demo`) | ✓ | | production multi-host proof |
+| Production multi-host · multi-GPU · shared compute mesh | | ✓ | |
 | GPU/NPU/TPU compilation, training, inference in Abbey | | | ✓ |
 | Autonomous OS/service operation (no allowlist) | | | ✓ |
 | Abbey as her own trained model (own weights) | | | ✓ |
@@ -137,6 +138,10 @@ CLI: `abbey claims` · `abbey claims proposed|oos` · `abbey claims refuse embed
 - `abi` on this machine is often a **shell alias**, not a binary — both the WDBX CLI
   bridge and `ABBEY_BACKEND=abi` need a real one: `cargo build -p abi-cli` in `../abi`,
   then set `ABBEY_ABI_BIN` (or `abi_bin` in config.toml)
+- Semantic embeddings default to `none`. Select `apple` or `openai` explicitly in
+  `[embeddings]`; API keys stay in `ABBEY_EMBEDDING_API_KEY`/`OPENAI_API_KEY`, never
+  `config.toml`. Provider/model changes create a new isolated vector space and never
+  silently fall back or overwrite an older space.
 - `abi wdbx` paths are **base paths** (dir + base name); Abbey opens a directory. Abbey's
   `<state>/wdbx/` is `<state>/wdbx/wdbx` to `abi` — `wdbx_bridge` translates, don't re-break it
 - `DurableStore` has no cross-process locking; `WdbxMemory` adds an `fs4` advisory

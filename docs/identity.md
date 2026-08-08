@@ -71,9 +71,9 @@ Routing decisions record **confidence**, **alternate**, and **fallback** on `rou
 | Abbey as tool runtime / MCP host | **Out of scope** |
 | `--thinking <level>` · `/think` · `abbey reason` · `/reason` | **Current** — Cursor `*-thinking-*` + structured reasoning wrap (not Abbey CoT UI) |
 | Tools during a run | **Current via cursor-agent** (`--print` has tool access; `--approve-mcps`) |
-| `abbey mcp` / `/mcp` config inventory + cursor-agent management | **Current** (not an MCP host runtime) |
+| `abbey mcp` / `/mcp` provider-aware inventory + explicit management | **Current** (not an MCP host runtime) |
 | `abbey acp` peer inventory / `acp run` | **Current** — launches gemini/opencode ACP stdio; not an ACP host |
-| skills/plugins inventory | **Current** |
+| skills/plugins inventory | **Current** — skill provenance/divergence + provider-explicit plugin states |
 | Tools / generation under `ABBEY_BACKEND=fm` or `abi` | **N/A** — refuse with exit 2 |
 | `abbey voice` / `speak` / `listen` / `ask` | **Current (macOS)** — Premium/Enhanced `say` TTS + on-device Speech STT |
 | Cloud TTS/STT subscriptions · local neural voice weights | **Out of scope** (use System Settings downloads for Premium voices) |
@@ -81,7 +81,8 @@ Routing decisions record **confidence**, **alternate**, and **fallback** on `rou
 | Full markdown renderer / LSP semantic highlight | **Out of scope** |
 | Multi-subagent fan-out (`abbey subagents` / `parallel`) | **Current** — named lanes + optional `--synthesize` |
 | Local distributed peers (`--peers gemini,claude,…`) | **Current** — PATH CLIs on this host |
-| Multi-node / multi-GPU agent mesh | **Proposed** (not Current) |
+| ABI authenticated local multi-process proof (`abbey mesh local-demo`) | **Current** — one host, 3–9 processes |
+| Production multi-host / multi-GPU shared-compute mesh | **Proposed** (not established by local-demo) |
 | Host platform matrix + thread/GPU/NPU/TPU detect | **Current** — `abbey platform` (not accelerator runtime) |
 | GPU/NPU/TPU kernels inside Abbey | **Out of scope** |
 
@@ -98,7 +99,9 @@ Routing decisions record **confidence**, **alternate**, and **fallback** on `rou
 | WDBX DurableStore in-process | **Current behind `--features wdbx`** (off by default, `src/memory/wdbx.rs`; `flock`-guarded) |
 | 3-D memory map (topic × recency × consolidation) | **Current** — deterministic axes, both backends; TUI Memory tab preview |
 | Lexical similarity search (`abbey memory similar`) | **Current** — `abi-ai` n-gram feature hash + cosine, computed per query, both backends |
-| Learned/semantic memory embedding | **Proposed** — the in-process embedder is a deterministic n-gram hash, not trained; same-idea-different-words still misses (`abbey claims refuse embeddings`) |
+| Project/source/reference/tag + inclusive timestamp filters | **Current** — identical backend-neutral semantics |
+| Learned/semantic memory embedding | **Current, opt-in** — Apple NaturalLanguage or OpenAI-compatible provider; isolated persisted spaces on SQLite/WDBX; no fallback |
+| Live paid OpenAI-compatible request | **Unverified in this release evidence** — implementation/mock contract are Current; no credential was supplied |
 | Fine-tuning / LoRA | **Out of scope** (`abbey lora` · `abbey learn lora` refuse) |
 | Local Qwen/Gemma / own weights | **Out of scope** (`abbey weights`) |
 | Unrestricted OS / shell | **Out of scope** (`abbey shell` · `abbey os refuse`) |
