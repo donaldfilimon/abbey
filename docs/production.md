@@ -49,6 +49,11 @@ workflow is verified only by reproducing its checkout layout locally (fresh
 
 ## Primary host targets
 
+Here, ✓ means the portable source surface is implemented and gated where the
+target toolchain is available; it does not claim that every target was
+runtime-verified on the current macOS host. Platform-specific runtime evidence
+is reported separately below and in `tasks/todo.md`.
+
 | Target | Portable CLI/TUI/memory/subagents | Notes |
 |--------|-----------------------------------|-------|
 | Linux | ✓ | primary |

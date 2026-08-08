@@ -106,11 +106,26 @@ impl Ledger {
             .filter(|t| !t.done && !is_deferred_section(&t.section))
     }
 
+    /// Unchecked todos Abbey can act on without an external state change.
+    ///
+    /// Blocked items remain visible through [`Self::open_todos`] and status
+    /// output, but the autonomous improve loop must not spend agent rounds on
+    /// account, billing, hosted-runner, or other explicitly blocked sections.
+    pub fn actionable_todos(&self) -> impl Iterator<Item = &TodoItem> {
+        self.open_todos()
+            .filter(|t| !is_blocked_section(&t.section))
+    }
+
     pub fn open_todo_count(&self) -> usize {
         self.open_todos().count()
     }
 
-    /// Prefer `in_progress`, else first `todo`, else `blocked`.
+    pub fn actionable_todo_count(&self) -> usize {
+        self.actionable_todos().count()
+    }
+
+    /// Prefer actionable goals by default; an explicit hint may select a
+    /// blocked goal for inspection or a deliberate retry.
     pub fn pick_goal(&self, hint: Option<&str>) -> Option<&Goal> {
         if let Some(h) = hint {
             let key = h.trim().to_ascii_lowercase();
@@ -135,11 +150,14 @@ impl Ledger {
             .iter()
             .find(|g| g.status == GoalStatus::InProgress)
             .or_else(|| self.goals.iter().find(|g| g.status == GoalStatus::Todo))
-            .or_else(|| self.goals.iter().find(|g| g.status == GoalStatus::Blocked))
     }
 
     pub fn next_open_todo(&self) -> Option<&TodoItem> {
         self.open_todos().next()
+    }
+
+    pub fn next_actionable_todo(&self) -> Option<&TodoItem> {
+        self.actionable_todos().next()
     }
 }
 
@@ -181,7 +199,12 @@ pub fn pick_work(ledger: &Ledger, hint: Option<&str>, gate_only: bool) -> WorkFo
         return WorkFocus::Stabilize;
     }
     if let Some(g) = ledger.pick_goal(hint) {
-        let todo = ledger.next_open_todo().map(|t| t.text.clone());
+        let todo = if hint.is_some() {
+            ledger.next_open_todo()
+        } else {
+            ledger.next_actionable_todo()
+        }
+        .map(|t| t.text.clone());
         return WorkFocus::Goal {
             title: g.title.clone(),
             status: g.status,
@@ -189,7 +212,7 @@ pub fn pick_work(ledger: &Ledger, hint: Option<&str>, gate_only: bool) -> WorkFo
             todo,
         };
     }
-    if let Some(t) = ledger.next_open_todo() {
+    if let Some(t) = ledger.next_actionable_todo() {
         return WorkFocus::Goal {
             title: "open todo (no open goal)".into(),
             status: GoalStatus::InProgress,
@@ -252,6 +275,12 @@ pub fn parse_goals(text: &str) -> Vec<Goal> {
 pub fn is_deferred_section(section: &str) -> bool {
     let s = section.to_ascii_lowercase();
     s.contains("deferred") || s.contains("out of scope") || s.contains("not abbey current")
+}
+
+/// Whether a todo section records an external blocker rather than locally
+/// executable work. Blocked items stay in the ledger and status counts.
+pub fn is_blocked_section(section: &str) -> bool {
+    section.to_ascii_lowercase().contains("blocked")
 }
 
 pub fn parse_todos(text: &str) -> Vec<TodoItem> {
@@ -427,6 +456,48 @@ status: todo
             todos: parse_todos(text),
         };
         assert_eq!(ledger.open_todo_count(), 1);
+    }
+
+    #[test]
+    fn blocked_work_stays_visible_but_is_not_nominated_by_default() {
+        let ledger = Ledger {
+            goals_path: PathBuf::new(),
+            todo_path: PathBuf::new(),
+            goals: vec![Goal {
+                title: "Working CI on GitHub".into(),
+                status: GoalStatus::Blocked,
+                body: "Owner billing action required".into(),
+            }],
+            todos: parse_todos(
+                "## Working CI on GitHub (blocked — owner action)\n\
+                 - [ ] obtain a hosted runner\n",
+            ),
+        };
+
+        assert_eq!(ledger.open_goals().count(), 1);
+        assert_eq!(ledger.open_todo_count(), 1);
+        assert_eq!(ledger.actionable_todo_count(), 0);
+        assert!(ledger.pick_goal(None).is_none());
+        assert!(ledger.next_actionable_todo().is_none());
+        assert!(matches!(
+            pick_work(&ledger, None, false),
+            WorkFocus::Stabilize
+        ));
+
+        let explicit = pick_work(&ledger, Some("working ci"), false);
+        match explicit {
+            WorkFocus::Goal {
+                title,
+                status,
+                todo,
+                ..
+            } => {
+                assert_eq!(title, "Working CI on GitHub");
+                assert_eq!(status, GoalStatus::Blocked);
+                assert_eq!(todo.as_deref(), Some("obtain a hosted runner"));
+            }
+            WorkFocus::Stabilize => panic!("explicit blocked goal should be inspectable"),
+        }
     }
 
     #[test]

@@ -18,7 +18,7 @@ use crate::state::AbbeyState;
 use crate::subagents::{self, LaneResult, RunOptions};
 use anyhow::{Result, bail};
 use gate::{GateReport, run_gate, wants_security_lane};
-use ledger::{Ledger, WorkFocus, pick_work, require_tasks_root};
+use ledger::{GoalStatus, Ledger, WorkFocus, pick_work, require_tasks_root};
 use report::{RunReport, latest_report_path, report_path, write_report};
 use std::time::{Duration, Instant};
 use uuid::Uuid;
@@ -251,12 +251,23 @@ fn cmd_status(state: &AbbeyState, opts: &ImproveOpts) -> Result<i32> {
         ledger.open_todo_count(),
         ledger.todos.len()
     );
+    println!(
+        "actionable: {} goals · {} todos (blocked work stays visible)",
+        ledger
+            .goals
+            .iter()
+            .filter(|g| matches!(g.status, GoalStatus::Todo | GoalStatus::InProgress))
+            .count(),
+        ledger.actionable_todo_count()
+    );
     for g in &ledger.goals {
         let mark = if g.status.is_open() { "·" } else { "✓" };
         println!("  {mark} [{}] {}", g.status.label(), g.title);
     }
-    if let Some(t) = ledger.next_open_todo() {
-        println!("next todo: [{}] {}", t.section, t.text);
+    if let Some(t) = ledger.next_actionable_todo() {
+        println!("next actionable todo: [{}] {}", t.section, t.text);
+    } else if ledger.open_todo_count() > 0 {
+        println!("next actionable todo: none (remaining open items are blocked)");
     }
     let hint = opts.goal_hint.first().map(String::as_str);
     let focus = pick_work(&ledger, hint, opts.gate_only);
@@ -514,7 +525,7 @@ fn focus_complete(focus: &WorkFocus, ledger: &Ledger, opts: &ImproveOpts) -> boo
                 ledger.open_goals().next().is_none() && ledger.open_todo_count() == 0
             } else {
                 // Default: gate green is enough when no open goal/todo remains.
-                ledger.pick_goal(None).is_none() && ledger.next_open_todo().is_none()
+                ledger.pick_goal(None).is_none() && ledger.next_actionable_todo().is_none()
             }
         }
     }

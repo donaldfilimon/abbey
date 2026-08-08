@@ -1,6 +1,7 @@
 use anyhow::{Context, Result, bail};
 use serde_json::Value;
 use std::io::Read;
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -155,10 +156,9 @@ pub struct SystemPluginRunner;
 
 impl PluginRunner for SystemPluginRunner {
     fn run(&self, command: &ProviderCommand, timeout: Duration) -> Result<ProviderOutput> {
-        let binary = crate::agent::which_bin(&command.binary).with_context(|| {
+        let binary = resolve_provider_binary(command.provider).with_context(|| {
             format!(
-                "{} is not on PATH for {} inventory",
-                command.binary,
+                "resolve {} plugin inventory binary",
                 command.provider.label()
             )
         })?;
@@ -210,6 +210,27 @@ impl PluginRunner for SystemPluginRunner {
             timed_out: false,
         })
     }
+}
+
+fn resolve_provider_binary(provider: PluginProvider) -> Result<PathBuf> {
+    let cfg = crate::config::AbbeyConfig::load().unwrap_or_default();
+    resolve_provider_binary_with_config(provider, &cfg)
+}
+
+fn resolve_provider_binary_with_config(
+    provider: PluginProvider,
+    cfg: &crate::config::AbbeyConfig,
+) -> Result<PathBuf> {
+    if provider == PluginProvider::Abi {
+        return crate::config::resolve_abi_bin(cfg).with_context(|| {
+            format!(
+                "ABI is unavailable; set ABBEY_ABI_BIN or `abi_bin` in {}",
+                crate::config::AbbeyConfig::config_path().display()
+            )
+        });
+    }
+    crate::agent::which_bin(provider.binary())
+        .with_context(|| format!("{} is not on PATH", provider.binary()))
 }
 
 fn read_capped(mut reader: impl Read) -> Result<String> {
@@ -457,8 +478,7 @@ pub fn run_plugin_for_provider(provider: PluginProvider, args: &[String]) -> Res
         }
         return Ok(0);
     }
-    let binary = crate::agent::which_bin(provider.binary())
-        .with_context(|| format!("{} is not on PATH", provider.binary()))?;
+    let binary = resolve_provider_binary(provider)?;
     let status = Command::new(binary)
         .arg("plugin")
         .args(args)
@@ -473,6 +493,7 @@ pub fn run_plugin_for_provider(provider: PluginProvider, args: &[String]) -> Res
 mod tests {
     use super::*;
     use std::collections::BTreeMap;
+    use std::fs;
 
     struct FakeRunner {
         outputs: BTreeMap<PluginProvider, ProviderOutput>,
@@ -582,5 +603,24 @@ mod tests {
                 .iter()
                 .all(|diagnostic| { !diagnostic.message.contains("do-not-print") })
         );
+    }
+
+    #[test]
+    fn abi_provider_uses_the_canonical_configured_binary() {
+        let configured = std::env::temp_dir().join(format!(
+            "abbey-abi-plugin-resolver-{}",
+            uuid::Uuid::new_v4()
+        ));
+        fs::write(&configured, b"test executable placeholder").unwrap();
+        let cfg = crate::config::AbbeyConfig {
+            abi_bin: Some(configured.clone()),
+            ..crate::config::AbbeyConfig::default()
+        };
+
+        assert_eq!(
+            resolve_provider_binary_with_config(PluginProvider::Abi, &cfg).unwrap(),
+            configured
+        );
+        fs::remove_file(configured).unwrap();
     }
 }
