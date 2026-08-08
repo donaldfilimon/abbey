@@ -21,7 +21,7 @@
 //! and there is no dual-write to drift. It also avoids persisting vectors next
 //! to Zig-written ones, where any hash change would silently corrupt recall.
 
-use super::{MemoryRecord, MemoryStore};
+use super::{MemoryFilter, MemoryRecord, MemoryStore};
 use abi_ai::{EMBED_DIM, text_embedding};
 
 /// Ceiling on records scanned per query — matches `nearest_to`'s scan budget.
@@ -71,7 +71,17 @@ pub fn similar_to_text(
     query: &str,
     limit: usize,
 ) -> anyhow::Result<Vec<(f32, MemoryRecord)>> {
-    let all = store.filter(None, None, SCAN_LIMIT)?;
+    similar_to_text_filtered(store, query, &MemoryFilter::default(), limit)
+}
+
+/// Filtered lexical similarity search.
+pub fn similar_to_text_filtered(
+    store: &dyn MemoryStore,
+    query: &str,
+    filter: &MemoryFilter,
+    limit: usize,
+) -> anyhow::Result<Vec<(f32, MemoryRecord)>> {
+    let all = store.filter_with(filter, SCAN_LIMIT)?;
     let q = embed_text(query);
     Ok(rank(&all, &q, limit)
         .into_iter()
@@ -79,16 +89,17 @@ pub fn similar_to_text(
         .collect())
 }
 
-/// Records most similar to an existing record (the anchor itself excluded).
-pub fn similar_to_id(
+/// Filtered lexical similarity search anchored on an existing record.
+pub fn similar_to_id_filtered(
     store: &dyn MemoryStore,
     anchor_id: &str,
+    filter: &MemoryFilter,
     limit: usize,
 ) -> anyhow::Result<Vec<(f32, MemoryRecord)>> {
     let Some(anchor) = store.get(anchor_id)? else {
         anyhow::bail!("memory id not found: {anchor_id}");
     };
-    let all = store.filter(None, None, SCAN_LIMIT)?;
+    let all = store.filter_with(filter, SCAN_LIMIT)?;
     let q = embed_record(&anchor);
     Ok(rank(&all, &q, limit + 1)
         .into_iter()
@@ -101,6 +112,7 @@ pub fn similar_to_id(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::memory::SqliteMemory;
 
     fn rec(summary: &str, tags: &[&str]) -> MemoryRecord {
         let mut r = MemoryRecord::new_stm(summary, "body");
@@ -127,6 +139,58 @@ mod tests {
             ranked[0].0 > ranked[1].0,
             "expected the wdbx record to outrank the voice one: {ranked:?}"
         );
+    }
+
+    #[test]
+    fn filtered_similarity_never_returns_another_project() {
+        let dir = std::env::temp_dir().join(format!("abbey-sim-filter-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = SqliteMemory::open(&SqliteMemory::path_for_state_dir(&dir)).unwrap();
+        let mut included = rec("durable vector memory", &["wdbx"]);
+        included.project = "project-a".into();
+        included.provenance = "test".into();
+        db.store(included).unwrap();
+        let mut excluded = rec("durable vector memory exact", &["wdbx"]);
+        excluded.project = "project-b".into();
+        excluded.provenance = "test".into();
+        db.store(excluded).unwrap();
+        let filter =
+            MemoryFilter::new(None, None, None, None, Some("project-a".into()), None, None)
+                .unwrap();
+        let hits = similar_to_text_filtered(&db, "durable vector memory", &filter, 10).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].1.project, "project-a");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn filtered_similarity_applies_the_filter_before_the_candidate_budget() {
+        let dir =
+            std::env::temp_dir().join(format!("abbey-sim-filter-budget-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = SqliteMemory::open(&SqliteMemory::path_for_state_dir(&dir)).unwrap();
+
+        let mut included = rec("durable vector memory", &["wdbx"]);
+        included.project = "project-a".into();
+        included.timestamp = "2020-01-01T00:00:00Z".into();
+        db.store(included).unwrap();
+
+        for index in 0..=SCAN_LIMIT {
+            let mut excluded = rec(&format!("unrelated newer record {index}"), &[]);
+            excluded.project = "project-b".into();
+            excluded.timestamp = "2021-01-01T00:00:00Z".into();
+            db.store(excluded).unwrap();
+        }
+
+        let filter =
+            MemoryFilter::new(None, None, None, None, Some("project-a".into()), None, None)
+                .unwrap();
+        let hits = similar_to_text_filtered(&db, "durable vector memory", &filter, 10).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].1.project, "project-a");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

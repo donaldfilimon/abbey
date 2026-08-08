@@ -139,6 +139,7 @@ next slice, which would have sent Max to build a capability `claims refuse` exit
 | Capability | Status | Why it stays closed |
 |---|---|---|
 | Semantic memory search (**learned** embedding space) | **Proposed** | The lexical slice does *not* close this — a feature hash has no trained semantics, so the same idea in different words still misses. `claims refuse embeddings` exits 2; abi-wdbx `put_vector` stays unwired (nothing persisted) |
+| Memory project/source/time filtering | **Current (local)** | `MemoryFilter` applies identical exact metadata and inclusive RFC 3339 semantics to SQLite and WDBX. Existing SQLite stores migrate by adding `project`; WDBX JSON remains backward-compatible. `memory put/search/map/export` expose the new metadata/filter flags. |
 | Multi-node · multi-GPU · shared compute mesh | **Proposed** | Cannot be honestly verified from one host. `abi-wdbx` ships `cluster`/`remote_compute` references Abbey does not orchestrate; `subagents --peers` (same-host PATH) is the Current substitute |
 | GPU/NPU/TPU compilation · training · inference *in Abbey* | **Out of scope** | Abbey detects accelerators (`abbey platform`) but runs no kernels. Contradicts "backend is `cursor-agent`, not a reimplementation" (CLAUDE.md) |
 | Autonomous operation of services and the OS | **Out of scope** | Contradicts the safety invariant in CLAUDE.md: OS execution "must never run without `--confirm`, and only against the allowlist — this is a safety invariant, not a default to relax" |

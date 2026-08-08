@@ -2,11 +2,11 @@
 
 use crate::agent::{self, AgentConfig, run_resilient};
 use crate::build_info;
-use crate::cli::{MemoryCmd, VERSION};
+use crate::cli::{MemoryCmd, MemoryFilterArgs, VERSION};
 use crate::config;
 use crate::gitops;
 use crate::init;
-use crate::memory::{self, MemoryRecord};
+use crate::memory::{self, MemoryFilter, MemoryRecord};
 use crate::output;
 use crate::persona;
 use crate::roles::{self, WorkerRole};
@@ -109,12 +109,24 @@ pub fn cmd_memory_store(state: &AbbeyState, cmd: MemoryCmd) -> Result<i32> {
             payload,
             provenance,
             tags,
+            source,
+            source_ref,
+            project,
+            timestamp,
         } => {
             let mut rec = MemoryRecord::new_stm(summary, payload);
             rec.retention = retention;
             rec.provenance = provenance;
             rec.origin = "user".into();
             rec.tags.extend(tags);
+            rec.source_type = source;
+            rec.source_ref = source_ref.unwrap_or_default();
+            if let Some(project) = project {
+                rec.project = project;
+            }
+            if let Some(timestamp) = timestamp {
+                rec.timestamp = MemoryFilter::normalize_timestamp(&timestamp)?;
+            }
             let id = rec.id.clone();
             mem.store(rec)?;
             println!("{id}");
@@ -130,8 +142,13 @@ pub fn cmd_memory_store(state: &AbbeyState, cmd: MemoryCmd) -> Result<i32> {
                 Ok(1)
             }
         },
-        MemoryCmd::Search { query, limit } => {
-            for r in mem.search_keyword(&query, limit)? {
+        MemoryCmd::Search {
+            query,
+            limit,
+            filter,
+        } => {
+            let filter = query_filter(filter, None)?;
+            for r in mem.search_keyword_with(&query, &filter, limit)? {
                 println!("{}\t{}\t{}", r.id, r.retention, r.summary);
             }
             Ok(0)
@@ -180,8 +197,13 @@ pub fn cmd_memory_store(state: &AbbeyState, cmd: MemoryCmd) -> Result<i32> {
             }
             Ok(0)
         }
-        MemoryCmd::Map { limit, layer } => {
-            let records = mem.filter(layer.as_deref(), None, limit)?;
+        MemoryCmd::Map {
+            limit,
+            layer,
+            filter,
+        } => {
+            let filter = query_filter(filter, layer)?;
+            let records = mem.filter_with(&filter, limit)?;
             if records.is_empty() {
                 eprintln!(
                     "abbey: no memories yet — teach her with `abbey memory put` or `abbey learn`"
@@ -221,20 +243,26 @@ pub fn cmd_memory_store(state: &AbbeyState, cmd: MemoryCmd) -> Result<i32> {
             }
             Ok(0)
         }
-        MemoryCmd::Similar { query, id, limit } => {
+        MemoryCmd::Similar {
+            query,
+            id,
+            limit,
+            filter,
+        } => {
+            let filter = query_filter(filter, None)?;
             let hits = match id {
                 Some(anchor) => {
                     let Some(rec) = mem.get(&anchor)? else {
                         bail!("memory id not found: {anchor}");
                     };
                     println!("anchor  {}", rec.summary);
-                    memory::similar_to_id(mem.as_ref(), &anchor, limit)?
+                    memory::similar_to_id_filtered(mem.as_ref(), &anchor, &filter, limit)?
                 }
                 None => {
                     if query.trim().is_empty() {
                         bail!("usage: abbey memory similar <query> | --id <id>");
                     }
-                    memory::similar_to_text(mem.as_ref(), &query, limit)?
+                    memory::similar_to_text_filtered(mem.as_ref(), &query, &filter, limit)?
                 }
             };
             if hits.is_empty() {
@@ -254,14 +282,27 @@ pub fn cmd_memory_store(state: &AbbeyState, cmd: MemoryCmd) -> Result<i32> {
             println!("note: lexical n-gram cosine — learned/semantic embeddings stay Proposed");
             Ok(0)
         }
-        MemoryCmd::Export { layer } => {
-            for r in mem.filter(Some(&layer), None, 10_000)? {
+        MemoryCmd::Export { layer, filter } => {
+            let filter = query_filter(filter, Some(layer))?;
+            for r in mem.filter_with(&filter, 10_000)? {
                 println!("{}", serde_json::to_string(&r)?);
             }
             Ok(0)
         }
         MemoryCmd::Embed { .. } => crate::claims::refuse("embeddings"),
     }
+}
+
+fn query_filter(args: MemoryFilterArgs, retention: Option<String>) -> Result<MemoryFilter> {
+    MemoryFilter::new(
+        retention,
+        args.tag,
+        args.source,
+        args.source_ref,
+        args.project,
+        args.since,
+        args.until,
+    )
 }
 
 pub fn print_permissions(cfg: &AgentConfig) {

@@ -74,14 +74,7 @@ pub fn run_cli(cli: Cli, state: AbbeyState, mut cfg: AgentConfig) -> Result<i32>
         }
         Some(Commands::Ask { prompt }) => run_agent(&mut cfg, &state, &prompt, RunSpec::ask()),
         Some(Commands::Plan { prompt }) => run_agent(&mut cfg, &state, &prompt, RunSpec::plan()),
-        Some(Commands::Print { prompt }) => {
-            cfg.print = true;
-            let chat = state.read_chat_for(cfg.backend);
-            let (st, out, err) = cfg.run_capture(chat.as_deref(), &prompt)?;
-            eprint!("{err}");
-            highlight::emit_agent_stdout(&out);
-            Ok(st.code().unwrap_or(1))
-        }
+        Some(Commands::Print { prompt }) => crate::capture::run_print(&mut cfg, &state, &prompt),
         Some(Commands::Diff { staged }) => {
             let text = gitops::diff_text(staged)?;
             if highlight::enabled() {

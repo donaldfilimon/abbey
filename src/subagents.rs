@@ -762,6 +762,20 @@ mod tests {
     }
 
     #[test]
+    fn jobs_parser_rejects_zero_and_malformed_values() {
+        assert!(parse_args(&["--jobs".into(), "0".into()]).is_err());
+        assert!(parse_args(&["--jobs".into(), "many".into()]).is_err());
+        assert!(parse_args(&["--jobs=0".into()]).is_err());
+        assert!(parse_args(&["--jobs=many".into()]).is_err());
+    }
+
+    #[test]
+    fn jobs_parser_accepts_separated_and_equals_forms() {
+        assert_eq!(parse_args(&["--jobs".into(), "3".into()]).unwrap().jobs, 3);
+        assert_eq!(parse_args(&["--jobs=4".into()]).unwrap().jobs, 4);
+    }
+
+    #[test]
     fn build_plan_defaults_three_lanes() {
         let opts = RunOptions {
             prompt: vec!["x".into()],

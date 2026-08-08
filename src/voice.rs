@@ -430,11 +430,9 @@ pub fn ask(
         "\n\nReply in clear spoken prose (short paragraphs, no markdown tables). \
          This answer will be read aloud.",
     );
-    cfg.print = true;
-    let chat = state.read_chat_for(cfg.backend);
-    let (st, out, err) = cfg.run_capture(chat.as_deref(), &[prompt])?;
-    eprint!("{err}");
-    let reply = out.trim();
+    let captured = crate::capture::capture_chat(cfg, state, &[prompt])?;
+    eprint!("{}", captured.stderr);
+    let reply = captured.stdout.trim();
     if !reply.is_empty() {
         let needs_nl = !reply.ends_with('\n');
         crate::highlight::emit_agent_stdout(reply);
@@ -443,7 +441,7 @@ pub fn ask(
         }
         let _ = speak(reply, None, None, None)?;
     }
-    Ok(st.code().unwrap_or(1))
+    Ok(captured.status.code().unwrap_or(1))
 }
 
 pub fn dispatch(state: &AbbeyState, cfg: &mut AgentConfig, args: &[String]) -> Result<i32> {
