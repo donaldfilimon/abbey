@@ -68,7 +68,7 @@ pub const SLASH_CATALOG: &[SlashCmd] = &[
     },
     SlashCmd {
         name: "vision",
-        help: "Vision honesty: path attach + agent gen (local weights OOS)",
+        help: "Vision honesty: path attach + agent gen (local models Proposed)",
         kind: SlashKind::Local,
     },
     SlashCmd {
@@ -88,12 +88,12 @@ pub const SLASH_CATALOG: &[SlashCmd] = &[
     },
     SlashCmd {
         name: "lora",
-        help: "LoRA honesty (learn curation Current; runners OOS)",
+        help: "LoRA honesty (learn curation Current; pipeline Proposed)",
         kind: SlashKind::Local,
     },
     SlashCmd {
         name: "weights",
-        help: "Local weights honesty (bindings/fm Current; bundled OOS)",
+        help: "Local weights honesty (bindings/fm Current; weights Proposed)",
         kind: SlashKind::Local,
     },
     SlashCmd {
@@ -108,7 +108,7 @@ pub const SLASH_CATALOG: &[SlashCmd] = &[
     },
     SlashCmd {
         name: "host",
-        help: "MCP/ACP host honesty (inventory Current; host OOS)",
+        help: "MCP/ACP host honesty (inventory Current; owned host Proposed)",
         kind: SlashKind::Local,
     },
     SlashCmd {

@@ -11,12 +11,14 @@ if [ ! -f "$BIN" ] && [ -f "${CARGO_TARGET_DIR:-target}/release/abbey.exe" ]; th
 fi
 
 DEST_DIR="${ABBEY_INSTALL_DIR:-${HOME}/.local/bin}"
+COMPLETION_HOME="${ABBEY_COMPLETION_HOME:-${HOME}}"
 mkdir -p "$DEST_DIR"
 # Stage beside the destination so the final rename is atomic on one filesystem.
 # `install(1)` is not assumed because minimal images and Git Bash may omit it.
 STAGED_BIN=$(mktemp "$DEST_DIR/.abbey.XXXXXX")
 cleanup_staged() {
   [ -z "${STAGED_BIN:-}" ] || rm -f -- "$STAGED_BIN"
+  [ -z "${STAGED_DAEMON:-}" ] || rm -f -- "$STAGED_DAEMON"
   [ -z "${STAGED_COMPLETION:-}" ] || rm -f -- "$STAGED_COMPLETION"
 }
 trap cleanup_staged EXIT HUP INT TERM
@@ -26,6 +28,18 @@ chmod 755 "$STAGED_BIN"
 mv -f "$STAGED_BIN" "$DEST_DIR/abbey"
 STAGED_BIN=""
 echo "installed: $DEST_DIR/abbey ($("$DEST_DIR/abbey" --version))"
+
+# The daemon is Unix-only until the named-pipe transport lands. It is staged
+# independently so an interrupted install never truncates either good binary.
+DAEMON_BIN="${CARGO_TARGET_DIR:-target}/release/abbeyd"
+if [ -f "$DAEMON_BIN" ]; then
+  STAGED_DAEMON=$(mktemp "$DEST_DIR/.abbeyd.XXXXXX")
+  cp "$DAEMON_BIN" "$STAGED_DAEMON"
+  chmod 755 "$STAGED_DAEMON"
+  mv -f "$STAGED_DAEMON" "$DEST_DIR/abbeyd"
+  STAGED_DAEMON=""
+  echo "installed: $DEST_DIR/abbeyd (read-only Unix daemon; explicit bearer required)"
+fi
 
 write_completion() {
   shell_name="$1"
@@ -43,13 +57,13 @@ write_completion() {
 }
 
 # Zsh completions (if modular zsh dir exists)
-if [ -d "${HOME}/.zsh/completions" ]; then
-  if write_completion zsh "${HOME}/.zsh/completions/_abbey_clap"; then
-    echo "wrote ~/.zsh/completions/_abbey_clap (run: rm -f ~/.zcompdump; compinit)"
+if [ -d "${COMPLETION_HOME}/.zsh/completions" ]; then
+  if write_completion zsh "${COMPLETION_HOME}/.zsh/completions/_abbey_clap"; then
+    echo "wrote ${COMPLETION_HOME}/.zsh/completions/_abbey_clap (refresh compinit cache if needed)"
   fi
 fi
-if [ -d "${HOME}/.bash_completion.d" ] || mkdir -p "${HOME}/.local/share/bash-completion/completions" 2>/dev/null; then
-  if write_completion bash "${HOME}/.local/share/bash-completion/completions/abbey"; then
-    echo "wrote ~/.local/share/bash-completion/completions/abbey"
+if [ -d "${COMPLETION_HOME}/.bash_completion.d" ] || mkdir -p "${COMPLETION_HOME}/.local/share/bash-completion/completions" 2>/dev/null; then
+  if write_completion bash "${COMPLETION_HOME}/.local/share/bash-completion/completions/abbey"; then
+    echo "wrote ${COMPLETION_HOME}/.local/share/bash-completion/completions/abbey"
   fi
 fi

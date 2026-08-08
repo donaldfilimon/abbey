@@ -493,10 +493,10 @@ pub fn print_config(state: &AbbeyState, cfg: &AgentConfig) {
 /// Printing `ABBEY_BACKEND=<label>` unconditionally used to lie whenever the
 /// backend came from the config key (or was the plain default).
 fn backend_source() -> String {
-    if let Ok(v) = std::env::var("ABBEY_BACKEND") {
-        if !v.trim().is_empty() {
-            return format!("ABBEY_BACKEND={}", v.trim());
-        }
+    if let Ok(v) = std::env::var("ABBEY_BACKEND")
+        && !v.trim().is_empty()
+    {
+        return format!("ABBEY_BACKEND={}", v.trim());
     }
     match config::AbbeyConfig::load()
         .ok()
@@ -548,8 +548,9 @@ pub fn cmd_doctor(state: &AbbeyState, cfg: &AgentConfig) -> Result<i32> {
     let _ = output::println(
         "routing:    confidence/alternate/fallback on route.jsonl (audit only — no auto second agent)",
     );
-    let _ =
-        output::println("learn:      review|stats (+ learn-review/learn-stats aliases; LoRA OOS)");
+    let _ = output::println(
+        "learn:      review|stats (+ aliases; LoRA pipeline Proposed, unavailable)",
+    );
     let _ = output::println(
         "os:         allowlist + dry-run; execute --confirm only (`abbey allowlist`)",
     );

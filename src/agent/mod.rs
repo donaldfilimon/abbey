@@ -127,10 +127,10 @@ impl AgentBackend {
     }
 
     fn resolve_from_env_and_config() -> Self {
-        if let Ok(v) = std::env::var("ABBEY_BACKEND") {
-            if !v.trim().is_empty() {
-                return Self::parse(&v).unwrap_or(Self::Cursor);
-            }
+        if let Ok(v) = std::env::var("ABBEY_BACKEND")
+            && !v.trim().is_empty()
+        {
+            return Self::parse(&v).unwrap_or(Self::Cursor);
         }
         let Some(configured) = crate::config::AbbeyConfig::load()
             .ok()
@@ -269,12 +269,12 @@ pub fn resolve_agent_for(backend: AgentBackend) -> Result<PathBuf> {
         if !c.is_file() {
             continue;
         }
-        if c.file_name().and_then(|s| s.to_str()) == Some("agent") {
-            if let Ok(target) = fs_readlink(c) {
-                // Skip Grok Build's `agent` when we want Cursor.
-                if backend == AgentBackend::Cursor && !target.contains("cursor-agent") {
-                    continue;
-                }
+        if c.file_name().and_then(|s| s.to_str()) == Some("agent")
+            && let Ok(target) = fs_readlink(c)
+        {
+            // Skip Grok Build's `agent` when we want Cursor.
+            if backend == AgentBackend::Cursor && !target.contains("cursor-agent") {
+                continue;
             }
         }
         return Ok(c.clone());
@@ -580,10 +580,11 @@ fn run_once(
     if capture_print || cfg.backend == AgentBackend::Abi {
         let (st, out, err) = cfg.run_capture(resume_id, prompt_and_rest)?;
         eprint!("{err}");
-        if cfg.backend == AgentBackend::Abi && st.success() {
-            if let Some(id) = resume_id.filter(|i| !i.is_empty()) {
-                cfg.append_abi_transcript(id, prompt_and_rest, &out);
-            }
+        if cfg.backend == AgentBackend::Abi
+            && st.success()
+            && let Some(id) = resume_id.filter(|i| !i.is_empty())
+        {
+            cfg.append_abi_transcript(id, prompt_and_rest, &out);
         }
         if let Some(path) = &cfg.cot_path {
             if let Err(e) = crate::surfaces::save_cot(path, &out) {

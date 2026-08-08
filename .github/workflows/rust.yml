@@ -5,53 +5,137 @@ on:
     branches: ["main"]
   pull_request:
     branches: ["main"]
+  workflow_dispatch:
+
+concurrency:
+  group: rust-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
+  ABI_REVISION: 32e372d7f522f5a6c9c0ef92c5b9612b52cfea05
 
+# Self-hosted jobs are restricted to trusted same-repository events. Fork code
+# must never run on machines that can reach local developer state or credentials.
 jobs:
-  gate:
-    runs-on: ubuntu-latest
+  gate-linux:
+    name: gate (Linux ARM64)
+    if: >
+      vars.ABBEY_LINUX_ARM64_RUNNER == 'enabled' &&
+      github.repository == 'donaldfilimon/abbey' &&
+      (github.event_name == 'push' ||
+       github.event_name == 'workflow_dispatch' ||
+       (github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.full_name == github.repository))
+    runs-on: [self-hosted, Linux, ARM64, abbey]
     steps:
-      # Abbey path-depends on the sibling ABI workspace
-      # (`abi-ai = { path = "../abi/crates/abi-ai" }`, plus `abi-wdbx` under
-      # --features wdbx). A lone checkout cannot even *resolve* the manifest:
-      # `cargo metadata` fails with "no matching package named `abi-ai`" before
-      # a single crate compiles. So both repos are checked out as siblings.
-      - name: Check out abbey
+      - name: Check out Abbey
         uses: actions/checkout@v4
         with:
           path: abbey
 
-      - name: Check out sibling abi
+      - name: Check out the verified ABI dependency
         uses: actions/checkout@v4
         with:
           repository: donaldfilimon/abi
+          ref: ${{ env.ABI_REVISION }}
           path: abi
 
-      # rust-toolchain.toml pins nightly and requests rustfmt + clippy, so
-      # rustup installs the right toolchain and components on first use.
-      # `../abi` requires rust-version 1.99, which nightly satisfies.
       - name: Install pinned toolchain
         working-directory: abbey
         run: |
           rustup show active-toolchain || rustup toolchain install
-          rustc --version && cargo --version
+          rustc --version
+          cargo --version
 
-      - name: Cache cargo registry and target
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            abbey/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('abbey/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-
+      - name: Build the real ABI binary
+        working-directory: abi
+        run: ./tools/cargo.sh build -p abi-cli
 
-      # check.sh is the project's merge bar: toolchain probe, fmt, clippy -D
-      # warnings, tests — the last two for BOTH feature sets, because a bare
-      # `cargo test` never compiles src/memory/wdbx.rs — then the file-size
-      # guard. Cross-compile smoke is soft and skips when targets are absent.
-      - name: Gate (./check.sh)
+      - name: Gate both Abbey feature sets
         working-directory: abbey
+        env:
+          ABBEY_ABI_BIN: ${{ github.workspace }}/abi/target/debug/abi
         run: ./check.sh
+
+      - name: RustSec dependency scan
+        working-directory: abbey
+        env:
+          ABBEY_DEP_SCAN_REQUIRE: "1"
+        run: ./tools/security/run-dep-scan.sh
+
+      - name: Warning-denied API docs and release binary
+        working-directory: abbey
+        run: |
+          RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --document-private-items
+          cargo build --release --locked
+          ./target/release/abbey --version
+
+      - name: ABI-backed local mesh proof
+        working-directory: abbey
+        env:
+          ABBEY_ABI_BIN: ${{ github.workspace }}/abi/target/debug/abi
+          ABBEY_STATE_DIR: ${{ runner.temp }}/abbey-mesh-state
+        run: cargo run --release --bin abbey -- mesh local-demo --nodes 3 --json
+
+  gate-macos:
+    name: gate (macOS ARM64 adjunct)
+    if: >
+      github.repository == 'donaldfilimon/abbey' &&
+      (github.event_name == 'push' ||
+       github.event_name == 'workflow_dispatch' ||
+       (github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.full_name == github.repository))
+    runs-on: [self-hosted, macOS, ARM64, abbey]
+    steps:
+      - name: Check out Abbey
+        uses: actions/checkout@v4
+        with:
+          path: abbey
+
+      - name: Check out the verified ABI dependency
+        uses: actions/checkout@v4
+        with:
+          repository: donaldfilimon/abi
+          ref: ${{ env.ABI_REVISION }}
+          path: abi
+
+      - name: Install pinned toolchain
+        working-directory: abbey
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          rustc --version
+          cargo --version
+
+      - name: Build the real ABI binary
+        working-directory: abi
+        run: ./tools/cargo.sh build -p abi-cli
+
+      - name: Gate both Abbey feature sets
+        working-directory: abbey
+        env:
+          ABBEY_ABI_BIN: ${{ github.workspace }}/abi/target/debug/abi
+        run: ./check.sh
+
+      - name: RustSec dependency scan
+        working-directory: abbey
+        env:
+          ABBEY_DEP_SCAN_REQUIRE: "1"
+        run: ./tools/security/run-dep-scan.sh
+
+      - name: Warning-denied API docs and release binary
+        working-directory: abbey
+        run: |
+          RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --document-private-items
+          cargo build --release --locked
+          ./target/release/abbey --version
+
+      - name: ABI-backed local mesh proof
+        working-directory: abbey
+        env:
+          ABBEY_ABI_BIN: ${{ github.workspace }}/abi/target/debug/abi
+          ABBEY_STATE_DIR: ${{ runner.temp }}/abbey-mesh-state
+        run: cargo run --release --bin abbey -- mesh local-demo --nodes 3 --json

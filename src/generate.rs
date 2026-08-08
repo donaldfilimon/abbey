@@ -136,10 +136,11 @@ pub fn run_generate(
     } else {
         state.cwd.join(out)
     };
-    if let Some(parent) = out_abs.parent() {
-        if !parent.as_os_str().is_empty() && !cfg.add_dirs.iter().any(|d| d == parent) {
-            cfg.add_dirs.push(parent.to_path_buf());
-        }
+    if let Some(parent) = out_abs.parent()
+        && !parent.as_os_str().is_empty()
+        && !cfg.add_dirs.iter().any(|d| d == parent)
+    {
+        cfg.add_dirs.push(parent.to_path_buf());
     }
 
     if let Some(ref edit_path) = edit {

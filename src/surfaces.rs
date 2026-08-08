@@ -1,10 +1,10 @@
 //! Honesty surfaces for vision weights, CoT viewing, and tool runtime.
 //!
-//! | Ask | Current | Out of scope |
-//! |-----|---------|--------------|
-//! | Vision/video | path attach + agent/MCP gen | local vision/video weights |
-//! | Reasoning | Cursor thinking + structured wrap + transcript viewer | Abbey-owned CoT engine/UI |
-//! | Tools | inventory + cursor-agent during a turn | Abbey as a tool runtime / MCP host |
+//! | Ask | Current | Deferred status |
+//! |-----|---------|-----------------|
+//! | Vision/video | path attach + agent/MCP gen | local neural media is Proposed |
+//! | Reasoning | Cursor thinking + structured wrap + transcript viewer | Abbey-owned hidden CoT engine/UI is OOS |
+//! | Tools | inventory + delegated tools during a turn | Abbey-owned runtime/MCP host is Proposed |
 
 use crate::claims;
 use crate::output;
@@ -72,8 +72,8 @@ pub fn print_vision_status() -> Result<i32> {
     println!("  · agent generate  abbey imagine|generate video  (cursor-agent / MCP tools)");
     println!("  · no pixel encode Abbey never loads weights or embeds frames");
     println!();
-    println!("Out of scope:");
-    println!("  x local vision / video weights or on-device VLM in Abbey");
+    println!("Proposed (unavailable):");
+    println!("  · local neural image/video models or on-device VLM in Abbey");
     println!();
     println!("instead: abbey --image ./shot.png \"…\" · abbey imagine \"…\"");
     println!("refuse:  abbey vision refuse · abbey claims refuse vision");
@@ -112,9 +112,9 @@ pub fn print_runtime_matrix() -> Result<i32> {
             "tools/MCP — not Abbey weights",
         ),
         ("voice TTS/STT", "Abbey→OS", "macOS say + Speech only"),
-        ("local vision weights", "—", "Out of scope"),
+        ("local neural media", "—", "Proposed (unavailable)"),
         ("Abbey CoT engine", "—", "Out of scope (viewer is Current)"),
-        ("Abbey tool runtime", "—", "Out of scope"),
+        ("Abbey tool runtime", "—", "Proposed (unavailable)"),
     ];
     for (cap, who, note) in rows {
         println!("{cap:<28} {who:<16} {note}");
@@ -174,7 +174,7 @@ pub fn dispatch_vision(args: &[String]) -> Result<i32> {
                     "abbey vision — media honesty\n\
                      usage: abbey vision [status|refuse]\n\
                      Current: --image/--video + imagine via agent tools\n\
-                     OOS: local vision/video weights"
+                     Proposed: local neural image/video models"
                 );
                 return Ok(0);
             }
@@ -220,7 +220,7 @@ pub fn dispatch_runtime(args: &[String]) -> Result<i32> {
             println!(
                 "abbey runtime — tool responsibility matrix\n\
                  usage: abbey runtime [matrix|refuse]\n\
-                 Abbey is not a tool runtime; cursor-agent executes MCP tools."
+                 Abbey does not yet own a tool runtime; the Proposed host remains unavailable."
             );
             Ok(0)
         }
@@ -230,7 +230,8 @@ pub fn dispatch_runtime(args: &[String]) -> Result<i32> {
 
 pub fn status_lines() -> Vec<String> {
     vec![
-        "vision:     path attach + agent gen — local weights OOS (`abbey vision`)".into(),
+        "vision:     path attach + agent gen — local neural models Proposed (`abbey vision`)"
+            .into(),
         "cot:        transcript viewer for reason — Abbey CoT engine OOS (`abbey cot`)".into(),
         "runtime:    responsibility matrix — Abbey is not a tool host (`abbey runtime`)".into(),
     ]
@@ -260,5 +261,12 @@ mod tests {
         assert!(text.contains("Abbey-owned CoT engine"));
         assert!(text.contains("1. Restate"));
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn status_lines_distinguish_proposed_from_oos() {
+        let lines = status_lines().join("\n");
+        assert!(lines.contains("local neural models Proposed"));
+        assert!(lines.contains("CoT engine OOS"));
     }
 }

@@ -19,11 +19,12 @@ cd ~/abbey
 ./install.sh
 # or:
 cargo build --release
-./install.sh          # Unix/macOS → ~/.local/bin/abbey
+./install.sh          # Unix/macOS → ~/.local/bin/abbey + abbeyd
 # Windows:  powershell -File .\install.ps1  → %LOCALAPPDATA%\abbey\bin\abbey.exe
 ```
 
-Requires: **Rust nightly** (`rust-toolchain.toml`), **cursor-agent** on PATH.
+Requires **Rust nightly** (`rust-toolchain.toml`) and at least one configured executor.
+`cursor-agent` is the default; `fm`, `abi`, and `grok` are conditional alternatives described below.
 
 ## Quick use
 
@@ -42,15 +43,16 @@ abbey init --force        # overwrite
 abbey init --print        # preview only
 abbey init --agent        # local scan, then refine with cursor-agent
 abbey doctor
-abbey claims                                 # Current / Proposed / Out of scope
-abbey claims proposed                        # production multi-host/shared compute, …
+abbey claims                                 # Current / Partial / Proposed / Blocked / OOS
+abbey claims proposed                        # approved but not implemented roadmap
+abbey claims blocked                         # externally blocked runtime/proof work
 abbey claims refuse lora                     # honest exit 2
 abbey platform                               # linux/macos/windows matrix + threads
 abbey compute                                # GPU/NPU/TPU host detect (not Abbey kernels)
-abbey vision                                 # path attach + agent gen (local weights OOS)
+abbey vision                                 # path attach + agent gen (local neural models Proposed)
 abbey cot show                               # last reason transcript (not Abbey CoT engine)
-abbey runtime                                # who runs tools (Abbey is not the host)
-abbey oos                                    # LoRA · weights · NPU/TPU · shell · MCP host
+abbey runtime                                # who runs tools (owned host is Proposed)
+abbey oos                                    # shipped-edition bypass · fake cost · vendor runtimes
 abbey lora|weights|accel|shell|host          # per-topic status / refuse (exit 2)
 abbey hybrid-loop "add a dark mode toggle"   # Gemma interprets → Max implements
 abbey subagents                              # catalog (abbey lanes + PATH peers)
@@ -66,6 +68,24 @@ abbey wdbx stats                             # in-process (needs --features wdbx
 abbey mesh local-demo --nodes 3 --json       # authenticated Unix same-host ABI process proof
 abbey completion zsh > ~/.zsh/completions/_abbey_clap
 ```
+
+### Read-only application daemon
+
+Abbey also ships a narrow `abbeyd` foundation on Unix. It exposes only the
+versioned `status` and `claims` application contracts over a length-prefixed,
+owner-only Unix socket; it does not own model workers, tools, memory, jobs, or
+shell execution. Create a private bearer file and start it explicitly:
+
+```bash
+umask 077
+mkdir -p "${XDG_STATE_HOME:-$HOME/.local/state}/abbey/daemon"
+openssl rand -hex 32 > "${XDG_STATE_HOME:-$HOME/.local/state}/abbey/daemon/bearer"
+ABBEYD_BEARER_TOKEN_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/abbey/daemon/bearer" abbeyd
+```
+
+The socket defaults to `<state>/daemon/abbeyd.sock`. Windows fails closed until
+a named-pipe transport and runtime proof exist. This substrate is not the
+Proposed Abbey-owned agent/tool runtime or MCP host.
 
 ### Slash (CLI or TUI prompt)
 
@@ -252,20 +272,23 @@ does not extend to an `abi` invoked directly by you against the same store.
 
 ## Honest limits
 
-- Backend is **cursor-agent**, not a reimplementation of Grok/Codex/Claude runtimes.
+- The default backend is **cursor-agent**; configured `fm`, `abi`, or `grok` routes can run
+  without it. Abbey does not reimplement Grok/Codex/Claude runtimes.
 - `abbey wdbx <query|db|…>` shells out to `abi`, which must be a **real binary** on PATH —
   a shell alias will not do (`cargo build -p abi-cli` in `../abi`, then set `ABBEY_ABI_BIN`).
   `stats`/`checkpoint` are answered in-process and need `--features wdbx`.
 - WDBX stores memory records in KV JSON and semantic vectors in a separate v2 sub-store per
   `space_id`; incompatible providers/models/dimensions are never compared.
 - The WDBX cross-process lock uses `fs4` on Unix and Windows. GPU/NPU/TPU *host*
-  detection is Current (`abbey platform`); accelerator runtimes inside Abbey are Out of scope.
+  detection is Current (`abbey platform`); Abbey accelerator runtimes are Proposed and
+  remain unavailable until implementation and proof land.
 - Under WDBX lock contention a run's background STM/activity write is dropped silently (it is
   best-effort by design). Explicit `abbey memory`/`abbey learn` writes surface the error.
 - The TUI memory panel opens the store with a 250 ms timeout so a redraw never stalls; a
   locked store shows `unavailable: …` rather than reporting an empty store.
-- Personas, Max/Gemma bindings, memory, hybrid-loop, fm, and the 3-D map are **Current** — do not assume local Gemma/Qwen weights or LoRA.
-- `abbey learn review`/`stats` curate `train_candidate` provenance; they are not a trainer.
+- Personas, Max/Gemma bindings, memory, hybrid-loop, fm, and the 3-D map are **Current** —
+  local production weights and LoRA are Proposed, not implemented.
+- `abbey learn review`/`stats` curate `train_candidate` provenance; they are not yet a trainer.
 - `/cost` is **N/A** (use Cursor account dashboard).
 - MCP/plugin management names its provider (`cursor|codex|claude`, plus `abi` for plugins);
   inventory failures and marketplace visibility are not reported as installed/runtime proof.

@@ -1,12 +1,18 @@
 # Abbey architecture (production)
+<!-- abbey-claims-sha256: 1cff4b9922dd6eb1a09eced94a8452478a0e071cb0835fdf788dd9cbec335282 -->
 
-Status key: **Current** = shipped · **Proposed** = designed, not claimed live · **Out of scope** = explicitly deferred.
+Status key: **Current** = shipped · **Partial** = some shipped surface with stated gaps ·
+**Proposed** = approved direction, not claimed live · **Blocked** = waiting on an external
+prerequisite or proof · **Out of scope** = explicitly excluded.
 
 ## Layers
 
 ```text
 ┌─────────────────────────────────────────────────────────┐
-│  CLI (clap)  ·  TUI (ratatui)  ·  slash catalog         │
+│  CLI (clap) · TUI (ratatui) · slash · abbeyd read API   │
+├─────────────────────────────────────────────────────────┤
+│  app_core — versioned Status/Claims contracts + policy  │
+│  daemon — bounded authenticated owner-only Unix socket  │
 ├─────────────────────────────────────────────────────────┤
 │  actions::run_agent — canonical RunSpec for CLI/slash/TUI │
 │  session::hybrid_run — persona + role + prefs + route   │
@@ -29,7 +35,9 @@ Status key: **Current** = shipped · **Proposed** = designed, not claimed live �
 
 | Module | Responsibility |
 |--------|----------------|
-| `main` | Entry + early routing (TUI / slash / continue) |
+| `main` / `entry` | Pre-Clap SIGPIPE shim + library-owned CLI/TUI/slash routing |
+| `lib` / `app_core` | Private implementation graph plus public versioned Status/Claims contracts and standard-edition policy |
+| `daemon` / `bin/abbeyd` | Authenticated 64 KiB length-prefixed read-only Unix socket; no model/tool/memory/job ownership; non-Unix fails closed |
 | `actions` | `RunSpec` + `run_agent` / review / commit / pr (one path) |
 | `commands` | Clap subcommand match → actions |
 | `slash` / `slash_dispatch` | Catalog + shared slash handler → actions |
@@ -38,7 +46,7 @@ Status key: **Current** = shipped · **Proposed** = designed, not claimed live �
 | `prompts` | Review/commit prompt builders |
 | `persona` / `roles` / `route_log` | Hybrid routing spine (`route_decision` → confidence/alt/fb on JSONL) |
 | `memory` | Records/filters plus explicit learned providers and space-isolated semantic index; SQLite default, WDBX under `--features wdbx` |
-| `mesh` | Typed, bounded Unix bridge to ABI's authenticated 3–9-process loopback proof; non-Unix fails before spawn; not production multi-host |
+| `mesh` | Typed, bounded Unix bridge to ABI's authenticated 3–9-process loopback proof; non-Unix fails before spawn; not production multi-VM |
 | `hybrid_loop` | Two-stage Gemma→Max run, correlated in the route log |
 | `wdbx_bridge` | `abbey wdbx` — `abi wdbx` passthrough + in-process `stats`/`checkpoint` |
 | `please_fix` | Last-failure prompt; capture summarizer (argv-safe) |
@@ -47,10 +55,10 @@ Status key: **Current** = shipped · **Proposed** = designed, not claimed live �
 | `voice` | macOS Premium/Enhanced TTS (`say`) + on-device STT (`scripts/abbey-stt.swift`) |
 | `protocols` | Provider-aware, secret-redacted MCP config inventory + ACP peer discovery/launch (not a host runtime) |
 | `highlight` | syntect fence/file ANSI colour for `-p`/print/commit/diff (TTY; not a markdown UI) |
-| `claims` | Current / Proposed / Out of scope gate + honest refuse paths |
+| `claims` | Current / Partial / Proposed / Blocked / Out of scope gate + honest refuse paths |
 | `platform` | Host OS/arch matrix, thread budget, GPU/NPU/TPU detect (report-only) |
-| `surfaces` | Vision/CoT/runtime honesty — viewer + matrix; weights/engine/host stay OOS |
-| `deferred` | OOS honesty pack — `oos`/`lora`/`weights`/`accel`/`shell`/`host` (refuse, no impl) |
+| `surfaces` | Vision/CoT/runtime honesty — neural media/owned host Proposed; hidden CoT OOS |
+| `deferred` | Unavailable-capability honesty pack — Proposed items plus shipped-edition shell bypass OOS |
 | `host` | portable `which_bin` (PATHEXT), argv budgets, install/state path report |
 | `learn` | Self-learn capture/digest/review/stats |
 | `os_control` | Cross-platform OS policy |
@@ -76,7 +84,7 @@ Status key: **Current** = shipped · **Proposed** = designed, not claimed live �
 
 ## Feature matrix (Current)
 
-- Grok/Codex/Claude parity CLI + slash
+- Selected Grok/Codex/Claude-compatible CLI + slash surfaces (**Partial** parity)
 - Personas via abi-ai; Max/Gemma roles; route JSONL with confidence/alternate/fallback
 - SQLite memory + learn pipeline (`review`/`stats` for train_candidate provenance)
 - Parallel / multi-subagent lanes; local peer CLIs; OS allowlist; skills/plugins inventory
@@ -107,7 +115,7 @@ Status key: **Current** = shipped · **Proposed** = designed, not claimed live �
   table, and WDBX v2 sub-store per space; no cross-provider fallback
 - `abbey mesh local-demo --nodes 3..9`: typed authenticated Unix-local ABI process proof
   with quorum/conflict/read-repair/process-group teardown evidence; non-Unix fails before
-  spawn; explicitly not production multi-host
+  spawn; explicitly not production multi-VM
 - Prompt argv clamp + please-fix capture summarizer (avoids E2BIG on cursor-agent)
 - Media path attach (`--image`/`--video`/`/image`/`/video`) + thinking aliases
   (`--thinking`/`/think`) + `--approve-mcps` tool passthrough
@@ -122,25 +130,47 @@ Status key: **Current** = shipped · **Proposed** = designed, not claimed live �
 - Goal-driven improve: `abbey improve status|plan|run --confirm` — ledger pick from
   `tasks/goals.md` + `todo.md`, local diagnose/implement lanes, hard bar `./check.sh`;
   does not auto-mark goals done; not a multi-node mesh
-- Claims gate CLI: `abbey claims` / `refuse` for Proposed (production multi-host)
-  and Out of scope (LoRA, local weights, GPU/NPU/TPU runtime, …)
+- Claims gate CLI: `abbey claims` / `refuse` for Partial, Proposed, Blocked, and
+  Out-of-scope surfaces. Approved roadmap verbs still return exit 2 until proven.
+- Shared application library plus `abbeyd`: exact versioned Status/Claims events
+  over an owner-only Unix socket with bounded frames/timeouts and bearer-file
+  authentication. This is a read-only control-plane foundation, not an owned
+  agent/tool runtime, durable job manager, MCP host, or Windows named-pipe proof.
 - Platform inventory: `abbey platform` / `compute` — linux/macos/windows matrix,
   threads, host GPU/NPU/TPU detect (not Abbey accelerator kernels)
 - MCP/ACP surfaces: `abbey mcp status|paths|view` reads provider-aware JSON/TOML config;
   management names `cursor|codex|claude` explicitly; `abbey acp list|run` discovers/
-  launches Gemini and OpenCode ACP peers. Abbey is not an MCP or ACP host.
+  launches Gemini and OpenCode ACP peers. An Abbey-owned provider-neutral host is Proposed.
 
 ## Proposed (not Current)
 
 See also `abbey claims proposed` (machine-readable gate in `src/claims.rs`).
 
-- Production multi-host / multi-GPU / shared-compute agent mesh. The Current ABI bridge
-  proves authenticated independent processes on loopback only; it supplies no separate-host
-  deployment, shared accelerator scheduling, or production operations evidence.
+- Tauri 2 + React/TypeScript desktop GUI, layered over the existing application/session state.
+- Provider-neutral Abbey-owned agent and tool runtime, including an MCP/ACP host boundary.
+- Production-capable local model weights plus an explicit fine-tuning/LoRA pipeline.
+- GPU/NPU/TPU compilation, training, and inference runtime owned by Abbey.
+- Local neural speech, image, and video models; current platform/delegated media remains distinct.
+- A separately packaged personal-unrestricted edition with isolation, auditable consent, and no
+  weakening of the shipped edition's allowlist + `--confirm` invariant.
+- An authenticated local three-VM shared-compute proof on one Mac. The Current ABI bridge
+  proves independent loopback processes only, not VM networking or shared compute.
+- Production separate-physical-host / geographic-HA / multi-GPU operation remains a later
+  Proposed stage even after the local three-VM proof succeeds.
+
+These are architecture directions, not implementation claims. Their refusal paths remain exit 2.
+
+## Blocked proof
+
+- GitHub-hosted runs remain `startup_failure` with zero jobs scheduled. The ABI dependency
+  publication blocker is resolved by merged ABI
+  `32e372d7f522f5a6c9c0ef92c5b9612b52cfea05`. A macOS ARM64 self-hosted runner is
+  registered; Linux ARM64 is not provisioned, so its job remains gated by an explicit
+  repository variable. Linux and Windows runtime proof remain open.
 
 ## Out of scope
 
-See `abbey claims oos`. Includes: LoRA / fine-tuning runners; local Qwen/Gemma weights;
-Abbey-own trained weights; GPU/NPU/TPU compilation·training·inference *inside* Abbey;
-autonomous unrestricted OS; Abbey as MCP/ACP host; fake cost accounting; cloud TTS/STT
-SaaS; local vision/gen weights; reimplementing Grok/Codex/Claude runtimes.
+See `abbey claims oos`. Includes: reimplementing Grok/Codex/Claude runtimes; fake cost
+accounting; bundled cloud TTS/STT SaaS; Abbey-owned hidden chain-of-thought engine/UI;
+and unrestricted shell/allowlist bypass in the shipped edition. The separately packaged
+personal-unrestricted edition is Proposed, not a waiver of current safety controls.

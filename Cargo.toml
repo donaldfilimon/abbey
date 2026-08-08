@@ -2,7 +2,8 @@
 name = "abbey"
 version = "2.6.0"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.99"
+default-run = "abbey"
 description = "Abbey — hybrid persona/role CLI/TUI with OS control, parallel lanes, skills/plugins inventory, self-learn"
 license = "MIT"
 authors = ["Donald Filimon"]
@@ -28,17 +29,15 @@ anyhow = "1"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 clap = { version = "4", features = ["derive", "env", "wrap_help"] }
 clap_complete = "4"
-crossterm = "0.28"
+crossterm = "0.29"
 dirs = "6"
-ratatui = "0.29"
+ratatui = "0.30.2"
 rusqlite = { version = "0.40", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 syntect = { version = "5", default-features = false, features = [
     "default-syntaxes",
     "default-themes",
-    "plist-load",
-    "yaml-load",
     "regex-onig",
 ] }
 thiserror = "2"
@@ -54,7 +53,7 @@ fs4 = { version = "0.13", optional = true }
 # build. Unix-gated: Windows has no SIGPIPE.
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
-nix = { version = "0.30", features = ["process", "signal"] }
+nix = { version = "0.30", features = ["process", "signal", "user"] }
 
 [features]
 default = []

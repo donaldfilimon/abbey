@@ -1,4 +1,5 @@
 # CLAUDE.md
+<!-- abbey-claims-sha256: 1cff4b9922dd6eb1a09eced94a8452478a0e071cb0835fdf788dd9cbec335282 -->
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
@@ -13,7 +14,7 @@ Full agent guidance lives in [AGENTS.md](AGENTS.md) — read it too; this file d
 ```bash
 cargo build --release              # build
 cargo build --features wdbx        # + in-process WDBX memory backend (off by default)
-./install.sh                       # build + install to ~/.local/bin/abbey (Windows: install.ps1)
+./install.sh                       # Unix: install abbey + read-only abbeyd (Windows: install.ps1 installs abbey)
 ./check.sh                         # production gate — see below
 cargo test                         # default-feature tests only
 cargo test --features wdbx         # includes src/memory/wdbx.rs
@@ -26,7 +27,7 @@ abbey doctor                       # build stamp + persona/role/memory/os honest
 
 `./check.sh` is the merge bar — always run it before considering work done. In order: a toolchain probe (a cheap `cargo check` that trips the `rust-version` gate during unit-graph construction, so a shadowed Homebrew cargo fails fast with the remedy printed), fmt-check, clippy `-D warnings`, tests — the last two **for both feature sets** — the file-size guard, then *soft* cross-compile checks for `x86_64-pc-windows-gnu` / `x86_64-unknown-linux-gnu` (skipped when the target isn't installed, and never a hard failure). A bare `cargo test` never compiles `src/memory/wdbx.rs`, so it can pass while the gated backend is broken; that is exactly why the gate runs twice.
 
-`tests/` holds two integration files that drive the **built binary** (`CARGO_BIN_EXE_abbey`), because some guarantees only exist once the process runs — real exit codes, real stdout/stderr, the SIGPIPE reset that happens before `main`. `cli_surface.rs` covers those, and runs every test under a throwaway `ABBEY_STATE_DIR` so nothing touches the developer's real chat id, memory store, or route log; keep that property when adding to it. `slash_parse.rs` covers the slash/CLI surface and does **not** override the state dir — it is only safe because its cases are read-only or `current_dir`-scoped to a temp project, so a state-mutating test does not belong there without adding the override first.
+`tests/` includes process-level CLI suites plus `app_core_contract.rs`, which imports Abbey as an external library client. Process tests drive `CARGO_BIN_EXE_abbey` because some guarantees only exist once the process runs — real exit codes, real stdout/stderr, and the SIGPIPE reset before `main`. `cli_surface.rs` uses a throwaway `ABBEY_STATE_DIR`; keep that property for state-mutating cases. `slash_parse.rs` is read-only/current-dir scoped. The app-core contract test must stay presentation-neutral and must not gain crate-private access.
 
 ## Toolchain
 
@@ -66,7 +67,10 @@ Key modules (`src/`):
 
 | Module | Responsibility |
 |---|---|
-| `main.rs` | thin entry — routing only, must stay under 200 lines |
+| `main.rs` | pre-Clap SIGPIPE shim delegating to the library; must stay under 200 lines |
+| `lib.rs` / `entry.rs` | private implementation graph + library-owned CLI/TUI routing |
+| `app_core/` | public versioned Status/Claims contracts and standard read-only policy |
+| `daemon/` / `bin/abbeyd.rs` | authenticated bounded Unix Status/Claims transport; no tools, models, memory, or jobs |
 | `cli.rs` | clap `Cli`/`Subcommand` definitions (Grok Build/Codex/Claude Code parity surface) |
 | `actions.rs` | `RunSpec` + `run_agent` — the one path every surface calls |
 | `commands.rs` | clap subcommand match → actions |
@@ -84,10 +88,10 @@ Key modules (`src/`):
 | `protocols.rs` | MCP config inventory + ACP peer discovery/launch (not a host runtime) |
 | `highlight.rs` | syntect ANSI for fenced code on `-p`/print + `abbey highlight` |
 | `subagents.rs` | multi-subagent lanes + local PATH peer fan-out + synthesize |
-| `claims.rs` | Current/Proposed/OOS gate + refuse paths (embeddings/LoRA/multi-node) |
+| `claims.rs` | Current/Partial/Proposed/Blocked/OOS gate + refuse paths and machine manifest |
 | `platform.rs` | host OS matrix + threads + GPU/NPU/TPU detect (not accelerator runtime) |
-| `surfaces.rs` | vision/cot/runtime honesty (viewer + matrix; weights/engine/host OOS) |
-| `deferred.rs` | OOS honesty pack — lora/weights/accel/shell/host (+ `abbey oos` index) |
+| `surfaces.rs` | vision/cot/runtime honesty (neural media/owned host Proposed; hidden CoT OOS) |
+| `deferred.rs` | deferred-capability index — lora/weights/accel/host Proposed; shipped-edition shell bypass OOS |
 | `host.rs` | portable PATH/PATHEXT lookup, argv clamp, install/state path helpers |
 | `memory/` (`mod.rs`, `sqlite.rs`, `wdbx.rs`, `map.rs`, `similarity.rs`) | `MemoryStore` trait, shared reflect/validation, backend dispatch (add new backends here and they work everywhere); `map.rs` = deterministic 3-D map (topic × recency × consolidation), `similarity.rs` = `memory similar` over `abi_ai::text_embedding` feature-hash vectors — **lexical, not learned**; both axes and distances answer surface-form questions, never semantic ones |
 | `hybrid_loop.rs` | two-stage Gemma→Max run; stages linked by `correlation` in the route log |

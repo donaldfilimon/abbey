@@ -1,9 +1,9 @@
-//! Claims gate — Current / Proposed / Out of scope.
+//! Claims gate — Current / Partial / Proposed / Blocked / Out of scope.
 //!
 //! Single machine-readable source for honesty. Docs and `AGENTS.md` stay the
-//! human table; this module powers `abbey claims` and refuse paths so Proposed
-//! items (production multi-host) and OOS items (LoRA, local weights) are never
-//! silently implied by a missing error.
+//! human table; this module powers `abbey claims` and refusal paths so approved
+//! roadmap work, externally blocked proof, and deliberately excluded work are
+//! never silently implied by a missing error.
 
 use crate::output;
 use anyhow::{Result, bail};
@@ -11,7 +11,9 @@ use anyhow::{Result, bail};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Status {
     Current,
+    Partial,
     Proposed,
+    Blocked,
     OutOfScope,
 }
 
@@ -19,8 +21,20 @@ impl Status {
     pub fn label(self) -> &'static str {
         match self {
             Self::Current => "Current",
+            Self::Partial => "Partial",
             Self::Proposed => "Proposed",
+            Self::Blocked => "Blocked",
             Self::OutOfScope => "Out of scope",
+        }
+    }
+
+    fn key(self) -> &'static str {
+        match self {
+            Self::Current => "current",
+            Self::Partial => "partial",
+            Self::Proposed => "proposed",
+            Self::Blocked => "blocked",
+            Self::OutOfScope => "out_of_scope",
         }
     }
 }
@@ -29,7 +43,7 @@ impl Status {
 pub struct Claim {
     pub name: &'static str,
     pub status: Status,
-    /// Short note — for Proposed/OOS: why deferred; for Current: caveat if any.
+    /// Short note — evidence boundary, blocker, or Current caveat.
     pub note: &'static str,
     /// What to use instead (Current substitute), if any.
     pub instead: Option<&'static str>,
@@ -46,8 +60,8 @@ pub const CLAIMS: &[Claim] = &[
     },
     Claim {
         name: "Grok/Codex/Claude surface parity",
-        status: Status::Current,
-        note: "partial — polish continues; not a reimplementation of those runtimes",
+        status: Status::Partial,
+        note: "selected UX aliases and compatible surfaces ship; parity polish continues; not a reimplementation of vendor runtimes",
         instead: None,
     },
     Claim {
@@ -77,7 +91,7 @@ pub const CLAIMS: &[Claim] = &[
     Claim {
         name: "WDBX in-process memory",
         status: Status::Current,
-        note: "behind --features wdbx (off by default); flock-guarded",
+        note: "behind --features wdbx (off by default); fs4 advisory lock (flock / LockFileEx)",
         instead: None,
     },
     Claim {
@@ -99,9 +113,15 @@ pub const CLAIMS: &[Claim] = &[
         instead: Some("abbey improve status|plan|run --confirm"),
     },
     Claim {
+        name: "shared application core + authenticated read-only abbeyd",
+        status: Status::Current,
+        note: "versioned read-only status/claims contracts over an owner-only bounded Unix socket; Windows named pipes, durable jobs, model/tool execution, and memory ownership are not implemented",
+        instead: Some("abbey::app_core · abbeyd with an owner-only bearer file"),
+    },
+    Claim {
         name: "MCP/ACP inventory + voice + highlight + media/imagine",
         status: Status::Current,
-        note: "not an MCP/ACP host; no local vision/gen/voice weights",
+        note: "inventory/peer launch and delegated media surfaces; no Abbey-owned tool host or local neural media models yet",
         instead: None,
     },
     Claim {
@@ -184,52 +204,73 @@ pub const CLAIMS: &[Claim] = &[
     Claim {
         name: "ABI WDBX authenticated local multi-process proof",
         status: Status::Current,
-        note: "abbey mesh local-demo on Unix; 3..=9 loopback ABI processes; not production multi-host",
+        note: "abbey mesh local-demo on Unix; 3..=9 loopback ABI processes; not production multi-VM",
         instead: Some("ABBEY_ABI_BIN=<real binary> abbey mesh local-demo --nodes 3"),
     },
-    // —— Proposed ——
+    // —— Proposed (approved roadmap; refusal paths remain fail-closed) ——
     Claim {
-        name: "production multi-host · multi-GPU · shared compute mesh",
+        name: "Tauri 2 + React/TypeScript desktop GUI",
         status: Status::Proposed,
-        note: "the authenticated local multi-process proof does not establish separate-host deployment",
-        instead: Some("abbey mesh local-demo · abbey subagents --peers (same host)"),
+        note: "approved product direction; the shipped interactive UI remains the ratatui TUI",
+        instead: Some("abbey tui"),
     },
-    // —— Out of scope ——
     Claim {
-        name: "fine-tuning / LoRA runners",
-        status: Status::OutOfScope,
-        note: "train_candidate is curation substrate only — no weight updates in Abbey",
+        name: "provider-neutral Abbey-owned agent and tool runtime / MCP-ACP host",
+        status: Status::Proposed,
+        note: "approved product direction; current execution is delegated to configured cursor-agent, abi, fm, or grok backends",
+        instead: Some("abbey runtime · abbey mcp|acp · --approve-mcps"),
+    },
+    Claim {
+        name: "production-capable local model weights",
+        status: Status::Proposed,
+        note: "approved product direction; Max/Gemma names currently remain role bindings, not bundled weights",
+        instead: Some("ABBEY_BACKEND=fm · abbey weights"),
+    },
+    Claim {
+        name: "fine-tuning / LoRA pipeline",
+        status: Status::Proposed,
+        note: "approved product direction; train_candidate remains curation substrate and performs no weight updates",
         instead: Some("abbey lora · abbey learn-review · abbey learn-stats"),
     },
     Claim {
-        name: "local Qwen / Gemma weights",
-        status: Status::OutOfScope,
-        note: "Max/Gemma are cursor-agent (or fm) bindings, not bundled weights",
-        instead: Some("abbey weights · ABBEY_BACKEND=fm"),
-    },
-    Claim {
-        name: "Abbey as her own trained model (own weights)",
-        status: Status::OutOfScope,
-        note: "product identity ≠ local foundation-model training loop",
-        instead: Some("abbey weights"),
-    },
-    Claim {
-        name: "GPU/NPU/TPU compilation, training, or inference in Abbey",
-        status: Status::OutOfScope,
-        note: "presence inventory only — Abbey does not schedule accelerator kernels",
+        name: "GPU/NPU/TPU compilation, training, and inference in Abbey",
+        status: Status::Proposed,
+        note: "approved product direction; current compute commands detect and report hardware only",
         instead: Some("abbey accel · abbey platform compute"),
     },
     Claim {
-        name: "autonomous OS / unrestricted shell",
-        status: Status::OutOfScope,
-        note: "os_control allowlist + --confirm is a safety invariant",
+        name: "local neural speech / image / video models",
+        status: Status::Proposed,
+        note: "approved product direction; current voice is platform I/O and current media generation is delegated to agent tools",
+        instead: Some("abbey voice · abbey --image · abbey imagine"),
+    },
+    Claim {
+        name: "personal-unrestricted separate edition",
+        status: Status::Proposed,
+        note: "approved only as an explicitly separate, locally controlled edition with isolation and auditable consent; shipped Abbey keeps allowlist + --confirm",
         instead: Some("abbey allowlist · abbey os execute --confirm · abbey shell"),
     },
     Claim {
-        name: "Abbey as MCP host / ACP host / tool runtime",
+        name: "authenticated local three-VM shared-compute proof, then production separate-host / geographic-HA / multi-GPU mesh",
+        status: Status::Proposed,
+        note: "approved product direction; the authenticated local multi-process proof does not establish separate-VM deployment",
+        instead: Some("abbey mesh local-demo · abbey subagents --peers (same host)"),
+    },
+    // —— Blocked proof ——
+    Claim {
+        name: "self-hosted Linux CI execution proof",
+        status: Status::Blocked,
+        note: "ABI dependency blocker resolved by merged ABI 32e372d7f522f5a6c9c0ef92c5b9612b52cfea05; macOS ARM64 self-hosted is registered, but Linux ARM64 is not provisioned and its job stays gated by an explicit repository variable; Linux/Windows runtime proof remains open",
+        instead: Some(
+            "run ./check.sh locally; provision/register Linux ARM64 and obtain successful Linux/Windows jobs before claiming cross-platform CI green",
+        ),
+    },
+    // —— Out of scope ——
+    Claim {
+        name: "unrestricted shell or allowlist bypass in the shipped edition",
         status: Status::OutOfScope,
-        note: "inventory + launch only; tools run inside cursor-agent during a turn",
-        instead: Some("abbey host · abbey runtime · abbey mcp|acp · --approve-mcps"),
+        note: "the shipped edition keeps os_control allowlist + --confirm as a safety invariant; only the separately packaged personal edition is Proposed",
+        instead: Some("abbey allowlist · abbey os execute --confirm · abbey shell"),
     },
     Claim {
         name: "Abbey-owned chain-of-thought engine / interactive CoT UI",
@@ -244,16 +285,10 @@ pub const CLAIMS: &[Claim] = &[
         instead: Some("Cursor account dashboard"),
     },
     Claim {
-        name: "cloud TTS/STT SaaS · local neural voice weights",
+        name: "bundled cloud TTS/STT SaaS",
         status: Status::OutOfScope,
-        note: "macOS say Premium/Enhanced + on-device Speech only",
+        note: "cloud speech services are not bundled; local neural speech is Proposed separately",
         instead: Some("abbey voice · System Settings → Spoken Content"),
-    },
-    Claim {
-        name: "local vision / generation weights",
-        status: Status::OutOfScope,
-        note: "path attach + agent/MCP tools write files — Abbey does not embed pixels",
-        instead: Some("abbey --image · abbey imagine"),
     },
     Claim {
         name: "reimplement Grok/Codex/Claude runtimes",
@@ -277,19 +312,40 @@ pub fn lookup(keyword: &str) -> Vec<&'static Claim> {
         .collect()
 }
 
-/// Print the gate. `filter`: None = all sections; Some("proposed"|"oos"|"current"|keyword).
+/// Serialize the canonical claims ledger for repository synchronization tools.
+pub fn manifest_json() -> Result<String> {
+    let rows = CLAIMS
+        .iter()
+        .map(|claim| {
+            serde_json::json!({
+                "name": claim.name,
+                "status": claim.status.key(),
+                "note": claim.note,
+                "instead": claim.instead,
+            })
+        })
+        .collect::<Vec<_>>();
+    Ok(serde_json::to_string_pretty(&rows)?)
+}
+
+/// Print the gate. `filter`: None = all sections; otherwise a status or keyword.
 pub fn print_claims(filter: Option<&str>) -> Result<i32> {
     let filter = filter.map(str::trim).filter(|s| !s.is_empty());
     match filter.map(str::to_ascii_lowercase).as_deref() {
         None | Some("all") => {
             print_section(Status::Current);
             println!();
+            print_section(Status::Partial);
+            println!();
             print_section(Status::Proposed);
+            println!();
+            print_section(Status::Blocked);
             println!();
             print_section(Status::OutOfScope);
             print_footer();
         }
         Some("current" | "shipped") => print_section(Status::Current),
+        Some("partial" | "part") => print_section(Status::Partial),
         Some("proposed" | "prop" | "roadmap") => {
             print_section(Status::Proposed);
             print_footer();
@@ -298,10 +354,16 @@ pub fn print_claims(filter: Option<&str>) -> Result<i32> {
             print_section(Status::OutOfScope);
             print_footer();
         }
+        Some("blocked" | "block") => {
+            print_section(Status::Blocked);
+            print_footer();
+        }
         Some(key) => {
             let hits = lookup(key);
             if hits.is_empty() {
-                bail!("no claims matching `{key}` — try: abbey claims proposed|oos|current");
+                bail!(
+                    "no claims matching `{key}` — try: abbey claims current|partial|proposed|blocked|oos"
+                );
             }
             println!("abbey claims — matches for `{key}`\n");
             for c in hits {
@@ -316,7 +378,9 @@ pub fn print_claims(filter: Option<&str>) -> Result<i32> {
 fn print_section(status: Status) {
     let title = match status {
         Status::Current => "Current (shipped)",
+        Status::Partial => "Partial (some shipped surface; stated gaps remain)",
         Status::Proposed => "Proposed (designed — not claimed live)",
+        Status::Blocked => "Blocked (implementation or proof needs an external prerequisite)",
         Status::OutOfScope => "Out of scope (explicitly deferred)",
     };
     println!("abbey claims — {title}");
@@ -328,7 +392,9 @@ fn print_section(status: Status) {
 fn print_claim(c: &Claim) {
     let mark = match c.status {
         Status::Current => "✓",
+        Status::Partial => "~",
         Status::Proposed => "·",
+        Status::Blocked => "!",
         Status::OutOfScope => "✗",
     };
     let _ = output::println(format!("  {mark} {}", c.name));
@@ -340,13 +406,13 @@ fn print_claim(c: &Claim) {
 
 fn print_footer() {
     println!(
-        "\nrefuse:  abbey claims refuse <lora|multinode|npu|…>  (exit 2)\n\
+        "\nrefuse:  abbey claims refuse <lora|multinode|npu|gui|…>  (exit 2)\n\
          docs:    AGENTS.md claims gate · docs/architecture.md · docs/identity.md\n\
-         rule:    Proposed/OOS verbs must fail honestly — never silent success"
+         rule:    Partial/Proposed/Blocked/OOS verbs must fail honestly — never silent success"
     );
 }
 
-/// Map a user verb to a Proposed/OOS claim and refuse with exit 2.
+/// Map an unavailable user verb to a non-Current claim and refuse with exit 2.
 pub fn refuse(verb: &str) -> Result<i32> {
     let key = verb.trim().to_ascii_lowercase();
     let (claim_key, detail) = match key.as_str() {
@@ -359,48 +425,56 @@ pub fn refuse(verb: &str) -> Result<i32> {
         }
         "lora" | "finetune" | "fine-tune" | "fine_tune" | "train-weights" => (
             "lora",
-            "Fine-tuning / LoRA is Out of scope. train_candidate is curation only.",
+            "Fine-tuning / LoRA is Proposed but not implemented. train_candidate is curation only.",
         ),
         "multinode" | "multi-node" | "cluster" | "mesh" | "multi-gpu" | "distributed-mesh" => (
-            "multi-host",
-            "Production multi-host / multi-GPU shared compute is Proposed. The authenticated local multi-process proof is Current on Unix hosts.",
+            "three-VM",
+            "An authenticated local three-VM shared-compute proof is Proposed; production separate-physical-host, geographic-HA, and multi-GPU operation remains Proposed even after that proof. The same-host multi-process proof is Current on Unix hosts.",
         ),
         "npu" | "tpu" | "gpu" | "cuda" | "metal" | "ane" => (
             "GPU/NPU/TPU",
-            "GPU/NPU/TPU compilation, training, and inference in Abbey are Out of scope. Host detect is Current.",
+            "GPU/NPU/TPU compilation, training, and inference in Abbey are Proposed but not implemented. Host detect is Current.",
         ),
         "vision" | "vlm" | "video-weights" | "local-vision" => (
-            "vision",
-            "Local vision/video weights are Out of scope. Path attach + agent/MCP gen are Current.",
+            "neural speech",
+            "Local neural image/video models are Proposed but not implemented. Path attach + delegated agent-tool generation are Current.",
         ),
         "cot" | "chain-of-thought" | "cot-ui" | "cot-engine" => (
             "CoT",
             "Abbey-owned CoT engine/UI is Out of scope. Transcript viewer + Cursor thinking wrap are Current.",
         ),
         "weights" | "qwen" | "local-gemma" | "own-model" => (
-            "weights",
-            "Local Qwen/Gemma weights and Abbey-own-weights training are Out of scope.",
+            "local model",
+            "Production-capable local weights are Proposed but not implemented. Max/Gemma remain role bindings.",
         ),
         "cost" | "tokens" | "billing" => (
             "cost",
             "Fake cost/token accounting is Out of scope. /cost is N/A.",
         ),
         "mcp-host" | "acp-host" | "host" | "tool-runtime" | "tool-host" => (
-            "MCP host",
-            "Abbey is not an MCP or ACP host — inventory/launch only.",
+            "tool runtime",
+            "An Abbey-owned provider-neutral tool runtime / MCP-ACP host is Proposed but not implemented. Inventory and peer launch are Current.",
         ),
         "shell" | "unrestricted" | "os-unrestricted" | "allowlist-bypass" | "yolo-shell" => (
-            "unrestricted",
-            "Unrestricted OS / autonomous shell is Out of scope. Allowlist + --confirm is Current.",
+            "personal-unrestricted",
+            "A personal-unrestricted separate edition is Proposed but not implemented. The shipped edition keeps allowlist + --confirm and refuses bypass.",
         ),
         "accel" | "accelerator" | "accelerators" => (
             "GPU/NPU/TPU",
-            "GPU/NPU/TPU compilation, training, and inference in Abbey are Out of scope. Host detect is Current.",
+            "GPU/NPU/TPU compilation, training, and inference in Abbey are Proposed but not implemented. Host detect is Current.",
+        ),
+        "gui" | "window" | "windowed" | "desktop" | "tauri" | "react" => (
+            "Tauri 2",
+            "The Tauri 2 + React/TypeScript desktop GUI is Proposed but not implemented. The ratatui TUI is Current.",
+        ),
+        "speech" | "local-speech" | "image" | "video" | "neural-media" => (
+            "neural speech",
+            "Local neural speech/image/video models are Proposed but not implemented. Platform voice I/O and delegated media tools are Current.",
         ),
         other => {
             eprintln!(
                 "abbey: unknown refuse topic `{other}`\n\
-                 try: lora · multinode · npu · weights · shell · cost · mcp-host"
+                 try: lora · multinode · npu · weights · shell · cost · mcp-host · gui"
             );
             return Ok(2);
         }
@@ -429,17 +503,19 @@ pub fn dispatch(args: &[String]) -> Result<i32> {
     {
         if matches!(args.first().map(String::as_str), Some("-h" | "--help")) {
             println!(
-                "abbey claims — Current / Proposed / Out of scope gate\n\
+                "abbey claims — Current / Partial / Proposed / Blocked / Out of scope gate\n\
                  \n\
                  usage:\n\
                    abbey claims              # full gate\n\
+                   abbey claims partial      # partially shipped\n\
                    abbey claims proposed     # Proposed only\n\
+                   abbey claims blocked      # external blockers\n\
                    abbey claims oos          # Out of scope only\n\
                    abbey claims current      # shipped\n\
                    abbey claims <keyword>    # search\n\
                    abbey claims refuse <topic>\n\
                  \n\
-                 topics: lora · multinode · npu · weights · shell · cost · mcp-host\n\
+                 topics: lora · multinode · npu · weights · shell · cost · mcp-host · gui\n\
                  note: embeddings are Current; `claims refuse embeddings` reports that status"
             );
             return Ok(0);
@@ -448,6 +524,10 @@ pub fn dispatch(args: &[String]) -> Result<i32> {
     }
 
     match args[0].as_str() {
+        "manifest" => {
+            output::println(manifest_json()?)?;
+            Ok(0)
+        }
         "refuse" | "no" | "deny" => {
             let topic = args.get(1).map(String::as_str).unwrap_or("");
             if topic.is_empty() {
@@ -456,6 +536,8 @@ pub fn dispatch(args: &[String]) -> Result<i32> {
             refuse(topic)
         }
         "proposed" | "prop" | "roadmap" => print_claims(Some("proposed")),
+        "partial" | "part" => print_claims(Some("partial")),
+        "blocked" | "block" => print_claims(Some("blocked")),
         "oos" | "out" | "out-of-scope" | "deferred" => print_claims(Some("oos")),
         "current" | "shipped" => print_claims(Some("current")),
         other => print_claims(Some(other)),
@@ -464,9 +546,13 @@ pub fn dispatch(args: &[String]) -> Result<i32> {
 
 pub fn status_line() -> String {
     let cur = by_status(Status::Current).count();
+    let partial = by_status(Status::Partial).count();
     let prop = by_status(Status::Proposed).count();
+    let blocked = by_status(Status::Blocked).count();
     let oos = by_status(Status::OutOfScope).count();
-    format!("claims:    {cur} Current · {prop} Proposed · {oos} Out of scope — `abbey claims`")
+    format!(
+        "claims:    {cur} Current · {partial} Partial · {prop} Proposed · {blocked} Blocked · {oos} Out of scope — `abbey claims`"
+    )
 }
 
 #[cfg(test)]
@@ -474,10 +560,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn gate_has_all_three_statuses() {
-        assert!(by_status(Status::Current).count() >= 14);
-        assert!(by_status(Status::Proposed).next().is_some());
-        assert!(by_status(Status::OutOfScope).count() >= 5);
+    fn gate_has_all_five_statuses() {
+        assert_eq!(by_status(Status::Current).count(), 24);
+        assert_eq!(by_status(Status::Partial).count(), 1);
+        assert_eq!(by_status(Status::Proposed).count(), 8);
+        assert_eq!(by_status(Status::Blocked).count(), 1);
+        assert_eq!(by_status(Status::OutOfScope).count(), 5);
     }
 
     #[test]
@@ -492,6 +580,23 @@ mod tests {
     }
 
     #[test]
+    fn app_core_daemon_claim_stays_narrower_than_owned_runtime() {
+        let daemon = CLAIMS
+            .iter()
+            .find(|claim| claim.name.starts_with("shared application core"))
+            .expect("app-core daemon claim");
+        assert_eq!(daemon.status, Status::Current);
+        assert!(daemon.note.contains("read-only"));
+        assert!(daemon.note.contains("not implemented"));
+
+        let owned_runtime = CLAIMS
+            .iter()
+            .find(|claim| claim.name.starts_with("provider-neutral Abbey-owned"))
+            .expect("owned runtime claim");
+        assert_eq!(owned_runtime.status, Status::Proposed);
+    }
+
+    #[test]
     fn abi_backend_is_current() {
         let claim = CLAIMS
             .iter()
@@ -502,9 +607,48 @@ mod tests {
     }
 
     #[test]
-    fn lora_is_out_of_scope() {
+    fn approved_expansion_is_proposed() {
         let hits = lookup("lora");
-        assert!(hits.iter().any(|c| c.status == Status::OutOfScope));
+        assert!(hits.iter().any(|c| c.status == Status::Proposed));
+        for keyword in [
+            "Tauri 2",
+            "tool runtime",
+            "local model",
+            "GPU/NPU/TPU",
+            "neural speech",
+            "personal-unrestricted",
+            "three-VM",
+        ] {
+            assert!(
+                lookup(keyword).iter().any(|c| c.status == Status::Proposed),
+                "missing Proposed claim for {keyword}"
+            );
+        }
+    }
+
+    #[test]
+    fn ci_proof_is_blocked_after_abi_dependency_resolution() {
+        let claim = lookup("self-hosted")
+            .into_iter()
+            .find(|c| c.status == Status::Blocked)
+            .expect("blocked self-hosted CI claim");
+        assert!(
+            claim
+                .note
+                .contains("32e372d7f522f5a6c9c0ef92c5b9612b52cfea05")
+        );
+        assert!(claim.note.contains("Linux ARM64"));
+        assert!(claim.note.contains("repository variable"));
+    }
+
+    #[test]
+    fn shipped_unrestricted_bypass_remains_out_of_scope() {
+        let claim = lookup("allowlist bypass")
+            .into_iter()
+            .find(|c| c.status == Status::OutOfScope)
+            .expect("shipped-edition bypass claim");
+        assert!(claim.name.contains("shipped edition"));
+        assert!(claim.note.contains("separately packaged"));
     }
 
     #[test]
@@ -516,11 +660,25 @@ mod tests {
         assert_eq!(refuse("host").unwrap(), 2);
         assert_eq!(refuse("npu").unwrap(), 2);
         assert_eq!(refuse("weights").unwrap(), 2);
+        assert_eq!(refuse("gui").unwrap(), 2);
     }
 
     #[test]
-    fn lookup_production_multihost() {
-        let hits = lookup("multi-host");
+    fn lookup_shared_compute_roadmap() {
+        let hits = lookup("three-VM");
         assert!(hits.iter().any(|c| c.status == Status::Proposed));
+    }
+
+    #[test]
+    fn manifest_is_ordered_machine_readable_claims_source() {
+        let manifest: Vec<serde_json::Value> =
+            serde_json::from_str(&manifest_json().unwrap()).unwrap();
+        assert_eq!(manifest.len(), CLAIMS.len());
+        assert_eq!(manifest[0]["name"], CLAIMS[0].name);
+        assert_eq!(manifest[0]["status"], CLAIMS[0].status.key());
+        assert_eq!(
+            manifest.last().unwrap()["name"],
+            CLAIMS.last().unwrap().name
+        );
     }
 }

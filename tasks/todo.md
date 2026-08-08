@@ -1,4 +1,9 @@
 # Todo
+<!-- abbey-claims-sha256: 1cff4b9922dd6eb1a09eced94a8452478a0e071cb0835fdf788dd9cbec335282 -->
+
+Ledger snapshot after the 2026-08-08 scope migration: **111 checked, 10 open**.
+The 10 open items are two externally blocked CI proofs plus eight approved
+Proposed implementation slices; recount when changing checkboxes.
 
 ## Working CI on GitHub (blocked — see goals.md)
 
@@ -7,12 +12,51 @@
 - [x] CI runs `./check.sh` (both feature sets), not a bare build+test
 - [x] `SECURITY.md` replaced — the template claimed nonexistent 5.1.x/4.0.x support
 - [x] CI constraints documented in `docs/production.md`
-- [ ] **Blocked:** a run that actually executes. Every run is `startup_failure`
-      at 0s / 0 jobs, including GitHub's own template — private-repo Actions
-      minutes or spending limit, not workflow content. Owner action:
-      github.com/settings/billing
-- [ ] **Blocked on the above:** confirm `check.sh` passes on `ubuntu-latest`
-      (verified only by reproducing the checkout layout locally so far)
+- [ ] **Blocked external proof:** GitHub-hosted runs remain `startup_failure` at
+      0s / 0 jobs. ABI publication is resolved at
+      `32e372d7f522f5a6c9c0ef92c5b9612b52cfea05`, and macOS ARM64 self-hosted is
+      registered; do not collapse these separate facts into a green hosted run.
+- [ ] **Blocked on runner provisioning:** provision/register Linux ARM64, enable
+      its explicitly gated repository variable, and obtain a real `./check.sh`
+      job; retain Windows runtime proof as a separate open evidence item.
+
+## Approved capability expansion roadmap (Proposed, not Current)
+
+Implementation order is dependency-driven. Every user-facing refusal remains exit 2
+until its slice has tests and runtime evidence; checking a design subtask does not promote
+the parent capability to Current.
+
+- [ ] **1. Runtime contracts:** define provider-neutral executor, tool-call, permission,
+      cancellation, transcript, and audit interfaces; adapt current cursor/abi/fm/grok
+      backends behind them without reimplementing vendor runtimes.
+  - [x] Foundation: extract a reusable library, stable `AppCommand`/`AppEvent`/ID/status/
+        capability contracts, standard read-only policy, and authenticated bounded Unix
+        `abbeyd` Status/Claims transport. This does not complete executor/tool/cancellation,
+        durable-job, Windows named-pipe, or memory-ownership work.
+- [ ] **2. Owned tool host:** implement capability-scoped tool registry plus MCP/ACP host
+      adapters, schema validation, bounded subprocess/network policy, consent, and audit;
+      preserve current inventory/peer-launch behavior during migration.
+- [ ] **3. Desktop GUI:** add a Tauri 2 + React/TypeScript frontend over shared
+      session/application state, not a second engine; cover backend selection, chat, tools/consent, memory,
+      routes, and accessibility while keeping CLI/TUI supported.
+- [ ] **4. Local model runtime:** integrate production-capable local weights through an
+      ABI-owned inference contract with model manifests, integrity/license provenance,
+      deterministic CPU fallback, memory budgets, and measurable quality/performance bars.
+- [ ] **5. Accelerator runtime:** add GPU/NPU/TPU capability negotiation and execution
+      behind the same compute abstraction; test numerical correctness and fallbacks before
+      advertising compilation/training/inference support.
+- [ ] **6. LoRA/fine-tuning:** promote curated `train_candidate` data through explicit
+      consent/redaction/splits, reproducible adapter training, evaluation, rollback, and
+      signed artifact provenance; no automatic weight mutation.
+- [ ] **7. Local neural media:** implement speech first, then image/video through the
+      model/runtime/accelerator contracts; preserve platform voice and delegated-agent
+      generation as clearly distinct Current paths.
+- [ ] **8. Shared compute + separate edition:** first prove authenticated shared compute
+      across three local VMs on one Mac (identity, quorum, leases, failure recovery,
+      observability) from ABI primitives. Keep separate-physical-host, geographic-HA, and
+      multi-GPU production operation Proposed after that proof. Package the
+      personal-unrestricted edition separately with local control,
+      isolation, auditable consent, and no bypass path in standard Abbey.
 
 ## Hybrid routing and memory
 
@@ -43,7 +87,8 @@
 - [x] Cross-process safety extends to the bridge: an `abbey wdbx` passthrough aimed at Abbey's
       own store takes the same lock, so Abbey's own CLI can't route around its guard. TUI
       redraw opens with a 250 ms timeout and reports `unavailable:` instead of "empty"
-- [x] Cross-process safety: `flock(2)` on `<store>/abbey.lock` held for the handle's life.
+- [x] Cross-process safety: `fs4` advisory lock on `<store>/abbey.lock` held for the
+      handle's life (Unix `flock`, Windows `LockFileEx`).
       Without it 20 concurrent `abbey` processes interleaved WAL appends and left the store
       **permanently unreadable** (CRC mismatch, every later open failed); with it 40/40
       concurrent writes land. SQLite passed the same test unaided — the lock is what makes
@@ -130,9 +175,8 @@ Closed work that *came out of* this section:
 - [x] WDBX cross-process lock on Windows + Unix (`fs4`) — **Current**
 - [x] Host GPU/NPU/TPU detection + thread matrix (`abbey platform`) — **Current**
 
-**Boundaries — deliberately not built. Not checkboxes: these are decisions, not
-pending work.** Re-opening one means changing the claims gate in `AGENTS.md` first,
-not ticking a box here. `abbey improve` skips this whole section when picking work
+**Historical boundaries, superseded where noted.** The approved expansion work is now
+tracked above. `abbey improve` skips this whole section when picking work
 (`ledger::is_deferred_section`) — an unchecked box here used to be nominated as the
 next slice, which would have sent Max to build a capability `claims refuse` exits 2 for.
 
@@ -141,10 +185,12 @@ next slice, which would have sent Max to build a capability `claims refuse` exit
 | Semantic memory search (**learned** embedding space) | **Current (opt-in)** | Explicit `none|apple|openai`, stable isolated spaces, SQLite/WDBX persistence, stale detection, pending/backfill, no fallback. Apple paraphrase proof passed locally; paid remote call remains unverified. |
 | Memory project/source/time filtering | **Current (local)** | `MemoryFilter` applies identical exact metadata and inclusive parsed RFC 3339 semantics to SQLite and WDBX. `memory put/search/similar/semantic/map/near/export` expose the shared metadata/filter flags. |
 | ABI authenticated local multi-process proof | **Current (Unix single host)** | `abbey mesh local-demo --nodes 3..9`; typed quorum/failover/conflict/repair/process-group teardown proof from the real ABI binary. Non-Unix fails before spawn. |
-| Production multi-host · multi-GPU · shared compute mesh | **Proposed** | Loopback independent processes do not establish separate-host deployment or shared accelerator scheduling. |
-| GPU/NPU/TPU compilation · training · inference *in Abbey* | **Out of scope** | Abbey detects accelerators (`abbey platform`) but runs no kernels. Contradicts "backend is `cursor-agent`, not a reimplementation" (CLAUDE.md) |
-| Autonomous operation of services and the OS | **Out of scope** | Contradicts the safety invariant in CLAUDE.md: OS execution "must never run without `--confirm`, and only against the allowlist — this is a safety invariant, not a default to relax" |
-| Local Qwen/Gemma weights · LoRA · CouchDB-Python second stack | **Out of scope** | A decision, not a capability gap: `abi-nn` next door already ships `train_model`/`train_on_jsonl`, and Abbey deliberately does **not** depend on it. `train_candidate` stays curation substrate only |
+| Local three-VM shared-compute proof on one Mac | **Proposed** | Loopback independent processes do not establish VM networking or shared compute. |
+| Production separate-host / geographic-HA / multi-GPU mesh | **Proposed after VM proof** | The local three-VM proof will not establish production operations evidence. |
+| GPU/NPU/TPU compilation · training · inference *in Abbey* | **Proposed** | Abbey currently detects accelerators but runs no kernels; approval does not create runtime proof. |
+| Personal-unrestricted separate edition | **Proposed** | Must remain separately packaged and locally controlled; unrestricted bypass in shipped Abbey remains Out of scope. |
+| Local production weights · LoRA | **Proposed** | `abi-nn` capabilities are reuse candidates, not evidence Abbey integrates them; `train_candidate` remains curation only. |
+| CouchDB-Python second stack | **Out of scope / unapproved** | No need established alongside the backend-neutral memory interface. |
 
 ### 2026-08-08 capability and tooling completion
 
@@ -164,12 +210,12 @@ next slice, which would have sent Max to build a capability `claims refuse` exit
 
 ## Hybrid model-routing architecture strategy
 
-Buildable residuals closed 2026-07-30; Proposed/OOS stay deferred above.
+Buildable residuals closed 2026-07-30; approved Proposed expansion stays open above.
 
 - [x] Richer Abi routing policy: `roles::route_decision` confidence + alternate + fallback
       recorded on `RouteRecord`; shown by `abbey routes` / `/routes` (no auto second agent)
 - [x] `abbey learn review` / `abbey learn stats` for train_candidate provenance curation
-      (export remains; LoRA stays Out of scope)
+      (export remains; this is not the now-Proposed LoRA implementation)
 - [x] Keep memory backend replaceable; **do not** add CouchDB/Python as a second stack
 
 ## Current-scope polish (post-d74e941)
@@ -214,10 +260,10 @@ Buildable residuals closed 2026-07-30; Proposed/OOS stay deferred above.
       sessionless backends; doctor names the real backend source instead of faking
       `ABBEY_BACKEND=`
 
-**Boundaries for this goal — decisions, not checkboxes** (see `tasks/goals.md` table):
-windowed GUI stays **Proposed** (new dep tree + claims-gate row); Abbey as her own agent
-runtime stays **Out of scope** (would delete shipped refusals); the shipped default stays
-cursor-agent because the default is now a per-user config key.
+**Historical boundaries for this goal — superseded by the approved roadmap above:**
+the canonical desktop is Tauri 2 + React/TypeScript and the provider-neutral
+Abbey-owned runtime is Proposed. Refusals remain exit 2 until implementation; the
+shipped default stays configurable and currently resolves to cursor-agent.
 - [x] Account/gen refuse; local MCP inventory remains available; no stale-chat retry; doctor + claims + docs honesty
 - [x] Unit tests: no flag leak, `--` prompt position, normalize thinking→local, abi candidate paths
 
@@ -243,7 +289,8 @@ cursor-agent because the default is now a per-user config key.
 - [x] CLI/slash/doctor/claims wiring; bounded `--confirm` + max-rounds/minutes
 - [x] Unit tests for ledger/args/gate classify; no live agent in tests
 - [x] Close goal after `./check.sh` green evidence (human ledger close) — verified live via
-      the built binary: `abbey improve status` (ledger parse: 18 goals/86 todos, correct
+      the built binary: `abbey improve status` (then-current ledger snapshot:
+      18 goals/86 todos, correct
       focus pick) and `abbey improve plan` (diagnose+implement prompt preview, no apply)
       against a green `./check.sh`. `improve run --confirm` (the Max force-apply path) was
       **not** exercised — that spends real cursor-agent credits and edits the tree

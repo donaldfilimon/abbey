@@ -17,10 +17,10 @@ pub fn parse_persona(s: &str) -> Option<AgentProfile> {
 /// Select persona: env `ABBEY_PERSONA` if set to a known name, else explicit
 /// address in input, else keyword router.
 pub fn select_persona(input: &str) -> AgentProfile {
-    if let Ok(v) = std::env::var("ABBEY_PERSONA") {
-        if let Some(p) = parse_persona(&v) {
-            return p;
-        }
+    if let Ok(v) = std::env::var("ABBEY_PERSONA")
+        && let Some(p) = parse_persona(&v)
+    {
+        return p;
     }
     if let Some(p) = explicit_profile_selector(input) {
         return p;

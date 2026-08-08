@@ -101,7 +101,7 @@ pub fn surface_matrix() -> &'static [SurfaceSupport] {
             linux: false,
             macos: false,
             windows: false,
-            note: "Out of scope — detect-only via `abbey platform`",
+            note: "Proposed — detect-only via `abbey platform` today",
         },
     ]
 }
@@ -319,7 +319,7 @@ pub fn print_platform() -> Result<i32> {
     println!();
     println!(
         "honesty: GPU/NPU/TPU compilation, training, and inference inside Abbey \
-         are Out of scope (`abbey claims oos`). Multi-threading = subagent jobs, \
+         are Proposed and unavailable (`abbey claims proposed`). Multi-threading = subagent jobs, \
          not accelerator kernels. Voice/fm remain macOS-only.\n\
          paths:   abbey platform paths"
     );
@@ -382,10 +382,10 @@ pub fn dispatch(args: &[String]) -> Result<i32> {
                    abbey platform compute      # threads + GPU/NPU/TPU detect\n\
                    abbey platform paths        # state/config/agent locations\n\
                    abbey platform threads      # parallelism + argv clamp\n\
-                   abbey platform refuse       # OOS: Abbey accelerator runtime\n\
+                   abbey platform refuse       # Proposed: Abbey accelerator runtime\n\
                  \n\
                  aliases: abbey compute · abbey accel\n\
-                 note: detection ≠ Abbey accelerator runtime (see claims oos)"
+                 note: detection ≠ Abbey accelerator runtime (see claims proposed)"
             );
             Ok(0)
         }

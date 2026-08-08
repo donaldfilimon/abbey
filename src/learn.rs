@@ -205,7 +205,7 @@ fn print_learn_usage() {
          \x20  abbey learn preference <text>  # LTM standing directive\n\
          \x20  abbey learn routes [n]         # route.jsonl → activity\n\
          \x20  abbey learn digest|export …\n\
-         note:  LoRA / fine-tune is Out of scope — curation only"
+         note:  LoRA / fine-tune is Proposed but unavailable — curation only"
     );
 }
 
@@ -247,7 +247,7 @@ pub fn review_train(state: &AbbeyState, limit: usize) -> Result<()> {
     println!(
         "\nreview: {} candidate(s); {} missing provenance; {} ready (prov+conf≥0.9)\n\
          next:   abbey learn stats · abbey learn export train_candidate\n\
-         oos:    LoRA runners — `abbey lora refuse`",
+         proposed: LoRA pipeline unavailable — `abbey lora refuse`",
         rows.len(),
         missing_prov,
         ready
@@ -261,7 +261,9 @@ pub fn train_stats(state: &AbbeyState) -> Result<()> {
     let path = memory::backend_path(&state.state_dir, &configured_backend());
     if !path.exists() {
         println!("train_candidate: total=0 (no store)");
-        println!("note: export via `abbey learn export train_candidate`; LoRA is out of scope");
+        println!(
+            "note: export via `abbey learn export train_candidate`; LoRA is Proposed, not implemented"
+        );
         return Ok(());
     }
     let mem = open_mem(state)?;
@@ -273,7 +275,7 @@ pub fn train_stats(state: &AbbeyState) -> Result<()> {
     println!("  curation_ready(prov+conf>=0.9)={}", cur.ready);
     println!(
         "\nnext:  abbey learn review · abbey learn export train_candidate\n\
-         oos:   LoRA / fine-tune — `abbey lora refuse` (exit 2)"
+         proposed: LoRA / fine-tune unavailable — `abbey lora refuse` (exit 2)"
     );
     Ok(())
 }
@@ -350,7 +352,7 @@ pub fn dispatch(state: &AbbeyState, args: &[String]) -> Result<i32> {
         other => bail!(
             "unknown learn subcommand `{other}`\n\
              usage: abbey learn [status|correction|train|preference|routes|digest|export|review|stats]\n\
-             (LoRA/fine-tune is Out of scope — see `abbey claims oos`)"
+             (LoRA/fine-tune is Proposed — see `abbey claims proposed`)"
         ),
     }
 }

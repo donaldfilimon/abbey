@@ -1,4 +1,5 @@
 # Abbey production readiness
+<!-- abbey-claims-sha256: 1cff4b9922dd6eb1a09eced94a8452478a0e071cb0835fdf788dd9cbec335282 -->
 
 ## Toolchain
 
@@ -10,7 +11,7 @@
 
 ```bash
 ./check.sh          # fmt + clippy -D warnings + test, for BOTH feature sets
-./install.sh        # Unix/macOS → ~/.local/bin/abbey
+./install.sh        # Unix/macOS → ~/.local/bin/abbey + abbeyd
 .\install.ps1       # Windows → %LOCALAPPDATA%\abbey\bin\abbey.exe
 abbey doctor        # build stamp + persona/role/memory/os honesty
 abbey platform paths
@@ -38,14 +39,15 @@ nightly also satisfies `../abi`'s `rust-version = 1.99`. CI runs `check.sh`
 rather than a bare `cargo build && cargo test` so the `wdbx` feature set is
 actually compiled and tested.
 
-**Known blocker (2026-08-08):** every Actions run on the private `abbey` repo
-ends in `startup_failure` at 0s with zero jobs scheduled — including GitHub's
-own default template and Dependabot, i.e. before workflow content matters. The
-same account's *public* `abi` repo runs Actions normally, which points at
-private-repo Actions minutes / spending limit rather than anything in this
-repository. Until that is resolved, `./check.sh` locally is the real gate; the
-workflow is verified only by reproducing its checkout layout locally (fresh
-`abbey` clone + sibling `abi` clone → `check.sh` exits 0), not by a green run.
+**CI evidence boundary (2026-08-08):** GitHub-hosted Actions runs on the private
+`abbey` repo still end in `startup_failure` at 0s with zero jobs scheduled,
+including GitHub's default template and Dependabot. The earlier unpublished-ABI
+dependency blocker is resolved by merged ABI
+`32e372d7f522f5a6c9c0ef92c5b9612b52cfea05`. A macOS ARM64 self-hosted runner is
+registered. A Linux ARM64 runner is not provisioned, so the Linux job is gated by
+an explicit repository variable until a real runner exists. Linux and Windows
+runtime proof therefore remain open. `./check.sh` locally remains the source gate;
+no zero-job or gated job is represented as green execution evidence.
 
 ## Primary host targets
 
@@ -69,14 +71,23 @@ dedicated process group and can terminate every descendant on timeout or output 
 It fails before spawning on Windows and other non-Unix hosts; Windows Job Object support
 has not been implemented or runtime-verified.
 
+`abbeyd` is also Unix-only in this slice. Its parent directory must be owned by
+the effective user with mode `0700`, its socket is forced to `0600`, and requests
+use a 4-byte big-endian length prefix capped at 64 KiB plus read/write deadlines.
+Set exactly one of `ABBEYD_BEARER_TOKEN_FILE` (recommended, owner-only regular
+file) or `ABBEYD_BEARER_TOKEN`; neither source belongs in `config.toml` or logs.
+The daemon exposes only `Status` and `Claims` through `abbey::app_core`; it owns
+no memory handle, agent process, tool registry, durable job, or shell. Windows
+named-pipe support remains unimplemented and fails closed.
+
 Accelerator **host detection** (`abbey platform compute`) is Current. GPU/NPU/TPU
-**runtimes inside Abbey** are Out of scope — see `abbey claims oos`.
+**runtimes inside Abbey** are Proposed and unavailable — see `abbey claims proposed`.
 
 ## Runtime deps
 
 | Dep | Required? | Notes |
 |-----|-----------|-------|
-| `cursor-agent` | Yes (default when `ABBEY_BACKEND` unset) | Default LLM executor |
+| `cursor-agent` | Required only for the default `cursor` route | Default LLM executor; another configured executor can run without it |
 | `fm` (`/usr/bin/fm`) | Only for `ABBEY_BACKEND=fm` | On-device Apple Foundation Model, macOS 26+ |
 | `abi` (real binary) | Required for `ABBEY_BACKEND=abi`; optional for WDBX/os/plugin CLI | `abi complete` — shell alias will not do; set `ABBEY_ABI_BIN` / `abi_bin` |
 | Swift + Apple NaturalLanguage | Only for `embedding_provider = "apple"` | macOS learned sentence space; runtime language availability varies |
@@ -92,7 +103,7 @@ Accelerator **host detection** (`abbey platform compute`) is Current. GPU/NPU/TP
   `[embeddings]` provider/endpoint/model/dimension/language.
   `abbey config --init` scaffolds it (never overwrites); an unrecognised
   `backend` warns instead of silently using cursor-agent.
-- Env: `ABBEY_MODEL`, `ABBEY_ROLE`, `ABBEY_PERSONA`, `ABBEY_MEMORY_BACKEND`, `ABBEY_AGENT`, `ABBEY_BACKEND`, `ABBEY_ABI_BIN`, `ABBEY_FORCE`, `ABBEY_PER_CWD`, `ABBEY_STATE_DIR`, and the `ABBEY_EMBEDDING_*` provider settings. Remote credentials are read only from `ABBEY_EMBEDDING_API_KEY` or `OPENAI_API_KEY`; never put them in `config.toml`.
+- Env: `ABBEY_MODEL`, `ABBEY_ROLE`, `ABBEY_PERSONA`, `ABBEY_MEMORY_BACKEND`, `ABBEY_AGENT`, `ABBEY_BACKEND`, `ABBEY_ABI_BIN`, `ABBEY_FORCE`, `ABBEY_PER_CWD`, `ABBEY_STATE_DIR`, the `ABBEY_EMBEDDING_*` provider settings, and `ABBEYD_SOCKET_PATH` plus exactly one daemon bearer source. The opt-in OpenAI-compatible embedding provider reads its credential only from `ABBEY_EMBEDDING_API_KEY` or `OPENAI_API_KEY`; never put it or the daemon bearer in `config.toml`, persisted diagnostics, logs, or subprocess argv.
 
 ## State locations
 
@@ -103,6 +114,7 @@ Accelerator **host detection** (`abbey platform compute`) is Current. GPU/NPU/TP
   `embedding-spaces-v2/<space_id>` stores. Legacy `embedding-spaces/` indexes are
   retained untouched and require an explicit backfill into v2.
 - `fm` transcripts (backend `fm`): `…/abbey/fm/<chat-id>.transcript`
+- `abbeyd` socket and recommended bearer: `…/abbey/daemon/` (owner-only; bearer is local state, never repository content)
 - Never commit state dirs
 
 ## Safety
@@ -127,7 +139,10 @@ cargo doc --no-deps --document-private-items
 # open: target/doc/abbey/index.html  (or $CARGO_TARGET_DIR/doc/abbey/)
 ```
 
-## Checklist before tagging a release
+## Per-release checklist template
+
+Keep every item unchecked in source. A release owner checks a copied instance only after
+collecting the corresponding evidence; this template is not evidence that a release passed.
 
 - [ ] `./check.sh` green
 - [ ] `abbey doctor` shows expected stamp/persona/role/memory/routing/learn lines

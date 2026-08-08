@@ -1,4 +1,5 @@
 # AGENTS.md
+<!-- abbey-claims-sha256: 1cff4b9922dd6eb1a09eced94a8452478a0e071cb0835fdf788dd9cbec335282 -->
 
 Guidance for AI coding agents in this repository.
 
@@ -8,7 +9,7 @@ Guidance for AI coding agents in this repository.
 - Purpose: Hybrid coding-agent CLI/TUI — personas, Max/Gemma roles, parallel lanes, OS control, skills/plugins inventory, self-learn — backed by **cursor-agent** (+ optional `abi`)
 - Stack: Rust nightly, edition 2024, `ratatui`, `clap`, path-dep `abi-ai`
 - Root: `/Users/donaldfilimon/abbey`
-- Install: `./install.sh` → `~/.local/bin/abbey`
+- Install: `./install.sh` → `~/.local/bin/abbey` + Unix `abbeyd`
 - Gate: `./check.sh` (fmt + clippy -D warnings + test + file-size)
 
 ## Spec
@@ -26,7 +27,12 @@ Guidance for AI coding agents in this repository.
 ## Layout
 
 ```
-src/main.rs           thin entry (<200 lines)
+src/main.rs           pre-Clap SIGPIPE + library entry (<200 lines)
+src/lib.rs            private implementation graph + narrow public API
+src/entry.rs          CLI/TUI routing behind the library boundary
+src/app_core/         typed read-only Status/Claims application contracts
+src/bin/abbeyd.rs     bounded authenticated Unix daemon entry
+src/daemon/           owner-only UDS protocol/server (no execution or memory ownership)
 src/cli.rs            clap Cli/Subcommand definitions
 src/commands.rs       clap dispatch
 src/output.rs         stdout helpers (broken pipe = success)
@@ -43,7 +49,7 @@ src/wdbx_bridge.rs   `abbey wdbx` → `abi wdbx` passthrough
 src/please_fix.rs   last-failure prompt + capture summarizer
 src/highlight.rs     syntect fence/file ANSI (auto on -p)
 src/subagents.rs     multi-lane + local peer agents
-src/claims.rs        Current/Proposed/OOS gate + refuse
+src/claims.rs        Current/Partial/Proposed/Blocked/OOS gate + refuse
 src/platform.rs      host OS/threads + GPU/NPU/TPU detect
 src/host.rs          portable PATH/PATHEXT + argv clamp + install paths
 src/surfaces.rs      vision/cot/runtime honesty surfaces
@@ -68,59 +74,39 @@ See [docs/architecture.md](docs/architecture.md). Personas via `abi-ai`; Max/Gem
 
 ### Claims gate
 
-CLI: `abbey claims` · `abbey claims proposed|oos` · `abbey claims refuse lora|multinode`
+CLI: `abbey claims` · `abbey claims partial|proposed|blocked|oos` · `abbey claims refuse lora|multinode`
 (source: `src/claims.rs` — keep this table and that module aligned).
 
-| Claim | Current | Proposed | Out of scope |
-| --- | --- | --- | --- |
-| cursor-agent backend (CLI/TUI) | ✓ | | |
-| Grok/Codex/Claude surface parity | partial | polish | reimplement runtimes |
-| Persona Abbey/Aviva/Abi | ✓ | | |
-| Max/Gemma role bindings | ✓ | | local Qwen/Gemma weights |
-| SQLite memory + self-learn | ✓ | | |
-| Parallel lanes (Max/Gemma/Aviva) | ✓ | | |
-| Multi-subagent fan-out (`subagents` / synthesize) | ✓ | | |
-| Local distributed peer agents (PATH CLIs) | ✓ | | multi-node agent mesh |
-| Goal-driven improve (`abbey improve` + check.sh bar) | ✓ | | multi-node / auto-done goals / unrestricted OS |
-| linux/macos/windows primary host targets (portable surfaces) | ✓ | | voice/fm macOS-only; see `platform paths` |
-| Multi-threaded subagent fan-out (`--jobs`) | ✓ | | GPU kernels |
-| WDBX cross-process lock (Unix + Windows via fs4) | ✓ | | |
-| GPU/NPU/TPU host detection (`abbey platform`) | ✓ | | accelerator runtime in Abbey |
-| CoT transcript viewer (`abbey cot`) | ✓ | | Abbey-owned CoT engine/UI |
-| Tool responsibility matrix (`abbey runtime`) | ✓ | | Abbey as tool runtime |
-| OOS honesty (`abbey oos` / lora|weights|accel|shell|host) | ✓ | | (surfaces refuse; do not implement) |
-| OS allowlist control | ✓ | | unrestricted shell |
-| Provider-explicit skills/plugins inventory | ✓ | | |
-| Unique build stamp | ✓ | | |
-| Modular src/ (<1k files) | ✓ | | |
-| WDBX in-process (feature `wdbx`, **off by default**) | ✓ | | |
-| WDBX CLI bridge (`abbey wdbx` → `abi wdbx`) | ✓ (needs a real `abi` binary) | | |
-| Hybrid loop (Gemma interpret → Max implement) | ✓ | | |
-| Route confidence / alternate / fallback (audit only) | ✓ | | |
-| `learn review` / `stats` (train_candidate curation) | ✓ | | |
-| On-device backend (`ABBEY_BACKEND=fm`, macOS 26+) | ✓ | | |
-| abi backend (`ABBEY_BACKEND=abi`) — no cursor-agent required | ✓ | | |
-| 3-D memory map (topic × recency × consolidation) | ✓ | | |
-| please-fix capture summarizer + argv clamp | ✓ | | |
-| Media path attach (`--image`/`--video`/`/image`) | ✓ | | local vision/video weights |
-| Image/video generation via agent tools (`imagine`/`generate`) | ✓ | | local vision/video weights |
-| Thinking aliases + `reason` structured wrap | ✓ | | Abbey-owned CoT engine |
-| macOS voice I/O (Premium/Enhanced TTS + on-device STT) | ✓ | | cloud TTS/STT SaaS |
-| MCP config inventory + explicit provider mgmt | ✓ | | Abbey as MCP host |
-| ACP peer inventory / launch (`acp run`) | ✓ | | Abbey as ACP host |
-| MCP/tools during a run (`--approve-mcps`) | ✓ | | Abbey as tool runtime |
-| Auto code highlighting (fences on `-p`/print · `abbey highlight`) | ✓ | | full markdown UI / LSP |
-| Lexical similarity search (`memory similar`, n-gram cosine) | ✓ | | learned/semantic ranking |
-| Semantic/learned memory (`none|apple|openai`, opt-in) | ✓ | | paid remote-call proof without credentials |
-| Memory filter by source / timestamp / project | ✓ | | |
-| ABI authenticated local multi-process proof (`mesh local-demo`, Unix only) | ✓ | | Windows process-tree support; production multi-host proof |
-| Production multi-host · multi-GPU · shared compute mesh | | ✓ | |
-| GPU/NPU/TPU compilation, training, inference in Abbey | | | ✓ |
-| Autonomous OS/service operation (no allowlist) | | | ✓ |
-| Abbey as her own trained model (own weights) | | | ✓ |
-| Local Qwen/Gemma weights | | | ✓ |
-| Fine-tuning / LoRA | | | ✓ |
-| Fake cost accounting | | | ✓ |
+| Claim | Status | Evidence boundary |
+| --- | --- | --- |
+| cursor-agent backend (CLI/TUI) | Current | Default executor, but not required when another configured backend is available. |
+| Grok/Codex/Claude surface parity | Partial | Selected aliases/surfaces ship; polish remains; vendor runtimes are not reimplemented. |
+| Persona Abbey/Aviva/Abi; Max/Gemma bindings | Current | Bindings are not local model weights. |
+| SQLite memory, self-learn, 3-D map, lexical + opt-in semantic search | Current | OpenAI live paid-call proof remains credential-dependent and unverified. |
+| WDBX in-process and cross-process lock | Current | Feature is off by default; fs4 maps to Unix `flock` and Windows `LockFileEx`. |
+| Hybrid loop, parallel lanes, multi-subagents, same-host PATH peers | Current | Does not prove a production multi-VM mesh. |
+| Goal-driven improve (`abbey improve` + `check.sh`) | Current | Bounded local apply; does not auto-mark goals done. |
+| Shared application core + authenticated read-only `abbeyd` | Current | Versioned Status/Claims only over owner-only Unix socket; not the Proposed owned agent/tool runtime. |
+| Portable Linux/macOS/Windows source surfaces | Current | macOS is locally exercised; Linux/Windows runtime proof remains open. |
+| GPU/NPU/TPU host detection | Current | Inventory only, not accelerator execution. |
+| CoT transcript viewer and structured `reason` wrap | Current | Abbey-owned hidden CoT engine/UI remains Out of scope. |
+| Tool responsibility matrix, MCP inventory, ACP peer launch | Current | Inventory/delegation only; no Abbey-owned host yet. |
+| OS allowlist + `--confirm` | Current | No allowlist bypass in the shipped edition. |
+| Media path attach, delegated image/video generation, macOS voice I/O | Current | These do not establish local neural media models. |
+| On-device `fm` and sibling `abi` backends | Current | Either can run without cursor-agent; a real `abi` binary is required for the ABI route. |
+| Tauri 2 + React/TypeScript desktop GUI | Proposed | Ratatui remains the shipped UI until implementation and runtime proof land. |
+| Provider-neutral Abbey-owned agent/tool runtime and MCP/ACP host | Proposed | Current executors remain delegated. |
+| Production-capable local model weights | Proposed | Max/Gemma remain bindings until actual weights and evaluation evidence exist. |
+| Fine-tuning / LoRA pipeline | Proposed | `train_candidate` is currently curation only. |
+| GPU/NPU/TPU compilation, training, and inference | Proposed | Hardware detection is the only Current accelerator surface. |
+| Local neural speech/image/video models | Proposed | Platform voice I/O and delegated media tools remain the Current substitutes. |
+| Personal-unrestricted separate edition | Proposed | Must be separately packaged, locally controlled, isolated, consented, and auditable; shipped Abbey keeps its safety invariant. |
+| Authenticated local three-VM shared-compute proof | Proposed | One Mac, three VMs is the next proof; Unix loopback multi-process is Current. |
+| Production separate-physical-host / geographic-HA / multi-GPU mesh | Proposed | Remains Proposed even after the local three-VM proof. |
+| Self-hosted Linux CI execution proof | Blocked | ABI dependency resolved at `32e372d7f522f5a6c9c0ef92c5b9612b52cfea05`; macOS ARM64 runner registered; Linux ARM64 not provisioned and its job is repository-variable gated; Linux/Windows proof stays open. |
+| Reimplement vendor runtimes; fake cost accounting; bundled cloud TTS/STT | Out of scope | Do not imply these through compatibility surfaces. |
+| Unrestricted shell/allowlist bypass in shipped Abbey | Out of scope | Separate personal edition is Proposed; this edition remains fail-closed. |
+| Abbey-owned hidden CoT engine / interactive hidden-CoT UI | Out of scope | Transcript viewing is Current. |
 
 ## Gotchas
 
@@ -157,5 +143,10 @@ CLI: `abbey claims` · `abbey claims proposed|oos` · `abbey claims refuse lora|
 ## Out of scope
 
 - Reimplementing Cursor / Grok / Codex runtimes
-- Fake token accounting; LoRA runners
+- Fake token accounting; shipped-edition allowlist bypass; bundled cloud TTS/STT
+- Abbey-owned hidden chain-of-thought engine / interactive hidden-CoT UI
 - Large clean-slate rewrites without confirmation
+
+LoRA and the other approved expansion capabilities are **Proposed**, not Out of
+scope; that status authorizes roadmap work, not a Current claim or a successful
+command before implementation and evidence.
