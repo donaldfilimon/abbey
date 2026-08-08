@@ -59,6 +59,7 @@ echo "== test (--features wdbx) =="
 cargo test --features wdbx
 
 echo "== claims/docs synchronization =="
+python3 -m unittest discover -s tools/tests -p 'test_*.py'
 python3 tools/check_claims_sync.py
 
 echo "== file size guard (main < 200, others warn > 800) =="

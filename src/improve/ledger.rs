@@ -1,10 +1,12 @@
 //! Goal ledger + todo checklist parsing (`tasks/goals.md`, `tasks/todo.md`).
 //!
-//! Tolerant markdown: `## Title`, `status: todo|in_progress|blocked|done`,
-//! and `- [ ]` / `- [x]` checkboxes. Abbey never auto-rewrites `goals.md`
-//! status — that stays a human/session close after evidence.
+//! Goals use `## Title` followed immediately by a machine-readable
+//! `<!-- abbey-goal` metadata block. Todo checkboxes remain tolerant markdown:
+//! `- [ ]` / `- [x]`. Abbey never auto-rewrites `goals.md` status — that stays
+//! a human/session close after evidence.
 
 use anyhow::{Result, bail};
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -13,6 +15,7 @@ pub enum GoalStatus {
     Todo,
     InProgress,
     Blocked,
+    Proposed,
     Done,
 }
 
@@ -20,9 +23,10 @@ impl GoalStatus {
     pub fn parse(s: &str) -> Option<Self> {
         match s.trim().to_ascii_lowercase().as_str() {
             "todo" => Some(Self::Todo),
-            "in_progress" | "in-progress" | "wip" => Some(Self::InProgress),
+            "in_progress" => Some(Self::InProgress),
             "blocked" => Some(Self::Blocked),
-            "done" | "closed" | "complete" => Some(Self::Done),
+            "proposed" => Some(Self::Proposed),
+            "done" => Some(Self::Done),
             _ => None,
         }
     }
@@ -32,20 +36,55 @@ impl GoalStatus {
             Self::Todo => "todo",
             Self::InProgress => "in_progress",
             Self::Blocked => "blocked",
+            Self::Proposed => "proposed",
             Self::Done => "done",
         }
     }
 
     pub fn is_open(self) -> bool {
-        matches!(self, Self::Todo | Self::InProgress | Self::Blocked)
+        matches!(
+            self,
+            Self::Todo | Self::InProgress | Self::Blocked | Self::Proposed
+        )
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct Goal {
+    /// Stable machine identifier. Titles may change; this must not.
+    pub id: String,
     pub title: String,
     pub status: GoalStatus,
+    pub implementation_evidence: String,
+    pub automated_test_evidence: String,
+    pub live_external_evidence: String,
+    pub next_action: String,
+    pub blocker_owner: Option<String>,
     pub body: String,
+}
+
+impl Goal {
+    /// Claims-bearing context supplied to improve lanes. Keeping the typed
+    /// metadata ahead of the narrative body prevents a long goal description
+    /// from hiding its evidence boundary or concrete next action.
+    fn runtime_context(&self) -> String {
+        let blocker_owner = self.blocker_owner.as_deref().unwrap_or("none");
+        let mut context = format!(
+            "Goal ID: {}\nImplementation evidence: {}\nAutomated-test evidence: {}\n\
+             Live/external evidence: {}\nNext action: {}\nBlocker owner: {}",
+            self.id,
+            self.implementation_evidence,
+            self.automated_test_evidence,
+            self.live_external_evidence,
+            self.next_action,
+            blocker_owner,
+        );
+        if !self.body.is_empty() {
+            context.push_str("\n\n");
+            context.push_str(&self.body);
+        }
+        context
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -83,7 +122,7 @@ impl Ledger {
         Ok(Self {
             goals_path,
             todo_path,
-            goals: parse_goals(&goals_text),
+            goals: parse_goals(&goals_text)?,
             todos: parse_todos(&todo_text),
         })
     }
@@ -124,12 +163,15 @@ impl Ledger {
         self.actionable_todos().count()
     }
 
-    /// Prefer actionable goals by default; an explicit hint may select a
-    /// blocked goal for inspection or a deliberate retry.
+    /// Prefer actionable goals by default; an explicit ID/title hint may
+    /// select a blocked or proposed goal for inspection or a deliberate retry.
     pub fn pick_goal(&self, hint: Option<&str>) -> Option<&Goal> {
         if let Some(h) = hint {
             let key = h.trim().to_ascii_lowercase();
             if !key.is_empty() {
+                if let Some(g) = self.goals.iter().find(|g| g.id.to_ascii_lowercase() == key) {
+                    return Some(g);
+                }
                 if let Some(g) = self
                     .goals
                     .iter()
@@ -157,7 +199,41 @@ impl Ledger {
     }
 
     pub fn next_actionable_todo(&self) -> Option<&TodoItem> {
+        if let Some(goal) = self.pick_goal(None)
+            && let Some(todo) = self
+                .actionable_todos()
+                .find(|todo| todo.text.contains(goal.next_action.trim()))
+        {
+            return Some(todo);
+        }
         self.actionable_todos().next()
+    }
+
+    /// Resolve the selected goal's declared next action against autonomous
+    /// work before falling back to the first actionable checklist item.
+    fn actionable_todo_for(&self, goal: &Goal) -> Option<&TodoItem> {
+        self.actionable_todos()
+            .find(|todo| todo.text.contains(goal.next_action.trim()))
+            .or_else(|| self.next_actionable_todo())
+    }
+
+    /// Explicit inspection may include blocked work, but Proposed/Done goals
+    /// must not inherit an unrelated open TODO merely because none matches.
+    fn open_todo_for(&self, goal: &Goal) -> Option<&TodoItem> {
+        if let Some(matching) = self
+            .open_todos()
+            .find(|todo| todo.text.contains(goal.next_action.trim()))
+        {
+            return Some(matching);
+        }
+        if matches!(
+            goal.status,
+            GoalStatus::Todo | GoalStatus::InProgress | GoalStatus::Blocked
+        ) {
+            self.next_open_todo()
+        } else {
+            None
+        }
     }
 }
 
@@ -200,15 +276,15 @@ pub fn pick_work(ledger: &Ledger, hint: Option<&str>, gate_only: bool) -> WorkFo
     }
     if let Some(g) = ledger.pick_goal(hint) {
         let todo = if hint.is_some() {
-            ledger.next_open_todo()
+            ledger.open_todo_for(g)
         } else {
-            ledger.next_actionable_todo()
+            ledger.actionable_todo_for(g)
         }
         .map(|t| t.text.clone());
         return WorkFocus::Goal {
             title: g.title.clone(),
             status: g.status,
-            body: g.body.clone(),
+            body: g.runtime_context(),
             todo,
         };
     }
@@ -223,48 +299,186 @@ pub fn pick_work(ledger: &Ledger, hint: Option<&str>, gate_only: bool) -> WorkFo
     WorkFocus::Stabilize
 }
 
-pub fn parse_goals(text: &str) -> Vec<Goal> {
+const GOAL_METADATA_OPEN: &str = "<!-- abbey-goal";
+const GOAL_METADATA_CLOSE: &str = "-->";
+
+#[derive(Default)]
+struct GoalMetadata {
+    id: Option<String>,
+    status: Option<GoalStatus>,
+    implementation_evidence: Option<String>,
+    automated_test_evidence: Option<String>,
+    live_external_evidence: Option<String>,
+    next_action: Option<String>,
+    blocker_owner: Option<String>,
+}
+
+/// Parse the claims-bearing goal ledger.
+///
+/// Every `##` goal heading must be followed on the very next line by:
+///
+/// ```text
+/// <!-- abbey-goal
+/// id: stable-kebab-case-id
+/// status: todo|in_progress|blocked|proposed|done
+/// implementation-evidence: concise source/commit evidence or none
+/// automated-test-evidence: concise automated evidence or none
+/// live-external-evidence: concise live/external evidence or none
+/// next-action: concrete next action or none when closed
+/// blocker-owner: required for blocked goals; optional otherwise
+/// -->
+/// ```
+///
+/// Unknown keys, duplicate keys/IDs, missing values, and unknown statuses are
+/// errors. This is deliberately fail-closed: malformed claims never become
+/// actionable `todo` work by accident.
+pub fn parse_goals(text: &str) -> Result<Vec<Goal>> {
+    let lines: Vec<&str> = text.lines().collect();
     let mut goals = Vec::new();
-    let mut title: Option<String> = None;
-    let mut status = GoalStatus::Todo;
-    let mut body = String::new();
+    let mut ids = HashSet::new();
+    let mut index = 0;
 
-    let flush = |goals: &mut Vec<Goal>,
-                 title: &mut Option<String>,
-                 status: &mut GoalStatus,
-                 body: &mut String| {
-        if let Some(t) = title.take() {
-            goals.push(Goal {
-                title: t,
-                status: *status,
-                body: body.trim().to_string(),
-            });
-            *status = GoalStatus::Todo;
-            body.clear();
+    while index < lines.len() {
+        let Some(title_text) = lines[index].strip_prefix("## ") else {
+            index += 1;
+            continue;
+        };
+        let heading_line = index + 1;
+        let title = title_text.trim();
+        if title.is_empty() {
+            bail!("goals.md:{heading_line}: goal heading must have a title");
         }
-    };
 
-    for line in text.lines() {
-        if let Some(rest) = line.strip_prefix("## ") {
-            flush(&mut goals, &mut title, &mut status, &mut body);
-            title = Some(rest.trim().to_string());
-            continue;
+        index += 1;
+        if lines.get(index).map(|line| line.trim()) != Some(GOAL_METADATA_OPEN) {
+            bail!(
+                "goals.md:{heading_line}: goal `{title}` must be followed immediately by `{GOAL_METADATA_OPEN}`"
+            );
         }
-        if title.is_none() {
-            continue;
-        }
-        let trimmed = line.trim();
-        if let Some(rest) = trimmed.strip_prefix("status:") {
-            if let Some(s) = GoalStatus::parse(rest) {
-                status = s;
+        index += 1;
+
+        let mut metadata = GoalMetadata::default();
+        let mut seen_keys = HashSet::new();
+        let mut closed = false;
+        while index < lines.len() {
+            let line_number = index + 1;
+            let line = lines[index].trim();
+            if line == GOAL_METADATA_CLOSE {
+                closed = true;
+                index += 1;
+                break;
             }
-            continue;
+            if line.is_empty() {
+                bail!(
+                    "goals.md:{line_number}: blank lines are not allowed in goal `{title}` metadata"
+                );
+            }
+            let Some((key, value)) = line.split_once(':') else {
+                bail!(
+                    "goals.md:{line_number}: malformed goal `{title}` metadata; expected `key: value`"
+                );
+            };
+            let key = key.trim();
+            let value = value.trim();
+            if key.is_empty() || value.is_empty() {
+                bail!(
+                    "goals.md:{line_number}: goal `{title}` metadata key and value must be nonempty"
+                );
+            }
+            if !seen_keys.insert(key.to_string()) {
+                bail!("goals.md:{line_number}: duplicate `{key}` metadata for goal `{title}`");
+            }
+            match key {
+                "id" => metadata.id = Some(value.to_string()),
+                "status" => {
+                    metadata.status = Some(GoalStatus::parse(value).ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "goals.md:{line_number}: unknown status `{value}` for goal `{title}`"
+                        )
+                    })?);
+                }
+                "implementation-evidence" => {
+                    metadata.implementation_evidence = Some(value.to_string());
+                }
+                "automated-test-evidence" => {
+                    metadata.automated_test_evidence = Some(value.to_string());
+                }
+                "live-external-evidence" => {
+                    metadata.live_external_evidence = Some(value.to_string());
+                }
+                "next-action" => metadata.next_action = Some(value.to_string()),
+                "blocker-owner" => metadata.blocker_owner = Some(value.to_string()),
+                _ => {
+                    bail!("goals.md:{line_number}: unknown metadata key `{key}` for goal `{title}`")
+                }
+            }
+            index += 1;
         }
-        body.push_str(line);
-        body.push('\n');
+        if !closed {
+            bail!("goals.md:{heading_line}: unclosed metadata for goal `{title}`");
+        }
+
+        let id = require_metadata(metadata.id, "id", title, heading_line)?;
+        if !ids.insert(id.clone()) {
+            bail!("goals.md:{heading_line}: duplicate goal id `{id}`");
+        }
+        let status = metadata.status.ok_or_else(|| {
+            anyhow::anyhow!("goals.md:{heading_line}: goal `{title}` is missing `status`")
+        })?;
+        let implementation_evidence = require_metadata(
+            metadata.implementation_evidence,
+            "implementation-evidence",
+            title,
+            heading_line,
+        )?;
+        let automated_test_evidence = require_metadata(
+            metadata.automated_test_evidence,
+            "automated-test-evidence",
+            title,
+            heading_line,
+        )?;
+        let live_external_evidence = require_metadata(
+            metadata.live_external_evidence,
+            "live-external-evidence",
+            title,
+            heading_line,
+        )?;
+        let next_action =
+            require_metadata(metadata.next_action, "next-action", title, heading_line)?;
+        if status == GoalStatus::Blocked && metadata.blocker_owner.is_none() {
+            bail!("goals.md:{heading_line}: blocked goal `{title}` is missing `blocker-owner`");
+        }
+
+        let body_start = index;
+        while index < lines.len() && !lines[index].starts_with("## ") {
+            index += 1;
+        }
+        let body = lines[body_start..index].join("\n").trim().to_string();
+        goals.push(Goal {
+            id,
+            title: title.to_string(),
+            status,
+            implementation_evidence,
+            automated_test_evidence,
+            live_external_evidence,
+            next_action,
+            blocker_owner: metadata.blocker_owner,
+            body,
+        });
     }
-    flush(&mut goals, &mut title, &mut status, &mut body);
-    goals
+
+    Ok(goals)
+}
+
+fn require_metadata(
+    value: Option<String>,
+    key: &str,
+    title: &str,
+    heading_line: usize,
+) -> Result<String> {
+    value.ok_or_else(|| {
+        anyhow::anyhow!("goals.md:{heading_line}: goal `{title}` is missing `{key}`")
+    })
 }
 
 /// Whether a `todo.md` heading marks capabilities Abbey deliberately does not
@@ -274,7 +488,10 @@ pub fn parse_goals(text: &str) -> Vec<Goal> {
 /// todo like "document why X is out of scope" is still picked up as work.
 pub fn is_deferred_section(section: &str) -> bool {
     let s = section.to_ascii_lowercase();
-    s.contains("deferred") || s.contains("out of scope") || s.contains("not abbey current")
+    s.contains("deferred")
+        || s.contains("proposed")
+        || s.contains("out of scope")
+        || s.contains("not abbey current")
 }
 
 /// Whether a todo section records an external blocker rather than locally
@@ -333,28 +550,241 @@ pub fn require_tasks_root(cwd: &Path) -> Result<PathBuf> {
 mod tests {
     use super::*;
 
+    fn goal(title: &str, status: GoalStatus) -> Goal {
+        Goal {
+            id: title.to_ascii_lowercase().replace(' ', "-"),
+            title: title.into(),
+            status,
+            implementation_evidence: "source evidence".into(),
+            automated_test_evidence: "unit test evidence".into(),
+            live_external_evidence: "not required".into(),
+            next_action: "none".into(),
+            blocker_owner: (status == GoalStatus::Blocked).then_some("repository owner".into()),
+            body: String::new(),
+        }
+    }
+
     #[test]
-    fn parse_goals_statuses() {
+    fn parses_current_goal_metadata_and_body() {
         let text = r#"
 # Goals
 
 ## Ship A
+<!-- abbey-goal
+id: ship-a
 status: done
+implementation-evidence: src/a.rs at commit abc123
+automated-test-evidence: cargo test ship_a passes
+live-external-evidence: live smoke passed 2026-08-08
+next-action: none; closed
+-->
 - landed
 
 ## Ship B
+<!-- abbey-goal
+id: ship-b
 status: in_progress
+implementation-evidence: partial implementation in src/b.rs
+automated-test-evidence: parser tests pass
+live-external-evidence: pending
+next-action: finish runtime wiring
+-->
 - still open
 
 ## Ship C
+<!-- abbey-goal
+id: ship-c
 status: todo
+implementation-evidence: none
+automated-test-evidence: none
+live-external-evidence: none
+next-action: implement first slice
+-->
 "#;
-        let g = parse_goals(text);
+        let g = parse_goals(text).expect("valid metadata");
         assert_eq!(g.len(), 3);
+        assert_eq!(g[0].id, "ship-a");
         assert_eq!(g[0].status, GoalStatus::Done);
+        assert_eq!(g[0].implementation_evidence, "src/a.rs at commit abc123");
+        assert_eq!(g[0].automated_test_evidence, "cargo test ship_a passes");
+        assert_eq!(g[0].live_external_evidence, "live smoke passed 2026-08-08");
+        assert_eq!(g[0].next_action, "none; closed");
+        assert_eq!(g[0].blocker_owner, None);
         assert_eq!(g[1].status, GoalStatus::InProgress);
         assert_eq!(g[2].status, GoalStatus::Todo);
         assert!(g[1].body.contains("still open"));
+    }
+
+    #[test]
+    fn proposed_is_visible_but_not_picked_by_default() {
+        let parsed = parse_goals(
+            r#"## Future runtime
+<!-- abbey-goal
+id: future-runtime
+status: proposed
+implementation-evidence: none
+automated-test-evidence: none
+live-external-evidence: none
+next-action: await roadmap approval
+-->
+"#,
+        )
+        .expect("proposed is a valid distinct status");
+        assert_eq!(parsed[0].status, GoalStatus::Proposed);
+
+        let ledger = Ledger {
+            goals_path: PathBuf::new(),
+            todo_path: PathBuf::new(),
+            goals: parsed,
+            todos: Vec::new(),
+        };
+
+        assert_eq!(ledger.open_goals().count(), 1);
+        assert!(ledger.pick_goal(None).is_none());
+        assert!(matches!(
+            pick_work(&ledger, None, false),
+            WorkFocus::Stabilize
+        ));
+
+        let explicit = ledger
+            .pick_goal(Some("future-runtime"))
+            .expect("explicit stable ID remains inspectable");
+        assert_eq!(explicit.status, GoalStatus::Proposed);
+    }
+
+    #[test]
+    fn duplicate_and_missing_goal_ids_are_rejected() {
+        let duplicate = r#"## One
+<!-- abbey-goal
+id: same-id
+status: done
+implementation-evidence: shipped
+automated-test-evidence: tested
+live-external-evidence: verified
+next-action: none
+-->
+## Two
+<!-- abbey-goal
+id: same-id
+status: todo
+implementation-evidence: none
+automated-test-evidence: none
+live-external-evidence: none
+next-action: start
+-->
+"#;
+        let error = parse_goals(duplicate).expect_err("duplicate IDs must fail closed");
+        assert!(error.to_string().contains("duplicate goal id `same-id`"));
+
+        let missing = r#"## Missing ID
+<!-- abbey-goal
+status: todo
+implementation-evidence: none
+automated-test-evidence: none
+live-external-evidence: none
+next-action: start
+-->
+"#;
+        let error = parse_goals(missing).expect_err("missing ID must fail closed");
+        assert!(error.to_string().contains("missing `id`"));
+
+        let empty = missing.replacen("status: todo", "id:\nstatus: todo", 1);
+        assert!(
+            parse_goals(&empty)
+                .expect_err("empty ID must fail closed")
+                .to_string()
+                .contains("key and value must be nonempty")
+        );
+    }
+
+    #[test]
+    fn missing_malformed_and_unknown_statuses_are_rejected() {
+        let missing = r#"## No status
+<!-- abbey-goal
+id: no-status
+implementation-evidence: none
+automated-test-evidence: none
+live-external-evidence: none
+next-action: decide status
+-->
+"#;
+        assert!(
+            parse_goals(missing)
+                .expect_err("missing status must fail closed")
+                .to_string()
+                .contains("missing `status`")
+        );
+
+        let unknown = missing.replace("id: no-status", "id: bad-status\nstatus: someday");
+        assert!(
+            parse_goals(&unknown)
+                .expect_err("unknown status must fail closed")
+                .to_string()
+                .contains("unknown status `someday`")
+        );
+
+        let malformed = missing.replace("id: no-status", "id: no-status\nstatus todo");
+        assert!(
+            parse_goals(&malformed)
+                .expect_err("malformed status must fail closed")
+                .to_string()
+                .contains("expected `key: value`")
+        );
+
+        let alias = missing.replace("id: no-status", "id: alias\nstatus: wip");
+        assert!(
+            parse_goals(&alias)
+                .expect_err("noncanonical status must fail closed")
+                .to_string()
+                .contains("unknown status `wip`")
+        );
+    }
+
+    #[test]
+    fn incomplete_metadata_and_blocked_without_owner_are_rejected() {
+        let missing_evidence = r#"## Incomplete
+<!-- abbey-goal
+id: incomplete
+status: todo
+implementation-evidence: none
+live-external-evidence: none
+next-action: add tests
+-->
+"#;
+        assert!(
+            parse_goals(missing_evidence)
+                .expect_err("all evidence fields are mandatory")
+                .to_string()
+                .contains("missing `automated-test-evidence`")
+        );
+
+        let blocked_without_owner = r#"## Externally blocked
+<!-- abbey-goal
+id: external-block
+status: blocked
+implementation-evidence: local slice shipped
+automated-test-evidence: local tests pass
+live-external-evidence: hosted proof pending
+next-action: owner provisions runner
+-->
+"#;
+        assert!(
+            parse_goals(blocked_without_owner)
+                .expect_err("blocked goals require an owner")
+                .to_string()
+                .contains("missing `blocker-owner`")
+        );
+    }
+
+    #[test]
+    fn metadata_must_be_immediately_below_the_heading() {
+        let text = "## Delayed\n\n<!-- abbey-goal\n";
+        assert!(
+            parse_goals(text)
+                .expect_err("detached metadata must be rejected")
+                .to_string()
+                .contains("must be followed immediately")
+        );
     }
 
     #[test]
@@ -363,16 +793,8 @@ status: todo
             goals_path: PathBuf::from("x"),
             todo_path: PathBuf::from("y"),
             goals: vec![
-                Goal {
-                    title: "Old".into(),
-                    status: GoalStatus::Todo,
-                    body: String::new(),
-                },
-                Goal {
-                    title: "Active".into(),
-                    status: GoalStatus::InProgress,
-                    body: String::new(),
-                },
+                goal("Old", GoalStatus::Todo),
+                goal("Active", GoalStatus::InProgress),
             ],
             todos: vec![TodoItem {
                 text: "do the thing".into(),
@@ -395,11 +817,7 @@ status: todo
         let ledger = Ledger {
             goals_path: PathBuf::new(),
             todo_path: PathBuf::new(),
-            goals: vec![Goal {
-                title: "Closed".into(),
-                status: GoalStatus::Done,
-                body: String::new(),
-            }],
+            goals: vec![goal("Closed", GoalStatus::Done)],
             todos: vec![TodoItem {
                 text: "done item".into(),
                 done: true,
@@ -430,11 +848,7 @@ status: todo
         let ledger = Ledger {
             goals_path: PathBuf::new(),
             todo_path: PathBuf::new(),
-            goals: vec![Goal {
-                title: "Closed".into(),
-                status: GoalStatus::Done,
-                body: String::new(),
-            }],
+            goals: vec![goal("Closed", GoalStatus::Done)],
             todos,
         };
         assert_eq!(ledger.open_todo_count(), 0, "deferred items are not work");
@@ -443,6 +857,43 @@ status: todo
             pick_work(&ledger, None, false),
             WorkFocus::Stabilize
         ));
+    }
+
+    #[test]
+    fn next_action_skips_earlier_work_and_proposed_todos_do_not_leak() {
+        let current = Goal {
+            next_action: "Phase 3 — Claims and ledgers as executable specifications".into(),
+            ..goal("Current program", GoalStatus::InProgress)
+        };
+        let ledger = Ledger {
+            goals_path: PathBuf::new(),
+            todo_path: PathBuf::new(),
+            goals: vec![goal("Future runtime", GoalStatus::Proposed), current],
+            todos: parse_todos(
+                "## Approved runtime roadmap (Proposed, not Current)\n\
+                 - [ ] build the proposed runtime\n\
+                 ## Current program\n\
+                 - [ ] **Phase 2 — Self-hosted runners replace the broken hosted-CI assumption**\n\
+                 - [ ] **Phase 3 — Claims and ledgers as executable specifications**\n",
+            ),
+        };
+
+        assert_eq!(ledger.open_todo_count(), 2);
+        assert_eq!(
+            ledger.next_actionable_todo().map(|todo| todo.text.as_str()),
+            Some("**Phase 3 — Claims and ledgers as executable specifications**")
+        );
+        let focus = pick_work(&ledger, None, false);
+        match focus {
+            WorkFocus::Goal { title, todo, .. } => {
+                assert_eq!(title, "Current program");
+                assert_eq!(
+                    todo.as_deref(),
+                    Some("**Phase 3 — Claims and ledgers as executable specifications**")
+                );
+            }
+            WorkFocus::Stabilize => panic!("current work should remain actionable"),
+        }
     }
 
     #[test]
@@ -464,9 +915,8 @@ status: todo
             goals_path: PathBuf::new(),
             todo_path: PathBuf::new(),
             goals: vec![Goal {
-                title: "Working CI on GitHub".into(),
-                status: GoalStatus::Blocked,
                 body: "Owner billing action required".into(),
+                ..goal("Working CI on GitHub", GoalStatus::Blocked)
             }],
             todos: parse_todos(
                 "## Working CI on GitHub (blocked — owner action)\n\

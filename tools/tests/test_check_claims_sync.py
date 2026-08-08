@@ -1,0 +1,129 @@
+from __future__ import annotations
+
+import importlib.util
+from pathlib import Path
+import tempfile
+import unittest
+
+
+SCRIPT = Path(__file__).resolve().parents[1] / "check_claims_sync.py"
+SPEC = importlib.util.spec_from_file_location("check_claims_sync", SCRIPT)
+assert SPEC is not None and SPEC.loader is not None
+claims_sync = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(claims_sync)
+
+
+def fixture_manifest() -> dict[str, object]:
+    evidence = {
+        "implementation_refs": ["src/example.rs"],
+        "automated_test_refs": ["example::tests"],
+        "local_live": {"state": "not_required", "reason": "not required"},
+        "external_required": {"state": "not_required", "reason": "not required"},
+    }
+    return {
+        "schema_version": 1,
+        "claims": [
+            {
+                "id": "example.current",
+                "name": "Example current capability",
+                "status": "current",
+                "note": "A deterministic example.",
+                "instead": None,
+                "evidence": evidence,
+                "next_action": "Maintain the regression.",
+                "blocker_owner": None,
+            }
+        ],
+    }
+
+
+class ClaimsSyncTests(unittest.TestCase):
+    def test_manifest_requires_object_schema_and_unique_ids(self) -> None:
+        manifest = fixture_manifest()
+        self.assertEqual(claims_sync.normalize_manifest(manifest), manifest)
+        duplicate = fixture_manifest()
+        duplicate["claims"].append(dict(duplicate["claims"][0]))
+        with self.assertRaisesRegex(ValueError, "duplicate claim id"):
+            claims_sync.normalize_manifest(duplicate)
+        unknown = fixture_manifest()
+        unknown["claims"][0]["status"] = "mystery"
+        with self.assertRaisesRegex(ValueError, "unknown status"):
+            claims_sync.normalize_manifest(unknown)
+
+    def test_generated_region_is_semantic_and_idempotent(self) -> None:
+        manifest = fixture_manifest()
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "README.md"
+            source = "# Example\n\nBody.\n"
+            region = claims_sync.render_region(
+                "table", manifest, "abc", path, "1 goal (1 done) · 1 checked / 0 open todos"
+            )
+            once = claims_sync.replace_generated_region(source, "table", region)
+            twice = claims_sync.replace_generated_region(once, "table", region)
+            self.assertEqual(once, twice)
+            self.assertIn("`example.current`", once)
+            self.assertIn("Example current capability", once)
+
+    def test_tampered_generated_row_is_repaired(self) -> None:
+        manifest = fixture_manifest()
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "README.md"
+            region = claims_sync.render_region(
+                "table", manifest, "abc", path, "1 goal (1 done) · 1 checked / 0 open todos"
+            )
+            expected = claims_sync.replace_generated_region("# Example\n", "table", region)
+            tampered = expected.replace("Current", "Proposed")
+            repaired = claims_sync.replace_generated_region(tampered, "table", region)
+            self.assertEqual(repaired, expected)
+
+    def test_duplicate_and_partial_markers_fail_closed(self) -> None:
+        manifest = fixture_manifest()
+        path = Path("README.md")
+        region = claims_sync.render_region(
+            "summary", manifest, "abc", path, "1 goal (1 done) · 1 checked / 0 open todos"
+        )
+        begin = "<!-- BEGIN abbey-generated:claims-summary -->"
+        with self.assertRaisesRegex(ValueError, "incomplete"):
+            claims_sync.replace_generated_region(begin, "summary", region)
+        duplicate = f"{region}\n{region}\n"
+        with self.assertRaisesRegex(ValueError, "duplicate"):
+            claims_sync.replace_generated_region(duplicate, "summary", region)
+        unknown = "<!-- BEGIN abbey-generated:claims-table -->\n"
+        with self.assertRaisesRegex(ValueError, "unknown"):
+            claims_sync.replace_generated_region(unknown, "summary", region)
+
+    def test_evidence_document_contains_all_evidence_classes(self) -> None:
+        rendered = claims_sync.render_evidence_document(
+            fixture_manifest(), "abc", "1 goal (1 done) · 1 checked / 0 open todos"
+        )
+        self.assertIn("Implementation evidence", rendered)
+        self.assertIn("Automated tests", rendered)
+        self.assertIn("Local/live evidence", rendered)
+        self.assertIn("External evidence required", rendered)
+        self.assertIn("Blocker owner", rendered)
+
+    def test_goal_metadata_is_strict_and_counts_workflow(self) -> None:
+        goals = """# Goals
+## Active
+<!-- abbey-goal
+id: active
+status: in_progress
+implementation-evidence: src/example.rs
+automated-test-evidence: example::tests
+live-external-evidence: not required
+next-action: finish it
+-->
+Body.
+"""
+        parsed = claims_sync.parse_goal_metadata(goals)
+        self.assertEqual(parsed[0]["id"], "active")
+        self.assertEqual(
+            claims_sync.workflow_summary(goals, "- [x] done\n- [ ] open\n"),
+            "1 goals (1 in_progress) · 1 checked / 1 open todos",
+        )
+        with self.assertRaisesRegex(ValueError, "unknown status"):
+            claims_sync.parse_goal_metadata(goals.replace("in_progress", "mystery"))
+
+
+if __name__ == "__main__":
+    unittest.main()

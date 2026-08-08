@@ -7,6 +7,13 @@
 
 use crate::output;
 use anyhow::{Result, bail};
+use std::collections::HashSet;
+
+mod registry;
+
+use registry::{Claim, EvidenceState};
+pub const CLAIMS: &[Claim] = registry::CLAIMS;
+pub const CLAIMS_SCHEMA_VERSION: u16 = 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Status {
@@ -39,267 +46,6 @@ impl Status {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct Claim {
-    pub name: &'static str,
-    pub status: Status,
-    /// Short note — evidence boundary, blocker, or Current caveat.
-    pub note: &'static str,
-    /// What to use instead (Current substitute), if any.
-    pub instead: Option<&'static str>,
-}
-
-/// Canonical gate. Keep in sync with `AGENTS.md` claims table.
-pub const CLAIMS: &[Claim] = &[
-    // —— Current ——
-    Claim {
-        name: "cursor-agent backend (CLI/TUI)",
-        status: Status::Current,
-        note: "default executor; alternatives: ABBEY_BACKEND=fm|grok|abi",
-        instead: None,
-    },
-    Claim {
-        name: "Grok/Codex/Claude surface parity",
-        status: Status::Partial,
-        note: "selected UX aliases and compatible surfaces ship; parity polish continues; not a reimplementation of vendor runtimes",
-        instead: None,
-    },
-    Claim {
-        name: "Persona Abbey/Aviva/Abi",
-        status: Status::Current,
-        note: "via abi-ai contracts",
-        instead: None,
-    },
-    Claim {
-        name: "Max/Gemma role bindings",
-        status: Status::Current,
-        note: "model-alias bindings — not local Qwen/Gemma weights",
-        instead: None,
-    },
-    Claim {
-        name: "SQLite memory + self-learn",
-        status: Status::Current,
-        note: "STM/LTM/activity/train_candidate + learn pipeline",
-        instead: None,
-    },
-    Claim {
-        name: "3-D memory map (topic × recency × consolidation)",
-        status: Status::Current,
-        note: "deterministic axes — not a learned embedding space",
-        instead: None,
-    },
-    Claim {
-        name: "WDBX in-process memory",
-        status: Status::Current,
-        note: "behind --features wdbx (off by default); fs4 advisory lock (flock / LockFileEx)",
-        instead: None,
-    },
-    Claim {
-        name: "Hybrid loop / route audit / learn review",
-        status: Status::Current,
-        note: "Gemma→Max correlated; confidence/alt/fb audit-only; train curation",
-        instead: None,
-    },
-    Claim {
-        name: "Multi-subagent + local PATH peers",
-        status: Status::Current,
-        note: "abbey subagents — same-host peers, not multi-node mesh",
-        instead: None,
-    },
-    Claim {
-        name: "Goal-driven improve loop (local subagents + check.sh bar)",
-        status: Status::Current,
-        note: "abbey improve — ledger pick + bounded --confirm apply; not multi-node / not unrestricted OS",
-        instead: Some("abbey improve status|plan|run --confirm"),
-    },
-    Claim {
-        name: "shared application core + authenticated read-only abbeyd client/server",
-        status: Status::Current,
-        note: "abbey daemon status|claims uses versioned read-only contracts over an owner-only bounded Unix socket; Windows named pipes, durable jobs, model/tool or shell execution, and memory ownership are not implemented",
-        instead: Some(
-            "abbey daemon status|claims · abbey::app_core · abbeyd with an owner-only bearer file",
-        ),
-    },
-    Claim {
-        name: "MCP/ACP inventory + voice + highlight + media/imagine",
-        status: Status::Current,
-        note: "inventory/peer launch and delegated media surfaces; no Abbey-owned tool host or local neural media models yet",
-        instead: None,
-    },
-    Claim {
-        name: "On-device backend (ABBEY_BACKEND=fm)",
-        status: Status::Current,
-        note: "macOS 26+ Foundation Models CLI; account/gen refuse; local MCP inventory remains available",
-        instead: None,
-    },
-    Claim {
-        name: "abi backend (ABBEY_BACKEND=abi) — no cursor-agent required",
-        status: Status::Current,
-        note: "one-shot `abi complete`: deterministic persona-template locally by default; \
-               bare claude-* / live|anthropic opt into abi's Anthropic transport (abi credentials); \
-               cursor role/thinking bindings stay local (no silent --live); needs a real `abi` binary; \
-               account/gen refuse; local MCP inventory remains available; Abbey-side transcript continuity (bounded context prefix — \
-               abi itself stays stateless); default backend selectable via config `backend` key",
-        instead: None,
-    },
-    Claim {
-        name: "linux/macos/windows/unix primary host targets (portable surfaces)",
-        status: Status::Current,
-        note: "CLI/TUI/sqlite/WDBX-lock/subagents/os-allowlist; PATHEXT which_bin; voice+fm macOS-only",
-        instead: Some("abbey platform · abbey platform paths"),
-    },
-    Claim {
-        name: "multi-threaded subagent fan-out (--jobs)",
-        status: Status::Current,
-        note: "std::thread parallelism sized from available_parallelism — not GPU kernels",
-        instead: Some("abbey platform threads · ABBEY_SUBAGENT_JOBS"),
-    },
-    Claim {
-        name: "WDBX cross-process lock (Unix + Windows)",
-        status: Status::Current,
-        note: "fs4 advisory lock (flock / LockFileEx); behind --features wdbx",
-        instead: None,
-    },
-    Claim {
-        name: "GPU/NPU/TPU presence detection (report-only)",
-        status: Status::Current,
-        note: "abbey platform compute — inventory only, not Abbey accelerators",
-        instead: Some("abbey platform · abbey compute"),
-    },
-    Claim {
-        name: "CoT transcript viewer (`abbey cot`)",
-        status: Status::Current,
-        note: "saves/displays structured reason output — not an Abbey CoT engine",
-        instead: Some("abbey cot show|run · abbey reason"),
-    },
-    Claim {
-        name: "tool responsibility matrix (`abbey runtime`)",
-        status: Status::Current,
-        note: "documents who executes what; Abbey is not the tool host",
-        instead: Some("abbey runtime · --approve-mcps"),
-    },
-    Claim {
-        name: "OOS honesty surfaces (`abbey oos` / lora|weights|accel|shell|host)",
-        status: Status::Current,
-        note: "status + refuse for deferred capabilities — does not implement them",
-        instead: Some("abbey oos · abbey claims refuse …"),
-    },
-    Claim {
-        name: "lexical similarity search over memory (feature-hash cosine)",
-        status: Status::Current,
-        note: "abi-ai n-gram hash + cosine at query time — independent of learned providers",
-        instead: Some("abbey memory similar <query> | --id <id>"),
-    },
-    Claim {
-        name: "semantic / learned memory embedding space",
-        status: Status::Current,
-        note: "opt-in apple|openai provider; space-isolated SQLite/WDBX persistence; \
-               Apple paraphrase ranking locally verified; remote live call unverified",
-        instead: Some("abbey memory semantic · memory embed status|--all"),
-    },
-    Claim {
-        name: "memory filter by source / timestamp / project",
-        status: Status::Current,
-        note: "shared exact metadata plus inclusive RFC 3339 bounds on SQLite and WDBX",
-        instead: Some("memory search|similar|semantic|map|near|export filter flags"),
-    },
-    Claim {
-        name: "ABI WDBX authenticated local multi-process proof",
-        status: Status::Current,
-        note: "abbey mesh local-demo on Unix; 3..=9 loopback ABI processes; not production multi-VM",
-        instead: Some("ABBEY_ABI_BIN=<real binary> abbey mesh local-demo --nodes 3"),
-    },
-    // —— Proposed (approved roadmap; refusal paths remain fail-closed) ——
-    Claim {
-        name: "Tauri 2 + React/TypeScript desktop GUI",
-        status: Status::Proposed,
-        note: "approved product direction; the shipped interactive UI remains the ratatui TUI",
-        instead: Some("abbey tui"),
-    },
-    Claim {
-        name: "provider-neutral Abbey-owned agent and tool runtime / MCP-ACP host",
-        status: Status::Proposed,
-        note: "approved product direction; current execution is delegated to configured cursor-agent, abi, fm, or grok backends",
-        instead: Some("abbey runtime · abbey mcp|acp · --approve-mcps"),
-    },
-    Claim {
-        name: "production-capable local model weights",
-        status: Status::Proposed,
-        note: "approved product direction; Max/Gemma names currently remain role bindings, not bundled weights",
-        instead: Some("ABBEY_BACKEND=fm · abbey weights"),
-    },
-    Claim {
-        name: "fine-tuning / LoRA pipeline",
-        status: Status::Proposed,
-        note: "approved product direction; train_candidate remains curation substrate and performs no weight updates",
-        instead: Some("abbey lora · abbey learn-review · abbey learn-stats"),
-    },
-    Claim {
-        name: "GPU/NPU/TPU compilation, training, and inference in Abbey",
-        status: Status::Proposed,
-        note: "approved product direction; current compute commands detect and report hardware only",
-        instead: Some("abbey accel · abbey platform compute"),
-    },
-    Claim {
-        name: "local neural speech / image / video models",
-        status: Status::Proposed,
-        note: "approved product direction; current voice is platform I/O and current media generation is delegated to agent tools",
-        instead: Some("abbey voice · abbey --image · abbey imagine"),
-    },
-    Claim {
-        name: "personal-unrestricted separate edition",
-        status: Status::Proposed,
-        note: "approved only as an explicitly separate, locally controlled edition with isolation and auditable consent; shipped Abbey keeps allowlist + --confirm",
-        instead: Some("abbey allowlist · abbey os execute --confirm · abbey shell"),
-    },
-    Claim {
-        name: "authenticated local three-VM shared-compute proof, then production separate-host / geographic-HA / multi-GPU mesh",
-        status: Status::Proposed,
-        note: "approved product direction; the authenticated local multi-process proof does not establish separate-VM deployment",
-        instead: Some("abbey mesh local-demo · abbey subagents --peers (same host)"),
-    },
-    // —— Blocked proof ——
-    Claim {
-        name: "self-hosted Linux CI execution proof",
-        status: Status::Blocked,
-        note: "ABI dependency blocker resolved by merged ABI 32e372d7f522f5a6c9c0ef92c5b9612b52cfea05; macOS ARM64 self-hosted is registered, but Linux ARM64 is not provisioned and its job stays gated by an explicit repository variable; Linux/Windows runtime proof remains open",
-        instead: Some(
-            "run ./check.sh locally; provision/register Linux ARM64 and obtain successful Linux/Windows jobs before claiming cross-platform CI green",
-        ),
-    },
-    // —— Out of scope ——
-    Claim {
-        name: "unrestricted shell or allowlist bypass in the shipped edition",
-        status: Status::OutOfScope,
-        note: "the shipped edition keeps os_control allowlist + --confirm as a safety invariant; only the separately packaged personal edition is Proposed",
-        instead: Some("abbey allowlist · abbey os execute --confirm · abbey shell"),
-    },
-    Claim {
-        name: "Abbey-owned chain-of-thought engine / interactive CoT UI",
-        status: Status::OutOfScope,
-        note: "reason uses Cursor thinking models; cot is a transcript viewer only",
-        instead: Some("abbey cot show · abbey reason"),
-    },
-    Claim {
-        name: "fake cost / token accounting",
-        status: Status::OutOfScope,
-        note: "/cost stays N/A for cursor-agent",
-        instead: Some("Cursor account dashboard"),
-    },
-    Claim {
-        name: "bundled cloud TTS/STT SaaS",
-        status: Status::OutOfScope,
-        note: "cloud speech services are not bundled; local neural speech is Proposed separately",
-        instead: Some("abbey voice · System Settings → Spoken Content"),
-    },
-    Claim {
-        name: "reimplement Grok/Codex/Claude runtimes",
-        status: Status::OutOfScope,
-        note: "surface parity only",
-        instead: None,
-    },
-];
-
 pub fn by_status(status: Status) -> impl Iterator<Item = &'static Claim> {
     CLAIMS.iter().filter(move |c| c.status == status)
 }
@@ -314,20 +60,238 @@ pub fn lookup(keyword: &str) -> Vec<&'static Claim> {
         .collect()
 }
 
+/// Validate evidence completeness and status semantics before exposing the
+/// registry to synchronization tooling.
+pub fn validate_registry() -> Result<()> {
+    validate_claims(CLAIMS)
+}
+
+fn validate_claims(claims: &[Claim]) -> Result<()> {
+    let mut ids = HashSet::with_capacity(claims.len());
+    for claim in claims {
+        if claim.id.is_empty()
+            || claim.id.starts_with('-')
+            || claim.id.ends_with('-')
+            || claim.id.contains("--")
+            || !claim
+                .id
+                .bytes()
+                .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+        {
+            bail!(
+                "claim `{}` has invalid stable id `{}`",
+                claim.name,
+                claim.id
+            );
+        }
+        if !ids.insert(claim.id) {
+            bail!("duplicate claim id `{}`", claim.id);
+        }
+        for (field, value) in [
+            ("name", claim.name),
+            ("note", claim.note),
+            ("next_action", claim.next_action),
+        ] {
+            if value.trim().is_empty() {
+                bail!("claim `{}` has empty {field}", claim.id);
+            }
+        }
+        validate_refs(
+            claim.id,
+            "implementation_refs",
+            claim.evidence.implementation_refs,
+        )?;
+        validate_refs(
+            claim.id,
+            "automated_test_refs",
+            claim.evidence.automated_test_refs,
+        )?;
+        validate_evidence_state(claim.id, "local_live", claim.evidence.local_live)?;
+        validate_evidence_state(
+            claim.id,
+            "external_required",
+            claim.evidence.external_required,
+        )?;
+
+        let implementation_is_empty = claim.evidence.implementation_refs.is_empty();
+        let tests_are_empty = claim.evidence.automated_test_refs.is_empty();
+        match claim.status {
+            Status::Current => {
+                require_built_evidence(claim, implementation_is_empty, tests_are_empty)?;
+                if is_required(claim.evidence.local_live)
+                    || is_required(claim.evidence.external_required)
+                {
+                    bail!(
+                        "Current claim `{}` cannot carry unsatisfied required evidence",
+                        claim.id
+                    );
+                }
+                require_no_blocker_owner(claim)?;
+            }
+            Status::Partial => {
+                require_built_evidence(claim, implementation_is_empty, tests_are_empty)?;
+                if !is_required(claim.evidence.local_live)
+                    && !is_required(claim.evidence.external_required)
+                {
+                    bail!(
+                        "Partial claim `{}` must identify its missing proof",
+                        claim.id
+                    );
+                }
+                require_no_blocker_owner(claim)?;
+            }
+            Status::Proposed => {
+                if !implementation_is_empty || !tests_are_empty {
+                    bail!(
+                        "Proposed claim `{}` cannot present implementation or tests as shipped evidence",
+                        claim.id
+                    );
+                }
+                if !is_required(claim.evidence.local_live) {
+                    bail!(
+                        "Proposed claim `{}` must require future local implementation proof",
+                        claim.id
+                    );
+                }
+                require_no_blocker_owner(claim)?;
+            }
+            Status::Blocked => {
+                require_built_evidence(claim, implementation_is_empty, tests_are_empty)?;
+                if !is_required(claim.evidence.external_required) {
+                    bail!(
+                        "Blocked claim `{}` must identify required external evidence",
+                        claim.id
+                    );
+                }
+                if claim
+                    .blocker_owner
+                    .is_none_or(|owner| owner.trim().is_empty())
+                {
+                    bail!("Blocked claim `{}` must identify a blocker owner", claim.id);
+                }
+            }
+            Status::OutOfScope => {
+                require_built_evidence(claim, implementation_is_empty, tests_are_empty)?;
+                if !matches!(claim.evidence.local_live, EvidenceState::NotRequired(_))
+                    || !matches!(
+                        claim.evidence.external_required,
+                        EvidenceState::NotRequired(_)
+                    )
+                {
+                    bail!(
+                        "Out-of-scope claim `{}` cannot carry pending or success evidence",
+                        claim.id
+                    );
+                }
+                require_no_blocker_owner(claim)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_refs(claim_id: &str, field: &str, refs: &[&str]) -> Result<()> {
+    if refs.iter().any(|value| value.trim().is_empty()) {
+        bail!("claim `{claim_id}` has an empty {field} entry");
+    }
+    let unique = refs.iter().copied().collect::<HashSet<_>>();
+    if unique.len() != refs.len() {
+        bail!("claim `{claim_id}` has duplicate {field} entries");
+    }
+    Ok(())
+}
+
+fn validate_evidence_state(claim_id: &str, field: &str, state: EvidenceState) -> Result<()> {
+    match state {
+        EvidenceState::Verified(refs) | EvidenceState::Required(refs) => {
+            if refs.is_empty() {
+                bail!("claim `{claim_id}` has {field} state without references");
+            }
+            validate_refs(claim_id, field, refs)
+        }
+        EvidenceState::NotRequired(reason) => {
+            if reason.trim().is_empty() {
+                bail!("claim `{claim_id}` has {field} without a reason");
+            }
+            Ok(())
+        }
+    }
+}
+
+fn require_built_evidence(
+    claim: &Claim,
+    implementation_is_empty: bool,
+    tests_are_empty: bool,
+) -> Result<()> {
+    if implementation_is_empty || tests_are_empty {
+        bail!(
+            "{} claim `{}` requires implementation and automated-test evidence",
+            claim.status.label(),
+            claim.id
+        );
+    }
+    Ok(())
+}
+
+fn require_no_blocker_owner(claim: &Claim) -> Result<()> {
+    if claim.blocker_owner.is_some() {
+        bail!(
+            "{} claim `{}` cannot carry a blocker owner",
+            claim.status.label(),
+            claim.id
+        );
+    }
+    Ok(())
+}
+
+fn is_required(state: EvidenceState) -> bool {
+    matches!(state, EvidenceState::Required(_))
+}
+
+fn evidence_state_json(state: EvidenceState) -> serde_json::Value {
+    match state {
+        EvidenceState::Verified(refs) => serde_json::json!({
+            "state": "verified",
+            "refs": refs,
+        }),
+        EvidenceState::Required(refs) => serde_json::json!({
+            "state": "required",
+            "refs": refs,
+        }),
+        EvidenceState::NotRequired(reason) => serde_json::json!({
+            "state": "not_required",
+            "reason": reason,
+        }),
+    }
+}
+
 /// Serialize the canonical claims ledger for repository synchronization tools.
 pub fn manifest_json() -> Result<String> {
+    validate_registry()?;
     let rows = CLAIMS
         .iter()
         .map(|claim| {
             serde_json::json!({
+                "id": claim.id,
                 "name": claim.name,
                 "status": claim.status.key(),
                 "note": claim.note,
                 "instead": claim.instead,
+                "evidence": {
+                    "implementation_refs": claim.evidence.implementation_refs,
+                    "automated_test_refs": claim.evidence.automated_test_refs,
+                    "local_live": evidence_state_json(claim.evidence.local_live),
+                    "external_required": evidence_state_json(claim.evidence.external_required),
+                },
+                "next_action": claim.next_action,
+                "blocker_owner": claim.blocker_owner,
             })
         })
         .collect::<Vec<_>>();
-    Ok(serde_json::to_string_pretty(&rows)?)
+    Ok(serde_json::to_string_pretty(&serde_json::json!({
+        "schema_version": CLAIMS_SCHEMA_VERSION,
+        "claims": rows,
+    }))?)
 }
 
 /// Print the gate. `filter`: None = all sections; otherwise a status or keyword.
@@ -573,11 +537,112 @@ mod tests {
 
     #[test]
     fn gate_has_all_five_statuses() {
+        assert_eq!(CLAIMS.len(), 39);
         assert_eq!(by_status(Status::Current).count(), 24);
         assert_eq!(by_status(Status::Partial).count(), 1);
         assert_eq!(by_status(Status::Proposed).count(), 8);
         assert_eq!(by_status(Status::Blocked).count(), 1);
         assert_eq!(by_status(Status::OutOfScope).count(), 5);
+    }
+
+    #[test]
+    fn stable_ids_are_unique_and_well_formed() {
+        let ids = CLAIMS.iter().map(|claim| claim.id).collect::<HashSet<_>>();
+        assert_eq!(ids.len(), CLAIMS.len());
+        for id in ids {
+            assert!(!id.is_empty());
+            assert!(!id.starts_with('-'));
+            assert!(!id.ends_with('-'));
+            assert!(!id.contains("--"));
+            assert!(
+                id.bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-'),
+                "invalid claim id: {id}"
+            );
+        }
+    }
+
+    #[test]
+    fn every_claim_has_exact_structured_evidence_coverage() {
+        validate_registry().expect("canonical registry must be internally valid");
+        for claim in CLAIMS {
+            assert!(!claim.next_action.trim().is_empty(), "{}", claim.id);
+            validate_evidence_state(claim.id, "local_live", claim.evidence.local_live).unwrap();
+            validate_evidence_state(
+                claim.id,
+                "external_required",
+                claim.evidence.external_required,
+            )
+            .unwrap();
+            if claim.status == Status::Proposed {
+                assert!(
+                    claim.evidence.implementation_refs.is_empty(),
+                    "{}",
+                    claim.id
+                );
+                assert!(
+                    claim.evidence.automated_test_refs.is_empty(),
+                    "{}",
+                    claim.id
+                );
+            } else {
+                assert!(
+                    !claim.evidence.implementation_refs.is_empty(),
+                    "{}",
+                    claim.id
+                );
+                assert!(
+                    !claim.evidence.automated_test_refs.is_empty(),
+                    "{}",
+                    claim.id
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn registry_status_invariants_fail_closed() {
+        let mut claims = CLAIMS.to_vec();
+
+        let current = claims
+            .iter()
+            .position(|claim| claim.status == Status::Current)
+            .unwrap();
+        claims[current].evidence.local_live = EvidenceState::Required(&["missing proof"]);
+        assert!(validate_claims(&claims).is_err());
+
+        claims = CLAIMS.to_vec();
+        let partial = claims
+            .iter()
+            .position(|claim| claim.status == Status::Partial)
+            .unwrap();
+        claims[partial].evidence.local_live = EvidenceState::NotRequired("none");
+        assert!(validate_claims(&claims).is_err());
+
+        claims = CLAIMS.to_vec();
+        let proposed = claims
+            .iter()
+            .position(|claim| claim.status == Status::Proposed)
+            .unwrap();
+        claims[proposed].evidence.implementation_refs = &["src/not-shipped.rs"];
+        assert!(validate_claims(&claims).is_err());
+
+        claims = CLAIMS.to_vec();
+        let blocked = claims
+            .iter()
+            .position(|claim| claim.status == Status::Blocked)
+            .unwrap();
+        claims[blocked].blocker_owner = None;
+        assert!(validate_claims(&claims).is_err());
+
+        claims = CLAIMS.to_vec();
+        let out_of_scope = claims
+            .iter()
+            .position(|claim| claim.status == Status::OutOfScope)
+            .unwrap();
+        claims[out_of_scope].evidence.external_required =
+            EvidenceState::Required(&["impossible proof"]);
+        assert!(validate_claims(&claims).is_err());
     }
 
     #[test]
@@ -702,14 +767,19 @@ mod tests {
 
     #[test]
     fn manifest_is_ordered_machine_readable_claims_source() {
-        let manifest: Vec<serde_json::Value> =
-            serde_json::from_str(&manifest_json().unwrap()).unwrap();
-        assert_eq!(manifest.len(), CLAIMS.len());
-        assert_eq!(manifest[0]["name"], CLAIMS[0].name);
-        assert_eq!(manifest[0]["status"], CLAIMS[0].status.key());
-        assert_eq!(
-            manifest.last().unwrap()["name"],
-            CLAIMS.last().unwrap().name
-        );
+        let manifest: serde_json::Value = serde_json::from_str(&manifest_json().unwrap()).unwrap();
+        assert_eq!(manifest["schema_version"], CLAIMS_SCHEMA_VERSION);
+        let rows = manifest["claims"].as_array().expect("claims array");
+        assert_eq!(rows.len(), CLAIMS.len());
+        assert_eq!(rows[0]["id"], CLAIMS[0].id);
+        assert_eq!(rows[0]["name"], CLAIMS[0].name);
+        assert_eq!(rows[0]["status"], CLAIMS[0].status.key());
+        assert!(rows[0]["evidence"]["implementation_refs"].is_array());
+        assert!(rows[0]["evidence"]["automated_test_refs"].is_array());
+        assert!(rows[0]["evidence"]["local_live"]["state"].is_string());
+        assert!(rows[0]["evidence"]["external_required"]["state"].is_string());
+        assert!(rows[0]["next_action"].is_string());
+        assert!(rows[0].get("blocker_owner").is_some());
+        assert_eq!(rows.last().unwrap()["name"], CLAIMS.last().unwrap().name);
     }
 }
