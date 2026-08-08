@@ -115,7 +115,18 @@ impl AgentBackend {
     /// A *set but unknown* env value still means cursor (long-standing
     /// behaviour) — it does not fall through to the config key, so a typo in
     /// the env var cannot silently activate a config-chosen backend.
+    ///
+    /// Resolved once per process and cached: neither the environment nor the
+    /// config file changes mid-run, and `read_chat` (hence the TUI's per-frame
+    /// draw) calls this — without the cache every frame re-read `config.toml`
+    /// from disk. The TUI's Ctrl-B switch sets `AgentConfig::backend`
+    /// directly and does not depend on this.
     pub fn from_env() -> Self {
+        static RESOLVED: std::sync::OnceLock<AgentBackend> = std::sync::OnceLock::new();
+        *RESOLVED.get_or_init(Self::resolve_from_env_and_config)
+    }
+
+    fn resolve_from_env_and_config() -> Self {
         if let Ok(v) = std::env::var("ABBEY_BACKEND") {
             if !v.trim().is_empty() {
                 return Self::parse(&v).unwrap_or(Self::Cursor);
@@ -125,6 +136,18 @@ impl AgentBackend {
             .ok()
             .and_then(|c| c.backend.as_deref().and_then(Self::parse))
             .unwrap_or(Self::Cursor)
+    }
+
+    /// State subdirectory holding this backend's conversation transcripts.
+    ///
+    /// Shared by `apply_global_flags` and the TUI's backend switch so a
+    /// mid-session switch cannot write one backend's transcripts into
+    /// another's directory.
+    pub fn transcript_subdir(self) -> &'static str {
+        match self {
+            Self::Abi => "abi",
+            _ => "fm",
+        }
     }
 
     pub fn label(self) -> &'static str {
@@ -595,6 +618,17 @@ mod tests {
         assert!(AgentBackend::Grok.has_server_sessions());
         assert!(!AgentBackend::Fm.has_server_sessions());
         assert!(!AgentBackend::Abi.has_server_sessions());
+    }
+
+    #[test]
+    fn transcript_subdir_separates_abi_from_fm() {
+        assert_eq!(AgentBackend::Abi.transcript_subdir(), "abi");
+        assert_eq!(AgentBackend::Fm.transcript_subdir(), "fm");
+        // A mid-session switch must not land abi turns in fm's directory.
+        assert_ne!(
+            AgentBackend::Abi.transcript_subdir(),
+            AgentBackend::Fm.transcript_subdir()
+        );
     }
 
     #[test]

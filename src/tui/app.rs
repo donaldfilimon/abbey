@@ -138,6 +138,9 @@ impl App {
             };
             self.cfg.backend = next;
             self.cfg.agent_path = path;
+            // Transcripts are per-backend; without this a switch to abi would
+            // append abi turns into the fm directory chosen at startup.
+            self.cfg.transcript_dir = Some(self.state.state_dir.join(next.transcript_subdir()));
             self.live_models.clear();
             if !next.supports_account_surface() {
                 self.refresh_models_live();
