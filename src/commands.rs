@@ -76,7 +76,7 @@ pub fn run_cli(cli: Cli, state: AbbeyState, mut cfg: AgentConfig) -> Result<i32>
         Some(Commands::Plan { prompt }) => run_agent(&mut cfg, &state, &prompt, RunSpec::plan()),
         Some(Commands::Print { prompt }) => {
             cfg.print = true;
-            let chat = state.read_chat();
+            let chat = state.read_chat_for(cfg.backend);
             let (st, out, err) = cfg.run_capture(chat.as_deref(), &prompt)?;
             eprint!("{err}");
             highlight::emit_agent_stdout(&out);
@@ -186,7 +186,7 @@ pub fn run_cli(cli: Cli, state: AbbeyState, mut cfg: AgentConfig) -> Result<i32>
         }
         Some(Commands::Doctor) => cmd_doctor(&state, &cfg),
         Some(Commands::Debug) => cmd_debug(&state, &cfg),
-        Some(Commands::ChatId) => match state.read_chat() {
+        Some(Commands::ChatId) => match state.read_chat_for(cfg.backend) {
             Some(id) => {
                 println!("{id}");
                 Ok(0)
@@ -219,7 +219,9 @@ pub fn run_cli(cli: Cli, state: AbbeyState, mut cfg: AgentConfig) -> Result<i32>
             None | Some(MemoryCmd::Chat) => {
                 println!(
                     "chat: {}",
-                    state.read_chat().unwrap_or_else(|| "(none)".into())
+                    state
+                        .read_chat_for(cfg.backend)
+                        .unwrap_or_else(|| "(none)".into())
                 );
                 println!("chat file: {}", state.active_chat_file().display());
                 println!("history:");

@@ -99,7 +99,24 @@ impl AbbeyState {
         }
     }
 
+    /// Active chat id, resolved without the env override.
+    ///
+    /// Prefer [`Self::read_chat_for`] wherever an `AgentConfig` is in scope:
+    /// this variant cannot honour `CURSOR_AGENT_CHAT_ID` because it does not
+    /// know whether the live backend has server sessions.
     pub fn read_chat(&self) -> Option<String> {
+        self.read_chat_for(crate::agent::AgentBackend::Abi)
+    }
+
+    /// Active chat id as seen by `backend`.
+    ///
+    /// The backend is passed in rather than read from
+    /// `AgentBackend::from_env()`, which resolves once per process: the TUI's
+    /// Ctrl-B switch changes `AgentConfig::backend` at runtime, so consulting
+    /// the cached value here would let a session that *started* on cursor keep
+    /// adopting `CURSOR_AGENT_CHAT_ID` after switching to `abi`/`fm`, which is
+    /// exactly the hijack described below.
+    pub fn read_chat_for(&self, backend: crate::agent::AgentBackend) -> Option<String> {
         // `CURSOR_AGENT_CHAT_ID` lets Abbey join the cursor session it was
         // launched from — but it is a *cursor* chat id. Under a backend with
         // no server sessions (`fm`, `abi`) it names nothing real, and adopting
@@ -107,7 +124,7 @@ impl AbbeyState {
         // running `abbey -c` under `abi` inside a cursor session resumed the
         // cursor id, so every turn wrote a fresh transcript and continuity
         // silently never happened.
-        if crate::agent::AgentBackend::from_env().has_server_sessions() {
+        if backend.has_server_sessions() {
             if let Ok(id) = std::env::var("CURSOR_AGENT_CHAT_ID") {
                 let id = id.trim().to_string();
                 if !id.is_empty() {

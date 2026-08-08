@@ -175,9 +175,11 @@ impl AgentBackend {
 
     /// Server-side chat sessions (`create-chat` / `--resume <id>`).
     ///
-    /// `fm` backs Abbey's chat id with a local transcript file; `abi complete`
-    /// is a stateless one-shot — Abbey still mints a chat id so state plumbing
-    /// works, but no continuity rides on it and none is claimed.
+    /// Both `fm` and `abi` back Abbey's chat id with a local transcript file
+    /// instead: `fm` natively (`--resume`/`--save-transcript`), `abi`
+    /// Abbey-side (the id names the transcript whose tail is replayed as a
+    /// context prefix). Neither has a *server* session, which is what this
+    /// predicate is about — it gates `create-chat` and the stale-chat retry.
     pub fn has_server_sessions(self) -> bool {
         matches!(self, Self::Cursor | Self::Grok)
     }
@@ -328,9 +330,9 @@ impl AgentConfig {
 
     pub fn create_chat(&self) -> Result<String> {
         // `fm` and `abi` have no server and no chat ids — Abbey mints one
-        // locally. Under `fm` it is backed by a transcript file; under `abi`
-        // each turn is a stateless one-shot and the id only feeds state
-        // plumbing (no continuity is claimed).
+        // locally and backs it with a transcript file: `fm` passes that file
+        // to the backend, `abi` replays its tail as a context prefix because
+        // `abi complete` itself keeps no state between turns.
         if !self.backend.has_server_sessions() {
             let id = uuid::Uuid::new_v4().to_string();
             if let Some(dir) = &self.transcript_dir {
@@ -505,7 +507,7 @@ pub fn run_resilient(
         return run_once(cfg, None, prompt_and_rest, capture_print);
     }
 
-    let chat = if let Some(id) = state.read_chat() {
+    let chat = if let Some(id) = state.read_chat_for(cfg.backend) {
         id
     } else {
         let id = cfg.create_chat()?;
@@ -618,6 +620,28 @@ mod tests {
         assert!(AgentBackend::Grok.has_server_sessions());
         assert!(!AgentBackend::Fm.has_server_sessions());
         assert!(!AgentBackend::Abi.has_server_sessions());
+    }
+
+    /// The `CURSOR_AGENT_CHAT_ID` guard in `AbbeyState::read_chat_for` keys off
+    /// this predicate. It once keyed off the process-cached `from_env()`
+    /// instead, so a TUI session that *started* on cursor kept adopting the
+    /// cursor chat id after Ctrl-B switched to `abi`/`fm` — the transcript
+    /// hijack that guard exists to prevent. Passing the live backend is what
+    /// makes the switch safe, in both directions.
+    #[test]
+    fn cursor_chat_env_is_honoured_per_backend_not_per_process() {
+        for switched_to in [AgentBackend::Fm, AgentBackend::Abi] {
+            assert!(
+                !switched_to.has_server_sessions(),
+                "{switched_to:?} must not adopt CURSOR_AGENT_CHAT_ID"
+            );
+        }
+        for switched_to in [AgentBackend::Cursor, AgentBackend::Grok] {
+            assert!(
+                switched_to.has_server_sessions(),
+                "{switched_to:?} must still adopt a real cursor session id"
+            );
+        }
     }
 
     #[test]

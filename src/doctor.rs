@@ -322,7 +322,9 @@ fn backend_source() -> String {
 }
 
 pub fn cmd_doctor(state: &AbbeyState, cfg: &AgentConfig) -> Result<i32> {
-    let chat = state.read_chat().unwrap_or_else(|| "(none)".into());
+    let chat = state
+        .read_chat_for(cfg.backend)
+        .unwrap_or_else(|| "(none)".into());
     for line in build_info::lines() {
         let _ = output::println(line);
     }
@@ -436,9 +438,13 @@ pub fn cmd_doctor(state: &AbbeyState, cfg: &AgentConfig) -> Result<i32> {
         ));
     }
     let _ = output::println(match config::resolve_abi_bin(&abbey_cfg) {
+        // Name the real source: this line used to hardcode `ABBEY_BACKEND=abi`
+        // and so lied whenever the backend came from the config key — the same
+        // defect `backend_source()` was written to fix one line above.
         Some(p) if backend == agent::AgentBackend::Abi => format!(
-            "abi backend: active (ABBEY_BACKEND=abi → {}) — local persona-template; \
+            "abi backend: active (from {} → {}) — local persona-template; \
              claude-*/live models use abi's Anthropic transport; Abbey-side transcript continuity",
+            backend_source(),
             p.display()
         ),
         Some(p) => format!(

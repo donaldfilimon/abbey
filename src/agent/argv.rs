@@ -238,8 +238,10 @@ impl AgentConfig {
     /// would be parsed as (or joined into) completion input.
     ///
     /// `abi complete` is a stateless one-shot with no instruction channel and
-    /// no resume — the mode note rides in the input text, `resume_id` is
-    /// ignored, and the prompt always follows a real `--` separator.
+    /// no `--resume` flag, so the mode note rides in the input text and the
+    /// prompt always follows a real `--` separator. `resume_id` is **not**
+    /// forwarded to abi — it names the transcript whose bounded tail is
+    /// injected as a context prefix (Abbey-side continuity).
     fn build_args_abi(&self, resume_id: Option<&str>, prompt_and_rest: &[String]) -> Vec<String> {
         let prompts = clamp_prompt_args(prompt_and_rest);
         let mut args = vec!["complete".to_string()];

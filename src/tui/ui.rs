@@ -118,7 +118,10 @@ fn draw_home(f: &mut Frame, area: Rect, app: &App) {
         .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
         .split(area);
 
-    let chat = app.state.read_chat().unwrap_or_else(|| "—".into());
+    let chat = app
+        .state
+        .read_chat_for(app.cfg.backend)
+        .unwrap_or_else(|| "—".into());
     let body = vec![
         Line::from(vec![
             Span::styled("model  ", dim_style(&app.theme)),

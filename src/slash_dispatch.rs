@@ -159,7 +159,9 @@ pub fn dispatch_slash(input: &str, state: &AbbeyState, cfg: &mut AgentConfig) ->
             let n: usize = rest.parse().unwrap_or(15);
             println!(
                 "chat: {}",
-                state.read_chat().unwrap_or_else(|| "(none)".into())
+                state
+                    .read_chat_for(cfg.backend)
+                    .unwrap_or_else(|| "(none)".into())
             );
             for e in state.history(n) {
                 println!("{}\t{}\t{}", e.timestamp, e.chat_id, e.cwd);

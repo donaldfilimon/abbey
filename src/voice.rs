@@ -431,7 +431,7 @@ pub fn ask(
          This answer will be read aloud.",
     );
     cfg.print = true;
-    let chat = state.read_chat();
+    let chat = state.read_chat_for(cfg.backend);
     let (st, out, err) = cfg.run_capture(chat.as_deref(), &[prompt])?;
     eprint!("{err}");
     let reply = out.trim();

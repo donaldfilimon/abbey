@@ -220,7 +220,7 @@ impl App {
     pub fn kpi_chips(&self) -> Vec<(String, String)> {
         let chat = self
             .state
-            .read_chat()
+            .read_chat_for(self.cfg.backend)
             .map(|c| c.chars().take(8).collect::<String>())
             .unwrap_or_else(|| "—".into());
         let persona = self

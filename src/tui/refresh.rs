@@ -137,7 +137,10 @@ impl App {
     }
 
     pub fn refresh_doctor(&mut self) {
-        let chat = self.state.read_chat().unwrap_or_else(|| "(none)".into());
+        let chat = self
+            .state
+            .read_chat_for(self.cfg.backend)
+            .unwrap_or_else(|| "(none)".into());
         let ac = config::AbbeyConfig::load().unwrap_or_default();
         let mut lines = crate::build_info::lines();
         lines.extend([
