@@ -34,7 +34,7 @@ fn scratch_store(test: &str) -> (ScratchDir, RuntimeStore) {
 fn new_run(key: &str) -> NewRun {
     NewRun {
         conversation_id: None,
-        idempotency_key: key.into(),
+        idempotency_key: key.parse().unwrap(),
         request_digest: "a".repeat(64),
     }
 }
@@ -88,8 +88,8 @@ fn transition_and_event_are_atomic_and_sequences_are_monotonic() {
     let started = store
         .transition_run(
             &run.id,
-            RunStatus::Queued,
-            RunStatus::Starting,
+            RunState::Queued,
+            RunState::Starting,
             event("run_starting"),
         )
         .unwrap();
@@ -99,18 +99,18 @@ fn transition_and_event_are_atomic_and_sequences_are_monotonic() {
     let running = store
         .transition_run(
             &run.id,
-            RunStatus::Starting,
-            RunStatus::Running,
+            RunState::Starting,
+            RunState::Running,
             event("run_running"),
         )
         .unwrap();
     assert_eq!(
         (started.sequence, note.sequence, running.sequence),
-        (1, 2, 3)
+        (2, 3, 4)
     );
     assert_eq!(
         store.get_run(&run.id).unwrap().unwrap().status,
-        RunStatus::Running
+        RunState::Running
     );
     let events = store.run_events(&run.id).unwrap();
     assert_eq!(
@@ -118,14 +118,14 @@ fn transition_and_event_are_atomic_and_sequences_are_monotonic() {
             .iter()
             .map(|entry| entry.sequence)
             .collect::<Vec<_>>(),
-        vec![0, 1, 2, 3]
+        vec![1, 2, 3, 4]
     );
 
     assert!(matches!(
         store.transition_run(
             &run.id,
-            RunStatus::Starting,
-            RunStatus::Failed,
+            RunState::Starting,
+            RunState::Failed,
             event("stale")
         ),
         Err(StoreError::UnexpectedStatus { .. })
@@ -140,8 +140,8 @@ fn terminal_runs_are_immutable() {
     store
         .transition_run(
             &run.id,
-            RunStatus::Queued,
-            RunStatus::Failed,
+            RunState::Queued,
+            RunState::Failed,
             event("run_failed"),
         )
         .unwrap();
@@ -152,8 +152,8 @@ fn terminal_runs_are_immutable() {
     assert!(matches!(
         store.transition_run(
             &run.id,
-            RunStatus::Failed,
-            RunStatus::Starting,
+            RunState::Failed,
+            RunState::Starting,
             event("restart")
         ),
         Err(StoreError::TerminalRun { .. })
@@ -173,40 +173,40 @@ fn reopen_interrupts_active_runs_but_preserves_queued_runs() {
         store
             .transition_run(
                 &starting.id,
-                RunStatus::Queued,
-                RunStatus::Starting,
+                RunState::Queued,
+                RunState::Starting,
                 event("starting"),
             )
             .unwrap();
         store
             .transition_run(
                 &running.id,
-                RunStatus::Queued,
-                RunStatus::Starting,
+                RunState::Queued,
+                RunState::Starting,
                 event("starting"),
             )
             .unwrap();
         store
             .transition_run(
                 &running.id,
-                RunStatus::Starting,
-                RunStatus::Running,
+                RunState::Starting,
+                RunState::Running,
                 event("running"),
             )
             .unwrap();
         store
             .transition_run(
                 &cancelling.id,
-                RunStatus::Queued,
-                RunStatus::Starting,
+                RunState::Queued,
+                RunState::Starting,
                 event("starting"),
             )
             .unwrap();
         store
             .transition_run(
                 &cancelling.id,
-                RunStatus::Starting,
-                RunStatus::CancelRequested,
+                RunState::Starting,
+                RunState::CancelRequested,
                 event("cancel_requested"),
             )
             .unwrap();
@@ -217,19 +217,19 @@ fn reopen_interrupts_active_runs_but_preserves_queued_runs() {
     assert_eq!(reopened.recovered_runs(), 3);
     assert_eq!(
         reopened.get_run(&queued_id).unwrap().unwrap().status,
-        RunStatus::Queued
+        RunState::Queued
     );
     assert_eq!(
         reopened.get_run(&running_id).unwrap().unwrap().status,
-        RunStatus::Interrupted
+        RunState::Interrupted
     );
     assert_eq!(
         reopened.get_run(&starting_id).unwrap().unwrap().status,
-        RunStatus::Interrupted
+        RunState::Interrupted
     );
     assert_eq!(
         reopened.get_run(&cancelling_id).unwrap().unwrap().status,
-        RunStatus::Interrupted
+        RunState::Interrupted
     );
     assert_eq!(
         reopened
@@ -247,14 +247,14 @@ fn conversation_foreign_keys_and_backend_binding_are_enforced() {
     let (_dir, store) = scratch_store("conversation");
     let conversation = ConversationId::new();
     assert!(matches!(
-        store.set_conversation_backend(&conversation, "cursor", Some("remote")),
+        store.set_conversation_backend(&conversation, BackendSelection::Cursor, Some("remote")),
         Err(StoreError::ConversationNotFound(_))
     ));
     store.create_conversation(&conversation).unwrap();
     let binding = store
-        .set_conversation_backend(&conversation, "cursor", Some("remote"))
+        .set_conversation_backend(&conversation, BackendSelection::Cursor, Some("remote"))
         .unwrap();
-    assert_eq!(binding.backend, "cursor");
+    assert_eq!(binding.backend, BackendSelection::Cursor);
 
     let mut run = new_run("conversation-key");
     run.conversation_id = Some(conversation.clone());
@@ -270,7 +270,7 @@ fn conversation_foreign_keys_and_backend_binding_are_enforced() {
 
 #[test]
 fn audit_metadata_is_bounded_and_redacts_prompts_and_credentials() {
-    let (_dir, store) = scratch_store("audit");
+    let (dir, store) = scratch_store("audit");
     let metadata = AuditMetadata::new(serde_json::json!({
         "operation": "status",
         "prompt": "private user prompt",
@@ -291,13 +291,15 @@ fn audit_metadata_is_bounded_and_redacts_prompts_and_credentials() {
     assert!(!encoded.contains("sk-private"));
     assert!(!encoded.contains("Bearer abcdef"));
     assert!(encoded.contains("visible"));
-    let persisted = store.audit_events_for_run(None).unwrap();
+    drop(store);
+    let reopened = RuntimeStore::open(&RuntimeStore::path_for_state_dir(dir.path())).unwrap();
+    let persisted = reopened.audit_events_for_run(None).unwrap();
     assert_eq!(persisted.len(), 1);
     assert_eq!(persisted[0].metadata, saved.metadata);
 
     assert!(
         AuditMetadata::new(serde_json::json!({
-            "large": "x".repeat(MAX_AUDIT_STRING_BYTES + 1)
+            "large": "x".repeat(513)
         }))
         .is_err()
     );

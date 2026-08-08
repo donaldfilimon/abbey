@@ -1,19 +1,16 @@
 //! SQLite-backed runtime lifecycle store.
 
 use super::migrations;
-use crate::app_core::{ConversationId, RunId};
+use crate::app_core::{BackendSelection, ConversationId, IdempotencyKey, RunId, RunState};
 use chrono::{SecondsFormat, Utc};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
 use std::sync::Mutex;
 use std::time::Duration;
 use thiserror::Error;
 
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
-const MAX_IDEMPOTENCY_KEY_BYTES: usize = 256;
 const MAX_EVENT_KIND_BYTES: usize = 64;
 const MAX_EVENT_PAYLOAD_BYTES: usize = 16 * 1024;
 
@@ -34,13 +31,10 @@ pub enum StoreError {
     RunNotFound(String),
     #[error("conversation was not found: {0}")]
     ConversationNotFound(String),
-    #[error("run status changed concurrently: expected {expected}, found {found}")]
-    UnexpectedStatus {
-        expected: RunStatus,
-        found: RunStatus,
-    },
-    #[error("invalid run transition from {from} to {to}")]
-    InvalidTransition { from: RunStatus, to: RunStatus },
+    #[error("run status changed concurrently: expected {expected:?}, found {found:?}")]
+    UnexpectedStatus { expected: RunState, found: RunState },
+    #[error("invalid run transition from {from:?} to {to:?}")]
+    InvalidTransition { from: RunState, to: RunState },
     #[error("terminal run {run_id} cannot be modified")]
     TerminalRun { run_id: String },
     #[error("runtime database contains invalid data: {0}")]
@@ -55,98 +49,10 @@ pub enum StoreError {
     Json(#[from] serde_json::Error),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum RunStatus {
-    Queued,
-    Starting,
-    Running,
-    CancelRequested,
-    Succeeded,
-    Failed,
-    Cancelled,
-    Interrupted,
-}
-
-impl RunStatus {
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Queued => "queued",
-            Self::Starting => "starting",
-            Self::Running => "running",
-            Self::CancelRequested => "cancel_requested",
-            Self::Succeeded => "succeeded",
-            Self::Failed => "failed",
-            Self::Cancelled => "cancelled",
-            Self::Interrupted => "interrupted",
-        }
-    }
-
-    #[must_use]
-    pub const fn is_terminal(self) -> bool {
-        matches!(
-            self,
-            Self::Succeeded | Self::Failed | Self::Cancelled | Self::Interrupted
-        )
-    }
-
-    const fn permits(self, next: Self) -> bool {
-        match self {
-            Self::Queued => matches!(next, Self::Starting | Self::Cancelled | Self::Failed),
-            Self::Starting => matches!(
-                next,
-                Self::Running
-                    | Self::CancelRequested
-                    | Self::Cancelled
-                    | Self::Failed
-                    | Self::Interrupted
-            ),
-            Self::Running => matches!(
-                next,
-                Self::CancelRequested
-                    | Self::Succeeded
-                    | Self::Failed
-                    | Self::Cancelled
-                    | Self::Interrupted
-            ),
-            Self::CancelRequested => matches!(
-                next,
-                Self::Succeeded | Self::Failed | Self::Cancelled | Self::Interrupted
-            ),
-            Self::Succeeded | Self::Failed | Self::Cancelled | Self::Interrupted => false,
-        }
-    }
-}
-
-impl std::fmt::Display for RunStatus {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(self.as_str())
-    }
-}
-
-impl FromStr for RunStatus {
-    type Err = StoreError;
-
-    fn from_str(value: &str) -> Result<Self, Self::Err> {
-        match value {
-            "queued" => Ok(Self::Queued),
-            "starting" => Ok(Self::Starting),
-            "running" => Ok(Self::Running),
-            "cancel_requested" => Ok(Self::CancelRequested),
-            "succeeded" => Ok(Self::Succeeded),
-            "failed" => Ok(Self::Failed),
-            "cancelled" => Ok(Self::Cancelled),
-            "interrupted" => Ok(Self::Interrupted),
-            _ => Err(StoreError::CorruptData("unknown run status")),
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NewRun {
     pub conversation_id: Option<ConversationId>,
-    pub idempotency_key: String,
+    pub idempotency_key: IdempotencyKey,
     /// Lower-case hexadecimal SHA-256 of the canonical request envelope.
     pub request_digest: String,
 }
@@ -155,9 +61,9 @@ pub struct NewRun {
 pub struct RunRecord {
     pub id: RunId,
     pub conversation_id: Option<ConversationId>,
-    pub idempotency_key: String,
+    pub idempotency_key: IdempotencyKey,
     pub request_digest: String,
-    pub status: RunStatus,
+    pub status: RunState,
     pub next_event_sequence: u64,
     pub created_at: String,
     pub updated_at: String,
@@ -181,7 +87,7 @@ pub struct RunEvent {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConversationBackend {
     pub conversation_id: ConversationId,
-    pub backend: String,
+    pub backend: BackendSelection,
     pub backend_conversation_id: Option<String>,
     pub updated_at: String,
 }
@@ -229,16 +135,18 @@ impl RuntimeStore {
     pub fn set_conversation_backend(
         &self,
         conversation_id: &ConversationId,
-        backend: &str,
+        backend: BackendSelection,
         backend_conversation_id: Option<&str>,
     ) -> Result<ConversationBackend, StoreError> {
-        validate_label(backend, "backend is empty or exceeds 64 bytes")?;
-        if backend_conversation_id.is_some_and(|value| value.len() > 512) {
+        if backend_conversation_id
+            .is_some_and(|value| value.len() > 512 || value.chars().any(char::is_control))
+        {
             return Err(StoreError::InvalidInput(
-                "backend conversation id exceeds 512 bytes",
+                "backend conversation id contains controls or exceeds 512 bytes",
             ));
         }
         let timestamp = now();
+        let backend_name = backend_as_str(backend);
         let conn = self.conn.lock().expect("runtime sqlite lock poisoned");
         let changed = conn.execute(
             "INSERT INTO conversation_backends(
@@ -249,7 +157,7 @@ impl RuntimeStore {
                 updated_at=excluded.updated_at",
             params![
                 conversation_id.as_str(),
-                backend,
+                backend_name,
                 backend_conversation_id,
                 timestamp
             ],
@@ -257,7 +165,7 @@ impl RuntimeStore {
         match changed {
             Ok(_) => Ok(ConversationBackend {
                 conversation_id: conversation_id.clone(),
-                backend: backend.to_owned(),
+                backend,
                 backend_conversation_id: backend_conversation_id.map(str::to_owned),
                 updated_at: timestamp,
             }),
@@ -272,7 +180,7 @@ impl RuntimeStore {
         validate_new_run(&new_run)?;
         let mut conn = self.conn.lock().expect("runtime sqlite lock poisoned");
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        if let Some(existing) = run_by_idempotency_key(&tx, &new_run.idempotency_key)? {
+        if let Some(existing) = run_by_idempotency_key(&tx, new_run.idempotency_key.as_str())? {
             if existing.request_digest == new_run.request_digest {
                 tx.commit()?;
                 return Ok(existing);
@@ -286,11 +194,11 @@ impl RuntimeStore {
             "INSERT INTO runs(
                 id, conversation_id, idempotency_key, request_digest, status,
                 next_event_sequence, created_at, updated_at
-             ) VALUES (?1, ?2, ?3, ?4, 'queued', 1, ?5, ?5)",
+             ) VALUES (?1, ?2, ?3, ?4, 'queued', 2, ?5, ?5)",
             params![
                 id.as_str(),
                 new_run.conversation_id.as_ref().map(ConversationId::as_str),
-                new_run.idempotency_key,
+                new_run.idempotency_key.as_str(),
                 new_run.request_digest,
                 timestamp
             ],
@@ -310,7 +218,7 @@ impl RuntimeStore {
         }
         tx.execute(
             "INSERT INTO run_events(run_id, sequence, kind, payload_json, created_at)
-             VALUES (?1, 0, 'run_queued', '{}', ?2)",
+             VALUES (?1, 1, 'run_queued', '{}', ?2)",
             params![id.as_str(), timestamp],
         )?;
         let record = run_by_id(&tx, &id)?
@@ -327,8 +235,8 @@ impl RuntimeStore {
     pub fn transition_run(
         &self,
         id: &RunId,
-        expected: RunStatus,
-        next: RunStatus,
+        expected: RunState,
+        next: RunState,
         event: NewRunEvent,
     ) -> Result<RunEvent, StoreError> {
         validate_event(&event)?;
@@ -346,7 +254,7 @@ impl RuntimeStore {
                 run_id: id.to_string(),
             });
         }
-        if !run.status.permits(next) {
+        if run.status.validate_transition(next).is_err() {
             return Err(StoreError::InvalidTransition {
                 from: run.status,
                 to: next,
@@ -369,9 +277,10 @@ impl RuntimeStore {
         }
         let timestamp = now();
         let stored = append_event(&tx, &run, event, &timestamp)?;
+        let next_sequence = sql_sequence(run.next_event_sequence + 1)?;
         tx.execute(
             "UPDATE runs SET next_event_sequence=?2, updated_at=?3 WHERE id=?1",
-            params![id.as_str(), run.next_event_sequence + 1, timestamp],
+            params![id.as_str(), next_sequence, timestamp],
         )?;
         tx.commit()?;
         Ok(stored)
@@ -426,21 +335,13 @@ impl RuntimeStore {
         run_id: Option<&RunId>,
     ) -> Result<Vec<AuditEvent>, StoreError> {
         let conn = self.conn.lock().expect("runtime sqlite lock poisoned");
-        let (sql, parameter) = if let Some(run_id) = run_id {
-            (
-                "SELECT id, run_id, action, outcome, metadata_json, created_at
-                 FROM audit_events WHERE run_id=?1 ORDER BY id",
-                Some(run_id.as_str()),
-            )
-        } else {
-            (
-                "SELECT id, run_id, action, outcome, metadata_json, created_at
-                 FROM audit_events WHERE run_id IS NULL ORDER BY id",
-                None,
-            )
-        };
-        let mut statement = conn.prepare(sql)?;
-        let rows = statement.query_map([parameter], row_to_audit)?;
+        let mut statement = conn.prepare(
+            "SELECT id, run_id, action, outcome, metadata_json, created_at
+             FROM audit_events
+             WHERE run_id=?1 OR (?1 IS NULL AND run_id IS NULL)
+             ORDER BY id",
+        )?;
+        let rows = statement.query_map([run_id.map(RunId::as_str)], row_to_audit)?;
         rows.collect::<rusqlite::Result<Vec<_>>>()
             .map_err(Into::into)
     }
@@ -480,7 +381,7 @@ fn recover_interrupted_on(conn: &mut Connection) -> Result<usize, StoreError> {
         update_and_append(
             &tx,
             &run,
-            RunStatus::Interrupted,
+            RunState::Interrupted,
             NewRunEvent {
                 kind: "run_recovered_interrupted".into(),
                 payload: serde_json::json!({"reason": "daemon_restart"}),
@@ -495,21 +396,23 @@ fn recover_interrupted_on(conn: &mut Connection) -> Result<usize, StoreError> {
 fn update_and_append(
     tx: &Transaction<'_>,
     run: &RunRecord,
-    next: RunStatus,
+    next: RunState,
     event: NewRunEvent,
     timestamp: &str,
 ) -> Result<RunEvent, StoreError> {
+    let sequence = sql_sequence(run.next_event_sequence)?;
+    let next_sequence = sql_sequence(run.next_event_sequence + 1)?;
     let changed = tx.execute(
         "UPDATE runs
          SET status=?3, next_event_sequence=?4, updated_at=?5
          WHERE id=?1 AND status=?2 AND next_event_sequence=?6",
         params![
             run.id.as_str(),
-            run.status.as_str(),
-            next.as_str(),
-            run.next_event_sequence + 1,
+            state_as_str(run.status),
+            state_as_str(next),
+            next_sequence,
             timestamp,
-            run.next_event_sequence
+            sequence
         ],
     )?;
     if changed != 1 {
@@ -530,12 +433,13 @@ fn append_event(
     timestamp: &str,
 ) -> Result<RunEvent, StoreError> {
     let payload_json = serde_json::to_string(&event.payload)?;
+    let sequence = sql_sequence(run.next_event_sequence)?;
     tx.execute(
         "INSERT INTO run_events(run_id, sequence, kind, payload_json, created_at)
          VALUES (?1, ?2, ?3, ?4, ?5)",
         params![
             run.id.as_str(),
-            run.next_event_sequence,
+            sequence,
             event.kind,
             payload_json,
             timestamp
@@ -584,9 +488,12 @@ fn row_to_run(row: &rusqlite::Row<'_>) -> rusqlite::Result<RunRecord> {
         conversation_id: raw_conversation
             .map(|value| parse_conversation_id(&value).map_err(to_sql_error))
             .transpose()?,
-        idempotency_key: row.get(2)?,
+        idempotency_key: row
+            .get::<_, String>(2)?
+            .parse()
+            .map_err(|_| to_sql_error(StoreError::CorruptData("invalid idempotency key")))?,
         request_digest: row.get(3)?,
-        status: raw_status.parse().map_err(to_sql_error)?,
+        status: parse_run_state(&raw_status).map_err(to_sql_error)?,
         next_event_sequence: u64::try_from(raw_sequence)
             .map_err(|_| to_sql_error(StoreError::CorruptData("negative event sequence")))?,
         created_at: row.get(6)?,
@@ -615,13 +522,6 @@ fn row_to_event(row: &rusqlite::Row<'_>) -> rusqlite::Result<RunEvent> {
 }
 
 fn validate_new_run(run: &NewRun) -> Result<(), StoreError> {
-    let key = run.idempotency_key.trim();
-    if key.is_empty() || key.len() > MAX_IDEMPOTENCY_KEY_BYTES || key.chars().any(char::is_control)
-    {
-        return Err(StoreError::InvalidInput(
-            "idempotency key is empty, contains controls, or exceeds 256 bytes",
-        ));
-    }
     if run.request_digest.len() != 64
         || !run
             .request_digest
@@ -633,6 +533,42 @@ fn validate_new_run(run: &NewRun) -> Result<(), StoreError> {
         ));
     }
     Ok(())
+}
+
+fn state_as_str(state: RunState) -> &'static str {
+    match state {
+        RunState::Queued => "queued",
+        RunState::Starting => "starting",
+        RunState::Running => "running",
+        RunState::CancelRequested => "cancel_requested",
+        RunState::Succeeded => "succeeded",
+        RunState::Failed => "failed",
+        RunState::Cancelled => "cancelled",
+        RunState::Interrupted => "interrupted",
+    }
+}
+
+fn backend_as_str(backend: BackendSelection) -> &'static str {
+    match backend {
+        BackendSelection::Cursor => "cursor",
+        BackendSelection::Abi => "abi",
+        BackendSelection::FoundationModels => "foundation_models",
+        BackendSelection::Grok => "grok",
+    }
+}
+
+fn parse_run_state(value: &str) -> Result<RunState, StoreError> {
+    match value {
+        "queued" => Ok(RunState::Queued),
+        "starting" => Ok(RunState::Starting),
+        "running" => Ok(RunState::Running),
+        "cancel_requested" => Ok(RunState::CancelRequested),
+        "succeeded" => Ok(RunState::Succeeded),
+        "failed" => Ok(RunState::Failed),
+        "cancelled" => Ok(RunState::Cancelled),
+        "interrupted" => Ok(RunState::Interrupted),
+        _ => Err(StoreError::CorruptData("unknown run status")),
+    }
 }
 
 fn validate_event(event: &NewRunEvent) -> Result<(), StoreError> {
@@ -671,6 +607,11 @@ fn parse_conversation_id(value: &str) -> Result<ConversationId, StoreError> {
     value
         .parse()
         .map_err(|_| StoreError::CorruptData("invalid conversation UUID"))
+}
+
+fn sql_sequence(sequence: u64) -> Result<i64, StoreError> {
+    i64::try_from(sequence)
+        .map_err(|_| StoreError::CorruptData("event sequence exceeds SQLite integer range"))
 }
 
 fn to_sql_error(error: StoreError) -> rusqlite::Error {

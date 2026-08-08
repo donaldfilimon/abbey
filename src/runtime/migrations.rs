@@ -39,7 +39,7 @@ CREATE TABLE runs (
             'succeeded', 'failed', 'cancelled', 'interrupted'
         )
     ),
-    next_event_sequence INTEGER NOT NULL DEFAULT 0 CHECK (next_event_sequence >= 0),
+    next_event_sequence INTEGER NOT NULL DEFAULT 1 CHECK (next_event_sequence >= 1),
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE RESTRICT
@@ -47,7 +47,7 @@ CREATE TABLE runs (
 
 CREATE TABLE run_events (
     run_id TEXT NOT NULL,
-    sequence INTEGER NOT NULL CHECK (sequence >= 0),
+    sequence INTEGER NOT NULL CHECK (sequence >= 1),
     kind TEXT NOT NULL,
     payload_json TEXT NOT NULL,
     created_at TEXT NOT NULL,
@@ -74,7 +74,7 @@ CREATE INDEX idx_audit_events_run ON audit_events(run_id, created_at);
 const MIGRATIONS: &[(i64, &str)] = &[(1, MIGRATION_1)];
 
 #[derive(Debug, Error)]
-pub(super) enum MigrationError {
+pub enum MigrationError {
     #[error("runtime database schema {found} is newer than supported schema {supported}")]
     FutureSchema { found: i64, supported: i64 },
     #[error("runtime database migration {version} failed: {source}")]

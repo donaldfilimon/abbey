@@ -11,6 +11,8 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
+use crate::app_core::{RunId, RunRequest};
+
 const MAX_FAILURE_BYTES: usize = 4_096;
 
 /// Monotonic cooperative-cancellation signal shared with one running executor.
@@ -65,11 +67,10 @@ impl std::error::Error for ExecutionError {}
 /// Cancellation is cooperative. Implementations should inspect `cancellation`
 /// at natural interruption points and return promptly when it becomes set.
 pub trait Executor: Send + Sync + 'static {
-    type Request: Send + 'static;
-
     fn execute(
         &self,
-        request: Self::Request,
+        run_id: &RunId,
+        request: RunRequest,
         cancellation: &CancellationToken,
     ) -> Result<(), ExecutionError>;
 }
@@ -84,11 +85,12 @@ pub(crate) enum ExecutionAttempt {
 
 pub(crate) fn execute_catching_panics<E: Executor>(
     executor: &E,
-    request: E::Request,
+    run_id: &RunId,
+    request: RunRequest,
     cancellation: &CancellationToken,
 ) -> ExecutionAttempt {
     match catch_unwind(AssertUnwindSafe(|| {
-        executor.execute(request, cancellation)
+        executor.execute(run_id, request, cancellation)
     })) {
         Ok(Ok(())) => ExecutionAttempt::Completed,
         Ok(Err(error)) => ExecutionAttempt::Failed(error),
@@ -126,11 +128,10 @@ mod tests {
     struct PanicExecutor;
 
     impl Executor for PanicExecutor {
-        type Request = ();
-
         fn execute(
             &self,
-            (): Self::Request,
+            _run_id: &RunId,
+            _request: RunRequest,
             _cancellation: &CancellationToken,
         ) -> Result<(), ExecutionError> {
             panic!("fixture panic")
@@ -156,7 +157,20 @@ mod tests {
 
     #[test]
     fn executor_panics_become_explicit_attempts() {
-        let attempt = execute_catching_panics(&PanicExecutor, (), &CancellationToken::default());
+        let request = RunRequest {
+            idempotency_key: "panic-fixture".parse().unwrap(),
+            conversation_id: None,
+            mode: crate::app_core::RunMode::Background,
+            backend: crate::app_core::BackendSelection::Abi,
+            input: "panic fixture".into(),
+            labels: Vec::new(),
+        };
+        let attempt = execute_catching_panics(
+            &PanicExecutor,
+            &RunId::new(),
+            request,
+            &CancellationToken::default(),
+        );
         let ExecutionAttempt::Panicked(error) = attempt else {
             panic!("expected panic outcome")
         };
