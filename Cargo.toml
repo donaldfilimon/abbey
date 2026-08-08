@@ -14,6 +14,15 @@ categories = ["command-line-utilities"]
 name = "abbey"
 path = "src/main.rs"
 
+# `unsafe_code` is allow-by-default in rustc, so `clippy -D warnings` in
+# check.sh never caught it. Denying here means every `cargo build`/`clippy`
+# and every editor surfaces new unsafe immediately, and each existing use has
+# to carry an explicit, justified `#[allow]`. Abbey shells out to other
+# processes; it has no business growing unsafe by accident. Mirrors the
+# sibling ABI workspace, which denies `unsafe_code` workspace-wide.
+[lints.rust]
+unsafe_code = "deny"
+
 [dependencies]
 anyhow = "1"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }

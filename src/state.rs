@@ -99,15 +99,6 @@ impl AbbeyState {
         }
     }
 
-    /// Active chat id, resolved without the env override.
-    ///
-    /// Prefer [`Self::read_chat_for`] wherever an `AgentConfig` is in scope:
-    /// this variant cannot honour `CURSOR_AGENT_CHAT_ID` because it does not
-    /// know whether the live backend has server sessions.
-    pub fn read_chat(&self) -> Option<String> {
-        self.read_chat_for(crate::agent::AgentBackend::Abi)
-    }
-
     /// Active chat id as seen by `backend`.
     ///
     /// The backend is passed in rather than read from

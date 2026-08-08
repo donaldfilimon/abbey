@@ -172,6 +172,10 @@ const fn rgb(r: u8, g: u8, b: u8) -> Color {
 }
 
 #[cfg(test)]
+// `std::env::{set_var, remove_var}` are unsafe in edition 2024; these tests
+// drive the theme env override and serialise on `env_test_guard`. Test-only:
+// the crate otherwise denies `unsafe_code`.
+#[allow(unsafe_code)]
 mod tests {
     use super::*;
     use std::fs;

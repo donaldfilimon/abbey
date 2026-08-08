@@ -62,6 +62,10 @@ use std::process::ExitCode;
 /// `cat`/`ls` do. Only fires once output exceeds the pipe buffer, which is why
 /// short commands looked fine.
 #[cfg(unix)]
+// The crate denies `unsafe_code` (Cargo.toml `[lints.rust]`). This is the only
+// production exception: restoring the default SIGPIPE disposition needs libc,
+// and there is no safe std API for it.
+#[allow(unsafe_code)]
 fn restore_sigpipe() {
     // SAFETY: setting SIG_DFL is async-signal-safe, and this runs as the first
     // statement of `main` — before any threads exist or any output is written.

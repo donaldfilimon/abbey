@@ -376,6 +376,10 @@ pub fn preference_context(state_dir: &Path, limit: usize) -> String {
 }
 
 #[cfg(test)]
+// `std::env::set_var` is unsafe in edition 2024 (it races other threads), and
+// these tests pin the memory backend so they do not depend on the developer's
+// config.toml. Test-only: the crate otherwise denies `unsafe_code`.
+#[allow(unsafe_code)]
 mod tests {
     use super::*;
     use crate::route_log::RouteRecord;
