@@ -252,10 +252,17 @@ fn run_local_demo_with_bin_timeout(
 }
 
 fn run_bounded_child(bin: &Path, argv: &[String], timeout: Duration) -> Result<BoundedOutput> {
-    let mut child = Command::new(bin)
+    let mut command = Command::new(bin);
+    command
         .args(argv)
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt as _;
+        command.process_group(0);
+    }
+    let mut child = command
         .spawn()
         .with_context(|| format!("run {} {}", bin.display(), argv.join(" ")))?;
     let stdout = child.stdout.take().context("capture ABI mesh stdout")?;
@@ -379,6 +386,18 @@ fn join_reader(
         .with_context(|| format!("read ABI local mesh proof {name}"))
 }
 
+#[cfg(unix)]
+fn kill_and_wait(child: &mut Child) {
+    use nix::sys::signal::{Signal, killpg};
+    use nix::unistd::Pid;
+
+    let process_group = i32::try_from(child.id()).expect("child process id fits pid_t");
+    let _ = killpg(Pid::from_raw(process_group), Signal::SIGKILL);
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+#[cfg(not(unix))]
 fn kill_and_wait(child: &mut Child) {
     let _ = child.kill();
     let _ = child.wait();
@@ -402,7 +421,28 @@ fn parse_proof(json: &[u8], requested_nodes: usize) -> Result<MeshProof> {
             proof.nodes
         );
     }
-    if proof.election.votes < proof.election.quorum
+    let election_quorum = proof.nodes / 2 + 1;
+    let write_replicas = proof.nodes.min(3);
+    let write_quorum = write_replicas / 2 + 1;
+    let leaders_are_valid = proof.election.leader < proof.nodes as u64
+        && proof.failover.leader < proof.nodes as u64
+        && proof.election.leader != proof.failover.leader;
+    let election_is_valid = proof.election.term > 0
+        && proof.election.quorum == election_quorum
+        && proof.election.votes >= proof.election.quorum
+        && proof.election.votes <= proof.nodes;
+    let failover_is_valid = proof.failover.term > proof.election.term
+        && proof.failover.quorum == election_quorum
+        && proof.failover.votes >= proof.failover.quorum
+        && proof.failover.votes <= proof.nodes;
+    let write_is_valid = proof.replicated_write.quorum == write_quorum
+        && proof.replicated_write.acknowledgements >= proof.replicated_write.quorum
+        && proof.replicated_write.acknowledgements <= write_replicas;
+    if !leaders_are_valid
+        || !election_is_valid
+        || !failover_is_valid
+        || !write_is_valid
+        || proof.election.votes < proof.election.quorum
         || proof.replicated_write.acknowledgements < proof.replicated_write.quorum
         || proof.failover.votes < proof.failover.quorum
         || !proof.shard_placement_verified
@@ -452,8 +492,11 @@ mod tests {
     }
 
     fn proof_json(nodes: usize) -> String {
+        let election_quorum = nodes / 2 + 1;
+        let write_quorum = nodes.min(3) / 2 + 1;
         format!(
-            r#"{{"proof":"{PROOF_LABEL}","storage_proof_scope":"{STORAGE_PROOF_SCOPE}","nodes":{nodes},"election":{{"leader":0,"term":1,"votes":{nodes},"quorum":2}},"replicated_write":{{"acknowledgements":{nodes},"quorum":2}},"shard_placement_verified":true,"failover":{{"leader":1,"term":2,"votes":2,"quorum":2}},"conflicts_observed":true,"read_repair_completed":true,"children_reaped":true}}"#
+            r#"{{"proof":"{PROOF_LABEL}","storage_proof_scope":"{STORAGE_PROOF_SCOPE}","nodes":{nodes},"election":{{"leader":0,"term":1,"votes":{nodes},"quorum":{election_quorum}}},"replicated_write":{{"acknowledgements":{},"quorum":{write_quorum}}},"shard_placement_verified":true,"failover":{{"leader":1,"term":2,"votes":{nodes},"quorum":{election_quorum}}},"conflicts_observed":true,"read_repair_completed":true,"children_reaped":true}}"#,
+            nodes.min(3)
         )
     }
 
@@ -482,6 +525,24 @@ mod tests {
         let incomplete =
             proof_json(3).replace("\"children_reaped\":true", "\"children_reaped\":false");
         assert!(parse_proof(incomplete.as_bytes(), 3).is_err());
+
+        for (path, invalid) in [
+            (&["election", "quorum"][..], 0_u64),
+            (&["election", "votes"][..], 4),
+            (&["election", "leader"][..], 3),
+            (&["failover", "leader"][..], 0),
+            (&["failover", "term"][..], 1),
+            (&["replicated_write", "acknowledgements"][..], 0),
+        ] {
+            let mut value: serde_json::Value = serde_json::from_str(&proof_json(3)).unwrap();
+            value[path[0]][path[1]] = invalid.into();
+            assert!(
+                parse_proof(serde_json::to_string(&value).unwrap().as_bytes(), 3).is_err(),
+                "accepted invalid proof field {}.{}={invalid}",
+                path[0],
+                path[1]
+            );
+        }
     }
 
     #[cfg(unix)]
@@ -518,6 +579,38 @@ mod tests {
             .to_string();
         assert!(error.contains("timed out"), "{error}");
         assert!(started.elapsed() < Duration::from_secs(2));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn local_demo_timeout_kills_descendants_holding_capture_pipes() {
+        use nix::sys::signal::kill;
+        use nix::unistd::Pid;
+
+        let (dir, bin) = write_fake_abi(
+            "descendant-timeout",
+            "#!/bin/sh\nsleep 30 &\necho $! > \"$0.child\"\nwait\n",
+        );
+        let started = Instant::now();
+        let error = run_local_demo_with_bin_timeout(&bin, 3, Duration::from_millis(200))
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("timed out"), "{error}");
+        assert!(started.elapsed() < Duration::from_secs(2));
+        let descendant = std::fs::read_to_string(format!("{}.child", bin.display()))
+            .unwrap()
+            .trim()
+            .parse::<i32>()
+            .unwrap();
+        let reaped_deadline = Instant::now() + Duration::from_secs(1);
+        while kill(Pid::from_raw(descendant), None).is_ok() && Instant::now() < reaped_deadline {
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert!(
+            kill(Pid::from_raw(descendant), None).is_err(),
+            "descendant process {descendant} survived the process-group kill"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

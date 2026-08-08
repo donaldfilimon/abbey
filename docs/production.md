@@ -89,7 +89,9 @@ Accelerator **host detection** (`abbey platform compute`) is Current. GPU/NPU/TP
 - Chat/model/history/routes: `$XDG_STATE_HOME/abbey` (or `~/.local/state/abbey`)
 - Memory SQLite: `…/abbey/memory.sqlite`
 - SQLite semantic vectors: `memory_embeddings` inside the same database
-- Memory WDBX (feature `wdbx`): `…/abbey/wdbx/` plus isolated `embedding-spaces/<space_id>` stores
+- Memory WDBX (feature `wdbx`): `…/abbey/wdbx/` plus isolated
+  `embedding-spaces-v2/<space_id>` stores. Legacy `embedding-spaces/` indexes are
+  retained untouched and require an explicit backfill into v2.
 - `fm` transcripts (backend `fm`): `…/abbey/fm/<chat-id>.transcript`
 - Never commit state dirs
 

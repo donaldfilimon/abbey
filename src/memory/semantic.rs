@@ -16,6 +16,14 @@ const NON_SUBJECT_TAGS: [&str; 5] = ["activity", "stm", "ltm", "train_candidate"
 pub struct StoredEmbedding {
     pub memory_id: String,
     pub space_id: String,
+    #[serde(default)]
+    pub provider: String,
+    #[serde(default)]
+    pub model: String,
+    #[serde(default)]
+    pub revision: String,
+    #[serde(default)]
+    pub normalization: String,
     pub content_hash: String,
     pub dimension: usize,
     pub vector: Vec<f32>,
@@ -35,11 +43,34 @@ impl StoredEmbedding {
         Ok(Self {
             memory_id: record.id.clone(),
             space_id: space.space_id.clone(),
+            provider: space.provider.clone(),
+            model: space.model.clone(),
+            revision: space.revision.clone(),
+            normalization: space.normalization.clone(),
             content_hash: content_hash(record),
             dimension: vector.len(),
             vector,
             updated_at: chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
         })
+    }
+
+    pub(super) fn validate(&self) -> Result<()> {
+        if self.dimension == 0 || self.vector.len() != self.dimension {
+            bail!("invalid stored embedding dimension");
+        }
+        if !self.vector.iter().all(|value| value.is_finite()) {
+            bail!("stored embedding contains a non-finite value");
+        }
+        let space = EmbeddingSpace::new(
+            self.provider.clone(),
+            self.model.clone(),
+            self.revision.clone(),
+            self.dimension,
+        )?;
+        if space.space_id != self.space_id || space.normalization != self.normalization {
+            bail!("stored embedding metadata does not match its space id");
+        }
+        Ok(())
     }
 }
 

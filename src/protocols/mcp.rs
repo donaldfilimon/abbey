@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
+use url::{Host, Url};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum McpProvider {
@@ -340,7 +341,8 @@ fn primary_provider(source: &McpConfigSource) -> McpProvider {
         .providers
         .iter()
         .copied()
-        .find(|provider| *provider != McpProvider::Shared)
+        .find(|provider| *provider == McpProvider::Shared)
+        .or_else(|| source.providers.first().copied())
         .unwrap_or(McpProvider::Shared)
 }
 
@@ -362,23 +364,32 @@ fn redact_command(command: &str) -> String {
 }
 
 fn redact_url(url: &str) -> String {
-    let without_fragment = url.split('#').next().unwrap_or(url);
-    let without_query = without_fragment
-        .split('?')
-        .next()
-        .unwrap_or(without_fragment);
-    let Some((scheme, rest)) = without_query.split_once("://") else {
-        return if looks_secret(without_query) {
-            "<URL redacted>".into()
-        } else {
-            without_query.into()
-        };
+    let Ok(parsed) = Url::parse(url) else {
+        return "<URL redacted>".into();
     };
-    let safe_rest = rest
-        .split_once('@')
-        .map(|(_, suffix)| format!("<credentials-redacted>@{suffix}"))
-        .unwrap_or_else(|| rest.to_string());
-    format!("{scheme}://{safe_rest}")
+    let Some(host) = parsed.host() else {
+        return "<URL redacted>".into();
+    };
+    let host = match host {
+        Host::Domain(value) => value.to_string(),
+        Host::Ipv4(value) => value.to_string(),
+        Host::Ipv6(value) => format!("[{value}]"),
+    };
+    let credentials = if parsed.username().is_empty() && parsed.password().is_none() {
+        ""
+    } else {
+        "<credentials-redacted>@"
+    };
+    let port = parsed
+        .port()
+        .map(|value| format!(":{value}"))
+        .unwrap_or_default();
+    let path = if looks_secret(parsed.path()) {
+        "/<path-redacted>"
+    } else {
+        parsed.path()
+    };
+    format!("{}://{credentials}{host}{port}{path}", parsed.scheme())
 }
 
 fn looks_secret(value: &str) -> bool {
@@ -729,6 +740,33 @@ mod tests {
         assert_eq!(sse.transport, McpTransport::Sse);
         assert!(sse.disabled);
         assert_eq!(stdio.transport, McpTransport::Stdio);
+        assert!(!format!("{servers:?}").contains("hidden"));
+    }
+
+    #[test]
+    fn project_shared_sources_stay_shared_and_multi_userinfo_is_fully_redacted() {
+        let source = source(
+            PathBuf::from("/project/.mcp.json"),
+            &[
+                McpProvider::Shared,
+                McpProvider::Cursor,
+                McpProvider::Claude,
+            ],
+            McpConfigFormat::Json,
+        );
+        let servers = parse_json_servers(
+            r#"{"mcpServers":{"shared":{"url":"https://first@second:secret@example.test/mcp?token=hidden"}}}"#,
+            &source,
+        )
+        .unwrap();
+        assert_eq!(servers[0].provider, McpProvider::Shared);
+        assert_eq!(
+            servers[0].command,
+            "https://<credentials-redacted>@example.test/mcp"
+        );
+        assert!(!format!("{servers:?}").contains("first"));
+        assert!(!format!("{servers:?}").contains("second"));
+        assert!(!format!("{servers:?}").contains("secret"));
         assert!(!format!("{servers:?}").contains("hidden"));
     }
 

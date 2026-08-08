@@ -11,8 +11,10 @@ use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
+use url::{Host, Url};
 
 pub const MAX_EMBEDDING_BATCH: usize = 64;
+pub const MAX_EMBEDDING_DIMENSION: usize = 4096;
 const MAX_INPUT_CHARS: usize = 1_000_000;
 const MAX_PROVIDER_STDOUT: usize = 16 * 1024 * 1024;
 const MAX_PROVIDER_STDERR: usize = 64 * 1024;
@@ -43,8 +45,8 @@ impl EmbeddingSpace {
         if provider.trim().is_empty() || model.trim().is_empty() || revision.trim().is_empty() {
             bail!("embedding space provider/model/revision must not be empty");
         }
-        if provider != "none" && dimension == 0 {
-            bail!("embedding dimension must be greater than zero");
+        if provider != "none" && !(1..=MAX_EMBEDDING_DIMENSION).contains(&dimension) {
+            bail!("embedding dimension must be between 1 and {MAX_EMBEDDING_DIMENSION}");
         }
         let normalization = NORMALIZATION.to_string();
         let identity = format!(
@@ -140,6 +142,8 @@ impl Embedder for AppleEmbedder {
         let request = serde_json::to_vec(&ProviderRequest {
             language: Some(self.language.clone()),
             model: None,
+            dimensions: None,
+            encoding_format: None,
             input: inputs.to_vec(),
         })?;
         let output = run_bounded(
@@ -166,13 +170,7 @@ impl OpenAiEmbedder {
     fn new(config: &EmbeddingConfig) -> Result<Self> {
         let endpoint = required(&config.endpoint, "embedding endpoint")?;
         let url = embeddings_url(endpoint)?;
-        let api_key = std::env::var("ABBEY_EMBEDDING_API_KEY")
-            .or_else(|_| std::env::var("OPENAI_API_KEY"))
-            .map_err(|_| {
-                anyhow!(
-                    "embedding provider `openai` needs ABBEY_EMBEDDING_API_KEY or OPENAI_API_KEY"
-                )
-            })?;
+        let api_key = embedding_api_key(|name| std::env::var(name).ok())?;
         Self::with_key(config, url, api_key)
     }
 
@@ -189,7 +187,9 @@ impl OpenAiEmbedder {
     }
 
     fn command(&self, header: &SecretHeader) -> Command {
-        let loopback = is_loopback_http(&self.url);
+        let parsed_url =
+            Url::parse(&self.url).expect("embedding URL was validated at construction");
+        let loopback = is_loopback_http(&parsed_url);
         let protocol = if loopback { "=http" } else { "=https" };
         let mut command = Command::new("curl");
         command
@@ -235,6 +235,8 @@ impl Embedder for OpenAiEmbedder {
         let request = serde_json::to_vec(&ProviderRequest {
             language: None,
             model: Some(self.space.model.clone()),
+            dimensions: Some(self.space.dimension),
+            encoding_format: Some("float"),
             input: inputs.to_vec(),
         })?;
         let header = SecretHeader::new(&self.api_key)?;
@@ -307,27 +309,57 @@ fn required<'a>(value: &'a str, label: &str) -> Result<&'a str> {
     Ok(value)
 }
 
+fn embedding_api_key(get: impl Fn(&str) -> Option<String>) -> Result<String> {
+    get("ABBEY_EMBEDDING_API_KEY")
+        .or_else(|| get("OPENAI_API_KEY"))
+        .filter(|key| !key.trim().is_empty())
+        .ok_or_else(|| {
+            anyhow!("embedding provider `openai` needs ABBEY_EMBEDDING_API_KEY or OPENAI_API_KEY")
+        })
+}
+
 fn embeddings_url(endpoint: &str) -> Result<String> {
-    let endpoint = endpoint.trim().trim_end_matches('/');
+    let endpoint = endpoint.trim();
     if endpoint.is_empty() {
         bail!("embedding endpoint must not be empty");
     }
-    if !endpoint.starts_with("https://") && !is_loopback_http(endpoint) {
+    let mut parsed = Url::parse(endpoint).context("parse embedding endpoint URL")?;
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        bail!("embedding endpoint must not contain URL userinfo");
+    }
+    if parsed.query().is_some() || parsed.fragment().is_some() {
+        bail!("embedding endpoint must not contain a query or fragment");
+    }
+    if parsed.scheme() != "https" && !is_loopback_http(&parsed) {
         bail!(
             "OpenAI-compatible embedding endpoint must use HTTPS (HTTP is allowed only for loopback tests)"
         );
     }
-    if endpoint.ends_with("/v1/embeddings") {
-        Ok(endpoint.to_string())
-    } else {
-        Ok(format!("{endpoint}/v1/embeddings"))
+    if parsed.scheme() != "http" && parsed.scheme() != "https" {
+        bail!("embedding endpoint must use HTTP or HTTPS");
     }
+    let path = parsed.path().trim_end_matches('/');
+    if !path.ends_with("/v1/embeddings") {
+        let target = if path.ends_with("/v1") {
+            format!("{path}/embeddings")
+        } else {
+            format!("{path}/v1/embeddings")
+        };
+        parsed.set_path(&target);
+    }
+    Ok(parsed.to_string())
 }
 
-fn is_loopback_http(url: &str) -> bool {
-    ["http://127.0.0.1:", "http://localhost:", "http://[::1]:"]
-        .iter()
-        .any(|prefix| url.starts_with(prefix))
+fn is_loopback_http(url: &Url) -> bool {
+    if url.scheme() != "http" {
+        return false;
+    }
+    match url.host() {
+        Some(Host::Domain(host)) => host.eq_ignore_ascii_case("localhost"),
+        Some(Host::Ipv4(address)) => address.is_loopback(),
+        Some(Host::Ipv6(address)) => address.is_loopback(),
+        None => false,
+    }
 }
 
 fn validate_batch(inputs: &[String]) -> Result<()> {
@@ -439,6 +471,10 @@ struct ProviderRequest {
     language: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    dimensions: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    encoding_format: Option<&'static str>,
     input: Vec<String>,
 }
 
@@ -605,6 +641,8 @@ mod tests {
         assert!(request.starts_with("POST /v1/embeddings HTTP/1.1"));
         assert!(request.contains("Authorization: Bearer test-secret"));
         assert!(request.contains(r#""model":"mock-model""#));
+        assert!(request.contains(r#""dimensions":2"#));
+        assert!(request.contains(r#""encoding_format":"float""#));
         assert!(request.contains(r#""input":["first","second"]"#));
     }
 
@@ -662,6 +700,28 @@ mod tests {
         let error = provider.embed(&["first".into()]).unwrap_err();
         assert!(format!("{error:#}").contains("401"));
         let _ = handle.join().unwrap();
+
+        let (endpoint, handle) = mock_server("429 Too Many Requests", r#"{"error":"rate"}"#);
+        let cfg = config("openai", endpoint.clone(), 2);
+        let provider =
+            OpenAiEmbedder::with_key(&cfg, embeddings_url(&endpoint).unwrap(), "key".into())
+                .unwrap();
+        let error = provider.embed(&["first".into()]).unwrap_err();
+        assert!(format!("{error:#}").contains("429"));
+        let _ = handle.join().unwrap();
+    }
+
+    #[test]
+    fn openai_missing_key_and_malformed_response_fail_without_fallback() {
+        assert!(embedding_api_key(|_| None).is_err());
+        let (endpoint, handle) = mock_server("200 OK", r#"{"data":"not-an-array"}"#);
+        let cfg = config("openai", endpoint.clone(), 2);
+        let provider =
+            OpenAiEmbedder::with_key(&cfg, embeddings_url(&endpoint).unwrap(), "key".into())
+                .unwrap();
+        let error = provider.embed(&["first".into()]).unwrap_err();
+        assert!(format!("{error:#}").contains("parse embedding response"));
+        let _ = handle.join().unwrap();
     }
 
     #[test]
@@ -677,5 +737,30 @@ mod tests {
     fn remote_plain_http_is_rejected() {
         assert!(embeddings_url("http://example.com").is_err());
         assert!(embeddings_url("http://127.0.0.1:1234").is_ok());
+        assert!(embeddings_url("http://127.0.0.1:80@example.test").is_err());
+        assert!(embeddings_url("https://user:pass@example.test").is_err());
+        assert!(embeddings_url("https://example.test?token=secret").is_err());
+    }
+
+    #[test]
+    fn endpoint_paths_and_dimensions_are_normalized_and_bounded() {
+        assert_eq!(
+            embeddings_url("https://example.test").unwrap(),
+            "https://example.test/v1/embeddings"
+        );
+        assert_eq!(
+            embeddings_url("https://example.test/v1").unwrap(),
+            "https://example.test/v1/embeddings"
+        );
+        assert_eq!(
+            embeddings_url("https://example.test/api/v1").unwrap(),
+            "https://example.test/api/v1/embeddings"
+        );
+        assert_eq!(
+            embeddings_url("https://example.test/v1/embeddings").unwrap(),
+            "https://example.test/v1/embeddings"
+        );
+        assert!(EmbeddingSpace::new("openai", "model", "r1", 4096).is_ok());
+        assert!(EmbeddingSpace::new("openai", "model", "r1", 4097).is_err());
     }
 }

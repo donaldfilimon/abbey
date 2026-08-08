@@ -317,12 +317,7 @@ impl MemoryStore for WdbxMemory {
     }
 
     fn put_embedding(&self, embedding: StoredEmbedding) -> Result<()> {
-        if embedding.dimension == 0 || embedding.vector.len() != embedding.dimension {
-            bail!("invalid stored embedding dimension");
-        }
-        if !embedding.vector.iter().all(|value| value.is_finite()) {
-            bail!("stored embedding contains a non-finite value");
-        }
+        embedding.validate()?;
         let Some(record) = self.get(&embedding.memory_id)? else {
             bail!("memory id not found: {}", embedding.memory_id);
         };
@@ -479,10 +474,13 @@ impl MemoryStore for WdbxMemory {
                 score: result.score,
                 record: record.clone(),
             });
-            if hits.len() == limit {
-                break;
-            }
         }
+        hits.sort_by(|a, b| {
+            b.score
+                .total_cmp(&a.score)
+                .then_with(|| a.record.id.cmp(&b.record.id))
+        });
+        hits.truncate(limit);
         Ok(hits)
     }
 }
@@ -731,18 +729,37 @@ mod tests {
         let mut invalid = StoredEmbedding::new(&record, &space, vec![1.0, 0.0]).unwrap();
         invalid.dimension = 3;
         invalid.vector = vec![1.0, 0.0, 0.0];
-        assert!(
-            db.put_embedding(invalid)
-                .unwrap_err()
-                .to_string()
-                .contains("embedding requires 3")
-        );
+        assert!(db.put_embedding(invalid).is_err());
 
         let hits = db
             .semantic_search(&space.space_id, &[1.0, 0.0], &MemoryFilter::default(), 10)
             .unwrap();
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].record.id, id);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn semantic_score_ties_use_stable_record_id_order() {
+        use crate::memory::{embedding::EmbeddingSpace, semantic::StoredEmbedding};
+
+        let dir = tmp("semantic-ties");
+        let db = WdbxMemory::open(&dir).unwrap();
+        let space = EmbeddingSpace::new("test", "ties", "r1", 2).unwrap();
+        for id in ["record-b", "record-a"] {
+            let mut record = MemoryRecord::new_stm(id, "private");
+            record.id = id.into();
+            db.store(record.clone()).unwrap();
+            db.put_embedding(StoredEmbedding::new(&record, &space, vec![1.0, 0.0]).unwrap())
+                .unwrap();
+        }
+        let ids = db
+            .semantic_search(&space.space_id, &[1.0, 0.0], &MemoryFilter::default(), 2)
+            .unwrap()
+            .into_iter()
+            .map(|hit| hit.record.id)
+            .collect::<Vec<_>>();
+        assert_eq!(ids, ["record-a", "record-b"]);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

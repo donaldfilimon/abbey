@@ -9,6 +9,8 @@ use rusqlite::{Connection, OptionalExtension, params};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+mod migrations;
+
 pub struct SqliteMemory {
     conn: Mutex<Connection>,
 }
@@ -22,7 +24,7 @@ impl SqliteMemory {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let conn =
+        let mut conn =
             Connection::open(path).with_context(|| format!("open sqlite {}", path.display()))?;
         conn.execute_batch(
             r#"
@@ -46,18 +48,6 @@ impl SqliteMemory {
             );
             CREATE INDEX IF NOT EXISTS idx_memory_retention ON memory(retention);
             CREATE INDEX IF NOT EXISTS idx_memory_summary ON memory(summary);
-            CREATE TABLE IF NOT EXISTS memory_embeddings (
-                memory_id TEXT NOT NULL,
-                space_id TEXT NOT NULL,
-                content_hash TEXT NOT NULL,
-                dimension INTEGER NOT NULL,
-                vector_json TEXT NOT NULL,
-                updated_at TEXT NOT NULL,
-                PRIMARY KEY (memory_id, space_id),
-                FOREIGN KEY (memory_id) REFERENCES memory(id)
-            );
-            CREATE INDEX IF NOT EXISTS idx_memory_embeddings_space
-                ON memory_embeddings(space_id);
             "#,
         )?;
         let has_project = {
@@ -74,6 +64,7 @@ impl SqliteMemory {
                 [],
             )?;
         }
+        migrations::ensure_embedding_schema(&mut conn)?;
         Ok(Self {
             conn: Mutex::new(conn),
         })
@@ -298,13 +289,8 @@ impl MemoryStore for SqliteMemory {
     }
 
     fn put_embedding(&self, embedding: StoredEmbedding) -> Result<()> {
-        if embedding.dimension == 0 || embedding.vector.len() != embedding.dimension {
-            bail!("invalid stored embedding dimension");
-        }
-        if !embedding.vector.iter().all(|value| value.is_finite()) {
-            bail!("stored embedding contains a non-finite value");
-        }
-        let vector_json = serde_json::to_string(&embedding.vector)?;
+        embedding.validate()?;
+        let vector_blob = encode_vector(&embedding.vector);
         let mut conn = self.conn.lock().expect("sqlite lock");
         let tx = conn.transaction()?;
         let current = {
@@ -332,19 +318,28 @@ impl MemoryStore for SqliteMemory {
         }
         tx.execute(
             r#"INSERT INTO memory_embeddings (
-                    memory_id, space_id, content_hash, dimension, vector_json, updated_at
-               ) VALUES (?1,?2,?3,?4,?5,?6)
-               ON CONFLICT(memory_id, space_id) DO UPDATE SET
+                    record_id, space_id, provider, model, revision, normalization,
+                    content_hash, dimension, vector_blob, updated_at
+               ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)
+               ON CONFLICT(record_id, space_id) DO UPDATE SET
+                    provider=excluded.provider,
+                    model=excluded.model,
+                    revision=excluded.revision,
+                    normalization=excluded.normalization,
                     content_hash=excluded.content_hash,
                     dimension=excluded.dimension,
-                    vector_json=excluded.vector_json,
+                    vector_blob=excluded.vector_blob,
                     updated_at=excluded.updated_at"#,
             params![
                 embedding.memory_id,
                 embedding.space_id,
+                embedding.provider,
+                embedding.model,
+                embedding.revision,
+                embedding.normalization,
                 embedding.content_hash,
                 embedding.dimension as i64,
-                vector_json,
+                vector_blob,
                 embedding.updated_at,
             ],
         )?;
@@ -362,7 +357,7 @@ impl MemoryStore for SqliteMemory {
                     tags_json, embedding_ref, confidence, provenance, retention,
                     supersedes, classification, obsolete, project,
                     (SELECT content_hash FROM memory_embeddings e
-                     WHERE e.memory_id=memory.id AND e.space_id=?1)
+                     WHERE e.record_id=memory.id AND e.space_id=?1)
              FROM memory WHERE obsolete=0 ORDER BY timestamp DESC",
         )?;
         let rows = statement.query_map(params![space_id], |row| {
@@ -388,7 +383,7 @@ impl MemoryStore for SqliteMemory {
                     tags_json, embedding_ref, confidence, provenance, retention,
                     supersedes, classification, obsolete, project,
                     (SELECT content_hash FROM memory_embeddings e
-                     WHERE e.memory_id=memory.id AND e.space_id=?1)
+                     WHERE e.record_id=memory.id AND e.space_id=?1)
              FROM memory WHERE obsolete=0",
         )?;
         let rows = statement.query_map(params![space_id], |row| {
@@ -414,7 +409,7 @@ impl MemoryStore for SqliteMemory {
                     tags_json, embedding_ref, confidence, provenance, retention,
                     supersedes, classification, obsolete, project,
                     (SELECT content_hash FROM memory_embeddings e
-                     WHERE e.memory_id=memory.id AND e.space_id=?2)
+                     WHERE e.record_id=memory.id AND e.space_id=?2)
              FROM memory WHERE id=?1",
         )?;
         let found = statement
@@ -444,8 +439,8 @@ impl MemoryStore for SqliteMemory {
             "SELECT m.id, m.source_type, m.source_ref, m.timestamp, m.origin, m.payload,
                     m.summary, m.tags_json, m.embedding_ref, m.confidence, m.provenance,
                     m.retention, m.supersedes, m.classification, m.obsolete, m.project,
-                    e.content_hash, e.dimension, e.vector_json
-             FROM memory m JOIN memory_embeddings e ON e.memory_id=m.id
+                    e.content_hash, e.dimension, e.vector_blob
+             FROM memory m JOIN memory_embeddings e ON e.record_id=m.id
              WHERE m.obsolete=0 AND e.space_id=?1",
         )?;
         let rows = statement.query_map(params![space_id], |row| {
@@ -453,12 +448,12 @@ impl MemoryStore for SqliteMemory {
                 Self::row_to_rec(row)?,
                 row.get::<_, String>(16)?,
                 row.get::<_, i64>(17)?,
-                row.get::<_, String>(18)?,
+                row.get::<_, Vec<u8>>(18)?,
             ))
         })?;
         let mut hits = Vec::new();
         for row in rows {
-            let (record, stored_hash, dimension, vector_json) = row?;
+            let (record, stored_hash, dimension, vector_blob) = row?;
             if !filter.matches(&record)
                 || stored_hash != super::semantic::content_hash(&record)
                 || dimension < 0
@@ -466,25 +461,50 @@ impl MemoryStore for SqliteMemory {
             {
                 continue;
             }
-            let vector: Vec<f32> = serde_json::from_str(&vector_json)?;
-            if vector.len() != dimension as usize || !vector.iter().all(|value| value.is_finite()) {
-                continue;
-            }
+            let vector = decode_vector(&vector_blob, dimension as usize)?;
             hits.push(SemanticHit {
                 score: super::semantic::cosine(&vector, query)?,
                 record,
             });
         }
-        hits.sort_by(|a, b| b.score.total_cmp(&a.score));
+        hits.sort_by(|a, b| {
+            b.score
+                .total_cmp(&a.score)
+                .then_with(|| a.record.id.cmp(&b.record.id))
+        });
         hits.truncate(limit);
         Ok(hits)
     }
 }
 
+fn encode_vector(vector: &[f32]) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(size_of_val(vector));
+    for value in vector {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes
+}
+
+fn decode_vector(bytes: &[u8], dimension: usize) -> Result<Vec<f32>> {
+    if bytes.len() != dimension.saturating_mul(size_of::<f32>()) {
+        bail!("stored embedding BLOB length does not match its dimension");
+    }
+    let vector = bytes
+        .chunks_exact(size_of::<f32>())
+        .map(|chunk| f32::from_le_bytes(chunk.try_into().expect("four-byte chunk")))
+        .collect::<Vec<_>>();
+    if !vector.iter().all(|value| value.is_finite()) {
+        bail!("stored embedding BLOB contains a non-finite value");
+    }
+    Ok(vector)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::memory::{MemoryRecord, MemoryStore};
+    use crate::memory::{
+        MemoryRecord, MemoryStore, embedding::EmbeddingSpace, semantic::StoredEmbedding,
+    };
 
     #[test]
     fn opening_a_legacy_schema_adds_project_without_losing_records() {
@@ -515,6 +535,132 @@ mod tests {
         let record = db.get("legacy").unwrap().unwrap();
         assert_eq!(record.summary, "kept");
         assert_eq!(record.project, "");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn embeddings_store_explicit_space_metadata_in_little_endian_blob() {
+        let dir =
+            std::env::temp_dir().join(format!("abbey-mem-embedding-schema-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = SqliteMemory::path_for_state_dir(&dir);
+        let db = SqliteMemory::open(&path).unwrap();
+        let record = MemoryRecord::new_stm("schema", "private");
+        let space = EmbeddingSpace::new("test", "model", "r7", 2).unwrap();
+        db.store(record.clone()).unwrap();
+        db.put_embedding(StoredEmbedding::new(&record, &space, vec![1.0, -0.5]).unwrap())
+            .unwrap();
+        drop(db);
+
+        let conn = Connection::open(&path).unwrap();
+        let stored = conn
+            .query_row(
+                "SELECT provider, model, revision, normalization, dimension,
+                        typeof(vector_blob), vector_blob
+                 FROM memory_embeddings WHERE record_id=?1 AND space_id=?2",
+                params![record.id, space.space_id],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, String>(3)?,
+                        row.get::<_, i64>(4)?,
+                        row.get::<_, String>(5)?,
+                        row.get::<_, Vec<u8>>(6)?,
+                    ))
+                },
+            )
+            .unwrap();
+        assert_eq!(&stored.0, "test");
+        assert_eq!(&stored.1, "model");
+        assert_eq!(&stored.2, "r7");
+        assert_eq!(&stored.3, "l2-v1");
+        assert_eq!(stored.4, 2);
+        assert_eq!(&stored.5, "blob");
+        assert_eq!(
+            stored.6,
+            [1.0_f32.to_le_bytes(), (-0.5_f32).to_le_bytes()].concat()
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn current_vector_json_schema_migrates_without_losing_search() {
+        let dir = std::env::temp_dir().join(format!(
+            "abbey-mem-embedding-json-migrate-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = SqliteMemory::path_for_state_dir(&dir);
+        let record = MemoryRecord::new_stm("migrate semantic vector", "private");
+        let record_id = record.id.clone();
+        let content_hash = super::super::semantic::content_hash(&record);
+        {
+            let db = SqliteMemory::open(&path).unwrap();
+            db.store(record).unwrap();
+        }
+        let conn = Connection::open(&path).unwrap();
+        conn.execute_batch(
+            "DROP TABLE memory_embeddings;
+             CREATE TABLE memory_embeddings (
+                memory_id TEXT NOT NULL, space_id TEXT NOT NULL,
+                content_hash TEXT NOT NULL, dimension INTEGER NOT NULL,
+                vector_json TEXT NOT NULL, updated_at TEXT NOT NULL,
+                PRIMARY KEY (memory_id, space_id)
+             );",
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO memory_embeddings VALUES (?1,'legacy-space',?2,2,'[1.0,0.0]',?3)",
+            params![record_id, content_hash, "2026-08-08T00:00:00Z"],
+        )
+        .unwrap();
+        drop(conn);
+
+        let db = SqliteMemory::open(&path).unwrap();
+        assert_eq!(db.embedding_status("legacy-space").unwrap().ready, 1);
+        let hits = db
+            .semantic_search("legacy-space", &[1.0, 0.0], &MemoryFilter::default(), 10)
+            .unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].record.id, record_id);
+        drop(db);
+        let conn = Connection::open(&path).unwrap();
+        let metadata = conn
+            .query_row(
+                "SELECT provider, typeof(vector_blob) FROM memory_embeddings",
+                [],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+            )
+            .unwrap();
+        assert_eq!(metadata, ("legacy-unknown".into(), "blob".into()));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn semantic_score_ties_use_stable_record_id_order() {
+        let dir =
+            std::env::temp_dir().join(format!("abbey-mem-semantic-ties-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let db = SqliteMemory::open(&SqliteMemory::path_for_state_dir(&dir)).unwrap();
+        let space = EmbeddingSpace::new("test", "ties", "r1", 2).unwrap();
+        for id in ["record-b", "record-a"] {
+            let mut record = MemoryRecord::new_stm(id, "private");
+            record.id = id.into();
+            db.store(record.clone()).unwrap();
+            db.put_embedding(StoredEmbedding::new(&record, &space, vec![1.0, 0.0]).unwrap())
+                .unwrap();
+        }
+        let ids = db
+            .semantic_search(&space.space_id, &[1.0, 0.0], &MemoryFilter::default(), 2)
+            .unwrap()
+            .into_iter()
+            .map(|hit| hit.record.id)
+            .collect::<Vec<_>>();
+        assert_eq!(ids, ["record-a", "record-b"]);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
