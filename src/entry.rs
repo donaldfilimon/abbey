@@ -73,6 +73,7 @@ fn command_needs_executor(cli: &Cli) -> bool {
         Some(
             Commands::Memory { .. }
                 | Commands::Mesh { .. }
+                | Commands::Daemon { .. }
                 | Commands::Agents
                 | Commands::Skills { .. }
                 | Commands::Plugins { .. }
@@ -93,6 +94,8 @@ mod tests {
             &["abbey", "plugins"][..],
             &["abbey", "memory", "embed", "status"][..],
             &["abbey", "mesh", "status"][..],
+            &["abbey", "daemon", "status"][..],
+            &["abbey", "daemon", "claims", "--status", "current"][..],
         ] {
             let cli = Cli::try_parse_from(args).unwrap();
             assert!(!command_needs_executor(&cli), "args={args:?}");
