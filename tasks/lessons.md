@@ -1,5 +1,5 @@
 # Lessons
-<!-- abbey-claims-sha256: 1cff4b9922dd6eb1a09eced94a8452478a0e071cb0835fdf788dd9cbec335282 -->
+<!-- abbey-claims-sha256: 6451afc47d15af34424f5885e18a540bb2d317fba24d1f6323d6fcac4831d485 -->
 
 - Abbey `/init` should stay offline-first (filesystem scan); `--agent` is optional refinement only.
 - Keep parity claims honest: cursor-agent is the default backend; `/cost` N/A; Max/Gemma = bindings.
@@ -41,4 +41,39 @@
 - **A shared contract is not an owned runtime.** The Current app-core/daemon slice
   advertises only Status and Claims. Defining approval or run identifiers does not
   grant execution capability, and a Unix socket does not prove durable jobs, model
-  workers, MCP hosting, memory ownership, or Windows named-pipe support.
+  workers, MCP hosting, memory ownership, or Windows named-pipe support. A client must
+  correlate request and event kinds, validate protocol/schema/capability invariants,
+  and keep bearer material out of Debug, errors, output, persistence, and argv; adding
+  that client does not broaden daemon authority.
+- **Pin sibling-repo dependencies by immutable commit in CI.** A CI or release build
+  that checks out a floating sibling branch (ABI `main`) is not reproducible — record
+  the exact merged SHA and check that out, so the same Abbey revision always builds
+  against the same ABI revision.
+- **Source compilation, local runtime proof, hosted CI, and external audit are separate
+  evidence classes.** A green local `./check.sh`, a live run on this Mac, a successful
+  hosted job, and an independent audit each prove something the others do not; never
+  let one class stand in for another in a claim.
+- **Claims must be generated or validated from a single source, never manually
+  duplicated.** Every hand-copied claim table is a future drift site; sync docs,
+  ledgers, and CLI output from the canonical `src/claims.rs` ledger via a checked
+  generator/validator.
+- **A model-produced structured tool call is the execution boundary.** Raw retrieved or
+  user-supplied text is never passed directly to a shell; only a validated, schema-typed
+  tool call the model explicitly emitted may cross into execution.
+- **Public-safe and personal-unrestricted editions need separate binaries, bundle IDs,
+  config roots, and tool registries.** A runtime flag inside one binary is a bypass
+  waiting to be flipped; edition separation is a packaging boundary, not a config value.
+- **A three-VM demo on one Mac is multi-VM evidence, not physical multi-host evidence.**
+  It proves identity/quorum/lease mechanics across VM boundaries; separate-physical-host,
+  geographic-HA, and real network-partition behavior remain unproven until run on real
+  separate machines.
+- **Gemma E4B adapters are not transferable to Gemma 12B.** LoRA adapters are tied to the
+  exact base architecture and dimensionality they were trained against; a different
+  parameter-count sibling model needs its own adapter training and evaluation.
+- **CoreML output-oracle success proves execution under requested compute units, not ANE
+  placement or residency.** Matching outputs with `.all`/`.cpuAndNeuralEngine` shows the
+  graph ran and agreed numerically; it does not show which unit executed any layer —
+  placement claims need profiler/instrument evidence.
+- **Optional TFHE-rs integration is not an independent cryptographic audit.** Wiring in a
+  reviewed library says nothing about our parameter choices, key handling, or protocol
+  composition; "audited dependency" and "audited system" are different claims.

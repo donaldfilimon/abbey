@@ -1,5 +1,5 @@
 # AGENTS.md
-<!-- abbey-claims-sha256: 1cff4b9922dd6eb1a09eced94a8452478a0e071cb0835fdf788dd9cbec335282 -->
+<!-- abbey-claims-sha256: 6451afc47d15af34424f5885e18a540bb2d317fba24d1f6323d6fcac4831d485 -->
 
 Guidance for AI coding agents in this repository.
 
@@ -32,7 +32,7 @@ src/lib.rs            private implementation graph + narrow public API
 src/entry.rs          CLI/TUI routing behind the library boundary
 src/app_core/         typed read-only Status/Claims application contracts
 src/bin/abbeyd.rs     bounded authenticated Unix daemon entry
-src/daemon/           owner-only UDS protocol/server (no execution or memory ownership)
+src/daemon/           bounded client + owner-only UDS protocol/server (no execution or memory ownership)
 src/cli.rs            clap Cli/Subcommand definitions
 src/commands.rs       clap dispatch
 src/output.rs         stdout helpers (broken pipe = success)
@@ -86,7 +86,7 @@ CLI: `abbey claims` · `abbey claims partial|proposed|blocked|oos` · `abbey cla
 | WDBX in-process and cross-process lock | Current | Feature is off by default; fs4 maps to Unix `flock` and Windows `LockFileEx`. |
 | Hybrid loop, parallel lanes, multi-subagents, same-host PATH peers | Current | Does not prove a production multi-VM mesh. |
 | Goal-driven improve (`abbey improve` + `check.sh`) | Current | Bounded local apply; does not auto-mark goals done. |
-| Shared application core + authenticated read-only `abbeyd` | Current | Versioned Status/Claims only over owner-only Unix socket; not the Proposed owned agent/tool runtime. |
+| Shared application core + authenticated read-only `abbeyd` | Current | `abbey daemon status\|claims` uses versioned Status/Claims over an owner-only Unix socket; not the Proposed owned agent/tool runtime. |
 | Portable Linux/macOS/Windows source surfaces | Current | macOS is locally exercised; Linux/Windows runtime proof remains open. |
 | GPU/NPU/TPU host detection | Current | Inventory only, not accelerator execution. |
 | CoT transcript viewer and structured `reason` wrap | Current | Abbey-owned hidden CoT engine/UI remains Out of scope. |
@@ -128,6 +128,9 @@ CLI: `abbey claims` · `abbey claims partial|proposed|blocked|oos` · `abbey cla
   `[embeddings]`; API keys stay in `ABBEY_EMBEDDING_API_KEY`/`OPENAI_API_KEY`, never
   `config.toml`. Provider/model changes create a new isolated vector space and never
   silently fall back or overwrite an older space.
+- `abbey daemon` and `abbeyd` must use the same socket and exactly one bearer source.
+  Bearer files are owner-only; client failures never fall back to in-process claims, and
+  non-Unix remains unsupported until a named-pipe transport is implemented and proven.
 - `abi wdbx` paths are **base paths** (dir + base name); Abbey opens a directory. Abbey's
   `<state>/wdbx/` is `<state>/wdbx/wdbx` to `abi` — `wdbx_bridge` translates, don't re-break it
 - `DurableStore` has no cross-process locking; `WdbxMemory` adds an `fs4` advisory

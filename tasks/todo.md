@@ -1,9 +1,10 @@
 # Todo
-<!-- abbey-claims-sha256: 1cff4b9922dd6eb1a09eced94a8452478a0e071cb0835fdf788dd9cbec335282 -->
+<!-- abbey-claims-sha256: 6451afc47d15af34424f5885e18a540bb2d317fba24d1f6323d6fcac4831d485 -->
 
-Ledger snapshot after the 2026-08-08 scope migration: **111 checked, 10 open**.
-The 10 open items are two externally blocked CI proofs plus eight approved
-Proposed implementation slices; recount when changing checkboxes.
+Ledger snapshot after the 2026-08-08 Completion Program capture: **112 checked,
+20 open**. The 20 open items are two externally blocked CI proofs, eight
+approved Proposed implementation slices, and ten remaining Abbey Completion
+Program phases; recount when changing checkboxes.
 
 ## Working CI on GitHub (blocked — see goals.md)
 
@@ -31,8 +32,10 @@ the parent capability to Current.
       backends behind them without reimplementing vendor runtimes.
   - [x] Foundation: extract a reusable library, stable `AppCommand`/`AppEvent`/ID/status/
         capability contracts, standard read-only policy, and authenticated bounded Unix
-        `abbeyd` Status/Claims transport. This does not complete executor/tool/cancellation,
-        durable-job, Windows named-pipe, or memory-ownership work.
+        `abbeyd` Status/Claims transport plus `abbey daemon status|claims` client with
+        real-binary human/JSON, no-executor, correlation, invariant, and redaction proof.
+        This does not complete executor/tool/cancellation, durable-job, Windows named-pipe,
+        or memory-ownership work.
 - [ ] **2. Owned tool host:** implement capability-scoped tool registry plus MCP/ACP host
       adapters, schema validation, bounded subprocess/network policy, consent, and audit;
       preserve current inventory/peer-launch behavior during migration.
@@ -57,6 +60,232 @@ the parent capability to Current.
       multi-GPU production operation Proposed after that proof. Package the
       personal-unrestricted edition separately with local control,
       isolation, auditable consent, and no bypass path in standard Abbey.
+
+## Abbey Completion Program: ABI foundation, dual editions, local models, desktop GUI, evidence-led closure
+
+Captured 2026-08-08 (see the same-titled goal in `goals.md`). Eleven staged
+phases; each phase closes only on its own evidence bar. Checking a phase's
+design subtask never promotes the parent capability to Current.
+
+- [x] **Phase 1 — Reproducible ABI + Abbey baseline:**
+  - ABI nested-help fix: route real-process `abi wdbx db --help` through the WDBX
+    dispatcher; preserve byte-pinned historical top-level WDBX help; codec-aware nested
+    DB help authoritative; subprocess regression against the built ABI binary
+    — *verified 2026-08-08: already fixed on ABI main by `e6c146f` ("fix(cli): route
+    nested wdbx help through live grammar"); subprocess regression
+    `nested_wdbx_help_uses_the_live_v2_grammar` (`abi-cli/tests/process.rs`) drives the
+    built binary and passes 1/1; live output confirmed codec-aware nested help with the
+    historical top-level surface intact*
+  - Re-run full ABI candidate gates: `git diff --check`, file-size guard,
+    `./tools/check.sh`, `./tools/check_full_fhe.sh`, RustSec, Windows/Linux
+    warning-denied cross-targets, gateway/membership/cluster/codec/compute/plugin/doc/
+    skill checks, scratch WDBX init/compaction/reopen/cluster/Metal/CoreML smokes;
+    check-work verifier until exact `VERDICT: PASS` (max 3 fix-and-rerun cycles)
+    — *partial 2026-08-08: `git diff --check` PASS, `./tools/check.sh` PASS (sizes, fmt,
+    clippy -D, build, workspace tests, bench guard, docs), dep-scan PASS (cargo-audit
+    0.22.2, 341 deps, only the two documented TFHE-rs ignores). NOT run this slice:
+    `check_full_fhe.sh`, cross-targets, Metal/CoreML smokes, check-work verifier —
+    separate evidence classes, still open*
+  - Preserve the two-review-unit commit structure (amend the unpublished code commit for
+    the nested-help fix); fast-forward ABI local main only after PASS; publish on
+    `codex/abbey-runtime-foundation`; record the exact merged ABI commit SHA
+    — *done before this slice: ABI main = `32e372d7f522f5a6c9c0ef92c5b9612b52cfea05`
+    (= origin/main HEAD), merged as PR #779 from `codex/abbey-runtime-foundation`
+    (branch since deleted); ABI worktree clean, 8 stashes untouched*
+  - Abbey CI/release builds check out that immutable ABI SHA — never floating ABI main;
+    preserve Abbey stash `d25279e82b6145ab86233448fc589bfa9560d1bc` exactly; prove
+    `integration/abi-proof-scope` fully merged before deleting that remote branch
+    — *verified 2026-08-08: `rust.yml` pins `ABI_REVISION: 32e372d7…` in both jobs;
+    `stash@{0}` = `d25279e8…` intact; `integration/abi-proof-scope` merged via PR #2
+    and already absent from origin*
+  - Rebuild Abbey against the pinned ABI commit; `./check.sh`, warning-denied rustdoc,
+    release installation, semantic-memory/mesh/MCP/plugin/isolated-state smokes;
+    repairs only via a temporary `codex/` integration branch + new check-work PASS
+    — *partial 2026-08-08: `./check.sh` green on the merged PR #4 state (pre-daemon-WIP
+    tree) against local ABI at the pinned SHA; rustdoc/release-install/smoke suite and
+    check-work PASS still open*
+- [ ] **Phase 2 — Self-hosted runners replace the broken hosted-CI assumption:**
+  - Primary Ubuntu ARM64 VM runner (self-hosted, Linux, ARM64, abbey) + macOS adjunct
+    runner + Win11 ARM evidence runner when provisioning/signing prerequisites exist;
+    same-repository jobs only, no fork-originated privileged jobs, no
+    `pull_request_target` for untrusted code, minimal token permissions, per-job cleanup
+  - CI checks out Abbey at workflow revision + ABI at the recorded merged commit; runs
+    `./check.sh`, warning-denied rustdoc, release build/install smoke, `ABBEY_ABI_BIN`
+    resolution smoke, safe plugin and MCP inventory tests
+  - Open Codex P2 (merged PR #4): `rust.yml` has no CI gate for fork-originated PRs
+    after removing `ubuntu-latest` — deliberate for now; revisit in this phase
+  - Open Codex P2 (merged PR #4): `rust.yml` sets `ABBEY_DEP_SCAN_REQUIRE=1` but never
+    installs cargo-audit/cargo-deny on fresh runners — runner provisioning must cover it
+  - Evidence bar: close the CI TODOs only after a run with actual jobs + successful
+    steps; a zero-job `startup_failure` is infrastructure evidence, never source-test
+    evidence; missing runners/VM images/admin permission = explicit external blockers
+- [ ] **Phase 3 — Claims and ledgers as executable specifications:**
+  - `src/claims.rs` = canonical machine-readable ledger; checked generator/validator
+    syncing the AGENTS claim table, goals.md, todo.md, docs capability sections, and
+    `abbey claims` CLI output, wired into `./check.sh`; each goal carries stable id,
+    status, implementation/test/live evidence, next actionable step, blocker owner
+  - Immediate ledger repairs: correct stale goal/TODO counts; reconcile the "Fully
+    independent TUI + agent runtime" status narrative; replace any Unix-only flock(2)
+    language with the fs4 boundary (flock Unix / `LockFileEx` Windows); restate the CI
+    blocker narrative as observed facts (Actions enabled, `startup_failure`, zero jobs,
+    floating sibling ABI dep as reproducibility defect), not a billing diagnosis
+    — *audited 2026-08-08: counts verified accurate (26 goals / 111+21 todos), TUI
+    narrative already reconciled under the abi-backed-independence reading, all lock
+    language already states the fs4 flock/`LockFileEx` boundary, and every CI mention
+    states observed facts with no billing diagnosis; no drift found*
+  - Claims drift repairs: lexical similarity and opt-in semantic memory = separate
+    Current capabilities; learned semantic ranking no longer OOS; cursor = default
+    provider, not the only backend; fm/abi alternatives documented consistently;
+    embedding credentials env-only and never persisted; repo-relative identity links;
+    nightly + ABI minimum Rust 1.99 aligned; release-template checkboxes stay unchecked
+    until a real RC is being signed/distributed
+    — *audited 2026-08-08 across README/AGENTS/docs: all seven items already
+    correct; no drift found*
+  - `tasks/lessons.md` additions: pin sibling deps by immutable commit in CI; source
+    compile vs local runtime proof vs hosted CI vs external audit = separate evidence
+    classes; claims generated/validated from a single source; a model-produced
+    structured tool call is the execution boundary (never raw text to a shell); the two
+    editions need separate binaries/bundle IDs/config roots/tool registries; three-VM
+    demo on one Mac = multi-VM evidence, not physical multi-host; Gemma E4B adapters not
+    transferable to Gemma 12B; CoreML output-oracle success proves execution under
+    requested compute units, not ANE placement; optional TFHE-rs integration is not an
+    independent crypto audit
+    — *done 2026-08-08: all nine rules appended to `tasks/lessons.md`*
+  - Open Codex P2 (merged PR #4): `tools/check_claims_sync.py` validates only a digest
+    marker + forbidden phrases, not claim text — superseded by this phase's full
+    generator/validator
+  - Resolved 2026-08-08 — Codex P2 (merged PR #4): `src/claims.rs` shell-refuse path
+    emitted only the Proposed personal-edition claim and omitted the canonical OOS
+    shipped-edition bypass claim; the refusal now surfaces both (lookup key widened to
+    match both claims, detail names both statuses, pinned by
+    `shell_refusal_surfaces_proposed_edition_and_oos_shipped_bypass`)
+  - Phase stays open: the checked generator/validator syncing all surfaces (first
+    sub-bullet) and the `check_claims_sync.py` supersession remain unimplemented
+- [ ] **Phase 4 — Shared Abbey application core + durable `abbeyd` daemon:**
+  - Reusable library consumed by CLI, TUI, daemon, desktop app; stable `AppCommand`,
+    `AppEvent`, `RunId`, `ConversationId`, `RuntimeStatus`, `ApprovalRequest`,
+    `CapabilitySet` interfaces (the shipped read-only Status/Claims foundation slice is
+    the seam, not this phase's completion)
+  - `abbeyd` durable daemon: session/conversation state, background runs, automations,
+    model-worker lifecycle, tool dispatch, memory access, audit events, cancellation +
+    process-tree teardown; no presentation logic in the daemon
+  - Transport: Unix-domain sockets (macOS/Linux) + named pipes (Windows), versioned
+    length-prefixed messages with strict size/timeout limits, per-install auth material
+  - Migration-safe state: schema versioning, startup recovery, idempotent job ids,
+    bounded queues, explicit failure records
+  - Evidence bar: CLI/TUI/React UI send the same `AppCommand` and consume the same
+    `AppEvent` stream; backend/provider behavior implemented once in the shared core
+- [ ] **Phase 5 — Model and tool runtime ownership in ABI:**
+  - Optional object-safe ABI agent-runtime layer: `ModelProvider`/`ModelRequest`/
+    `ModelEvent`/`EventSink`/`ToolSpec`/`ToolCall`/`ToolResult`/`ToolRegistry`/
+    `ExecutionPolicy`/`AuditSink`/`Usage`/`RunBudget`; streaming + structured tool
+    calls, cancellation, bounded capture, deterministic test providers, no dependency
+    back into Abbey, no new unsafe for model exec/teardown
+  - Optional `abi-models` crate: Candle + safetensors, CPU and Metal first, CUDA
+    feature-compiled but runtime-unverified; signed/hash-verified model registry;
+    weights stored outside both repos with resumable hash-verified downloads and
+    recorded license acceptance
+  - Gemma 4 architecture + compressed-tensor loader in ABI or a pinned reviewed Candle
+    fork (upstream Candle catalog lacks Gemma 4); "device available" never becomes a
+    speed/placement claim
+  - Authenticated worker protocol: local IPC same-machine; mTLS gRPC for VM workers;
+    signed job envelopes, idempotency keys, deadlines, cancellation, bounded streams,
+    capability evidence, result hashes
+- [ ] **Phase 6 — Two deliberately separate runtime editions:**
+  - Safe public/default edition: explicit approvals for shell/fs-mutation/network/
+    elevation, scoped tool allowlists, only the safe tool registry via network MCP, no
+    auto-install of privileged helpers; stays the default abbey binary/package/bundle
+  - Personal-unrestricted edition: separate binary + desktop bundle (distinct name,
+    bundle ID, config root, credential namespace, audit log); unrestricted mode always
+    on with the accepted prompt-injection consequence documented
+  - Commands execute only after a validated structured `shell.exec` tool call — never
+    concatenate untrusted raw strings into a shell; privileged ops via signed platform
+    helpers (Authorization Services/SMAppService, polkit, signed Windows service/UAC);
+    never store the user password or bypass OS authorization
+  - Mandatory audit records, process-group teardown, bounded capture, timeouts,
+    emergency kill switch; personal shell tool only via local IPC/loopback — never
+    remote MCP or a network worker API
+  - Honest reasoning/metering: visible rationale summaries, tool-call args/results/
+    timing/failure traces, no hidden-CoT claims, provider-reported tokens/charges when
+    supplied and labeled estimates otherwise
+- [ ] **Phase 7 — Tauri 2 React/TypeScript desktop product:**
+  - Tauri 2 + React + TypeScript + Bun/Vite as a client of `abbeyd`; no duplicated
+    business logic; frontend IPC types generated from the Rust command/event schema
+  - First-release views: Chat, Runs/trace, Tools/approvals, Memory/semantic spaces,
+    Models/downloads, Training/adapters, Cluster/workers, Routes/bindings,
+    Doctor/settings
+  - Security: strict CSP, no remote JS/eval, no generic execute-shell invoke, narrow
+    Rust commands, secrets never echoed to frontend logs/state; safe vs personal
+    editions get different bundle identities and capability manifests
+  - Platform/signing: macOS ARM64 host, Ubuntu ARM64 VM, Win11 ARM (WebView2); Windows
+    x64 unverified until separately built/run; Apple Developer ID + notarization,
+    Windows/Linux signing keys are owner-controlled release blockers — never
+    manufacture/embed credentials
+- [ ] **Phase 8 — Local model and media roadmap:**
+  - Primary inference: `google/gemma-4-12B-it-qat-w4a16-ct` (24 GB Mac fit); start
+    bounded at 4K context + 64-token acceptance smoke; require peak RSS ≤ 20 GB, no
+    sustained swap thrash, deterministic tokenizer fixtures, valid structured tool-call
+    output, CPU/Metal oracle within documented tolerance — if the bar fails, keep the
+    capability OFF with no silent substitution
+  - Training: adapters against the separate Gemma 4 E4B instruction model, never
+    advertised as 12B-compatible; only `train_candidate` records with local redaction,
+    dedup, deterministic 80/10/10 split, no upload/remote training; adapter manifest
+    with base hashes/dataset digest/seed/metrics/rollback state
+  - Adapter bars: ≥95% valid tool-call JSON on held-out fixtures, NLL regression ≤2% vs
+    base, deterministic reopen/rollback, 100% pass on public-edition refusal fixtures
+  - Media providers (explicit opt-in): Whisper large-v3-turbo STT, Parler-TTS Mini v1.1
+    TTS, SDXL image, LTX-Video; hash-verified downloads, recorded license acceptance,
+    fixed-seed fixtures, recorded device/runtime/revision/duration/output digest; cloud
+    TTS/STT SaaS stays out of scope, macOS system speech stays a separate provider
+- [ ] **Phase 9 — MCP hosting without exposing the personal shell:**
+  - Abbey MCP host around the safe-edition tool registry: stdio + stateless Streamable
+    HTTP, version negotiation, tools/resources/prompts/tasks, JSON Schema 2020-12,
+    tracking the stateless MCP 2026-07-28 lifecycle (not the old session-init model)
+  - Non-loopback: HTTPS, OAuth 2.1, PKCE, resource indicators, token audience binding,
+    no token passthrough; strict request/schema-depth/frame/batch/concurrency/timeout/
+    rate limits
+  - `shell.exec` absent from remotely discoverable MCP capabilities
+  - Evidence bar: protocol conformance, hostile-origin, authn, token-audience,
+    malformed-frame, rate-limit, slow-consumer, cancellation, secret-redaction tests
+- [ ] **Phase 10 — Authenticated three-VM shared-compute proof:**
+  - Three Ubuntu ARM64 VMs on one Mac: distinct IPs, independent state dirs, worker
+    identities/certs, separate namespaces; WDBX data plane + consensus-backed
+    control/membership plane (independent persistent store, no circular dependency on
+    WDBX placement) + ABI model/compute worker plane
+  - Require private-CA mTLS, cert rotation, signed job envelopes, capability
+    advertisement, leases/deadlines, retries/cancellation, result hashes,
+    quotas/backpressure, resumable recovery, backup/restore, rolling-upgrade
+    compatibility
+  - Validate worker/VM termination, leader failure, network partition, stale leader,
+    duplicate delivery, conflicting WDBX values, read repair, reconnect, rolling
+    restart, clean teardown
+  - Promotion boundary: Current = authenticated local multi-VM proof on one Mac only;
+    production separate-physical-host, geographic HA, multi-GPU scheduling stay
+    Proposed; CUDA/Vulkan/TPU/Windows compute stay unverified without real hardware
+    evidence
+- [ ] **Phase 11 — Verification and final ledger closure:**
+  - Per wave: focused unit+integration tests, fmt, warning-denied lint, file-size and
+    docs checks, scratch-state services only; HawkScan only when runtime +
+    `HAWK_API_KEY` exist (else record DAST unavailable — never "passed"); ledger
+    status+evidence updated in the same review unit
+  - Final ABI gates: workspace check, full FHE gate, RustSec (only the two documented
+    TFHE-rs transitive exceptions), gateway TLS/mTLS/authn/membership/limits/streaming/
+    tamper tests, cross-target gates where toolchains exist, frozen 13-command CLI +
+    12-tool MCP contracts, scratch WDBX/cluster/Metal/CoreML smokes, independent
+    check-work exact PASS
+  - Final Abbey gates: `./check.sh` both feature sets, warning-denied rustdoc, release
+    build + isolated installer smoke, Apple 512-dim semantic-memory proof, SQLite/WDBX
+    parity, real Abbey-to-ABI three-node mesh proof, CLI/TUI/daemon/Tauri command-event
+    parity, safe/personal bundle isolation, MCP conformance+security tests, local-model
+    fixtures, desktop launch + signature validation on all three platforms, independent
+    check-work exact PASS after the final repair wave
+  - Finish-all definition: every locally implementable goal has source+tests+docs+
+    required local live evidence; todo.md has no unchecked locally actionable item;
+    remaining unchecked items name a real external prerequisite + exact proof needed;
+    goals/todo/lessons/`src/claims.rs`/AGENTS/docs pass the automated sync check; no
+    secrets/weights/credentials/signing material in either repo; local green gates vs
+    hosted CI vs runtime proof vs signing vs DAST vs external review vs multi-host
+    reported as separate facts
 
 ## Hybrid routing and memory
 

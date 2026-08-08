@@ -1,4 +1,5 @@
 # Abbey CLI / TUI
+<!-- abbey-claims-sha256: 6451afc47d15af34424f5885e18a540bb2d317fba24d1f6323d6fcac4831d485 -->
 
 **v2.6** — production-structured hybrid CLI/TUI (modular `src/`, `./check.sh` gate).
 
@@ -23,8 +24,10 @@ cargo build --release
 # Windows:  powershell -File .\install.ps1  → %LOCALAPPDATA%\abbey\bin\abbey.exe
 ```
 
-Requires **Rust nightly** (`rust-toolchain.toml`) and at least one configured executor.
-`cursor-agent` is the default; `fm`, `abi`, and `grok` are conditional alternatives described below.
+Requires **Rust nightly** (`rust-toolchain.toml`). Generation commands require a
+configured executor; local claims, memory/inventory, mesh, and daemon-client commands do
+not. `cursor-agent` is the default; `fm`, `abi`, and `grok` are conditional alternatives
+described below.
 
 ## Quick use
 
@@ -43,6 +46,10 @@ abbey init --force        # overwrite
 abbey init --print        # preview only
 abbey init --agent        # local scan, then refine with cursor-agent
 abbey doctor
+abbey daemon status                          # authenticated local read-only query
+abbey daemon status --json                   # typed AppEvent JSON
+abbey daemon claims --status proposed
+abbey daemon claims --contains desktop --json
 abbey claims                                 # Current / Partial / Proposed / Blocked / OOS
 abbey claims proposed                        # approved but not implemented roadmap
 abbey claims blocked                         # externally blocked runtime/proof work
@@ -81,11 +88,18 @@ umask 077
 mkdir -p "${XDG_STATE_HOME:-$HOME/.local/state}/abbey/daemon"
 openssl rand -hex 32 > "${XDG_STATE_HOME:-$HOME/.local/state}/abbey/daemon/bearer"
 ABBEYD_BEARER_TOKEN_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/abbey/daemon/bearer" abbeyd
+
+# In a second shell, use the same socket and exactly one bearer source:
+ABBEYD_BEARER_TOKEN_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/abbey/daemon/bearer" \
+  abbey daemon status
 ```
 
-The socket defaults to `<state>/daemon/abbeyd.sock`. Windows fails closed until
-a named-pipe transport and runtime proof exist. This substrate is not the
-Proposed Abbey-owned agent/tool runtime or MCP host.
+The socket defaults to `<state>/daemon/abbeyd.sock`. `--json` emits the typed
+`AppEvent`, not the transport envelope. These commands neither resolve nor contact a
+model executor and never fall back to an in-process answer after connection or
+authentication failure. Windows reports the named-pipe transport as unsupported until
+that transport and runtime proof exist. This substrate is not the Proposed Abbey-owned
+agent/tool runtime or MCP host.
 
 ### Slash (CLI or TUI prompt)
 
@@ -300,6 +314,11 @@ does not extend to an `abi` invoked directly by you against the same store.
 ```
 src/
   main.rs         thin entry (<200 lines)
+  lib.rs          shared library boundary
+  entry.rs        library-owned CLI/TUI routing
+  app_core/       versioned read-only Status/Claims contracts
+  bin/abbeyd.rs   bounded authenticated Unix daemon entry
+  daemon/         authenticated bounded client + owner-only Unix server
   actions.rs      canonical RunSpec → run_agent
   cli.rs          clap surface
   slash.rs        slash catalog

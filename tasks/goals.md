@@ -1,8 +1,9 @@
 # Goals
-<!-- abbey-claims-sha256: 1cff4b9922dd6eb1a09eced94a8452478a0e071cb0835fdf788dd9cbec335282 -->
+<!-- abbey-claims-sha256: 6451afc47d15af34424f5885e18a540bb2d317fba24d1f6323d6fcac4831d485 -->
 
-Ledger snapshot after the 2026-08-08 scope migration: **25 goals** — 23 done,
-1 blocked, 1 proposed. Recount when adding or changing a `##` goal/status.
+Ledger snapshot after the 2026-08-08 Completion Program capture: **26 goals** —
+23 done, 1 blocked, 1 proposed, 1 in progress. Recount when adding or changing
+a `##` goal/status.
 
 ## Working CI on GitHub
 status: blocked
@@ -210,6 +211,12 @@ fails closed elsewhere. This is source/test/live-scratch evidence for a reusable
 application/control-plane seam—not completion of the Proposed owned executor/tool
 runtime, durable background jobs, memory ownership, Windows named pipes, desktop,
 or personal edition.
+
+The local `abbey daemon status|claims` client now exercises that exact authenticated
+protocol through the real `abbey` and `abbeyd` binaries, with human and typed JSON
+output and no model-executor resolution. Request/event correlation, version/schema,
+capability, claims-count, frame, timeout, and secret-redaction checks remain part of
+the read-only control-plane proof; they do not complete the durable-daemon phase.
 
 Found live 2026-07-31 while verifying `improve status`: `abbey memory map | head -2`
 printed a Rust panic (`failed printing to stdout: Broken pipe`) instead of exiting
@@ -524,3 +531,50 @@ broken shared Codex `computer-use` entry was removed; auth-needed/disabled plugi
 left intact. Unix/Windows installers use locked builds and atomic staging. ABI's existing
 hook lifecycle/force-push guards were repaired and independently verified; Abbey had no
 repository hook configuration to rewrite.
+
+## Abbey Completion Program: ABI foundation, dual editions, local models, desktop GUI, evidence-led closure
+status: in_progress
+
+Captured 2026-08-08 from the full program spec (11 phases; phase checklists live
+in `tasks/todo.md` under the same title). This is the staged umbrella program
+for completing Abbey as a product; it subsumes the ordering of the approved
+capability expansion roadmap without reopening or replacing that section.
+
+- **Immediate priority — reproducible baseline:** stabilize ABI (nested-help
+  fix, full candidate gates, check-work exact PASS) and pin Abbey CI/release
+  builds to the exact merged, immutable ABI commit SHA — never floating ABI
+  main.
+- **Claims and ledgers become executable specifications:** `src/claims.rs` as
+  the canonical machine-readable capability ledger with a generator/validator
+  syncing AGENTS, goals.md, todo.md, docs, and `abbey claims` output, wired
+  into `./check.sh`.
+- **Product expansion:** shared app core + `abbeyd` durable daemon; safe public
+  edition vs separately packaged personal-unrestricted edition; Tauri 2 +
+  React/TypeScript desktop app; local Gemma/media model runtimes; MCP host
+  without exposing the personal shell; authenticated three-VM shared-compute
+  proof on one Mac.
+- **Evidence discipline:** a capability becomes Current only with source +
+  automated gates + required live proof. Hosted CI, signing credentials, DAST,
+  external audits, and physical multi-host deployment stay
+  Blocked/Proposed/Unverified until their own evidence exists — reported as
+  separate facts, never collapsed into a green local gate.
+- **Shipped 2026-08-08 (Phase 3 immediate-ledger-repairs slice):** the
+  `claims refuse shell` path now surfaces both ledger facts (Proposed
+  personal-unrestricted separate edition AND Out-of-scope shipped-edition
+  allowlist bypass, unit-tested); the claims-drift audit across
+  README/AGENTS/docs found items (a)–(g) already correct; the nine
+  Phase 3 durable rules were appended to `tasks/lessons.md`. The full
+  generator/validator work and all phase evidence bars remain open.
+- **Completed 2026-08-08 (Phase 1 reproducible baseline):** ABI main is clean at the
+  pinned `32e372d7…` (merged PR #779 from `codex/abbey-runtime-foundation`,
+  branch deleted); the nested-help defect was already fixed there (`e6c146f`)
+  with a passing subprocess regression against the built binary. The independent
+  verifier passed the committed ABI candidate; workspace/full-FHE/RustSec/plugin/
+  skills/docs and scratch WDBX/cluster/Metal/CoreML gates were green with CUDA,
+  Vulkan, Windows/Linux runtime, and ANE residency retained as explicit evidence gaps.
+  Abbey side: `rust.yml` pins `ABI_REVISION` to that SHA in both jobs, stash
+  `d25279e8…` intact, `integration/abi-proof-scope` proven merged and already
+  deleted. Abbey's sibling-dependent gate, warning-denied rustdoc in both feature
+  modes, RustSec scan, locked release build, isolated installer, semantic, mesh,
+  inventory, and authenticated daemon client smokes are locally green. Hosted runner
+  execution remains the separate blocked Phase 2 evidence class.
