@@ -115,6 +115,24 @@ pub fn recent_routes(state_dir: &Path, n: usize) -> Result<Vec<RouteRecord>> {
     Ok(out)
 }
 
+/// Compact one-liner for the TUI Routes pane — narrow columns, no reason text.
+///
+/// The full audit line stays [`format_route_line`]; this keeps only what fits
+/// a half-width pane: clock time, persona/role, model, confidence, stage.
+pub fn compact_route_line(r: &RouteRecord) -> String {
+    // ts is RFC3339-ish ("2026-08-08T04:53:21…") — keep HH:MM when present.
+    let clock = if r.ts.len() >= 16 && r.ts.is_char_boundary(11) && r.ts.is_char_boundary(16) {
+        &r.ts[11..16]
+    } else {
+        r.ts.as_str()
+    };
+    let stage = r.stage.as_deref().unwrap_or("-");
+    format!(
+        "{clock} {}/{} {} {:.2} {stage}",
+        r.persona, r.role, r.model, r.confidence
+    )
+}
+
 /// One-line display for CLI / slash — keeps both surfaces in lockstep.
 pub fn format_route_line(r: &RouteRecord) -> String {
     format!(
@@ -162,5 +180,23 @@ mod tests {
         assert!(format_route_line(&got[0]).contains("alt=gemma"));
         assert!(format_route_line(&got[0]).contains("fb=prefer hybrid-loop"));
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn compact_line_keeps_route_fields_and_drops_reason() {
+        let rec = RouteRecord::new(".", "abbey", "max", "fable", "a very long reason", 0.82);
+        let line = compact_route_line(&rec);
+        assert!(line.contains("abbey/max"), "{line}");
+        assert!(line.contains("fable"), "{line}");
+        assert!(line.contains("0.82"), "{line}");
+        assert!(
+            !line.contains("a very long reason"),
+            "reason must not widen the pane: {line}"
+        );
+        // A short/odd timestamp must fall back rather than panic or slice
+        // off a char boundary.
+        let mut odd = RouteRecord::new(".", "abbey", "max", "fable", "r", 0.5);
+        odd.ts = "now".into();
+        assert!(compact_route_line(&odd).starts_with("now "));
     }
 }

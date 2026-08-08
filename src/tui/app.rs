@@ -41,6 +41,8 @@ pub struct App {
     pub should_quit: bool,
     pub pending: PendingAction,
     pub last_agent_code: Option<i32>,
+    /// Compact tail of `route.jsonl` for the Home Routes pane (audit only).
+    pub route_lines: Vec<String>,
     pub doctor_lines: Vec<String>,
     pub history: Vec<crate::state::HistoryEntry>,
     pub aliases: Vec<(String, String)>,
@@ -82,6 +84,7 @@ impl App {
             should_quit: false,
             pending: PendingAction::None,
             last_agent_code: None,
+            route_lines: Vec::new(),
             doctor_lines: Vec::new(),
             history,
             aliases,

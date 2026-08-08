@@ -79,11 +79,23 @@ from the previous slice makes the active executor visible immediately. Cycle
 order + wrap covered by a unit test; gate green (153+5+7 / 159+5+7). Same honesty
 caveat: switch logic is unit-tested and compiled, not TTY-driven in this session.
 
-**Named residuals (open, not laundered):** richer/multi-pane "modern" TUI and any
-windowed GUI (egui or similar — would be a new claims-gate row and a new dep
-tree); whether cursor-agent should ever stop being the default; abi-side chat
-continuity (`abi complete` is stateless one-shot by design). These need a design
-pick, not more code behind the current reading.
+**Home routes-audit pane slice (2026-08-08, /goal continue-all):** the Home tab
+is now multi-pane — Session (left), recent chats (right-top), and a live
+**Routes · audit** pane (right-bottom) showing the compact tail of
+`route.jsonl` (clock · persona/role · model · confidence · stage) via a new
+`compact_route_line` next to the shared `format_route_line`, unit-tested
+including the odd-timestamp fallback. The pane refreshes with the doctor
+refresh, which already re-runs after every agent run, so each prompt's routing
+decision appears immediately — the same records `abbey routes` prints, audit
+only. Gate green (154+5+7 / 160+5+7). This delivers the "richer multi-pane"
+reading for Home; same TTY caveat as the other TUI slices.
+
+**Named residuals (open, not laundered):** any *windowed* GUI (egui or similar —
+would be a new claims-gate row and a new dep tree, so it needs an explicit gate
+amendment, not a continue); whether cursor-agent should ever stop being the
+default; abi-side chat continuity (`abi complete` is stateless one-shot by
+design); further TUI panes beyond Home if wanted. "More modern" is unbounded by
+construction — closing the goal needs an acceptance statement, not more slices.
 
 Found live 2026-07-31 while verifying `improve status`: `abbey memory map | head -2`
 printed a Rust panic (`failed printing to stdout: Broken pipe`) instead of exiting

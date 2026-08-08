@@ -172,6 +172,8 @@ Buildable residuals closed 2026-07-30; Proposed/OOS stay deferred above.
       the cursor alias table never shows under abi/fm
 - [x] In-TUI backend switcher: Ctrl-B + palette "Cycle backend" via `resolve_agent_for`;
       unresolvable backends skipped, honest status when nothing else resolves
+- [x] Home multi-pane: Session · recent chats · live Routes-audit pane
+      (`compact_route_line` tail of route.jsonl, refreshed after every run)
 - [ ] "Modern TUI" beyond honesty (richer panes/layout) — needs a design pick (see goals.md
       residuals); windowed GUI would be a claims-gate amendment first
 - [x] Account/MCP/gen refuse; no stale-chat retry; doctor + claims + docs honesty

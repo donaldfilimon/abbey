@@ -166,6 +166,16 @@ impl App {
         ]);
         self.doctor_lines = lines;
         self.history = self.state.history(40);
+        // Routes pane rides the doctor refresh: it re-runs after every agent
+        // run, so the audit tail is always current when the Home tab redraws.
+        self.route_lines = crate::route_log::recent_routes(&self.state.state_dir, 8)
+            .map(|v| {
+                v.iter()
+                    .rev()
+                    .map(crate::route_log::compact_route_line)
+                    .collect()
+            })
+            .unwrap_or_default();
     }
 }
 
