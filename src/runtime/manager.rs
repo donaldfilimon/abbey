@@ -196,14 +196,12 @@ impl<E: Executor, C: Clock> RunManager<E, C> {
         };
         let sender = lock(&self.sender).as_ref().cloned();
         let Some(sender) = sender else {
-            lock(&self.shared.admitted).remove(&item.run_id);
-            let _ = transition_with_failure(
+            reject_admission(
                 &self.shared,
                 &item.run_id,
-                RunState::Queued,
                 "worker_unavailable",
                 "run worker is unavailable",
-            );
+            )?;
             return Err(ManagerError::ShuttingDown);
         };
         let send_result = sender.try_send(item);
@@ -213,11 +211,9 @@ impl<E: Executor, C: Clock> RunManager<E, C> {
                 disposition: SubmitDisposition::Enqueued,
             }),
             Err(TrySendError::Full(item)) => {
-                lock(&self.shared.admitted).remove(&item.run_id);
-                let failed = transition_with_failure(
+                let failed = reject_admission(
                     &self.shared,
                     &item.run_id,
-                    RunState::Queued,
                     "queue_full",
                     "bounded run queue is full",
                 )?;
@@ -227,14 +223,12 @@ impl<E: Executor, C: Clock> RunManager<E, C> {
                 })
             }
             Err(TrySendError::Disconnected(item)) => {
-                lock(&self.shared.admitted).remove(&item.run_id);
-                let _ = transition_with_failure(
+                reject_admission(
                     &self.shared,
                     &item.run_id,
-                    RunState::Queued,
                     "worker_unavailable",
                     "run worker is unavailable",
-                );
+                )?;
                 Err(ManagerError::ShuttingDown)
             }
         }
@@ -353,32 +347,43 @@ fn worker_entry<E: Executor, C: Clock>(
     executor: Arc<E>,
     receiver: Receiver<WorkItem>,
 ) {
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        while let Ok(item) = receiver.recv() {
-            if shared.shutting_down.load(Ordering::Acquire) {
-                cancel_queued(&shared, &item.run_id, "manager_shutdown");
-                continue;
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+        || -> Result<(), ManagerError> {
+            while let Ok(item) = receiver.recv() {
+                if shared.shutting_down.load(Ordering::Acquire) {
+                    cancel_queued(&shared, &item.run_id, "manager_shutdown")?;
+                    continue;
+                }
+                execute_item(&shared, executor.as_ref(), item)?;
             }
-            execute_item(&shared, executor.as_ref(), item);
-        }
-    }));
-    if result.is_err() {
+            Ok(())
+        },
+    ));
+    if !matches!(result, Ok(Ok(()))) {
         shared.shutting_down.store(true, Ordering::Release);
         shared.worker_failed.store(true, Ordering::Release);
         let _ = interrupt_admitted(&shared);
     }
 }
 
-fn execute_item<E: Executor, C: Clock>(shared: &Shared<C>, executor: &E, item: WorkItem) {
+fn execute_item<E: Executor, C: Clock>(
+    shared: &Shared<C>,
+    executor: &E,
+    item: WorkItem,
+) -> Result<(), ManagerError> {
     let started = shared.store.transition_run(
         &item.run_id,
         RunState::Queued,
         RunState::Starting,
         event(shared, "run_starting", None, None),
     );
-    if started.is_err() {
-        finish_admission(shared, &item.run_id);
-        return;
+    match started {
+        Ok(_) => {}
+        Err(StoreError::UnexpectedStatus { .. } | StoreError::TerminalRun { .. }) => {
+            settle_start_conflict(shared, &item.run_id)?;
+            return Ok(());
+        }
+        Err(error) => return Err(error.into()),
     }
 
     let token = CancellationToken::default();
@@ -387,121 +392,193 @@ fn execute_item<E: Executor, C: Clock>(shared: &Shared<C>, executor: &E, item: W
         token.cancel();
     }
 
-    let record = match shared.store.get_run(&item.run_id) {
-        Ok(Some(record)) => record,
-        _ => {
-            finish_admission(shared, &item.run_id);
-            return;
-        }
-    };
+    let record = shared
+        .store
+        .get_run(&item.run_id)?
+        .ok_or_else(|| StoreError::RunNotFound(item.run_id.to_string()))?;
     if record.status == RunState::CancelRequested || token.is_cancelled() {
         token.cancel();
-        finish_cancelled(shared, &item.run_id, record.status);
+        finish_cancelled(shared, &item.run_id)?;
         finish_admission(shared, &item.run_id);
-        return;
+        return Ok(());
     }
-    if shared
-        .store
-        .transition_run(
-            &item.run_id,
-            RunState::Starting,
-            RunState::Running,
-            event(shared, "run_started", None, None),
-        )
-        .is_err()
-    {
-        if let Ok(Some(current)) = shared.store.get_run(&item.run_id)
-            && current.status == RunState::CancelRequested
-        {
+    let running = shared.store.transition_run(
+        &item.run_id,
+        RunState::Starting,
+        RunState::Running,
+        event(shared, "run_started", None, None),
+    );
+    match running {
+        Ok(_) => {}
+        Err(StoreError::UnexpectedStatus { .. }) => {
             token.cancel();
-            finish_cancelled(shared, &item.run_id, current.status);
+            finish_cancelled(shared, &item.run_id)?;
+            finish_admission(shared, &item.run_id);
+            return Ok(());
         }
-        finish_admission(shared, &item.run_id);
-        return;
+        Err(error) => return Err(error.into()),
     }
 
     let attempt = execute_catching_panics(executor, &item.run_id, item.request, &token);
-    let current = shared.store.get_run(&item.run_id).ok().flatten();
-    if let Some(current) = current {
-        match attempt {
-            ExecutionAttempt::Completed
-                if token.is_cancelled()
-                    || current.status == RunState::CancelRequested
-                    || shared.shutting_down.load(Ordering::Acquire) =>
-            {
-                finish_cancelled(shared, &item.run_id, current.status);
-            }
+    settle_attempt(shared, &item.run_id, &token, &attempt)?;
+    finish_admission(shared, &item.run_id);
+    Ok(())
+}
+
+fn settle_attempt<C: Clock>(
+    shared: &Shared<C>,
+    run_id: &RunId,
+    token: &CancellationToken,
+    attempt: &ExecutionAttempt,
+) -> Result<(), ManagerError> {
+    for _ in 0..8 {
+        let record = shared
+            .store
+            .get_run(run_id)?
+            .ok_or_else(|| StoreError::RunNotFound(run_id.to_string()))?;
+        if record.status.is_terminal() {
+            return Ok(());
+        }
+        let (next, terminal_event) = match attempt {
+            ExecutionAttempt::Failed(_) => (
+                RunState::Failed,
+                failure_event(shared, "executor_failed", "executor returned a failure"),
+            ),
+            ExecutionAttempt::Panicked(_) => (
+                RunState::Failed,
+                failure_event(shared, "executor_panicked", "executor panicked"),
+            ),
             ExecutionAttempt::Completed => {
-                let _ = shared.store.transition_run(
-                    &item.run_id,
-                    current.status,
-                    RunState::Succeeded,
-                    event(shared, "run_succeeded", None, None),
-                );
+                let cancelling = token.is_cancelled()
+                    || record.status == RunState::CancelRequested
+                    || shared.shutting_down.load(Ordering::Acquire);
+                if cancelling {
+                    (
+                        RunState::Cancelled,
+                        event(shared, "run_cancelled", None, None),
+                    )
+                } else {
+                    (
+                        RunState::Succeeded,
+                        event(shared, "run_succeeded", None, None),
+                    )
+                }
             }
-            ExecutionAttempt::Failed(_) => {
-                let _ = transition_with_failure(
-                    shared,
-                    &item.run_id,
-                    current.status,
-                    "executor_failed",
-                    "executor returned a failure",
-                );
-            }
-            ExecutionAttempt::Panicked(_) => {
-                let _ = transition_with_failure(
-                    shared,
-                    &item.run_id,
-                    current.status,
-                    "executor_panicked",
-                    "executor panicked",
-                );
-            }
+        };
+        match shared
+            .store
+            .transition_run(run_id, record.status, next, terminal_event)
+        {
+            Ok(_) => return Ok(()),
+            Err(StoreError::UnexpectedStatus { .. }) => continue,
+            Err(error) => return Err(error.into()),
         }
     }
-    finish_admission(shared, &item.run_id);
+    Err(StoreError::CorruptData("terminal run transition did not converge").into())
 }
 
-fn finish_cancelled<C: Clock>(shared: &Shared<C>, run_id: &RunId, expected: RunState) {
-    if matches!(expected, RunState::Starting | RunState::Running) {
-        let _ = shared.store.transition_run(
+fn finish_cancelled<C: Clock>(shared: &Shared<C>, run_id: &RunId) -> Result<(), ManagerError> {
+    for _ in 0..8 {
+        let record = shared
+            .store
+            .get_run(run_id)?
+            .ok_or_else(|| StoreError::RunNotFound(run_id.to_string()))?;
+        if record.status.is_terminal() {
+            return Ok(());
+        }
+        match shared.store.transition_run(
             run_id,
-            expected,
-            RunState::CancelRequested,
-            event(shared, "run_cancel_requested", None, None),
-        );
-    }
-    let expected = shared
-        .store
-        .get_run(run_id)
-        .ok()
-        .flatten()
-        .map(|record| record.status)
-        .unwrap_or(RunState::CancelRequested);
-    if !expected.is_terminal() {
-        let _ = shared.store.transition_run(
-            run_id,
-            expected,
+            record.status,
             RunState::Cancelled,
             event(shared, "run_cancelled", None, None),
-        );
+        ) {
+            Ok(_) => return Ok(()),
+            Err(StoreError::UnexpectedStatus { .. }) => continue,
+            Err(error) => return Err(error.into()),
+        }
     }
+    Err(StoreError::CorruptData("cancellation transition did not converge").into())
 }
 
-fn cancel_queued<C: Clock>(shared: &Shared<C>, run_id: &RunId, reason: &str) {
-    let _ = shared.store.transition_run(
+fn cancel_queued<C: Clock>(
+    shared: &Shared<C>,
+    run_id: &RunId,
+    reason: &str,
+) -> Result<(), ManagerError> {
+    let transition = shared.store.transition_run(
         run_id,
         RunState::Queued,
         RunState::Cancelled,
         event(shared, "run_cancelled", Some("reason"), Some(reason)),
     );
+    match transition {
+        Ok(_) | Err(StoreError::TerminalRun { .. }) => {}
+        Err(StoreError::UnexpectedStatus { .. }) => finish_cancelled(shared, run_id)?,
+        Err(error) => return Err(error.into()),
+    }
     finish_admission(shared, run_id);
+    Ok(())
 }
 
 fn finish_admission<C>(shared: &Shared<C>, run_id: &RunId) {
     lock(&shared.active).remove(run_id);
     lock(&shared.admitted).remove(run_id);
     notify(shared);
+}
+
+fn settle_start_conflict<C: Clock>(shared: &Shared<C>, run_id: &RunId) -> Result<(), ManagerError> {
+    let record = shared
+        .store
+        .get_run(run_id)?
+        .ok_or_else(|| StoreError::RunNotFound(run_id.to_string()))?;
+    if record.status.is_terminal() {
+        finish_admission(shared, run_id);
+        return Ok(());
+    }
+    if record.status == RunState::CancelRequested {
+        finish_cancelled(shared, run_id)?;
+        finish_admission(shared, run_id);
+        return Ok(());
+    }
+    Err(StoreError::UnexpectedStatus {
+        expected: RunState::Queued,
+        found: record.status,
+    }
+    .into())
+}
+
+fn reject_admission<C: Clock>(
+    shared: &Shared<C>,
+    run_id: &RunId,
+    code: &str,
+    message: &str,
+) -> Result<RunRecord, ManagerError> {
+    for _ in 0..8 {
+        let record = shared
+            .store
+            .get_run(run_id)?
+            .ok_or_else(|| StoreError::RunNotFound(run_id.to_string()))?;
+        if record.status.is_terminal() {
+            finish_admission(shared, run_id);
+            return Ok(record);
+        }
+        if record.status != RunState::Queued {
+            return Err(StoreError::UnexpectedStatus {
+                expected: RunState::Queued,
+                found: record.status,
+            }
+            .into());
+        }
+        match transition_with_failure(shared, run_id, RunState::Queued, code, message) {
+            Ok(terminal) => {
+                finish_admission(shared, run_id);
+                return Ok(terminal);
+            }
+            Err(ManagerError::Store(StoreError::UnexpectedStatus { .. })) => continue,
+            Err(error) => return Err(error),
+        }
+    }
+    Err(StoreError::CorruptData("rejected admission did not converge").into())
 }
 
 fn canonical_request_digest(request: &RunRequest) -> Result<String, ManagerError> {

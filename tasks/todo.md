@@ -7,9 +7,9 @@ Executable workflow ledger: **26 goals (23 done, 1 in_progress, 1 proposed, 1 bl
 <!-- END abbey-generated:claims-summary -->
 
 
-Ledger snapshot after the 2026-08-08 Completion Program capture: **113 checked,
-19 open**. The 19 open items are two externally blocked CI proofs, eight
-approved Proposed implementation slices, and nine remaining Abbey Completion
+Ledger snapshot after the 2026-08-08 Completion Program capture: **114 checked,
+20 open**. The 20 open items are two externally blocked CI proofs, eight
+approved Proposed implementation slices, and ten remaining Abbey Completion
 Program phases; recount when changing checkboxes.
 
 ## Working CI on GitHub (blocked — see goals.md)
@@ -124,8 +124,9 @@ design subtask never promotes the parent capability to Current.
     resolution smoke, safe plugin and MCP inventory tests
   - Open Codex P2 (merged PR #4): `rust.yml` has no CI gate for fork-originated PRs
     after removing `ubuntu-latest` — deliberate for now; revisit in this phase
-  - Open Codex P2 (merged PR #4): `rust.yml` sets `ABBEY_DEP_SCAN_REQUIRE=1` but never
-    installs cargo-audit/cargo-deny on fresh runners — runner provisioning must cover it
+  - Resolved 2026-08-08 (merged PR #11): both workflow jobs perform a locked
+    `cargo-audit` installation before running the required dependency scan. This removes the
+    fresh-runner tool gap but does not prove a runner actually scheduled or executed.
   - Evidence bar: close the CI TODOs only after a run with actual jobs + successful
     steps; a zero-job `startup_failure` is infrastructure evidence, never source-test
     evidence; missing runners/VM images/admin permission = explicit external blockers
@@ -139,7 +140,7 @@ design subtask never promotes the parent capability to Current.
     language with the fs4 boundary (flock Unix / `LockFileEx` Windows); restate the CI
     blocker narrative as observed facts (Actions enabled, `startup_failure`, zero jobs,
     floating sibling ABI dep as reproducibility defect), not a billing diagnosis
-    — *audited 2026-08-08: counts verified accurate (26 goals / 112+20 todos), TUI
+    — *audited 2026-08-08: counts verified accurate (26 goals / 114+20 todos), TUI
     narrative already reconciled under the abi-backed-independence reading, all lock
     language already states the fs4 flock/`LockFileEx` boundary, and every CI mention
     states observed facts with no billing diagnosis; no drift found*

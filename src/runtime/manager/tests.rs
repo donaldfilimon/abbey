@@ -14,6 +14,68 @@ impl Clock for FakeClock {
 }
 
 #[derive(Default)]
+struct CompletionRaceState {
+    entered: bool,
+    released: bool,
+}
+
+#[derive(Default)]
+struct CompletionRaceClock {
+    calls: AtomicU64,
+    state: (Mutex<CompletionRaceState>, Condvar),
+}
+
+impl CompletionRaceClock {
+    fn wait_until_terminal_transition_is_staged(&self) {
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        let (state, changed) = &self.state;
+        let mut state = lock(state);
+        while !state.entered {
+            let remaining = deadline
+                .checked_duration_since(std::time::Instant::now())
+                .expect("terminal transition was not staged before deadline");
+            let waited = changed
+                .wait_timeout(state, remaining)
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            state = waited.0;
+            assert!(!waited.1.timed_out(), "terminal transition was not staged");
+        }
+    }
+
+    fn release_terminal_transition(&self) {
+        let (state, changed) = &self.state;
+        lock(state).released = true;
+        changed.notify_all();
+    }
+}
+
+impl Clock for CompletionRaceClock {
+    fn now_millis(&self) -> u64 {
+        let call = self.calls.fetch_add(1, Ordering::Relaxed);
+        if call == 2 {
+            let (state, changed) = &self.state;
+            let mut state = lock(state);
+            state.entered = true;
+            changed.notify_all();
+            while !state.released {
+                state = changed
+                    .wait(state)
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+            }
+        }
+        call
+    }
+}
+
+struct CompletionRaceRelease(Arc<CompletionRaceClock>);
+
+impl Drop for CompletionRaceRelease {
+    fn drop(&mut self) {
+        self.0.release_terminal_transition();
+    }
+}
+
+#[derive(Default)]
 struct TestExecutor {
     calls: Mutex<HashMap<String, usize>>,
     entered: (Mutex<HashSet<String>>, Condvar),
@@ -221,6 +283,77 @@ fn running_cancellation_reaches_executor_and_persists_cancelled() {
 }
 
 #[test]
+fn cancellation_winning_during_terminal_persistence_converges_to_cancelled() {
+    let scratch = ScratchDir::new("completion-cancel-race");
+    let store = Arc::new(RuntimeStore::open(&scratch.0.join("runtime.sqlite")).unwrap());
+    let executor = Arc::new(TestExecutor::default());
+    let clock = Arc::new(CompletionRaceClock::default());
+    let manager = RunManager::start(
+        Arc::clone(&store),
+        executor,
+        Arc::clone(&clock),
+        RunManagerConfig { queue_capacity: 1 },
+    );
+    let release = CompletionRaceRelease(Arc::clone(&clock));
+
+    let run = manager
+        .submit(request("completion-race", "success"))
+        .unwrap();
+    clock.wait_until_terminal_transition_is_staged();
+    let cancellation = manager.cancel(&run.run.id).unwrap();
+    release.0.release_terminal_transition();
+    assert_eq!(cancellation.status, RunState::CancelRequested);
+
+    assert_eq!(terminal(&manager, &run.run.id).status, RunState::Cancelled);
+    manager.shutdown().unwrap();
+    assert!(
+        store
+            .get_run(&run.run.id)
+            .unwrap()
+            .unwrap()
+            .status
+            .is_terminal()
+    );
+}
+
+fn assert_cancel_race_preserves_failure(input: &str, expected_code: &str) {
+    let scratch = ScratchDir::new(expected_code);
+    let store = Arc::new(RuntimeStore::open(&scratch.0.join("runtime.sqlite")).unwrap());
+    let executor = Arc::new(TestExecutor::default());
+    let clock = Arc::new(CompletionRaceClock::default());
+    let manager = RunManager::start(
+        Arc::clone(&store),
+        executor,
+        Arc::clone(&clock),
+        RunManagerConfig { queue_capacity: 1 },
+    );
+    let release = CompletionRaceRelease(Arc::clone(&clock));
+
+    let run = manager
+        .submit(request(expected_code, input))
+        .expect("failure fixture should be admitted");
+    clock.wait_until_terminal_transition_is_staged();
+    let cancellation = manager.cancel(&run.run.id).unwrap();
+    release.0.release_terminal_transition();
+    assert_eq!(cancellation.status, RunState::CancelRequested);
+
+    assert_eq!(terminal(&manager, &run.run.id).status, RunState::Failed);
+    let events = store.run_events(&run.run.id).unwrap();
+    assert_eq!(events.last().unwrap().payload["code"], expected_code);
+    manager.shutdown().unwrap();
+}
+
+#[test]
+fn cancellation_racing_with_failure_preserves_failure_record() {
+    assert_cancel_race_preserves_failure("fail", "executor_failed");
+}
+
+#[test]
+fn cancellation_racing_with_panic_preserves_panic_record() {
+    assert_cancel_race_preserves_failure("panic", "executor_panicked");
+}
+
+#[test]
 fn failures_and_panics_become_explicit_durable_failures() {
     let (_scratch, store, _executor, manager) = manager("failures", 2);
     let failed = manager.submit(request("failure", "fail")).unwrap();
@@ -296,4 +429,111 @@ fn shutdown_cancels_running_and_queued_work_before_returning() {
         RunState::Cancelled
     );
     assert_eq!(executor.calls_for("never-execute"), 0);
+}
+
+#[test]
+fn rejected_admission_is_released_only_after_terminal_persistence() {
+    let (_scratch, store, _executor, manager) = manager("rejected-admission", 1);
+    let request = request("rejected-admission", "success");
+    let run = store
+        .create_or_get_run(NewRun {
+            conversation_id: None,
+            idempotency_key: request.idempotency_key.clone(),
+            request_digest: canonical_request_digest(&request).unwrap(),
+        })
+        .unwrap();
+    lock(&manager.shared.admitted).insert(run.id.clone());
+
+    let terminal = reject_admission(
+        &manager.shared,
+        &run.id,
+        "fixture_rejection",
+        "fixture rejection",
+    )
+    .unwrap();
+
+    assert_eq!(terminal.status, RunState::Failed);
+    assert!(!lock(&manager.shared.admitted).contains(&run.id));
+    manager.shutdown().unwrap();
+}
+
+#[test]
+fn rejected_admission_retains_recovery_ownership_on_nonterminal_conflict() {
+    let (_scratch, store, _executor, manager) = manager("rejection-conflict", 1);
+    let request = request("rejection-conflict", "success");
+    let run = store
+        .create_or_get_run(NewRun {
+            conversation_id: None,
+            idempotency_key: request.idempotency_key.clone(),
+            request_digest: canonical_request_digest(&request).unwrap(),
+        })
+        .unwrap();
+    lock(&manager.shared.admitted).insert(run.id.clone());
+    store
+        .transition_run(
+            &run.id,
+            RunState::Queued,
+            RunState::Starting,
+            event(&manager.shared, "fixture_starting", None, None),
+        )
+        .unwrap();
+
+    assert!(matches!(
+        reject_admission(
+            &manager.shared,
+            &run.id,
+            "fixture_rejection",
+            "fixture rejection"
+        ),
+        Err(ManagerError::Store(StoreError::UnexpectedStatus {
+            found: RunState::Starting,
+            ..
+        }))
+    ));
+    assert!(lock(&manager.shared.admitted).contains(&run.id));
+    manager.shutdown().unwrap();
+    assert_eq!(
+        store.get_run(&run.id).unwrap().unwrap().status,
+        RunState::Interrupted
+    );
+}
+
+#[test]
+fn start_conflict_settles_cancel_requested_before_releasing_admission() {
+    let (_scratch, store, executor, manager) = manager("start-conflict", 1);
+    let request = request("start-conflict", "never-execute");
+    let run = store
+        .create_or_get_run(NewRun {
+            conversation_id: None,
+            idempotency_key: request.idempotency_key.clone(),
+            request_digest: canonical_request_digest(&request).unwrap(),
+        })
+        .unwrap();
+    lock(&manager.shared.admitted).insert(run.id.clone());
+    store
+        .transition_run(
+            &run.id,
+            RunState::Queued,
+            RunState::CancelRequested,
+            event(&manager.shared, "fixture_cancel_requested", None, None),
+        )
+        .unwrap();
+
+    execute_item(
+        &manager.shared,
+        executor.as_ref(),
+        WorkItem {
+            run_id: run.id.clone(),
+            request,
+        },
+    )
+    .unwrap();
+
+    assert_eq!(
+        store.get_run(&run.id).unwrap().unwrap().status,
+        RunState::Cancelled
+    );
+    assert!(!lock(&manager.shared.admitted).contains(&run.id));
+    assert_eq!(executor.calls_for("never-execute"), 0);
+    manager.shutdown().unwrap();
 }

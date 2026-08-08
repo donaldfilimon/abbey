@@ -95,3 +95,9 @@ Executable workflow ledger: **26 goals (23 done, 1 in_progress, 1 proposed, 1 bl
   durable, but mark Starting/Running/CancelRequested runs Interrupted after restart. An
   explicit retry can reuse the request identity safely; automatic replay could duplicate
   a filesystem mutation or tool call that completed just before the crash.
+- **A terminal decision is not durable until its compare-and-swap transition commits.**
+  Completion and cancellation can both observe `Running`; if cancellation publishes
+  `CancelRequested` first, the worker must reload state and converge to `Cancelled`
+  instead of discarding `UnexpectedStatus`. Keep the run admitted until a terminal row is
+  visible, and pin the interleaving with a deterministic barrier test rather than hoping
+  a timing stress test happens to find it.
