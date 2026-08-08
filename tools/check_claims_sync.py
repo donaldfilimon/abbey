@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parent.parent
 DOCUMENTS = (
     ROOT / "AGENTS.md",
     ROOT / "CLAUDE.md",
+    ROOT / "README.md",
     ROOT / "tasks/goals.md",
     ROOT / "tasks/todo.md",
     ROOT / "tasks/lessons.md",

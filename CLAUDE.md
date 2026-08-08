@@ -1,5 +1,5 @@
 # CLAUDE.md
-<!-- abbey-claims-sha256: 1cff4b9922dd6eb1a09eced94a8452478a0e071cb0835fdf788dd9cbec335282 -->
+<!-- abbey-claims-sha256: 6451afc47d15af34424f5885e18a540bb2d317fba24d1f6323d6fcac4831d485 -->
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
@@ -27,7 +27,7 @@ abbey doctor                       # build stamp + persona/role/memory/os honest
 
 `./check.sh` is the merge bar — always run it before considering work done. In order: a toolchain probe (a cheap `cargo check` that trips the `rust-version` gate during unit-graph construction, so a shadowed Homebrew cargo fails fast with the remedy printed), fmt-check, clippy `-D warnings`, tests — the last two **for both feature sets** — the file-size guard, then *soft* cross-compile checks for `x86_64-pc-windows-gnu` / `x86_64-unknown-linux-gnu` (skipped when the target isn't installed, and never a hard failure). A bare `cargo test` never compiles `src/memory/wdbx.rs`, so it can pass while the gated backend is broken; that is exactly why the gate runs twice.
 
-`tests/` includes process-level CLI suites plus `app_core_contract.rs`, which imports Abbey as an external library client. Process tests drive `CARGO_BIN_EXE_abbey` because some guarantees only exist once the process runs — real exit codes, real stdout/stderr, and the SIGPIPE reset before `main`. `cli_surface.rs` uses a throwaway `ABBEY_STATE_DIR`; keep that property for state-mutating cases. `slash_parse.rs` is read-only/current-dir scoped. The app-core contract test must stay presentation-neutral and must not gain crate-private access.
+`tests/` includes process-level CLI suites plus `app_core_contract.rs`, which imports Abbey as an external library client. Process tests drive `CARGO_BIN_EXE_abbey` because some guarantees only exist once the process runs — real exit codes, real stdout/stderr, and the SIGPIPE reset before `main`. `daemon_cli.rs` starts real `abbeyd` and `abbey` binaries against owner-only scratch state; it must never use a user's socket or bearer. `cli_surface.rs` uses a throwaway `ABBEY_STATE_DIR`; keep that property for state-mutating cases. `slash_parse.rs` is read-only/current-dir scoped. The app-core contract test must stay presentation-neutral and must not gain crate-private access.
 
 ## Toolchain
 
@@ -70,7 +70,7 @@ Key modules (`src/`):
 | `main.rs` | pre-Clap SIGPIPE shim delegating to the library; must stay under 200 lines |
 | `lib.rs` / `entry.rs` | private implementation graph + library-owned CLI/TUI routing |
 | `app_core/` | public versioned Status/Claims contracts and standard read-only policy |
-| `daemon/` / `bin/abbeyd.rs` | authenticated bounded Unix Status/Claims transport; no tools, models, memory, or jobs |
+| `daemon/` / `bin/abbeyd.rs` | authenticated bounded Unix Status/Claims client/server transport; no tools, models, memory, or jobs |
 | `cli.rs` | clap `Cli`/`Subcommand` definitions (Grok Build/Codex/Claude Code parity surface) |
 | `actions.rs` | `RunSpec` + `run_agent` — the one path every surface calls |
 | `commands.rs` | clap subcommand match → actions |

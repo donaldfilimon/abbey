@@ -254,6 +254,11 @@ pub enum Commands {
         #[command(subcommand)]
         cmd: MeshCmd,
     },
+    /// Query the authenticated local Abbey daemon control plane
+    Daemon {
+        #[command(subcommand)]
+        cmd: DaemonCmd,
+    },
     /// Show or set persona (abbey|aviva|abi|auto)
     Persona { name: Option<String> },
     /// Show or set worker role (max|gemma|auto)
@@ -670,6 +675,38 @@ pub enum MeshCmd {
         #[arg(long)]
         json: bool,
     },
+}
+
+#[derive(Debug, Clone, Subcommand)]
+pub enum DaemonCmd {
+    /// Show the daemon runtime and advertised read-only capabilities
+    Status {
+        /// Emit the typed application event as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Query the daemon's canonical capability claims
+    Claims {
+        /// Select one evidence status
+        #[arg(long, value_enum)]
+        status: Option<DaemonClaimStatus>,
+        /// Case-insensitive substring filter over claim text
+        #[arg(long, value_name = "TEXT")]
+        contains: Option<String>,
+        /// Emit the typed application event as JSON
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum DaemonClaimStatus {
+    Current,
+    Partial,
+    Proposed,
+    Blocked,
+    #[value(name = "oos", alias = "out-of-scope", alias = "out_of_scope")]
+    OutOfScope,
 }
 
 fn parse_mesh_nodes(value: &str) -> Result<usize, String> {

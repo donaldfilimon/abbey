@@ -1,5 +1,5 @@
 # Abbey production readiness
-<!-- abbey-claims-sha256: 1cff4b9922dd6eb1a09eced94a8452478a0e071cb0835fdf788dd9cbec335282 -->
+<!-- abbey-claims-sha256: 6451afc47d15af34424f5885e18a540bb2d317fba24d1f6323d6fcac4831d485 -->
 
 ## Toolchain
 
@@ -79,6 +79,20 @@ file) or `ABBEYD_BEARER_TOKEN`; neither source belongs in `config.toml` or logs.
 The daemon exposes only `Status` and `Claims` through `abbey::app_core`; it owns
 no memory handle, agent process, tool registry, durable job, or shell. Windows
 named-pipe support remains unimplemented and fails closed.
+
+The client consumes the same socket and exactly one bearer source:
+
+```bash
+abbey daemon status
+abbey daemon status --json
+abbey daemon claims --status proposed --contains desktop
+```
+
+Human output is concise; `--json` is the typed `AppEvent`. Connection,
+authentication, protocol, schema, capability, and request/event-correlation failures are
+nonzero and never fall back to local claims. Authentication material is absent from
+stdout, stderr, Debug output, persisted state, and subprocess argv. On non-Unix hosts the
+client reports the unavailable named-pipe transport before attempting authentication.
 
 Accelerator **host detection** (`abbey platform compute`) is Current. GPU/NPU/TPU
 **runtimes inside Abbey** are Proposed and unavailable — see `abbey claims proposed`.

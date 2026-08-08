@@ -10,7 +10,7 @@ const MAX_BEARER_LEN: usize = 4096;
 
 /// Authentication material whose `Debug` implementation is always redacted.
 #[derive(Clone)]
-pub struct BearerSecret(Vec<u8>);
+pub struct BearerSecret(String);
 
 impl BearerSecret {
     pub fn parse(value: impl AsRef<[u8]>) -> Result<Self, ConfigError> {
@@ -18,10 +18,11 @@ impl BearerSecret {
         if !(MIN_BEARER_LEN..=MAX_BEARER_LEN).contains(&value.len()) {
             return Err(ConfigError::BearerLength);
         }
-        if value.iter().any(|byte| byte.is_ascii_control()) {
+        let value = std::str::from_utf8(value).map_err(|_| ConfigError::BearerNotUtf8)?;
+        if value.chars().any(char::is_control) {
             return Err(ConfigError::BearerControlCharacter);
         }
-        Ok(Self(value.to_vec()))
+        Ok(Self(value.to_owned()))
     }
 
     pub(crate) fn matches(&self, candidate: &[u8]) -> bool {
@@ -32,12 +33,17 @@ impl BearerSecret {
             return false;
         }
         self.0
+            .as_bytes()
             .iter()
             .zip(candidate)
             .fold(0_u8, |difference, (left, right)| {
                 difference | (left ^ right)
             })
             == 0
+    }
+
+    pub(crate) fn as_str(&self) -> &str {
+        &self.0
     }
 }
 
@@ -210,6 +216,26 @@ mod tests {
         assert!(matches!(
             load_bearer_file(&path),
             Err(ConfigError::BearerFilePermissions(_))
+        ));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn owner_only_bearer_file_rejects_non_utf8() {
+        use std::io::Write as _;
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let root = scratch_dir("bearer-utf8");
+        let path = root.join("bearer");
+        let mut bytes = vec![b'a'; MIN_BEARER_LEN];
+        bytes[0] = 0xff;
+        let mut file = std::fs::File::create(&path).unwrap();
+        file.write_all(&bytes).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        assert!(matches!(
+            load_bearer_file(&path),
+            Err(ConfigError::BearerNotUtf8)
         ));
         std::fs::remove_dir_all(root).unwrap();
     }

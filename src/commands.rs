@@ -2,10 +2,19 @@
 
 use crate::actions::{RunSpec, fork_prompt, run_agent, run_commit, run_pr, run_review};
 use crate::agent::{AgentConfig, run_resilient};
+use crate::app_core::{
+    AppCapability, AppCommand, AppEvent, ClaimStatus, ClaimsQuery, Edition, RuntimeState,
+};
 use crate::build_info;
 use crate::claims;
-use crate::cli::{Cli, Commands, GenerateCmd, MemoryCmd, MeshCmd, Shell};
+use crate::cli::{
+    Cli, Commands, DaemonClaimStatus, DaemonCmd, GenerateCmd, MemoryCmd, MeshCmd, Shell,
+};
 use crate::config;
+#[cfg(not(unix))]
+use crate::daemon::ClientError;
+#[cfg(unix)]
+use crate::daemon::{DaemonClient, DaemonConfig};
 use crate::deferred;
 use crate::doctor::{
     cmd_debug, cmd_doctor, cmd_init, cmd_memory_store, cmd_persona, cmd_role, print_config,
@@ -33,7 +42,7 @@ use crate::subagents;
 use crate::surfaces;
 use crate::voice;
 use crate::wdbx_bridge;
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use clap::CommandFactory;
 use clap_complete::{Shell as ClapShell, generate};
 use std::io;
@@ -236,6 +245,7 @@ pub fn run_cli(cli: Cli, state: AbbeyState, mut cfg: AgentConfig) -> Result<i32>
                 }
             }
         }
+        Some(Commands::Daemon { cmd }) => run_daemon_command(cmd),
         Some(Commands::Persona { name }) => cmd_persona(name.as_deref()),
         Some(Commands::Role { name }) => cmd_role(name.as_deref()),
         Some(Commands::Routes { n, correlation }) => {
@@ -442,5 +452,157 @@ pub fn run_cli(cli: Cli, state: AbbeyState, mut cfg: AgentConfig) -> Result<i32>
             }
             run_resilient(&cfg, &state, false, &args)
         }
+    }
+}
+
+fn run_daemon_command(command: DaemonCmd) -> Result<i32> {
+    let (command, json) = match command {
+        DaemonCmd::Status { json } => (AppCommand::Status, json),
+        DaemonCmd::Claims {
+            status,
+            contains,
+            json,
+        } => (
+            AppCommand::Claims(ClaimsQuery {
+                status: status.map(daemon_claim_status),
+                contains,
+            }),
+            json,
+        ),
+    };
+    let event = request_daemon(command)?;
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&event)?);
+    } else {
+        print!("{}", format_daemon_event(&event)?);
+    }
+    Ok(0)
+}
+
+#[cfg(unix)]
+fn request_daemon(command: AppCommand) -> Result<AppEvent> {
+    let config = DaemonConfig::from_env()?;
+    Ok(DaemonClient::new(config).request(command)?)
+}
+
+#[cfg(not(unix))]
+fn request_daemon(_command: AppCommand) -> Result<AppEvent> {
+    Err(ClientError::UnsupportedPlatform.into())
+}
+
+fn daemon_claim_status(status: DaemonClaimStatus) -> ClaimStatus {
+    match status {
+        DaemonClaimStatus::Current => ClaimStatus::Current,
+        DaemonClaimStatus::Partial => ClaimStatus::Partial,
+        DaemonClaimStatus::Proposed => ClaimStatus::Proposed,
+        DaemonClaimStatus::Blocked => ClaimStatus::Blocked,
+        DaemonClaimStatus::OutOfScope => ClaimStatus::OutOfScope,
+    }
+}
+
+fn format_daemon_event(event: &AppEvent) -> Result<String> {
+    match event {
+        AppEvent::Status(status) => {
+            let edition = match status.edition {
+                Edition::Standard => "standard",
+            };
+            let state = match status.state {
+                RuntimeState::Ready => "ready",
+            };
+            let capabilities = status
+                .capabilities
+                .as_slice()
+                .iter()
+                .map(|capability| match capability {
+                    AppCapability::ReadStatus => "read_status",
+                    AppCapability::ReadClaims => "read_claims",
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            Ok(format!(
+                "abbeyd: {state} ({edition} edition)\n\
+                 protocol: {} · schema: {}\n\
+                 build: {} · {} · {}\n\
+                 capabilities: {capabilities}\n",
+                status.protocol_version,
+                status.schema_version,
+                status.version,
+                status.build_git,
+                status.build_target,
+            ))
+        }
+        AppEvent::Claims(snapshot) => {
+            let mut rendered = format!("abbeyd claims: {} match(es)\n", snapshot.matched);
+            for claim in &snapshot.claims {
+                rendered.push_str(&format!(
+                    "  [{}] {}\n      {}\n",
+                    claim_status_label(claim.status),
+                    claim.name,
+                    claim.note,
+                ));
+                if let Some(instead) = &claim.instead {
+                    rendered.push_str(&format!("      instead: {instead}\n"));
+                }
+            }
+            Ok(rendered)
+        }
+        AppEvent::ApprovalRequested(_) => Err(anyhow!(
+            "daemon returned an event outside the read-only CLI contract"
+        )),
+    }
+}
+
+fn claim_status_label(status: ClaimStatus) -> &'static str {
+    match status {
+        ClaimStatus::Current => "Current",
+        ClaimStatus::Partial => "Partial",
+        ClaimStatus::Proposed => "Proposed",
+        ClaimStatus::Blocked => "Blocked",
+        ClaimStatus::OutOfScope => "Out of scope",
+    }
+}
+
+#[cfg(test)]
+mod daemon_tests {
+    use super::*;
+    use crate::app_core::{
+        APP_PROTOCOL_VERSION, APP_SCHEMA_VERSION, CapabilitySet, ClaimsSnapshot, RuntimeStatus,
+    };
+
+    #[test]
+    fn daemon_human_status_is_concise_and_read_only() {
+        let text = format_daemon_event(&AppEvent::Status(RuntimeStatus {
+            protocol_version: APP_PROTOCOL_VERSION,
+            schema_version: APP_SCHEMA_VERSION,
+            edition: Edition::Standard,
+            state: RuntimeState::Ready,
+            version: "2.6.0".into(),
+            build_git: "abc123".into(),
+            build_target: "aarch64-apple-darwin".into(),
+            capabilities: CapabilitySet::standard(),
+        }))
+        .unwrap();
+        assert!(text.contains("abbeyd: ready (standard edition)"));
+        assert!(text.contains("capabilities: read_status, read_claims"));
+        assert!(!text.contains("shell"));
+        assert!(!text.contains("bearer"));
+    }
+
+    #[test]
+    fn daemon_human_claims_preserve_evidence_status() {
+        let text = format_daemon_event(&AppEvent::Claims(ClaimsSnapshot {
+            claims: vec![crate::app_core::ClaimRecord {
+                name: "three-VM proof".into(),
+                status: ClaimStatus::Proposed,
+                note: "not production multi-host evidence".into(),
+                instead: Some("local multi-process proof".into()),
+            }],
+            matched: 1,
+        }))
+        .unwrap();
+        assert!(text.contains("[Proposed] three-VM proof"));
+        assert!(text.contains("not production multi-host evidence"));
+        assert!(text.contains("instead: local multi-process proof"));
     }
 }

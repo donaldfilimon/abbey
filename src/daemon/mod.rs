@@ -4,10 +4,12 @@
 //! tools, child processes, nor memory stores. Presentation clients can query
 //! status and claims through an injected [`ReadOnlyHandler`].
 
+mod client;
 mod config;
 mod protocol;
 mod server;
 
+pub use client::{ClientError, DaemonClient};
 pub use config::{BearerSecret, DaemonConfig};
 pub use protocol::{PROTOCOL_VERSION, RequestEnvelope, ResponseEnvelope, ResponsePayload};
 pub use server::{DaemonServer, ReadOnlyHandler, ServerError, Shutdown};

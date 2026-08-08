@@ -1,5 +1,5 @@
 #!/bin/sh
-# Install Abbey CLI/TUI + shell completions (Unix / macOS / Git Bash).
+# Install Abbey CLI/TUI, Unix daemon, and shell completions.
 set -eu
 cd "$(dirname "$0")"
 

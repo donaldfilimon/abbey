@@ -113,10 +113,12 @@ pub const CLAIMS: &[Claim] = &[
         instead: Some("abbey improve status|plan|run --confirm"),
     },
     Claim {
-        name: "shared application core + authenticated read-only abbeyd",
+        name: "shared application core + authenticated read-only abbeyd client/server",
         status: Status::Current,
-        note: "versioned read-only status/claims contracts over an owner-only bounded Unix socket; Windows named pipes, durable jobs, model/tool execution, and memory ownership are not implemented",
-        instead: Some("abbey::app_core · abbeyd with an owner-only bearer file"),
+        note: "abbey daemon status|claims uses versioned read-only contracts over an owner-only bounded Unix socket; Windows named pipes, durable jobs, model/tool or shell execution, and memory ownership are not implemented",
+        instead: Some(
+            "abbey daemon status|claims · abbey::app_core · abbeyd with an owner-only bearer file",
+        ),
     },
     Claim {
         name: "MCP/ACP inventory + voice + highlight + media/imagine",
@@ -412,6 +414,19 @@ fn print_footer() {
     );
 }
 
+/// Claim-lookup key for the shipped-edition shell / allowlist-bypass refusal.
+/// It must surface BOTH facts: the Proposed personal-unrestricted separate
+/// edition AND the Out-of-scope shipped-edition bypass claim.
+const SHELL_BYPASS_CLAIM_KEY: &str = "allowlist";
+
+/// Non-Current claims a refusal surfaces for `claim_key`.
+fn refusal_claims(claim_key: &str) -> Vec<&'static Claim> {
+    lookup(claim_key)
+        .into_iter()
+        .filter(|c| c.status != Status::Current)
+        .collect()
+}
+
 /// Map an unavailable user verb to a non-Current claim and refuse with exit 2.
 pub fn refuse(verb: &str) -> Result<i32> {
     let key = verb.trim().to_ascii_lowercase();
@@ -456,8 +471,8 @@ pub fn refuse(verb: &str) -> Result<i32> {
             "An Abbey-owned provider-neutral tool runtime / MCP-ACP host is Proposed but not implemented. Inventory and peer launch are Current.",
         ),
         "shell" | "unrestricted" | "os-unrestricted" | "allowlist-bypass" | "yolo-shell" => (
-            "personal-unrestricted",
-            "A personal-unrestricted separate edition is Proposed but not implemented. The shipped edition keeps allowlist + --confirm and refuses bypass.",
+            SHELL_BYPASS_CLAIM_KEY,
+            "A personal-unrestricted separate edition is Proposed but not implemented, and allowlist bypass in the shipped edition is Out of scope. Shipped Abbey keeps allowlist + --confirm and refuses bypass.",
         ),
         "accel" | "accelerator" | "accelerators" => (
             "GPU/NPU/TPU",
@@ -480,10 +495,7 @@ pub fn refuse(verb: &str) -> Result<i32> {
         }
     };
 
-    let hits: Vec<_> = lookup(claim_key)
-        .into_iter()
-        .filter(|c| c.status != Status::Current)
-        .collect();
+    let hits = refusal_claims(claim_key);
     eprintln!("abbey: refused — {detail}");
     for c in &hits {
         eprintln!("  [{}] {}", c.status.label(), c.name);
@@ -586,6 +598,7 @@ mod tests {
             .find(|claim| claim.name.starts_with("shared application core"))
             .expect("app-core daemon claim");
         assert_eq!(daemon.status, Status::Current);
+        assert!(daemon.note.contains("abbey daemon status|claims"));
         assert!(daemon.note.contains("read-only"));
         assert!(daemon.note.contains("not implemented"));
 
@@ -649,6 +662,24 @@ mod tests {
             .expect("shipped-edition bypass claim");
         assert!(claim.name.contains("shipped edition"));
         assert!(claim.note.contains("separately packaged"));
+    }
+
+    #[test]
+    fn shell_refusal_surfaces_proposed_edition_and_oos_shipped_bypass() {
+        // The `shell`/`allowlist-bypass` refuse arm must print BOTH ledger
+        // facts: the Proposed personal-unrestricted separate edition and the
+        // Out-of-scope allowlist bypass in the shipped edition.
+        let hits = refusal_claims(SHELL_BYPASS_CLAIM_KEY);
+        assert!(
+            hits.iter()
+                .any(|c| c.status == Status::Proposed && c.name.contains("personal-unrestricted")),
+            "missing Proposed personal-unrestricted separate-edition claim"
+        );
+        assert!(
+            hits.iter()
+                .any(|c| c.status == Status::OutOfScope && c.name.contains("shipped edition")),
+            "missing Out-of-scope shipped-edition allowlist-bypass claim"
+        );
     }
 
     #[test]
