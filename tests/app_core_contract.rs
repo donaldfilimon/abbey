@@ -3,6 +3,14 @@ use abbey::app_core::{
     ClaimStatus, ClaimsQuery, ConversationId, Edition, RunId,
 };
 
+/// The compiled edition this test binary was built for. The safe build must
+/// still report `standard`; the personal build must report itself rather than
+/// impersonating the public edition.
+#[cfg(not(feature = "personal-edition"))]
+const EXPECTED_EDITION: Edition = Edition::Standard;
+#[cfg(feature = "personal-edition")]
+const EXPECTED_EDITION: Edition = Edition::Personal;
+
 #[test]
 fn public_identifiers_and_commands_have_stable_wire_shapes() {
     let run = RunId::new();
@@ -39,7 +47,7 @@ fn standard_service_advertises_only_implemented_read_capabilities() {
     };
 
     assert_eq!(status.protocol_version, APP_PROTOCOL_VERSION);
-    assert_eq!(status.edition, Edition::Standard);
+    assert_eq!(status.edition, EXPECTED_EDITION);
     assert_eq!(
         status.capabilities.as_slice(),
         &[AppCapability::ReadStatus, AppCapability::ReadClaims]

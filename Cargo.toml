@@ -61,6 +61,14 @@ default = []
 # In-process WDBX memory backend. Off by default: pulls the abi-wdbx crate and
 # its portable_simd/sha2/num-bigint tree. Gate with `--features wdbx`.
 wdbx = ["dep:abi-wdbx", "dep:fs4"]
+# Compile-time edition selector. OFF by default: the default build is the SAFE
+# public edition (allowlist + --confirm, unchanged paths). Enabling it builds a
+# separately identified personal edition — distinct binary/bundle name, config
+# root, credential namespace, and audit log path (`src/edition.rs`). It does
+# NOT enable an unrestricted runtime: no shell.exec, no privileged helper, and
+# no always-on unrestricted mode exists in either edition. check.sh gates this
+# feature explicitly, or the cfg'd paths rot behind the default gate.
+personal-edition = []
 
 [profile.release]
 lto = true

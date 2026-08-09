@@ -122,14 +122,12 @@ fn default_embedding_language() -> String {
 }
 
 impl AbbeyConfig {
+    /// Config file for the *active edition*.
+    ///
+    /// The root and the override variable both come from `edition::ACTIVE`, so
+    /// a safe and a personal install can never read the same config.
     pub fn config_path() -> PathBuf {
-        if let Some(p) = std::env::var_os("ABBEY_CONFIG") {
-            return PathBuf::from(p);
-        }
-        dirs::config_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("abbey")
-            .join("config.toml")
+        crate::edition::ACTIVE.config_path()
     }
 
     pub fn load() -> Result<Self> {

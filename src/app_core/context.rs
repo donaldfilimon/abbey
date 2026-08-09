@@ -10,14 +10,20 @@ pub struct AppContext {
 }
 
 impl AppContext {
-    /// Construct the public-safe edition context from compile-time build data.
+    /// Construct the context for the compiled edition.
+    ///
+    /// The capability set is deliberately edition-independent: the personal
+    /// edition is a separate identity, not a larger permission set.
     #[must_use]
-    pub fn standard() -> Self {
+    pub fn active() -> Self {
         Self {
             status: RuntimeStatus {
                 protocol_version: APP_PROTOCOL_VERSION,
                 schema_version: APP_SCHEMA_VERSION,
-                edition: Edition::Standard,
+                edition: match crate::edition::ACTIVE {
+                    crate::edition::Edition::Safe => Edition::Standard,
+                    crate::edition::Edition::Personal => Edition::Personal,
+                },
                 state: RuntimeState::Ready,
                 version: crate::build_info::VERSION.to_owned(),
                 build_git: crate::build_info::BUILD_GIT.to_owned(),
@@ -35,6 +41,6 @@ impl AppContext {
 
 impl Default for AppContext {
     fn default() -> Self {
-        Self::standard()
+        Self::active()
     }
 }

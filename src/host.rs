@@ -121,19 +121,29 @@ pub fn agent_candidate_paths(backend: &str, home: &Path) -> Vec<PathBuf> {
     out
 }
 
-/// Default install directory for the abbey binary on this host.
+/// Default install directory for this edition's binary on this host.
 pub fn default_install_dir(home: &Path) -> PathBuf {
+    let slug = crate::edition::ACTIVE.slug();
     #[cfg(windows)]
     {
         if let Some(local) = std::env::var_os("LOCALAPPDATA") {
-            return PathBuf::from(local).join("abbey\\bin");
+            return PathBuf::from(local).join(slug).join("bin");
         }
-        return home.join("AppData\\Local\\abbey\\bin");
+        return home.join("AppData\\Local").join(slug).join("bin");
     }
     #[cfg(not(windows))]
     {
+        let _ = slug;
         home.join(".local/bin")
     }
+}
+
+/// Where this edition's CLI binary is installed by default.
+///
+/// Unix editions share `~/.local/bin`, so the *file name* is what keeps a
+/// personal install from overwriting the safe one.
+pub fn installed_binary_path(home: &Path) -> PathBuf {
+    default_install_dir(home).join(crate::edition::ACTIVE.binary_name())
 }
 
 /// Human lines for `abbey platform paths`.

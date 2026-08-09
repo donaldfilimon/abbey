@@ -224,6 +224,15 @@ pub enum Commands {
     Doctor,
     /// Rich debug diagnostics
     Debug,
+    /// Compiled edition identity — binary, bundle id, config/state/credential/audit namespaces
+    Edition {
+        /// Print only the installed CLI binary name (for packaging scripts)
+        #[arg(long, conflicts_with = "daemon_name")]
+        name: bool,
+        /// Print only the installed daemon binary name (for packaging scripts)
+        #[arg(long)]
+        daemon_name: bool,
+    },
     /// Print active chat id
     #[command(visible_alias = "id")]
     ChatId,
