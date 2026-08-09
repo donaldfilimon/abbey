@@ -169,6 +169,7 @@ Accelerator **host detection** (`abbey platform compute`) is Current. GPU/NPU/TP
 | modern `curl` | Only for `embedding_provider = "openai"` | HTTPS, bounded requests/timeouts; key is environment-only |
 | git | Optional | diff/commit/pr/branch |
 | `nvidia-smi` / ROCm / TPU tools | Optional | improve `abbey platform` detect only |
+| Xcode toolchain (`xcrun swiftc`) + Metal device | **Build-time**, only for `--features accel` | `abi-gpu`'s build script compiles `libabi_metal_dot.dylib`. The dylib resolves through `@loader_path`, and `install.sh` copies only the binary — so `ABBEY_CARGO_FEATURES=accel ./install.sh` produces an install that aborts in dyld (observed exit 134). Run `abbey accel verify` from a cargo build tree |
 
 ## Config
 

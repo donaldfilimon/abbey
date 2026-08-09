@@ -101,6 +101,15 @@ prerequisite or proof · **Out of scope** = explicitly excluded.
 - `/init` project scan → AGENTS.md
 - In-process `abi-wdbx` `DurableStore` memory backend — **behind `--features wdbx`, off by
   default**; `check.sh` gates both feature sets
+- Numerical kernel execution on Metal (`abbey accel verify`, `src/accel/`) — **behind
+  `--features accel`, off by default**, gated by `check.sh`. `dot`/`cosine`/`top_k` run
+  through `abi-gpu`'s `MetalAccelerator`, and every natively produced value is checked
+  against the `abi-compute` `CpuBackend` oracle in the same run. Execution is read from
+  the adapter's `CapabilityState` ladder, never from the return value, because the adapter
+  returns the oracle itself on fallback; a run that never reached Metal reports
+  `backend used: cpu` and records no parity. Arithmetic only — **not** compilation,
+  training, model inference, device residency/placement, or any speedup (nothing is
+  timed). Without the feature the verb refuses with exit 2
 - Compile-time edition separation (`src/edition.rs`): the default build is the safe public
   edition; `--features personal-edition` (off by default, gated by `check.sh`) selects a
   separately identified product — distinct binary/daemon name, bundle id, config root,

@@ -91,7 +91,18 @@ fn accel_verify_is_honest_about_what_this_build_can_do() {
     let s = Scratch::new("accel");
     let (code, out, err) = run(&s, &["accel", "verify"]);
 
-    if cfg!(feature = "accel") {
+    // Which branch applies is decided by what the binary *did*, not by this
+    // test crate's own cfg — the two are compiled together today, but the
+    // guarantee under test belongs to the process. The cfg is then used only as
+    // a cross-check, so a build that silently lost the feature cannot pass by
+    // quietly taking the refusal branch.
+    assert_eq!(
+        code == 2,
+        !cfg!(feature = "accel"),
+        "exit {code} disagrees with the feature this build was compiled with"
+    );
+
+    if code != 2 {
         assert!(
             code == 0 || code == 1,
             "compiled bridge should report, not error: code={code} err={err}"
