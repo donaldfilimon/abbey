@@ -13,10 +13,17 @@ const MAX_CLAIMS_FILTER_BYTES: usize = 256;
 const MAX_APPROVAL_SUMMARY_BYTES: usize = 1_024;
 
 /// Abbey edition represented by this public-safe contract.
+///
+/// Mirrors the compile-time `edition::Edition` so a client is never told it is
+/// talking to the safe edition when it is not. Neither variant grants extra
+/// capabilities — [`CapabilitySet`] is identical in both.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Edition {
+    /// Safe public edition — the default build.
     Standard,
+    /// Separately packaged personal edition (`--features personal-edition`).
+    Personal,
 }
 
 /// Commands accepted by the initial shared application service.

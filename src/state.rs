@@ -26,34 +26,26 @@ pub struct HistoryEntry {
 
 impl AbbeyState {
     pub fn load() -> Result<Self> {
-        let state_dir = std::env::var_os("ABBEY_STATE_DIR")
+        // Both the override variable and the default root belong to the active
+        // edition (`edition::ACTIVE`), so a personal build can never adopt the
+        // safe build's state — not even from an exported ABBEY_STATE_DIR.
+        let edition = crate::edition::ACTIVE;
+        let state_dir = std::env::var_os(edition.state_dir_env())
             .map(PathBuf::from)
-            .or_else(|| {
-                // Unix: XDG state, else ~/.local/state/abbey (do not steal macOS
-                // Application Support via data_local_dir — that relocates existing stores).
-                // Windows: LocalAppData\abbey.
-                #[cfg(windows)]
-                {
-                    dirs::data_local_dir()
-                        .map(|d| d.join("abbey"))
-                        .or_else(|| dirs::home_dir().map(|h| h.join("AppData\\Local\\abbey")))
-                }
-                #[cfg(not(windows))]
-                {
-                    dirs::state_dir()
-                        .map(|d| d.join("abbey"))
-                        .or_else(|| dirs::home_dir().map(|h| h.join(".local/state/abbey")))
-                }
-            })
-            .context("cannot resolve ABBEY_STATE_DIR")?;
+            .or_else(|| edition.default_state_root())
+            .with_context(|| format!("cannot resolve {}", edition.state_dir_env()))?;
 
-        let chat_file = std::env::var_os("ABBEY_CHAT_FILE")
+        // These name individual state *files*, so they are edition-scoped too.
+        // Scoping only the root was not enough: one exported ABBEY_CHAT_FILE
+        // otherwise gave both editions the same chat id (observed, then fixed).
+        // The safe edition's names are unchanged (`ABBEY_CHAT_FILE`, …).
+        let chat_file = std::env::var_os(edition.scoped_env("CHAT_FILE"))
             .map(PathBuf::from)
             .unwrap_or_else(|| state_dir.join("chat-id"));
-        let model_file = std::env::var_os("ABBEY_MODEL_FILE")
+        let model_file = std::env::var_os(edition.scoped_env("MODEL_FILE"))
             .map(PathBuf::from)
             .unwrap_or_else(|| state_dir.join("model"));
-        let history_file = std::env::var_os("ABBEY_HISTORY_FILE")
+        let history_file = std::env::var_os(edition.scoped_env("HISTORY_FILE"))
             .map(PathBuf::from)
             .unwrap_or_else(|| state_dir.join("history.log"));
         let cwd_dir = state_dir.join("by-cwd");

@@ -333,9 +333,13 @@ pub fn print_paths() -> Result<i32> {
     for line in crate::host::path_report_lines(&state.state_dir, &cfg) {
         println!("  {line}");
     }
+    let edition = crate::edition::ACTIVE;
     println!(
-        "\nnote: set ABBEY_STATE_DIR / ABBEY_CONFIG / ABBEY_AGENT to override.\n\
-         install: ./install.sh (Unix) · .\\install.ps1 (Windows)"
+        "\nnote: set {} / {} / ABBEY_AGENT to override ({} edition).\n\
+         install: ./install.sh (Unix) · .\\install.ps1 (Windows)",
+        edition.state_dir_env(),
+        edition.config_path_env(),
+        edition.product_name()
     );
     Ok(0)
 }

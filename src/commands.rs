@@ -189,6 +189,11 @@ pub fn run_cli(cli: Cli, state: AbbeyState, mut cfg: AgentConfig) -> Result<i32>
         }
         Some(Commands::Doctor) => cmd_doctor(&state, &cfg),
         Some(Commands::Debug) => cmd_debug(&state, &cfg),
+        Some(Commands::Edition { name, daemon_name }) => Ok(crate::edition::cmd_edition(
+            &state.state_dir,
+            name,
+            daemon_name,
+        )),
         Some(Commands::ChatId) => match state.read_chat_for(cfg.backend) {
             Some(id) => {
                 println!("{id}");
@@ -506,6 +511,7 @@ fn format_daemon_event(event: &AppEvent) -> Result<String> {
         AppEvent::Status(status) => {
             let edition = match status.edition {
                 Edition::Standard => "standard",
+                Edition::Personal => "personal",
             };
             let state = match status.state {
                 RuntimeState::Ready => "ready",

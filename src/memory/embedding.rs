@@ -309,13 +309,16 @@ fn required<'a>(value: &'a str, label: &str) -> Result<&'a str> {
     Ok(value)
 }
 
+/// Abbey's own credential variable is edition-scoped (safe:
+/// `ABBEY_EMBEDDING_API_KEY`), so one exported Abbey key never reaches the
+/// other edition. `OPENAI_API_KEY` stays a shared, provider-owned fallback —
+/// it is the user's provider credential, not an Abbey namespace.
 fn embedding_api_key(get: impl Fn(&str) -> Option<String>) -> Result<String> {
-    get("ABBEY_EMBEDDING_API_KEY")
+    let scoped = crate::edition::ACTIVE.credential_env("EMBEDDING_API_KEY");
+    get(&scoped)
         .or_else(|| get("OPENAI_API_KEY"))
         .filter(|key| !key.trim().is_empty())
-        .ok_or_else(|| {
-            anyhow!("embedding provider `openai` needs ABBEY_EMBEDDING_API_KEY or OPENAI_API_KEY")
-        })
+        .ok_or_else(|| anyhow!("embedding provider `openai` needs {scoped} or OPENAI_API_KEY"))
 }
 
 fn embeddings_url(endpoint: &str) -> Result<String> {
