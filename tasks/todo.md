@@ -292,6 +292,51 @@ design subtask never promotes the parent capability to Current.
     exactly the kind of defect that turns into an unreproducible data-loss report
     later, and it currently blocks nothing only because it is rare. Reproduce under
     load (`cargo test -- --test-threads=1` vs default) before treating it as noise.
+    **Status 2026-08-09 (branch `codex/flaky-test-hardening`, base `bfe364e`):** still
+    undiagnosed, and **not reproduced** in 27 full `cargo test` runs (12 before + 15
+    after the supervisor fix below). Not fixed; left open deliberately rather than
+    closed as noise.
+  - **Supervisor teardown flakes diagnosed and fixed 2026-08-09 (`71f2903`):**
+    Measured on `bfe364e` with 12 full `cargo test` iterations — **3/12 runs failed
+    (25%)**:
+    - `runtime::supervisor::tests::timeout_and_precancelled_execution_teardown_the_group`
+      2/12 — `Teardown("process group survived SIGKILL grace")`
+    - `runtime::supervisor::tests::exact_cap_succeeds_and_cap_plus_one_fails_closed_for_both_streams`
+      1/12 — `Teardown("send SIGTERM to process group was not permitted")`
+
+    One root cause, and it is a **fixture** defect, not a containment defect.
+    `group_exists` is `killpg(pgid, 0)`; on Darwin an unreaped zombie still answers it
+    (with success, or with the EPERM `signal_group_until` retries). A group member
+    orphaned by its dying leader is reparented to launchd and reaped *asynchronously*,
+    so the group stays observable after every process in it is dead. `terminate` waits
+    for the group to vanish and fails closed at `terminate_grace`, so at 100ms (30ms in
+    the timeout test) the fixture was asserting that launchd reaps within 100ms —
+    something neither test is about and neither can schedule.
+    Fix: `terminate_grace` bounds a poll-until-gone loop, not a sleep — `terminate`
+    rechecks every `poll_interval` and returns the moment the group is gone, so raising
+    the bound costs an idle machine nothing. `TEARDOWN_GRACE` = 1s (cap is 5s), the
+    30ms override dropped, and the `elapsed() < 2s` liveness bounds raised to
+    `LIVENESS_BOUND` = 10s so the same race cannot relocate into them.
+    **After: 0/15** full-suite iterations failed.
+  - **`daemon::client::tests::real_scratch_server_round_trip` EINVAL — mechanism
+    proven, occurrence NOT reproduced, still open (2026-08-09):** reported once as
+    `Configure(Os { code: 22, InvalidInput })`. Two hypotheses are now *disproven*:
+    it is not Rust's zero-`Duration` rejection (that is a constructed `io::Error`, not
+    an `Os` errno), and it is not `sun_path` truncation (the client's socket path is
+    `/tmp/adc-<label>-<pid>-<8hex>/abbeyd.sock` = **40 bytes**, against Darwin's 104
+    cap — `client.rs::scratch_dir` already uses `/tmp` for this reason).
+    What *is* proven, by direct probe: on Darwin `setsockopt(SO_RCVTIMEO)` against a
+    UDS whose peer has closed returns **EINVAL (22)**. The matching code path is real —
+    `DaemonClient` performs `UnixStream::connect` on a worker thread and only sets the
+    timeouts on the main thread *after* an mpsc handoff, while the daemon applies its
+    own 300ms `read_timeout` to `read_frame`; a >300ms scheduling stall across that
+    handoff lets the daemon close first, so the client's `set_read_timeout` lands on a
+    closed peer.
+    **Not fixed.** Not reproduced in 27 full-suite runs, nor in 150 iterations of the
+    `daemon::` tests under 2x-CPU oversubscription (0 failures). Note also that simply
+    moving the `setsockopt` into the worker thread would likely *relocate* the failure
+    to the subsequent write (EPIPE) rather than remove it — the real exposure is the
+    300ms deadline versus scheduling latency. Needs a reproduction before a fix.
   - Phase 4 evidence bar: CLI and TUI use the same typed commands and lifecycle-event
     reducer; serialized frontend-neutral fixtures are stable. Phase 7 proves the future
     React/Tauri client consumes those contracts. Paginated event retrieval and a live
