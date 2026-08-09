@@ -1,10 +1,17 @@
 //! XDG state: chat ids (global + per-cwd), model, history.
 
-use anyhow::{Context, Result, bail};
-use chrono::Utc;
+use anyhow::{Context, Result};
 use std::fs;
-use std::io::Write;
 use std::path::{Path, PathBuf};
+
+#[cfg(unix)]
+mod conversation;
+#[cfg(not(unix))]
+#[path = "state/conversation_portable.rs"]
+mod conversation;
+
+#[cfg(unix)]
+pub(crate) use conversation::lock_legacy_capture;
 
 #[derive(Debug, Clone)]
 pub struct AbbeyState {
@@ -100,6 +107,13 @@ impl AbbeyState {
     /// adopting `CURSOR_AGENT_CHAT_ID` after switching to `abi`/`fm`, which is
     /// exactly the hijack described below.
     pub fn read_chat_for(&self, backend: crate::agent::AgentBackend) -> Option<String> {
+        // Recover the canonical commit's compatibility mirrors before backend
+        // selection. An inherited Cursor id may win below, but it must not
+        // indefinitely strand a committed journal from an earlier process.
+        let mirrored = match conversation::read_chat(self) {
+            Ok(mirrored) => mirrored,
+            Err(_) => return None,
+        };
         // `CURSOR_AGENT_CHAT_ID` lets Abbey join the cursor session it was
         // launched from — but it is a *cursor* chat id. Under a backend with
         // no server sessions (`fm`, `abi`) it names nothing real, and adopting
@@ -115,82 +129,19 @@ impl AbbeyState {
                 return Some(id);
             }
         }
-        let file = self.active_chat_file();
-        if let Some(id) = read_first_line(&file) {
-            return Some(id);
-        }
-        if self.per_cwd {
-            return read_first_line(&self.chat_file);
-        }
-        None
+        mirrored
     }
 
     pub fn save_chat(&self, id: &str) -> Result<()> {
-        let id = id.trim();
-        if id.is_empty() {
-            bail!("empty chat id");
-        }
-        let file = self.active_chat_file();
-        if let Some(parent) = file.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        fs::write(&file, format!("{id}\n"))?;
-        // Mirror for shell-integration / zsh wrapper
-        fs::write(&self.chat_file, format!("{id}\n"))?;
-        fs::write(
-            self.chat_file.with_extension("export"),
-            format!("ABBEY_CHAT_ID={id}\n"),
-        )?;
-        self.append_history(id)?;
-        Ok(())
+        conversation::save_chat(self, id)
     }
 
     pub fn clear_chat(&self, all: bool) -> Result<()> {
-        let file = self.active_chat_file();
-        let _ = fs::remove_file(&file);
-        if all || !self.per_cwd {
-            let _ = fs::remove_file(&self.chat_file);
-            let _ = fs::remove_file(self.chat_file.with_extension("export"));
-        }
-        if all && let Ok(entries) = fs::read_dir(&self.cwd_dir) {
-            for e in entries.flatten() {
-                let _ = fs::remove_file(e.path());
-            }
-        }
-        Ok(())
-    }
-
-    fn append_history(&self, id: &str) -> Result<()> {
-        let mut f = fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&self.history_file)?;
-        writeln!(
-            f,
-            "{}\t{}\t{}",
-            Utc::now().format("%Y-%m-%dT%H:%M:%SZ"),
-            id,
-            self.cwd.display()
-        )?;
-        Ok(())
+        conversation::clear_legacy_chat(self, all)
     }
 
     pub fn history(&self, n: usize) -> Vec<HistoryEntry> {
-        let Ok(text) = fs::read_to_string(&self.history_file) else {
-            return Vec::new();
-        };
-        text.lines()
-            .rev()
-            .filter_map(|line| {
-                let mut parts = line.splitn(3, '\t');
-                Some(HistoryEntry {
-                    timestamp: parts.next()?.to_string(),
-                    chat_id: parts.next()?.to_string(),
-                    cwd: parts.next().unwrap_or("").to_string(),
-                })
-            })
-            .take(n)
-            .collect()
+        conversation::history(self, n).unwrap_or_default()
     }
 
     pub fn read_model(&self) -> String {
@@ -226,21 +177,26 @@ impl AbbeyState {
 
     pub fn save_model(&self, model: &str) -> Result<()> {
         let m = crate::models::resolve_model(model);
-        fs::write(&self.model_file, format!("{m}\n"))?;
-        Ok(())
+        conversation::write_model(self, &m)
     }
 
     /// Persist a model tag without cursor `resolve_model` expansion.
     pub fn save_model_literal(&self, model: &str) -> Result<()> {
         let m = model.trim();
         anyhow::ensure!(!m.is_empty(), "model id must not be empty");
-        fs::write(&self.model_file, format!("{m}\n"))?;
-        Ok(())
+        conversation::write_model(self, m)
     }
 
     pub fn clear_model(&self) -> Result<()> {
-        let _ = fs::remove_file(&self.model_file);
-        Ok(())
+        conversation::clear_model(self)
+    }
+
+    pub(crate) fn compact_history(&self, keep: usize) -> Result<usize> {
+        conversation::compact_history(self, keep)
+    }
+
+    pub(crate) fn ensure_conversation_ready(&self) -> Result<()> {
+        conversation::ensure_ready(self)
     }
 }
 

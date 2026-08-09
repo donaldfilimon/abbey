@@ -19,6 +19,9 @@ const MAX_EVENT_KIND_BYTES: usize = 64;
 const MAX_EVENT_PAYLOAD_BYTES: usize = 16 * 1024;
 
 mod audit;
+mod identity;
+#[cfg(unix)]
+mod private;
 
 pub use audit::{AuditEvent, AuditMetadata, NewAuditEvent};
 use audit::{row_to_audit, validate_audit_label};
@@ -109,24 +112,57 @@ impl RuntimeStore {
     }
 
     pub fn open(path: &Path) -> Result<Self, StoreError> {
-        Self::open_internal(path, None)
+        Self::open_internal(path, None, true)
     }
 
+    /// Open only canonical metadata without changing interrupted run states.
+    #[cfg(test)]
+    pub(crate) fn open_metadata(path: &Path) -> Result<Self, StoreError> {
+        Self::open_internal(path, None, false)
+    }
+
+    #[cfg(test)]
     pub(crate) fn open_with_legacy(
         path: &Path,
         legacy: Option<&super::legacy::PreparedLegacyImport>,
     ) -> Result<Self, StoreError> {
-        Self::open_internal(path, legacy)
+        Self::open_internal(path, legacy, true)
+    }
+
+    /// Open the edition-private runtime database for metadata-only writes.
+    ///
+    /// This path validates ownership, permissions, type, and symlink safety,
+    /// and deliberately does not recover interrupted daemon runs.
+    #[cfg(unix)]
+    pub(crate) fn open_metadata_private(path: &Path) -> Result<Self, StoreError> {
+        Self::finish_open(private::open(path)?, None, false)
+    }
+
+    /// Open the edition-private runtime database for daemon lifecycle work.
+    #[cfg(unix)]
+    pub(crate) fn open_with_legacy_private(
+        path: &Path,
+        legacy: Option<&super::legacy::PreparedLegacyImport>,
+    ) -> Result<Self, StoreError> {
+        Self::finish_open(private::open(path)?, legacy, true)
     }
 
     fn open_internal(
         path: &Path,
         legacy: Option<&super::legacy::PreparedLegacyImport>,
+        recover_interrupted: bool,
     ) -> Result<Self, StoreError> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let mut conn = Connection::open(path)?;
+        Self::finish_open(Connection::open(path)?, legacy, recover_interrupted)
+    }
+
+    fn finish_open(
+        mut conn: Connection,
+        legacy: Option<&super::legacy::PreparedLegacyImport>,
+        recover_interrupted: bool,
+    ) -> Result<Self, StoreError> {
         configure(&conn)?;
         let timestamp = now();
         migrations::apply(&mut conn, &timestamp)?;
@@ -134,7 +170,11 @@ impl RuntimeStore {
             .map(|import| migrations::import_legacy(&mut conn, import, &timestamp))
             .transpose()?
             .unwrap_or(false);
-        let recovered_runs = recover_interrupted_on(&mut conn)?;
+        let recovered_runs = if recover_interrupted {
+            recover_interrupted_on(&mut conn)?
+        } else {
+            0
+        };
         Ok(Self {
             conn: Mutex::new(conn),
             recovered_runs,

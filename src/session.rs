@@ -328,19 +328,5 @@ pub fn hybrid_loop_run(
 }
 
 pub fn compact_history(state: &AbbeyState, keep: usize) -> Result<usize> {
-    let path = &state.history_file;
-    if !path.exists() {
-        return Ok(0);
-    }
-    let text = std::fs::read_to_string(path)?;
-    let lines: Vec<&str> = text.lines().filter(|l| !l.is_empty()).collect();
-    let keep = keep.max(1);
-    let start = lines.len().saturating_sub(keep);
-    let kept = &lines[start..];
-    let mut out = kept.join("\n");
-    if !out.is_empty() {
-        out.push('\n');
-    }
-    std::fs::write(path, out)?;
-    Ok(kept.len())
+    state.compact_history(keep)
 }

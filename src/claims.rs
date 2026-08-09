@@ -537,8 +537,8 @@ mod tests {
 
     #[test]
     fn gate_has_all_five_statuses() {
-        assert_eq!(CLAIMS.len(), 44);
-        assert_eq!(by_status(Status::Current).count(), 29);
+        assert_eq!(CLAIMS.len(), 45);
+        assert_eq!(by_status(Status::Current).count(), 30);
         assert_eq!(by_status(Status::Partial).count(), 1);
         assert_eq!(by_status(Status::Proposed).count(), 8);
         assert_eq!(by_status(Status::Blocked).count(), 1);
@@ -724,6 +724,36 @@ mod tests {
                 "missing boundary: {boundary}"
             );
         }
+    }
+
+    #[test]
+    fn conversation_identity_write_claim_stays_save_only_and_unix_local() {
+        let claim = CLAIMS
+            .iter()
+            .find(|claim| claim.id == "runtime-conversation-identity-write-cutover")
+            .expect("canonical identity write claim");
+        assert_eq!(claim.status, Status::Current);
+        for boundary in [
+            "identity saves",
+            "edition/scope/alias digests",
+            "owner-only fs4-locked recovery journal",
+            "Raw mirror-plan data is transiently retained only",
+            "Reads and clear semantics remain legacy-mirror behavior",
+            "transcripts, semantic memory, backend/title/run inference",
+            "protocol/UI/MCP surfaces",
+            "Windows runtime authority",
+        ] {
+            assert!(
+                claim.note.contains(boundary),
+                "missing boundary: {boundary}"
+            );
+        }
+        assert!(claim.next_action.contains("runtime.sqlite tombstones"));
+        assert!(
+            claim
+                .next_action
+                .contains("do not delete transcripts or memory")
+        );
     }
 
     #[test]

@@ -5,6 +5,7 @@
 
 mod delegated;
 mod executor;
+mod identity;
 mod legacy;
 mod manager;
 mod migrations;
@@ -18,6 +19,8 @@ pub use executor::{CancellationToken, ExecutionError, ExecutionErrorKind, Execut
 pub use manager::{
     Clock, ManagerError, RunManager, RunManagerConfig, SubmitDisposition, SubmitResult, SystemClock,
 };
+
+pub(crate) use identity::{ConversationIdentityScope, IdentityCommit};
 
 pub(crate) use legacy::prepare as prepare_legacy_import;
 

@@ -47,8 +47,9 @@ uuid = { version = "1", features = ["v4"] }
 url = "2"
 abi-ai = { path = "../abi/crates/abi-ai" }
 abi-wdbx = { path = "../abi/crates/abi-wdbx", optional = true }
-# Cross-platform advisory lock for the WDBX store (Unix flock / Win LockFileEx).
-fs4 = { version = "0.13", optional = true }
+# Cross-platform advisory lock for WDBX and canonical identity writes
+# (Unix flock / Windows LockFileEx).
+fs4 = "0.13"
 
 # SIGPIPE reset only — already in the tree transitively, so this costs no extra
 # build. Unix-gated: Windows has no SIGPIPE.
@@ -60,7 +61,7 @@ nix = { version = "0.30", features = ["process", "signal", "user"] }
 default = []
 # In-process WDBX memory backend. Off by default: pulls the abi-wdbx crate and
 # its portable_simd/sha2/num-bigint tree. Gate with `--features wdbx`.
-wdbx = ["dep:abi-wdbx", "dep:fs4"]
+wdbx = ["dep:abi-wdbx"]
 # Compile-time edition selector. OFF by default: the default build is the SAFE
 # public edition (allowlist + --confirm, unchanged paths). Enabling it builds a
 # separately identified personal edition — distinct binary/bundle name, config

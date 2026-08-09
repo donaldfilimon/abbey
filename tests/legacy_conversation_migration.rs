@@ -158,12 +158,15 @@ fn assert_database(database: &Path) {
             0
         ))
         .unwrap(),
-        2
+        3
     );
     for (table, expected) in [
         ("legacy_conversation_imports", 1),
         ("legacy_conversation_aliases", 2),
         ("legacy_conversation_entries", 4),
+        ("conversation_identity_aliases", 2),
+        ("conversation_identity_scopes", 0),
+        ("conversation_identity_commit", 0),
         ("runs", 0),
         ("conversation_backends", 0),
     ] {

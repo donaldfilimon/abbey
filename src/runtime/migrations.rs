@@ -3,7 +3,7 @@
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 use thiserror::Error;
 
-pub(super) const CURRENT_SCHEMA_VERSION: i64 = 2;
+pub(super) const CURRENT_SCHEMA_VERSION: i64 = 3;
 
 const CREATE_LEDGER: &str = r#"
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -121,7 +121,79 @@ CREATE INDEX idx_legacy_entries_conversation
     ON legacy_conversation_entries(conversation_id, snapshot_sha256, ordinal);
 "#;
 
-const MIGRATIONS: &[(i64, &str)] = &[(1, MIGRATION_1), (2, MIGRATION_2)];
+const MIGRATION_3: &str = r#"
+CREATE TABLE conversation_identity_aliases (
+    alias_sha256 TEXT PRIMARY KEY CHECK (
+        length(alias_sha256) = 64
+        AND alias_sha256 NOT GLOB '*[^0-9a-f]*'
+    ),
+    conversation_id TEXT NOT NULL UNIQUE,
+    origin TEXT NOT NULL CHECK (origin IN ('legacy_v2', 'runtime_v3')),
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (conversation_id)
+        REFERENCES conversations(id) ON DELETE RESTRICT
+);
+
+CREATE TABLE conversation_identity_scopes (
+    edition_sha256 TEXT NOT NULL CHECK (
+        length(edition_sha256) = 64
+        AND edition_sha256 NOT GLOB '*[^0-9a-f]*'
+    ),
+    scope_sha256 TEXT NOT NULL CHECK (
+        length(scope_sha256) = 64
+        AND scope_sha256 NOT GLOB '*[^0-9a-f]*'
+    ),
+    alias_sha256 TEXT NOT NULL,
+    conversation_id TEXT NOT NULL,
+    revision INTEGER NOT NULL CHECK (revision > 0),
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (edition_sha256, scope_sha256),
+    FOREIGN KEY (alias_sha256)
+        REFERENCES conversation_identity_aliases(alias_sha256) ON DELETE RESTRICT,
+    FOREIGN KEY (conversation_id)
+        REFERENCES conversations(id) ON DELETE RESTRICT
+);
+
+CREATE TABLE conversation_identity_commit (
+    singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+    revision INTEGER NOT NULL CHECK (revision > 0),
+    operation TEXT NOT NULL CHECK (operation = 'save'),
+    edition_sha256 TEXT NOT NULL CHECK (
+        length(edition_sha256) = 64
+        AND edition_sha256 NOT GLOB '*[^0-9a-f]*'
+    ),
+    scope_sha256 TEXT NOT NULL CHECK (
+        length(scope_sha256) = 64
+        AND scope_sha256 NOT GLOB '*[^0-9a-f]*'
+    ),
+    scope_set_sha256 TEXT NOT NULL CHECK (
+        length(scope_set_sha256) = 64
+        AND scope_set_sha256 NOT GLOB '*[^0-9a-f]*'
+    ),
+    alias_sha256 TEXT NOT NULL,
+    conversation_id TEXT NOT NULL,
+    mutation_sha256 TEXT NOT NULL CHECK (
+        length(mutation_sha256) = 64
+        AND mutation_sha256 NOT GLOB '*[^0-9a-f]*'
+    ),
+    committed_at TEXT NOT NULL,
+    FOREIGN KEY (alias_sha256)
+        REFERENCES conversation_identity_aliases(alias_sha256) ON DELETE RESTRICT,
+    FOREIGN KEY (conversation_id)
+        REFERENCES conversations(id) ON DELETE RESTRICT
+);
+
+INSERT INTO conversation_identity_aliases(
+    alias_sha256, conversation_id, origin, created_at
+)
+SELECT alias_sha256, conversation_id, 'legacy_v2', imported_at
+FROM legacy_conversation_aliases;
+
+CREATE INDEX idx_conversation_identity_scope_alias
+    ON conversation_identity_scopes(alias_sha256, conversation_id);
+"#;
+
+const MIGRATIONS: &[(i64, &str)] = &[(1, MIGRATION_1), (2, MIGRATION_2), (3, MIGRATION_3)];
 
 #[derive(Debug, Error)]
 pub enum MigrationError {
@@ -254,12 +326,31 @@ pub(super) fn import_legacy(
                 now
             ],
         )?;
+        tx.execute(
+            "INSERT OR IGNORE INTO conversation_identity_aliases(
+                alias_sha256, conversation_id, origin, created_at
+             ) VALUES (?1, ?2, 'legacy_v2', ?3)",
+            params![
+                entry.alias_sha256.as_str(),
+                entry.conversation_id.as_str(),
+                now
+            ],
+        )?;
         let mapped = tx.query_row(
             "SELECT conversation_id FROM legacy_conversation_aliases WHERE alias_sha256=?1",
             [&entry.alias_sha256],
             |row| row.get::<_, String>(0),
         )?;
         if mapped != entry.conversation_id.as_str() {
+            return Err(MigrationError::LegacyInvariant);
+        }
+        let generic_mapping = tx.query_row(
+            "SELECT conversation_id FROM conversation_identity_aliases
+             WHERE alias_sha256=?1",
+            [&entry.alias_sha256],
+            |row| row.get::<_, String>(0),
+        )?;
+        if generic_mapping != entry.conversation_id.as_str() {
             return Err(MigrationError::LegacyInvariant);
         }
         tx.execute(
@@ -382,8 +473,50 @@ mod tests {
             conn.query_row("SELECT COUNT(*) FROM schema_migrations", [], |row| row
                 .get::<_, i64>(0))
                 .unwrap(),
-            2
+            3
         );
+    }
+
+    #[test]
+    fn schema_v3_copies_v2_aliases_without_plaintext_material() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        apply_set(&mut conn, "2026-08-08T00:00:00Z", &MIGRATIONS[..2], 2).unwrap();
+        let identity = crate::runtime::identity::external_identity("private-v2-id").unwrap();
+        conn.execute(
+            "INSERT INTO conversations(id, created_at, updated_at) VALUES (?1, 't', 't')",
+            [identity.conversation_id.as_str()],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO legacy_conversation_imports(
+                snapshot_sha256, backup_sha256, source_count, entry_count,
+                skipped_count, captured_at, imported_at
+             ) VALUES (?1, ?1, 1, 1, 0, 't', 't')",
+            ["a".repeat(64)],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO legacy_conversation_aliases(
+                alias_sha256, conversation_id, first_import_sha256, imported_at
+             ) VALUES (?1, ?2, ?3, 't')",
+            params![
+                identity.alias_sha256,
+                identity.conversation_id.as_str(),
+                "a".repeat(64)
+            ],
+        )
+        .unwrap();
+
+        apply(&mut conn, "2026-08-08T00:00:01Z").unwrap();
+        let copied = conn
+            .query_row(
+                "SELECT conversation_id, origin FROM conversation_identity_aliases",
+                [],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+            )
+            .unwrap();
+        assert_eq!(copied.0, identity.conversation_id.as_str());
+        assert_eq!(copied.1, "legacy_v2");
     }
 
     #[test]

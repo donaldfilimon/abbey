@@ -172,11 +172,6 @@ pub(crate) fn open_private_store(state_root: &Path) -> Result<RuntimeStore, Runt
         Err(_) => return Err(RuntimeConfigError::StateDirectory),
     }
 
-    // Snapshot and retain canonical edition-owned legacy metadata before any
-    // SQLite migration/import transaction begins.
-    let legacy = prepare_legacy_import(state_root, &runtime_dir)
-        .map_err(|_| RuntimeConfigError::LegacyMetadata)?;
-
     let database = RuntimeStore::path_for_state_dir(&runtime_dir);
     match fs::symlink_metadata(&database) {
         Ok(metadata) => validate_private_database(&metadata)?,
@@ -198,7 +193,16 @@ pub(crate) fn open_private_store(state_root: &Path) -> Result<RuntimeStore, Runt
         }
         Err(_) => return Err(RuntimeConfigError::DatabasePath),
     }
-    let store = RuntimeStore::open_with_legacy(&database, legacy.as_ref())
+
+    // Recover any canonical identity commit and hold the same projection lock
+    // across legacy capture + SQLite import. Per-file atomic renames alone do
+    // not prevent a stable but mixed cross-file snapshot during a save.
+    let _conversation_guard = crate::state::lock_legacy_capture(state_root)
+        .map_err(|_| RuntimeConfigError::LegacyMetadata)?;
+    let legacy = prepare_legacy_import(state_root, &runtime_dir)
+        .map_err(|_| RuntimeConfigError::LegacyMetadata)?;
+
+    let store = RuntimeStore::open_with_legacy_private(&database, legacy.as_ref())
         .map_err(|_| RuntimeConfigError::Store)?;
     let metadata = fs::symlink_metadata(&database).map_err(|_| RuntimeConfigError::DatabasePath)?;
     validate_private_database(&metadata)?;

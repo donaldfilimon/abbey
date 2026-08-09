@@ -34,7 +34,7 @@ again by the transactional store.
 `RuntimeStore` uses `<state>/daemon/runtime.sqlite`. It is independent from
 `memory.sqlite` and from the optional WDBX semantic-memory backend.
 
-The version-2 schema contains:
+The version-3 schema contains:
 
 - `schema_migrations`
 - `conversations`
@@ -45,6 +45,9 @@ The version-2 schema contains:
 - `legacy_conversation_imports`
 - `legacy_conversation_aliases`
 - `legacy_conversation_entries`
+- `conversation_identity_aliases`
+- `conversation_identity_scopes`
+- `conversation_identity_commit`
 
 SQLite runs with foreign keys enabled, WAL journaling, `synchronous=FULL`, and a bounded
 busy timeout. Migrations and run transitions use immediate transactions. A state change
@@ -84,6 +87,39 @@ back the entire batch. An unchanged snapshot reuses the manifest timestamp and i
 marker; a changed snapshot creates another retained backup and may widen only the
 trustworthy timestamp envelope. This startup-only migration adds no `AppCommand`,
 `AppEvent`, CLI/TUI/desktop invoke, MCP tool, process, model, or network authority.
+
+## Canonical conversation identity saves and compatibility mirrors
+
+On Unix, a new conversation-identity save first validates and domain-separates its
+external identity, active edition, and global/per-working-directory scopes. One immediate
+schema-v3 transaction stores only the alias, edition, scope, scope-set, and mutation-token
+digests; the deterministic UUIDv8 conversation identity; one monotonic revision; and the
+commit timestamp. The raw external identity, working directory, and mutation token never
+enter `runtime.sqlite`. Opening this metadata path also does not perform unrelated run
+recovery.
+
+After that canonical commit, Abbey projects the configured `chat-id`, `chat-id.export`,
+direct `by-cwd`, and `history.log` compatibility files through the sole coordinator at
+`<state>/daemon/conversation-mirror-journal/`. The directory is `0700`; its stable `lock`
+and transient atomic `pending.json` are `0600`. An `fs4` advisory lock serializes writers
+and history observation. The pending plan may transiently contain the exact raw mirror
+material required for recovery, so it remains private and its `Debug` and error surfaces
+are redacted.
+
+Recovery compares the journal's opaque mutation marker with the canonical SQLite commit.
+A prepared plan that never committed is discarded without touching mirrors. A committed
+plan is completed idempotently. Each mirror uses before/after digests and atomic
+same-parent replacement; divergent existing data fails closed instead of being
+overwritten, and full-file history replacement prevents replay from duplicating an entry.
+Symlinks, reserved journal aliases, unsafe ancestors, controls, and unsafe permissions
+fail before canonical commit or mirror mutation.
+
+This slice changes only save/new-identity coordination. Reads still consult the legacy
+compatibility mirrors, and `clear_chat` retains its existing mirror-only semantics under
+the shared lock; canonical tombstones are the next separately evidenced slice. It adds no
+transcript or semantic-memory ownership, backend/title/run inference, `AppCommand`,
+`AppEvent`, CLI/TUI/desktop invoke, MCP capability, model/tool execution authority, or
+Windows runtime claim.
 
 ## Recovery
 

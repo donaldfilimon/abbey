@@ -402,6 +402,7 @@ pub fn run_cli(cli: Cli, state: AbbeyState, mut cfg: AgentConfig) -> Result<i32>
             Ok(0)
         }
         Some(Commands::CreateChat) => {
+            state.ensure_conversation_ready()?;
             let id = cfg.create_chat()?;
             state.save_chat(&id)?;
             println!("{id}");

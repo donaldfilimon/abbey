@@ -15,9 +15,7 @@ const MAX_SOURCE_FILES: usize = 1_024;
 const MAX_SOURCE_BYTES: usize = 2 * 1_024 * 1_024;
 const MAX_TOTAL_BYTES: usize = 8 * 1_024 * 1_024;
 const MAX_ENTRIES: usize = 4_096;
-const MAX_LEGACY_ID_BYTES: usize = 512;
 const MAX_TIMESTAMP_BYTES: usize = 64;
-const UUID_DOMAIN: &[u8] = b"abbey:legacy-conversation:v1\0";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LegacySourceKind {
@@ -648,7 +646,7 @@ fn parse_entries(sources: &[LegacySource]) -> (Vec<LegacyEntry>, usize) {
 }
 
 fn parse_history_entry(legacy_id: &str, observed_at: &str) -> Option<LegacyEntry> {
-    let legacy_id = valid_legacy_id(legacy_id)?;
+    let identity = super::identity::external_identity(legacy_id).ok()?;
     if observed_at.len() > MAX_TIMESTAMP_BYTES {
         return None;
     }
@@ -657,53 +655,35 @@ fn parse_history_entry(legacy_id: &str, observed_at: &str) -> Option<LegacyEntry
         .with_timezone(&chrono::Utc)
         .to_rfc3339_opts(chrono::SecondsFormat::Nanos, true);
     Some(LegacyEntry {
-        conversation_id: legacy_conversation_id(legacy_id),
-        alias_sha256: legacy_alias_digest(legacy_id),
+        conversation_id: identity.conversation_id,
+        alias_sha256: identity.alias_sha256,
         source_kind: LegacySourceKind::History,
         observed_at: Some(observed_at),
     })
 }
 
 fn parse_direct_entry(legacy_id: &str, source_kind: LegacySourceKind) -> Option<LegacyEntry> {
-    let legacy_id = valid_legacy_id(legacy_id)?;
+    let identity = super::identity::external_identity(legacy_id).ok()?;
     Some(LegacyEntry {
-        conversation_id: legacy_conversation_id(legacy_id),
-        alias_sha256: legacy_alias_digest(legacy_id),
+        conversation_id: identity.conversation_id,
+        alias_sha256: identity.alias_sha256,
         source_kind,
         observed_at: None,
     })
 }
 
-fn valid_legacy_id(value: &str) -> Option<&str> {
-    let value = value.trim();
-    if value.is_empty() || value.len() > MAX_LEGACY_ID_BYTES || value.chars().any(char::is_control)
-    {
-        None
-    } else {
-        Some(value)
-    }
-}
-
+#[cfg(test)]
 pub(crate) fn legacy_conversation_id(legacy_id: &str) -> ConversationId {
-    let mut digest = Sha256::new();
-    digest.update(UUID_DOMAIN);
-    digest.update(legacy_id.as_bytes());
-    let digest = digest.finalize();
-    let mut bytes = [0u8; 16];
-    bytes.copy_from_slice(&digest[..16]);
-    bytes[6] = (bytes[6] & 0x0f) | 0x80;
-    bytes[8] = (bytes[8] & 0x3f) | 0x80;
-    uuid::Uuid::from_bytes(bytes)
-        .to_string()
-        .parse()
-        .expect("UUIDv8 is a canonical conversation id")
+    super::identity::external_identity(legacy_id)
+        .expect("legacy conversation id is valid")
+        .conversation_id
 }
 
+#[cfg(test)]
 fn legacy_alias_digest(legacy_id: &str) -> String {
-    let mut digest = Sha256::new();
-    digest.update(b"abbey:legacy-conversation-alias:v1\0");
-    digest.update(legacy_id.as_bytes());
-    lower_hex(&digest.finalize())
+    super::identity::external_identity(legacy_id)
+        .expect("legacy conversation id is valid")
+        .alias_sha256
 }
 
 fn lower_hex(bytes: &[u8]) -> String {
