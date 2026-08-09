@@ -20,8 +20,22 @@ fi
 # (`cargo build --release --features personal-edition`) must never overwrite the
 # safe edition's binary, completions, or daemon — the names come from the binary
 # itself (`src/edition.rs`), not from a literal repeated here.
-EDITION_BIN=$("$BIN" edition --name 2>/dev/null || printf 'abbey')
-EDITION_DAEMON=$("$BIN" edition --daemon-name 2>/dev/null || printf 'abbeyd')
+# No fallback literal. Falling back to 'abbey' on a failed probe is precisely
+# the clobber this derivation exists to prevent: a personal-edition build whose
+# probe failed would install over the safe edition under its name. Fail the
+# install instead. install.ps1 throws for the same reason.
+EDITION_BIN=$("$BIN" edition --name 2>/dev/null) || {
+    printf 'install.sh: could not read the edition name from %s\n' "$BIN" >&2
+    exit 1
+}
+EDITION_DAEMON=$("$BIN" edition --daemon-name 2>/dev/null) || {
+    printf 'install.sh: could not read the daemon name from %s\n' "$BIN" >&2
+    exit 1
+}
+[ -n "$EDITION_BIN" ] && [ -n "$EDITION_DAEMON" ] || {
+    printf 'install.sh: edition probe returned an empty name\n' >&2
+    exit 1
+}
 
 DEST_DIR="${ABBEY_INSTALL_DIR:-${HOME}/.local/bin}"
 COMPLETION_HOME="${ABBEY_COMPLETION_HOME:-${HOME}}"
