@@ -50,11 +50,12 @@ const TOPICS: &[Topic] = &[
         title: "NPU / TPU / GPU runtime",
         current: &[
             "abbey platform compute — host presence inventory (report-only)",
+            "abbey accel verify — numerical kernels on Metal, each checked against the CPU oracle (behind `--features accel`; no placement or speedup claim)",
             "multi-thread subagents (--jobs) — CPU process/thread fan-out",
         ],
         status: claims::Status::Proposed,
         unavailable: "GPU/NPU/TPU compilation, training, or inference scheduled by Abbey",
-        instead: "abbey platform compute · abbey compute",
+        instead: "abbey accel verify · abbey platform compute · abbey compute",
         refuse: "npu",
     },
     Topic {
@@ -168,6 +169,12 @@ pub fn dispatch_topic(key: &str, args: &[String]) -> Result<i32> {
         None | Some("status") | Some("show") | Some("info") => print_topic(t),
         Some("refuse") | Some("no") | Some("deny") => claims::refuse(t.refuse),
         Some("detect") | Some("compute") if t.key == "accel" => platform::print_compute(),
+        // The one accelerator verb that is not deferred: real kernel execution
+        // with CPU-oracle parity, behind `--features accel`. Without the
+        // feature it refuses with exit 2 rather than silently no-opping.
+        Some("verify") | Some("kernel") | Some("kernels") if t.key == "accel" => {
+            crate::accel::verify_command(&args[1..])
+        }
         Some("allowlist") | Some("policy") if t.key == "shell" => {
             os_control::run_os(&["allowlist".into()], false)
         }
@@ -181,7 +188,7 @@ pub fn dispatch_topic(key: &str, args: &[String]) -> Result<i32> {
                 k = t.key,
                 title = t.title,
                 extra = match t.key {
-                    "accel" => "|detect",
+                    "accel" => "|detect|verify",
                     "shell" => "|allowlist",
                     "host" => "|matrix",
                     _ => "",
@@ -226,7 +233,7 @@ pub fn status_lines() -> Vec<String> {
     vec![
         "lora:       learn curation only — LoRA pipeline Proposed (`abbey lora`)".into(),
         "weights:    Max/Gemma bindings · fm — local weights Proposed (`abbey weights`)".into(),
-        "accel:      host detect only — accelerator runtime Proposed (`abbey accel`)".into(),
+        "accel:      host detect + verified Metal kernels (--features accel) — compile/train/infer Proposed (`abbey accel`)".into(),
         "shell:      allowlist + --confirm — unrestricted OS OOS (`abbey shell`)".into(),
         "host:       read-only stdio + loopback HTTP — external-server client-host Proposed (`abbey host`)".into(),
     ]
