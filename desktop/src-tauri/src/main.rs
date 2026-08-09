@@ -106,7 +106,15 @@ mod tests {
 
     #[test]
     fn no_execution_capable_plugin_is_declared() {
-        const MANIFEST: &str = include_str!("../Cargo.toml");
+        // Comments are stripped first: this file's own manifest *names* the
+        // plugins it refuses to depend on, and a naive substring match would
+        // fail on the explanation rather than on a real dependency.
+        const RAW_MANIFEST: &str = include_str!("../Cargo.toml");
+        let manifest: String = RAW_MANIFEST
+            .lines()
+            .map(|line| line.split('#').next().unwrap_or_default())
+            .collect::<Vec<_>>()
+            .join("\n");
         for plugin in [
             "tauri-plugin-shell",
             "tauri-plugin-fs",
@@ -116,7 +124,7 @@ mod tests {
             "tauri-plugin-dialog",
         ] {
             assert!(
-                !MANIFEST.contains(plugin),
+                !manifest.contains(plugin),
                 "{plugin} would give the webview a capability the desktop client must not have"
             );
         }
