@@ -129,6 +129,26 @@ class InstallPs1Source(unittest.TestCase):
                 f"${variable} needs a throwing guard, not a fallback literal",
             )
 
+    def test_install_sh_also_refuses_to_fall_back_to_a_literal(self) -> None:
+        # Symmetric to the ps1 guard above, and the reason it exists: install.sh
+        # used to do `$(... || printf 'abbey')`, so a personal-edition build
+        # whose probe failed installed *over* the safe edition under its name --
+        # the exact collision this derivation prevents. Pinned on both platforms
+        # so the fallback cannot quietly return to either one.
+        sh = INSTALL_SH.read_text(encoding="utf-8")
+        for literal in ("printf 'abbey'", "printf 'abbeyd'"):
+            self.assertNotIn(
+                literal,
+                sh,
+                f"install.sh fell back to the literal {literal!r} on a failed probe",
+            )
+        for variable in ("EDITION_BIN", "EDITION_DAEMON"):
+            self.assertRegex(
+                sh,
+                rf"{variable}=\$\([^)]*\) \|\| \{{",
+                f"{variable} needs a failing guard, not a fallback literal",
+            )
+
     def test_feature_selection_matches_install_sh(self) -> None:
         sh = INSTALL_SH.read_text(encoding="utf-8")
         self.assertIn("ABBEY_CARGO_FEATURES", sh)
