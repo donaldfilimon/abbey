@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use thiserror::Error;
 
-use crate::runtime::{DelegatedLimits, RunManagerConfig, RuntimeStore};
+use crate::runtime::{DelegatedLimits, RunManagerConfig, RuntimeStore, prepare_legacy_import};
 
 /// Startup-owned runtime authority. Requests cannot modify any field.
 pub struct RuntimeDaemonConfig {
@@ -149,6 +149,8 @@ pub enum RuntimeConfigError {
     Routes,
     #[error("daemon runtime database could not be opened")]
     Store,
+    #[error("daemon legacy conversation metadata could not be safely retained")]
+    LegacyMetadata,
 }
 
 #[cfg(unix)]
@@ -169,6 +171,11 @@ pub(crate) fn open_private_store(state_root: &Path) -> Result<RuntimeStore, Runt
         }
         Err(_) => return Err(RuntimeConfigError::StateDirectory),
     }
+
+    // Snapshot and retain canonical edition-owned legacy metadata before any
+    // SQLite migration/import transaction begins.
+    let legacy = prepare_legacy_import(state_root, &runtime_dir)
+        .map_err(|_| RuntimeConfigError::LegacyMetadata)?;
 
     let database = RuntimeStore::path_for_state_dir(&runtime_dir);
     match fs::symlink_metadata(&database) {
@@ -191,7 +198,8 @@ pub(crate) fn open_private_store(state_root: &Path) -> Result<RuntimeStore, Runt
         }
         Err(_) => return Err(RuntimeConfigError::DatabasePath),
     }
-    let store = RuntimeStore::open(&database).map_err(|_| RuntimeConfigError::Store)?;
+    let store = RuntimeStore::open_with_legacy(&database, legacy.as_ref())
+        .map_err(|_| RuntimeConfigError::Store)?;
     let metadata = fs::symlink_metadata(&database).map_err(|_| RuntimeConfigError::DatabasePath)?;
     validate_private_database(&metadata)?;
     Ok(store)
