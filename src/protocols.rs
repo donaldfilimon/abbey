@@ -216,8 +216,12 @@ pub fn dispatch_mcp(_cfg: &AgentConfig, cwd: &Path, args: &[String]) -> Result<i
         "help" | "-h" | "--help" => {
             println!(
                 "abbey mcp — Abbey's own read-only MCP server + local config inventory\n\n\
-                 Abbey as MCP server (stdio, read-only tools):\n\
+                 Abbey as MCP server (read-only tools):\n\
                    abbey mcp serve            # JSON-RPC 2.0 over stdin/stdout\n\
+                   abbey mcp serve http       # Streamable HTTP POST /mcp, loopback only\n\
+                                              # [--host <loopback>] [--port <n>]\n\
+                                              # unauthenticated: no TLS, no OAuth 2.1/PKCE;\n\
+                                              # a non-loopback --host is a hard error\n\
                    abbey mcp tools            # describe the safe registry + limits\n\n\
                  Local inventory (works under cursor/grok/fm/abi backends):\n\
                    abbey mcp status\n\

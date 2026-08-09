@@ -301,6 +301,42 @@ fn the_registry_description_command_is_not_the_serve_path() {
         .expect("spawn abbey mcp tools");
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(stdout.contains("abbey_status"));
-    assert!(stdout.contains("Streamable HTTP"), "{stdout}");
-    assert!(stdout.contains("OAuth"), "{stdout}");
+    assert!(stdout.contains("stdio"), "{stdout}");
+
+    // Streamable HTTP now ships, so asserting the words "Streamable HTTP" and
+    // "OAuth" merely appear no longer distinguishes an honest description from
+    // a stale one. Pin the *claims* instead: HTTP is real but loopback-only and
+    // unauthenticated, and OAuth is named as absent rather than as a feature.
+    assert!(
+        stdout.contains("Streamable HTTP POST /mcp, loopback only"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("loopback only, and it is unauthenticated"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("A non-loopback bind is a hard error"),
+        "{stdout}"
+    );
+    // Match on whitespace-normalized text: the paragraph is hard-wrapped, so a
+    // literal match would pin the line breaks rather than the claim.
+    let flowed = stdout.split_whitespace().collect::<Vec<_>>().join(" ");
+    let unimplemented = flowed
+        .rsplit_once("are NOT implemented")
+        .map(|(before, _)| before)
+        .expect("the description names what is unimplemented");
+    for absent in [
+        "HTTPS/TLS",
+        "OAuth 2.1/PKCE",
+        "resource indicators",
+        "token-audience binding",
+        "SSE streaming/resumability",
+        "stateless-lifecycle revision",
+    ] {
+        assert!(
+            unimplemented.contains(absent),
+            "`{absent}` must be listed as unimplemented, not merely mentioned: {stdout}"
+        );
+    }
 }
