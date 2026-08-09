@@ -412,6 +412,16 @@ const MCP_HOST_REFUSAL_DETAIL: &str = "An Abbey-owned provider-neutral tool runt
     stdio and unauthenticated loopback-only HTTP. Non-loopback HTTP, HTTPS/TLS, OAuth, and \
     consuming external servers remain unavailable.";
 
+/// Accelerator refusal. Narrowed when kernel execution shipped: the Proposed
+/// scope (compilation / training / inference) is unchanged and still refuses,
+/// but the detail must name what *is* Current or the refusal overstates.
+const ACCEL_REFUSAL_DETAIL: &str = "GPU/NPU/TPU compilation, training, and model inference in \
+    Abbey are Proposed but not implemented, and device residency/placement is not observable \
+    here. Current: host presence detect (`abbey platform compute`), and — behind \
+    `--features accel` — real numerical kernel execution on Metal with CPU-oracle parity \
+    (`abbey accel verify`). That verifies arithmetic, not compilation, training, inference, \
+    placement, or speedup.";
+
 pub fn refuse(verb: &str) -> Result<i32> {
     let key = verb.trim().to_ascii_lowercase();
     let (claim_key, detail) = match key.as_str() {
@@ -430,10 +440,7 @@ pub fn refuse(verb: &str) -> Result<i32> {
             "three-VM",
             "An authenticated local three-VM shared-compute proof is Proposed; production separate-physical-host, geographic-HA, and multi-GPU operation remains Proposed even after that proof. The same-host multi-process proof is Current on Unix hosts.",
         ),
-        "npu" | "tpu" | "gpu" | "cuda" | "metal" | "ane" => (
-            "GPU/NPU/TPU",
-            "GPU/NPU/TPU compilation, training, and inference in Abbey are Proposed but not implemented. Host detect is Current.",
-        ),
+        "npu" | "tpu" | "gpu" | "cuda" | "metal" | "ane" => ("GPU/NPU/TPU", ACCEL_REFUSAL_DETAIL),
         "vision" | "vlm" | "video-weights" | "local-vision" => (
             "neural speech",
             "Local neural image/video models are Proposed but not implemented. Path attach + delegated agent-tool generation are Current.",
@@ -457,10 +464,7 @@ pub fn refuse(verb: &str) -> Result<i32> {
             SHELL_BYPASS_CLAIM_KEY,
             "A personal-unrestricted separate edition is Proposed but not implemented, and allowlist bypass in the shipped edition is Out of scope. Shipped Abbey keeps allowlist + --confirm and refuses bypass.",
         ),
-        "accel" | "accelerator" | "accelerators" => (
-            "GPU/NPU/TPU",
-            "GPU/NPU/TPU compilation, training, and inference in Abbey are Proposed but not implemented. Host detect is Current.",
-        ),
+        "accel" | "accelerator" | "accelerators" => ("GPU/NPU/TPU", ACCEL_REFUSAL_DETAIL),
         "gui" | "window" | "windowed" | "desktop" | "tauri" | "react" => (
             "Tauri 2",
             "The Tauri 2 + React/TypeScript desktop GUI is Proposed but not implemented. The ratatui TUI is Current.",

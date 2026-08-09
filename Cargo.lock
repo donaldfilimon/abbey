@@ -7,6 +7,8 @@ name = "abbey"
 version = "2.6.0"
 dependencies = [
  "abi-ai",
+ "abi-compute",
+ "abi-gpu",
  "abi-wdbx",
  "anyhow",
  "chrono",
@@ -64,6 +66,14 @@ dependencies = [
  "thiserror 2.0.20",
  "windows-sys 0.61.2",
  "zeroize",
+]
+
+[[package]]
+name = "abi-gpu"
+version = "0.1.0"
+dependencies = [
+ "abi-compute",
+ "abi-foundation",
 ]
 
 [[package]]

@@ -103,7 +103,7 @@ pub const SLASH_CATALOG: &[SlashCmd] = &[
     },
     SlashCmd {
         name: "accel",
-        help: "NPU/TPU honesty: /accel [status|detect|refuse]",
+        help: "Accelerators: /accel [status|detect|verify|refuse] (verify needs --features accel)",
         kind: SlashKind::Local,
     },
     SlashCmd {
