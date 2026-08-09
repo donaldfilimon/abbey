@@ -8,6 +8,8 @@ use crate::runtime::identity::{
 use chrono::{DateTime, SecondsFormat, Utc};
 use rusqlite::{OptionalExtension, params};
 
+const MAX_MIGRATED_V3_SCOPE_PERMUTATIONS: usize = 40_320;
+
 pub(super) struct MutationReceipt {
     pub(super) mutation_sha256: String,
     pub(super) revision: i64,
@@ -195,9 +197,9 @@ fn validate_migrated_v3_save_receipt(
     if migrated_count == 0 {
         return Ok(false);
     }
-    // Migration 4 retained the exact v3 authority rows but did not retain the
-    // original scope-vector order. Authenticate the complete set relationally;
-    // only native-v4 receipts may claim ordered scope-set reconstruction.
+    // Migration 4 retained the exact v3 authority rows but not their original
+    // order. First authenticate the complete set relationally, then authenticate
+    // the stored digest against a bounded primary-first permutation search.
     let _ = scope_set_sha256_from_hashes(scope_refs).map_err(|_| {
         StoreError::CorruptData("identity migrated-v3 receipt scope membership is invalid")
     })?;
@@ -231,7 +233,71 @@ fn validate_migrated_v3_save_receipt(
             ));
         }
     }
+    validate_migrated_v3_scope_set_digest(receipt, scope_refs)?;
     Ok(true)
+}
+
+fn validate_migrated_v3_scope_set_digest(
+    receipt: &MutationReceipt,
+    scope_refs: &[&str],
+) -> Result<(), StoreError> {
+    let primary = receipt.scope_sha256.as_str();
+    let mut remaining = scope_refs
+        .iter()
+        .copied()
+        .filter(|scope| *scope != primary)
+        .collect::<Vec<_>>();
+    remaining.sort_unstable();
+
+    let mut permutation_count = 1_usize;
+    for factor in 2..=remaining.len() {
+        permutation_count =
+            permutation_count
+                .checked_mul(factor)
+                .ok_or(StoreError::CorruptData(
+                    "identity migrated-v3 scope-set digest cannot be bounded",
+                ))?;
+        if permutation_count > MAX_MIGRATED_V3_SCOPE_PERMUTATIONS {
+            return Err(StoreError::CorruptData(
+                "identity migrated-v3 scope-set digest cannot be authenticated",
+            ));
+        }
+    }
+
+    loop {
+        let ordered = std::iter::once(primary)
+            .chain(remaining.iter().copied())
+            .collect::<Vec<_>>();
+        let digest = scope_set_sha256_from_hashes(&ordered).map_err(|_| {
+            StoreError::CorruptData("identity migrated-v3 scope-set digest is invalid")
+        })?;
+        if digest == receipt.scope_set_sha256 {
+            return Ok(());
+        }
+        if !advance_permutation(&mut remaining) {
+            return Err(StoreError::CorruptData(
+                "identity migrated-v3 scope-set digest is unauthenticated",
+            ));
+        }
+    }
+}
+
+fn advance_permutation(values: &mut [&str]) -> bool {
+    let Some(pivot) = (0..values.len().saturating_sub(1))
+        .rev()
+        .find(|&index| values[index] < values[index + 1])
+    else {
+        return false;
+    };
+    let Some(successor) = (pivot + 1..values.len())
+        .rev()
+        .find(|&index| values[pivot] < values[index])
+    else {
+        return false;
+    };
+    values.swap(pivot, successor);
+    values[pivot + 1..].reverse();
+    true
 }
 
 pub(super) fn validate_alias_mapping(

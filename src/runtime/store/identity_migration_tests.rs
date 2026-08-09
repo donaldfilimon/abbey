@@ -110,6 +110,93 @@ fn canonical_scope_selection_authenticates_v3_unordered_scope_membership() {
     std::fs::remove_dir_all(dir).unwrap();
 }
 
+#[test]
+fn canonical_scope_selection_rejects_tampered_v3_scope_set_digest() {
+    let dir = tempfile_dir("v3-tampered-scope-set");
+    let path = RuntimeStore::path_for_state_dir(&dir);
+    let mut conn = rusqlite::Connection::open(&path).unwrap();
+    crate::runtime::migrations::apply_through_v3(&mut conn, "2026-08-09T00:00:00.000Z").unwrap();
+    let edition = edition_sha256("abbey").unwrap();
+    let global = ConversationIdentityScope::global();
+    let external = external_identity("v3-tampered-digest-secret").unwrap();
+    let timestamp = "2026-08-09T00:00:01.000Z";
+    conn.execute(
+        "INSERT INTO conversations(id, created_at, updated_at) VALUES (?1, ?2, ?2)",
+        params![external.conversation_id.as_str(), timestamp],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO conversation_identity_aliases(
+            alias_sha256, conversation_id, origin, created_at
+         ) VALUES (?1, ?2, 'runtime_v3', ?3)",
+        params![
+            external.alias_sha256,
+            external.conversation_id.as_str(),
+            timestamp
+        ],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO conversation_identity_scopes(
+            edition_sha256, scope_sha256, alias_sha256, conversation_id,
+            revision, updated_at
+         ) VALUES (?1, ?2, ?3, ?4, 1, ?5)",
+        params![
+            edition,
+            global.as_sha256(),
+            external.alias_sha256,
+            external.conversation_id.as_str(),
+            timestamp
+        ],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO conversation_identity_commit(
+            singleton, revision, operation, edition_sha256, scope_sha256,
+            scope_set_sha256, alias_sha256, conversation_id, mutation_sha256, committed_at
+         ) VALUES (1, 1, 'save', ?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        params![
+            edition,
+            global.as_sha256(),
+            scope_set_sha256(std::slice::from_ref(&global)).unwrap(),
+            external.alias_sha256,
+            external.conversation_id.as_str(),
+            mutation_sha256("v3-tampered-digest-token").unwrap(),
+            timestamp
+        ],
+    )
+    .unwrap();
+    drop(conn);
+
+    let store = RuntimeStore::open_metadata(&path).unwrap();
+    {
+        let conn = store.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE conversation_identity_mutations SET scope_set_sha256=?1",
+            ["b".repeat(64)],
+        )
+        .unwrap();
+        for table in [
+            "conversation_identity_migrated_scopes",
+            "conversation_identity_mutation_scopes",
+        ] {
+            assert_eq!(
+                conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .unwrap(),
+                1
+            );
+        }
+    }
+    assert!(matches!(
+        store.identity_scope_selection("abbey", &global),
+        Err(StoreError::CorruptData(_))
+    ));
+    drop(store);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
 fn tempfile_dir(label: &str) -> std::path::PathBuf {
     let path = std::env::temp_dir().join(format!(
         "abbey-runtime-identity-migration-{label}-{}-{}",
