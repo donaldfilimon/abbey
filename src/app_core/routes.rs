@@ -121,15 +121,16 @@ impl RouteAuditEntry {
         validate_field(&self.role, MAX_ROUTE_FIELD_BYTES)?;
         validate_field(&self.model, MAX_ROUTE_FIELD_BYTES)?;
         validate_field(&self.reason, MAX_ROUTE_REASON_BYTES)?;
-        for optional in [
+        for value in [
             &self.stage,
             &self.correlation,
             &self.alternate,
             &self.fallback,
-        ] {
-            if let Some(value) = optional {
-                validate_field(value, MAX_ROUTE_FIELD_BYTES)?;
-            }
+        ]
+        .into_iter()
+        .flatten()
+        {
+            validate_field(value, MAX_ROUTE_FIELD_BYTES)?;
         }
         if self.confidence_percent > 100 {
             return Err(ValidationError::new(
