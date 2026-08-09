@@ -825,3 +825,23 @@ capability expansion roadmap without reopening or replacing that section.
   cancellation are also unimplemented. Being an MCP *server* does not make
   Abbey a client/host of other providers' servers — that stays
   `runtime-provider-neutral-owned` (Proposed).
+- **Built 2026-08-08 (Phase 7 slice 1 — desktop client scaffold; ledger row unchanged
+  at Proposed):** `desktop/` holds a Tauri 2 + React 19 + TypeScript client on
+  bun/Vite in its own cargo workspace, so `./check.sh` is unaffected and no file under
+  `src/` was modified. Its TypeScript IPC types are *generated* from
+  `src/app_core/{ids,contracts}.rs` by a `syn` projection and, crucially,
+  cross-checked: the generator also emits the real `serde_json` output of real
+  `app_core` values as `as const satisfies`, so a wrong field name, `rename_all`, or
+  adjacent tag fails `tsc` rather than merely failing a checksum (proven negatively —
+  `CapabilitySet`, whose only field is private, is the canary). Bundle identity for
+  both editions is written into the Tauri configs from `abbey::edition`, pinned by
+  tests, and re-checked at startup. Exactly four enumerated read-only commands exist;
+  no shell/fs/http/process plugin is in the manifest; the CSP forbids inline, eval, and
+  wildcards; and the bearer crosses IPC only as a boolean plus a source kind.
+  **Why the ledger row stays Proposed:** two views (Doctor, Capabilities) are real
+  because they are exactly the two capabilities the app core grants, the other eight
+  render no data and say why; and there is **no packaged runtime proof** — no
+  `tauri build`, no signing or notarization, no Ubuntu/Windows run, and no observed
+  read against a live `abbeyd`, since every read on this machine came from the
+  in-process core. `desktop-tauri-react` requires packaged runtime evidence, which
+  does not exist.
