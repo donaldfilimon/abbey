@@ -1,0 +1,9 @@
+# Workspace for Abbey's desktop client.
+#
+# Deliberately separate from the root `abbey` package: the root manifest has no
+# `[workspace]` table, so nothing here is absorbed into abbey's build, its
+# lockfile, `cargo clippy --all-targets`, or `check.sh`'s `src/**/*.rs` file-size
+# guard. The desktop tree is a *client* of the abbey library, never part of it.
+[workspace]
+resolver = "3"
+members = ["codegen", "src-tauri"]
