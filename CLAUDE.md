@@ -20,7 +20,7 @@ Full agent guidance lives in [AGENTS.md](AGENTS.md) — read it too; this file d
 ```bash
 cargo build --release              # build (the safe public edition)
 cargo build --features wdbx        # + in-process WDBX memory backend (off by default)
-cargo build --features personal-edition  # separately identified personal edition
+cargo build --features personal-edition  # separately identified personal edition (src/edition.rs)
 ./install.sh                       # Unix: install abbey + read-only abbeyd (Windows: install.ps1 installs abbey)
 ./check.sh                         # production gate — see below
 cargo test                         # default-feature tests only
@@ -50,9 +50,11 @@ the shared `capture.rs` (`run_print` / `capture_chat`) rather than calling the
 executor ad hoc: `print` (`commands.rs`), `commit` (`actions::run_commit`), and
 `voice ask` (`voice.rs`). None reach `run_agent`, so they skip `hybrid_run`
 entirely — no persona/role wrap, no prefs injection, and **no `route.jsonl`
-entry**. That is deliberate for single-shot piping and spoken replies, but it
-means the routing audit does not see them. New bypasses must go through
-`capture.rs` and be added to this list; its caller set is the bypass inventory.
+entry** (verified: `abbey print …` leaves the route log unchanged where
+`abbey ask …` appends a row). That is deliberate for single-shot piping and
+spoken replies, but it means the routing audit does not see them. New bypasses
+must go through `capture.rs` and be added to this list — its caller set *is*
+the bypass inventory.
 
 ```
 CLI (clap) · TUI (ratatui) · slash catalog
@@ -101,7 +103,7 @@ Key modules (`src/`):
 | `protocols.rs` / `protocols/mcp.rs` | MCP config inventory + ACP peer discovery/launch (Abbey is not a *client/host* of other providers' servers) |
 | `mcp_host/` (`mod.rs`, `serve.rs`, `tools.rs`, `jsonrpc.rs`, `limits.rs`, `redact.rs`) | `abbey mcp serve` — Abbey's own read-only **stdio MCP server**: newline-delimited JSON-RPC 2.0, version negotiation, `tools/list`+`tools/call`, JSON Schema 2020-12, a registry whose `EffectClass` admits read-only tools only, named enforced limits, outbound secret redaction. No HTTP/OAuth in this slice |
 | `highlight.rs` | syntect ANSI for fenced code on `-p`/print + `abbey highlight` |
-| `subagents.rs` / `subagents/` | multi-subagent lanes + local PATH peer fan-out + synthesize |
+| `subagents.rs` / `subagents/` (`catalog.rs`, `execute.rs`, `parsing.rs`) | multi-subagent lanes + local PATH peer fan-out + synthesize |
 | `claims.rs` / `claims/registry.rs` | Current/Partial/Proposed/Blocked/OOS gate + refuse paths and machine manifest |
 | `platform.rs` | host OS matrix + threads + GPU/NPU/TPU detect (not accelerator runtime) |
 | `surfaces.rs` | vision/cot/runtime honesty (neural media/owned host Proposed; hidden CoT OOS) |
@@ -113,7 +115,7 @@ Key modules (`src/`):
 | `learn.rs` | self-learn capture/digest/review/stats into `train_candidate` |
 | `os_control.rs` | cross-platform OS allowlist policy |
 | `parallel.rs` | multi-lane fan-out (Max/Gemma/Aviva) |
-| `inventory.rs` / `inventory/` | skills/plugins/peer-agent-tool discovery |
+| `inventory.rs` / `inventory/` (`skills.rs`, `plugins.rs`) | skills/plugins/peer-agent-tool discovery |
 | `init/` (`mod.rs`, `detect.rs`, `probe.rs`) | `abbey init` — scans a project and writes `AGENTS.md` |
 | `tui/` (`app.rs`, `keys.rs`, `ui.rs`, `tabs.rs`, `overlay.rs`, `refresh.rs`, `theme.rs`, `widgets.rs`, `mod.rs`) | 7-tab ratatui app; `keys.rs` holds key/palette/editor/mouse input handling split out of `app.rs` |
 | `doctor.rs` | doctor/debug/persona/role/memory checks |
