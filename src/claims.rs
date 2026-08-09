@@ -676,11 +676,21 @@ mod tests {
             .expect("bounded protocol-v2 run claim");
         assert_eq!(bounded_runs.status, Status::Current);
         assert!(bounded_runs.note.contains("startup-bound"));
+        assert!(bounded_runs.note.contains("CLI and TUI slash surface"));
+        assert!(bounded_runs.note.contains("frontend-neutral"));
         assert!(
             bounded_runs
                 .note
                 .contains("Requests cannot select executables")
         );
+        for excluded in [
+            "live subscriptions",
+            "daemon-owned memory",
+            "desktop bridge",
+            "provider-neutral model ownership",
+        ] {
+            assert!(bounded_runs.note.contains(excluded));
+        }
         assert!(
             bounded_runs
                 .note

@@ -108,6 +108,25 @@ request once with v1 only after an explicit `unsupported_version`. It never retr
 `SubmitRun` or `CancelRun`, because a lost mutation response does not prove the operation
 was not committed.
 
+## Shared presentation reducer
+
+`src/run_control.rs` is the single presentation-neutral reducer used by
+`abbey daemon run submit|status|cancel|events` and the TUI's `/daemon run ...` slash
+path. Both surfaces build the same closed `AppCommand`, use the same authenticated
+`DaemonClient`, and reduce the correlated `AppEvent` into a sanitized `RunControlView`.
+The reducer performs no I/O or execution itself.
+
+Snapshots may advance over states a status poll did not observe, but their run identity,
+idempotency key, conversation identity, creation timestamp, terminal state, and durable
+event count cannot regress. Event pages are stricter: sequence one is `Queued`, every
+contiguous event follows the canonical transition graph, and continuation requests must
+use the prior page's exact cursor and fixed watermark. `next_events_command` creates one
+explicit continuation only; it is not polling or a live subscription.
+
+Human and JSON renderers consume only this validated state. Prompt text, provider output,
+bearer material, and provider paths never enter the reducer view or its diagnostics. The
+desktop bridge remains separately wired and does not gain run control from this module.
+
 ## Audit boundary
 
 Audit metadata is a bounded JSON object. Sensitive field names and recognizable bearer,
@@ -123,6 +142,9 @@ The Current product surface is exact v1 read compatibility plus authenticated pr
 fixed-recipe local run control on Unix. A real scratch-daemon test proves idempotent single
 launch, terminal persistence, cancellation and descendant death, fixed-watermark paging,
 restart/reopen, and absence of bearer, prompt, provider-output, and executable-path
-disclosure. CLI/TUI lifecycle parity, tool dispatch, automations, live subscriptions,
-daemon-owned memory, Windows named pipes/Job Objects, and a finished desktop client remain
-separate incomplete or Proposed evidence slices.
+disclosure. A second real process proof covers the shared CLI/TUI-slash command grammar,
+reducer, and sanitized renderer; the TUI evidence is deterministic slash-process parity,
+not an interactive-terminal or desktop proof. Tool dispatch, automations, approvals,
+live subscriptions, daemon-owned memory, the desktop run bridge, Windows named pipes/Job
+Objects, and provider-neutral model ownership remain separate incomplete or Proposed
+evidence slices.

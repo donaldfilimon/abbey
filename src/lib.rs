@@ -42,6 +42,7 @@ mod prompts;
 mod protocols;
 mod roles;
 mod route_log;
+pub mod run_control;
 pub mod runtime;
 mod session;
 mod slash;
