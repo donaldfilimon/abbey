@@ -17,8 +17,8 @@
 //! returns `false` unconditionally, and the isolation tests pin that. This
 //! module implements the separation mechanism only.
 //!
-//! Every per-edition string lives in exactly one table ([`SAFE`]/[`PERSONAL`]).
-//! Callers must derive names and paths from [`ACTIVE`] rather than repeating a
+//! Every per-edition string lives in exactly one table (`SAFE`/`PERSONAL`).
+//! Callers must derive names and paths from `ACTIVE` rather than repeating a
 //! literal, or the two editions drift and can collide.
 
 use std::path::{Path, PathBuf};
