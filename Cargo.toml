@@ -35,6 +35,7 @@ ratatui = "0.30.2"
 rusqlite = { version = "0.40", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2 = "0.10"
 syntect = { version = "5", default-features = false, features = [
     "default-syntaxes",
     "default-themes",

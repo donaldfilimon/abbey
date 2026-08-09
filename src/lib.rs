@@ -40,6 +40,7 @@ mod prompts;
 mod protocols;
 mod roles;
 mod route_log;
+pub mod runtime;
 mod session;
 mod slash;
 mod slash_dispatch;
