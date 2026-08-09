@@ -6,7 +6,7 @@
 
 use super::executor::{CancellationToken, ExecutionError, ExecutionErrorKind, Executor};
 use super::supervisor::{
-    ProcessEnvironment, ProcessSpec, SupervisorLimits, SupervisorOutcome, run,
+    ProcessEnvironment, ProcessSpec, SupervisorError, SupervisorLimits, SupervisorOutcome, run,
 };
 use crate::app_core::{BackendSelection, RunId, RunMode, RunRequest};
 use std::ffi::{OsStr, OsString};
@@ -90,7 +90,11 @@ impl fmt::Display for DelegatedConfigError {
         match self {
             Self::InvalidWorkspace => formatter.write_str("delegated workspace is invalid"),
             Self::InvalidExecutable(backend) => {
-                write!(formatter, "delegated {} executable is invalid", backend_label(*backend))
+                write!(
+                    formatter,
+                    "delegated {} executable is invalid",
+                    backend_label(*backend)
+                )
             }
             Self::InvalidLimits => formatter.write_str("delegated process limits are invalid"),
         }
@@ -144,10 +148,7 @@ impl DelegatedExecutorConfig {
         Ok(self)
     }
 
-    pub fn with_limits(
-        mut self,
-        limits: DelegatedLimits,
-    ) -> Result<Self, DelegatedConfigError> {
+    pub fn with_limits(mut self, limits: DelegatedLimits) -> Result<Self, DelegatedConfigError> {
         limits.validate()?;
         self.limits = limits;
         Ok(self)
@@ -235,14 +236,8 @@ impl Executor for DelegatedExecutor {
         cancellation: &CancellationToken,
     ) -> Result<(), ExecutionError> {
         let spec = self.spec(&request)?;
-        let outcome = run(&spec, &self.config.limits.supervisor(), cancellation).map_err(|error| {
-            let kind = if error.is_teardown() {
-                ExecutionErrorKind::Teardown
-            } else {
-                ExecutionErrorKind::Spawn
-            };
-            ExecutionError::with_kind(kind, generic_message(kind))
-        })?;
+        let outcome = run(&spec, &self.config.limits.supervisor(), cancellation)
+            .map_err(map_supervisor_error)?;
         match outcome {
             SupervisorOutcome::Exited { status, .. } if status.success() => Ok(()),
             SupervisorOutcome::Exited { .. } => Err(ExecutionError::with_kind(
@@ -266,6 +261,24 @@ impl Executor for DelegatedExecutor {
             }
         }
     }
+}
+
+fn map_supervisor_error(error: SupervisorError) -> ExecutionError {
+    let kind = if error.is_teardown() {
+        ExecutionErrorKind::Teardown
+    } else {
+        match &error {
+            SupervisorError::Invalid(_) => ExecutionErrorKind::Unsupported,
+            #[cfg(not(unix))]
+            SupervisorError::Unsupported => ExecutionErrorKind::Unsupported,
+            SupervisorError::Spawn(_) | SupervisorError::Pipe(_) => ExecutionErrorKind::Spawn,
+            SupervisorError::Wait(_)
+            | SupervisorError::Reader(_, _)
+            | SupervisorError::ReaderThread(_) => ExecutionErrorKind::Teardown,
+            SupervisorError::Teardown(_) => unreachable!("handled by is_teardown"),
+        }
+    };
+    ExecutionError::with_kind(kind, generic_message(kind))
 }
 
 fn unsupported() -> ExecutionError {
@@ -325,7 +338,11 @@ where
 {
     let mut selected = environment
         .into_iter()
-        .filter(|(key, _)| BENIGN_ENVIRONMENT.iter().any(|allowed| key == OsStr::new(allowed)))
+        .filter(|(key, _)| {
+            BENIGN_ENVIRONMENT
+                .iter()
+                .any(|allowed| key == OsStr::new(allowed))
+        })
         .collect::<Vec<_>>();
     selected.sort_by(|left, right| left.0.cmp(&right.0));
     selected.dedup_by(|left, right| left.0 == right.0);
@@ -342,11 +359,15 @@ fn backend_label(backend: BackendSelection) -> &'static str {
 }
 
 #[cfg(test)]
+mod manager_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::app_core::{IdempotencyKey, RunMode};
-    use std::sync::atomic::{AtomicU64, Ordering};
+    use crate::runtime::supervisor::StreamName;
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::thread;
     use std::time::Instant;
 
@@ -393,10 +414,7 @@ mod tests {
         }
     }
 
-    fn execute(
-        executor: &DelegatedExecutor,
-        request: RunRequest,
-    ) -> Result<(), ExecutionError> {
+    fn execute(executor: &DelegatedExecutor, request: RunRequest) -> Result<(), ExecutionError> {
         executor.execute(&RunId::new(), request, &CancellationToken::default())
     }
 
@@ -451,6 +469,58 @@ mod tests {
         );
     }
 
+    #[test]
+    fn supervisor_errors_map_to_stable_redacted_execution_kinds() {
+        let cases = vec![
+            #[cfg(not(unix))]
+            (
+                SupervisorError::Unsupported,
+                ExecutionErrorKind::Unsupported,
+            ),
+            (
+                SupervisorError::Invalid("private prompt in invalid specification"),
+                ExecutionErrorKind::Unsupported,
+            ),
+            (
+                SupervisorError::Spawn(std::io::Error::other(
+                    "/private/provider-path contained bearer-secret",
+                )),
+                ExecutionErrorKind::Spawn,
+            ),
+            (
+                SupervisorError::Pipe("private-output-stream"),
+                ExecutionErrorKind::Spawn,
+            ),
+            (
+                SupervisorError::Wait(std::io::Error::other("/private/provider-path wait failed")),
+                ExecutionErrorKind::Teardown,
+            ),
+            (
+                SupervisorError::Reader(
+                    StreamName::Stdout,
+                    std::io::Error::other("private provider output read failed"),
+                ),
+                ExecutionErrorKind::Teardown,
+            ),
+            (
+                SupervisorError::ReaderThread(StreamName::Stderr),
+                ExecutionErrorKind::Teardown,
+            ),
+            (
+                SupervisorError::Teardown("/private/provider-path retained private output".into()),
+                ExecutionErrorKind::Teardown,
+            ),
+        ];
+        for (source, expected) in cases {
+            let error = map_supervisor_error(source);
+            assert_eq!(error.kind(), expected);
+            let rendered = error.to_string();
+            assert!(!rendered.contains("private"));
+            assert!(!rendered.contains("bearer-secret"));
+            assert!(!rendered.contains("provider-path"));
+        }
+    }
+
     #[cfg(unix)]
     #[test]
     fn abi_recipe_is_exact_literal_and_environment_is_scrubbed() {
@@ -487,7 +557,10 @@ mod tests {
             request(BackendSelection::Abi, RunMode::OneShot, &input),
         )
         .unwrap();
-        assert!(!marker.exists(), "metacharacter input was executed by a shell");
+        assert!(
+            !marker.exists(),
+            "metacharacter input was executed by a shell"
+        );
     }
 
     #[cfg(unix)]
@@ -548,7 +621,10 @@ mod tests {
             let error = execute(&executor, request).unwrap_err();
             assert_eq!(error.kind(), ExecutionErrorKind::Unsupported);
         }
-        assert!(!marker.exists(), "unsupported request reached process spawn");
+        assert!(
+            !marker.exists(),
+            "unsupported request reached process spawn"
+        );
     }
 
     #[cfg(unix)]
@@ -579,13 +655,10 @@ mod tests {
     fn timeout_and_output_limit_map_to_stable_generic_kinds() {
         let scratch = ScratchDir::new("limits");
         let sleeper = scratch.script("sleep", "exec /bin/sleep 30");
-        let noisy = scratch.script(
-            "noisy",
-            "i=0; while [ $i -lt 100 ]; do printf x; i=$((i + 1)); done",
-        );
-        let limits = DelegatedLimits {
+        let noisy = scratch.script("noisy", "printf 12345678901234567\nexec /bin/sleep 30");
+        let timeout_limits = DelegatedLimits {
             timeout: Duration::from_millis(80),
-            terminate_grace: Duration::from_millis(40),
+            terminate_grace: Duration::from_millis(500),
             stdout_bytes: 16,
             stderr_bytes: 16,
             poll_interval: Duration::from_millis(5),
@@ -595,7 +668,7 @@ mod tests {
             .unwrap()
             .bind_abi_local(&sleeper)
             .unwrap()
-            .with_limits(limits)
+            .with_limits(timeout_limits)
             .unwrap();
         let started = Instant::now();
         let error = execute(
@@ -610,7 +683,10 @@ mod tests {
             .unwrap()
             .bind_abi_local(&noisy)
             .unwrap()
-            .with_limits(limits)
+            .with_limits(DelegatedLimits {
+                timeout: Duration::from_secs(2),
+                ..timeout_limits
+            })
             .unwrap();
         let error = execute(
             &DelegatedExecutor::new(output_config),

@@ -3,12 +3,17 @@
 //! This module owns lifecycle persistence only. Model execution, tool dispatch,
 //! presentation, and daemon transport stay outside the database layer.
 
+mod delegated;
 mod executor;
 mod manager;
 mod migrations;
 mod store;
+pub(crate) mod supervisor;
 
-pub use executor::{CancellationToken, ExecutionError, Executor};
+pub use delegated::{
+    DelegatedConfigError, DelegatedExecutor, DelegatedExecutorConfig, DelegatedLimits,
+};
+pub use executor::{CancellationToken, ExecutionError, ExecutionErrorKind, Executor};
 pub use manager::{
     Clock, ManagerError, RunManager, RunManagerConfig, SubmitDisposition, SubmitResult, SystemClock,
 };
