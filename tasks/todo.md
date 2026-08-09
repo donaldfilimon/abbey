@@ -204,10 +204,13 @@ design subtask never promotes the parent capability to Current.
     benign environment. Manager integration proves success, stable timeout/output failure
     codes, and idempotent single launch. This adds no protocol-v1, CLI, TUI, MCP, or
     arbitrary-command authority; non-Unix remains fail-closed.
-  - [ ] **Phase 4B — bounded cancellable process supervisor and delegated executor adapter:**
-    continue with Phase 4B.2 protocol-v2 run submission/status/event paging, then legacy
-    conversation migration; daemon-owned memory; race-safe approvals; automations; Unix
-    admission hardening and Windows named pipes/Job Objects.
+  - [ ] **Phase 4B.2 — protocol-v2 run submission status and paged lifecycle events:**
+    expose only the fixed ABI-local/Foundation Models recipes already proven by Phase
+    4B.1, preserve exact protocol-v1 Status/Claims behavior, and keep event paging
+    bounded, snapshot-consistent, and free of raw prompts or process output. Later
+    Phase 4B slices retain legacy conversation migration, daemon-owned memory,
+    race-safe approvals, automations, Unix admission hardening, and Windows named
+    pipes/Job Objects.
   - Phase 4 evidence bar: CLI and TUI use the same typed commands and lifecycle-event
     reducer; serialized frontend-neutral fixtures are stable. Phase 7 proves the future
     React/Tauri client consumes those contracts. Paginated event retrieval and a live

@@ -723,8 +723,8 @@ repository hook configuration to rewrite.
 <!-- abbey-goal
 id: abbey-completion-program
 status: in_progress
-implementation-evidence: Phase 1 baseline, Phase 3 executable ledgers, read-only daemon, and Phase 4A durable lifecycle contracts/store/manager foundation are complete
-automated-test-evidence: check.sh both modes plus claims-sync, rustdoc, RustSec, release, installer, semantic, mesh, inventory, daemon, and repeated runtime state-machine suites
+implementation-evidence: Phase 1 baseline, Phase 3 executable ledgers, read-only daemon, Phase 4A durable lifecycle, and Phase 4B.1 bounded delegated supervision are complete
+automated-test-evidence: check.sh both modes plus claims-sync, rustdoc, RustSec, release, installer, semantic, mesh, inventory, daemon, repeated runtime state-machine suites, and repeated process-group race proof
 live-external-evidence: local macOS evidence is green; hosted runners signing DAST paid provider and separate-platform proofs remain distinct
 next-action: Phase 4B.2 — protocol-v2 run submission status and paged lifecycle events
 -->
