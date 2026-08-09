@@ -34,7 +34,7 @@ again by the transactional store.
 `RuntimeStore` uses `<state>/daemon/runtime.sqlite`. It is independent from
 `memory.sqlite` and from the optional WDBX semantic-memory backend.
 
-The version-1 schema contains:
+The version-2 schema contains:
 
 - `schema_migrations`
 - `conversations`
@@ -42,6 +42,9 @@ The version-1 schema contains:
 - `runs`
 - `run_events`
 - `audit_events`
+- `legacy_conversation_imports`
+- `legacy_conversation_aliases`
+- `legacy_conversation_entries`
 
 SQLite runs with foreign keys enabled, WAL journaling, `synchronous=FULL`, and a bounded
 busy timeout. Migrations and run transitions use immediate transactions. A state change
@@ -51,6 +54,36 @@ sequences.
 Idempotency keys are bound to a SHA-256 digest computed by `RunManager` from the validated
 serialized `RunRequest`. Reusing a key with the same request returns the original run;
 reusing it with different request data fails with `IdempotencyConflict`.
+
+## Legacy conversation metadata migration
+
+On Unix, daemon startup inspects only the active edition's canonical `history.log`,
+`chat-id`, and direct regular files under `by-cwd`. `chat-id.export` participates in the
+byte-exact backup but is never parsed, sourced, evaluated, or imported. Environment
+overrides that name other chat/history paths are deliberately ignored by this automatic
+migration.
+
+The snapshot is bounded to 1,024 source files, 2 MiB per file, 8 MiB total, and 4,096
+parsed observations. Files are opened with `O_NOFOLLOW`; symlinks, non-regular files,
+unsafe ownership/permissions, oversize sources, and a snapshot that remains unstable
+after three attempts fail closed. The second pass compares both metadata fingerprints and
+bytes because legacy writers do not share a migration lock.
+
+Before SQLite changes, Abbey finalizes an owner-only content-addressed backup at
+`<state>/daemon/legacy-conversation-backups/v1-<digest>/`. It contains exact source bytes
+and a deterministic manifest with the retained capture time, source roles, sizes, and
+per-file SHA-256 values. Files and directories are synchronized around the atomic rename;
+an existing destination is verified rather than overwritten. The original metadata and
+every finalized backup are retained.
+
+Only digest-addressed opaque UUIDv8 identities and normalized UTC timestamp envelopes
+enter `runtime.sqlite` in one immediate transaction. Raw legacy IDs, cwd values, source
+paths, transcript/prompt/provider output, memory/embeddings, route audit, backend
+bindings, inferred titles, and reconstructed runs do not. Native UUID collisions roll
+back the entire batch. An unchanged snapshot reuses the manifest timestamp and import
+marker; a changed snapshot creates another retained backup and may widen only the
+trustworthy timestamp envelope. This startup-only migration adds no `AppCommand`,
+`AppEvent`, CLI/TUI/desktop invoke, MCP tool, process, model, or network authority.
 
 ## Recovery
 
@@ -108,6 +141,25 @@ request once with v1 only after an explicit `unsupported_version`. It never retr
 `SubmitRun` or `CancelRun`, because a lost mutation response does not prove the operation
 was not committed.
 
+## Shared presentation reducer
+
+`src/run_control.rs` is the single presentation-neutral reducer used by
+`abbey daemon run submit|status|cancel|events` and the TUI's `/daemon run ...` slash
+path. Both surfaces build the same closed `AppCommand`, use the same authenticated
+`DaemonClient`, and reduce the correlated `AppEvent` into a sanitized `RunControlView`.
+The reducer performs no I/O or execution itself.
+
+Snapshots may advance over states a status poll did not observe, but their run identity,
+idempotency key, conversation identity, creation timestamp, terminal state, and durable
+event count cannot regress. Event pages are stricter: sequence one is `Queued`, every
+contiguous event follows the canonical transition graph, and continuation requests must
+use the prior page's exact cursor and fixed watermark. `next_events_command` creates one
+explicit continuation only; it is not polling or a live subscription.
+
+Human and JSON renderers consume only this validated state. Prompt text, provider output,
+bearer material, and provider paths never enter the reducer view or its diagnostics. The
+desktop bridge remains separately wired and does not gain run control from this module.
+
 ## Audit boundary
 
 Audit metadata is a bounded JSON object. Sensitive field names and recognizable bearer,
@@ -123,6 +175,12 @@ The Current product surface is exact v1 read compatibility plus authenticated pr
 fixed-recipe local run control on Unix. A real scratch-daemon test proves idempotent single
 launch, terminal persistence, cancellation and descendant death, fixed-watermark paging,
 restart/reopen, and absence of bearer, prompt, provider-output, and executable-path
-disclosure. CLI/TUI lifecycle parity, tool dispatch, automations, live subscriptions,
-daemon-owned memory, Windows named pipes/Job Objects, and a finished desktop client remain
-separate incomplete or Proposed evidence slices.
+disclosure. A second real process proof covers the shared CLI/TUI-slash command grammar,
+reducer, and sanitized renderer; the TUI evidence is deterministic slash-process parity,
+not an interactive-terminal or desktop proof. A separate real scratch startup/restart
+proof covers the canonical legacy-metadata backup/import boundary, including unchanged
+transcript/route/memory/WDBX canaries and absence of raw identifiers or cwd values in
+SQLite and output. Tool dispatch, automations, approvals,
+live subscriptions, daemon-owned memory, the desktop run bridge, Windows named pipes/Job
+Objects, and provider-neutral model ownership remain separate incomplete or Proposed
+evidence slices.

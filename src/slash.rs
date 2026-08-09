@@ -82,6 +82,11 @@ pub const SLASH_CATALOG: &[SlashCmd] = &[
         kind: SlashKind::Local,
     },
     SlashCmd {
+        name: "daemon",
+        help: "Bounded daemon runs: /daemon run submit|status|cancel|events",
+        kind: SlashKind::Local,
+    },
+    SlashCmd {
         name: "oos",
         help: "OOS honesty index: /oos [lora|weights|accel|shell|host]",
         kind: SlashKind::Local,

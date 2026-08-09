@@ -5,6 +5,7 @@
 
 mod delegated;
 mod executor;
+mod legacy;
 mod manager;
 mod migrations;
 mod store;
@@ -17,6 +18,8 @@ pub use executor::{CancellationToken, ExecutionError, ExecutionErrorKind, Execut
 pub use manager::{
     Clock, ManagerError, RunManager, RunManagerConfig, SubmitDisposition, SubmitResult, SystemClock,
 };
+
+pub(crate) use legacy::prepare as prepare_legacy_import;
 
 pub use store::{
     AuditEvent, AuditMetadata, ConversationBackend, NewAuditEvent, NewRun, NewRunEvent, RunEvent,
