@@ -89,6 +89,7 @@ jobs:
   gate-macos:
     name: gate (macOS ARM64 adjunct)
     if: >
+      vars.ABBEY_MACOS_ARM64_RUNNER == 'enabled' &&
       github.repository == 'donaldfilimon/abbey' &&
       (github.event_name == 'push' ||
        github.event_name == 'workflow_dispatch' ||
