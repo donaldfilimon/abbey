@@ -119,7 +119,14 @@ fn a_real_client_exchange_completes_over_stdio() {
 
     assert_eq!(responses[2]["id"], 3);
     let status = &responses[2]["result"]["structuredContent"];
-    assert_eq!(status["edition"], "standard");
+    // The served status must name the edition this binary was compiled as, so
+    // the assertion tracks the build rather than pinning one edition's label.
+    let expected_edition = if cfg!(feature = "personal-edition") {
+        "personal"
+    } else {
+        "standard"
+    };
+    assert_eq!(status["edition"], expected_edition);
     assert_eq!(status["state"], "ready");
     assert!(status["capabilities"]["capabilities"].is_array());
 }
