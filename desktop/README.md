@@ -48,15 +48,36 @@ guard. `./check.sh` at the repo root is unaffected.
 ```bash
 cd desktop
 bun install
+./check.sh             # the desktop gate — run this before committing here
 bun run build          # tsc --noEmit && vite build
 bun run typecheck
 bun run codegen        # regenerate the IPC types
 bun run codegen:check  # fail if any generated file is stale
 bun run verify:bundle  # security checks against dist/ and the crate manifest
 cargo test -p abbey-desktop
-cargo check -p abbey-desktop --all-targets
+cargo build -p abbey-desktop
 bun run tauri dev      # requires the Rust toolchain and a WebView
 ```
+
+`desktop/check.sh` is deliberately **not** called by the repository root
+`./check.sh`, which must stay a pure Rust-crate gate needing neither bun nor a
+WebView toolchain. The cost is real and worth stating: generated-type drift,
+the bundle scan, and the personal-edition build are caught only when somebody
+runs `desktop/check.sh`. Nothing automatic enforces them.
+
+Two verification notes:
+
+- `cargo check` does **not** link. `desktop/check.sh` runs `cargo build` as
+  well, because a Tauri binary that type-checks can still fail to link against
+  the platform WebView frameworks.
+- `backend::tests::connection_detail_never_contains_bearer_material` and
+  `a_configured_daemon_never_falls_back_to_the_in_process_core` are
+  *conditional* on a bearer being exported, and no-op in the default run. Run
+  the suite a second time to exercise them
+  (`ABBEYD_BEARER_TOKEN=$(python3 -c "print('a'*48)") cargo test -p abbey-desktop`);
+  setting the variable from inside a test is not possible because
+  `std::env::set_var` is `unsafe` in edition 2024 and this crate denies
+  `unsafe_code`.
 
 ## Generated IPC types
 
@@ -190,9 +211,15 @@ Phase 7 in `tasks/todo.md` asks for more than this slice delivers:
 - **Not packaged, signed, or notarized.** No `tauri build` bundle was produced.
   Apple Developer ID + notarization and Windows/Linux signing keys are
   owner-controlled release blockers; no credential was manufactured or embedded.
-- **Not run against a live `abbeyd`.** The daemon route is implemented and unit
-  tested, but the observed reads on this machine came from the in-process
-  application core (no bearer configured). No windowed runtime proof exists.
+- **Not run against a live `abbeyd`.** The daemon route is implemented and
+  tested, but no `abbeyd` was started. With a bearer exported and no listener,
+  the observed result was
+  `Transport: cannot connect to abbeyd at …/abbeyd.sock` — which proves the
+  no-silent-fallback invariant but is not a successful daemon read. Every
+  *successful* read observed on this machine came from the in-process core.
+- **No windowed runtime proof.** A real `abbey-desktop` binary links
+  (`Mach-O 64-bit executable arm64`, macOS ARM64), but the window has never been
+  opened, so nothing here has been seen rendering.
 - **Not run on Ubuntu ARM64 or Win11 ARM.** `ClientError::UnsupportedPlatform`
   is surfaced honestly on Windows, where `abbeyd` has no named-pipe transport.
 - **Eight of the nine first-release views have no data source**, because

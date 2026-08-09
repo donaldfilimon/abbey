@@ -193,6 +193,33 @@ mod tests {
         assert_eq!(status.capabilities.as_slice().len(), 2);
     }
 
+    /// The discriminating test for "no silent fallback".
+    ///
+    /// Only meaningful when a bearer is exported and no daemon is listening,
+    /// which is why the suite is run a second time as
+    /// `ABBEYD_BEARER_TOKEN=<48 chars> cargo test -p abbey-desktop`. Setting the
+    /// variable from inside the test is not an option: `std::env::set_var` is
+    /// `unsafe` in edition 2024 and this crate denies `unsafe_code`.
+    #[test]
+    fn a_configured_daemon_never_falls_back_to_the_in_process_core() {
+        let Some(source) = bearer_source() else {
+            return; // covered by the bearer-set run
+        };
+        assert_eq!(connection().source, ConnectionSource::Daemon);
+        let error = status().expect_err(
+            "a configured daemon with no listener must fail, never answer from this process",
+        );
+        assert!(
+            matches!(
+                error.kind,
+                IpcErrorKind::Transport
+                    | IpcErrorKind::Configuration
+                    | IpcErrorKind::UnsupportedPlatform
+            ),
+            "expected a daemon failure, received {error:?} (bearer source {source:?})"
+        );
+    }
+
     #[test]
     fn connection_detail_never_contains_bearer_material() {
         let info = connection();
