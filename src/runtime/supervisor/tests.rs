@@ -3,10 +3,37 @@ use std::ffi::OsString;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
+/// `terminate_grace` bounds a poll-until-the-group-is-gone loop, not a sleep:
+/// `ChildGuard::terminate` rechecks `group_exists` every `poll_interval` and
+/// returns the instant the group disappears, so a generous grace costs an idle
+/// machine nothing and only decides how long teardown may wait before failing
+/// closed.
+///
+/// It has to out-wait *reaping*, which is not ours to schedule. `group_exists`
+/// is `killpg(pgid, 0)`, and on Darwin an unreaped zombie still answers it —
+/// with success, or with the EPERM that `signal_group_until` deliberately
+/// retries. A group member orphaned by its dying leader is reparented to
+/// launchd and reaped asynchronously, so under parallel load the group can
+/// stay observable for far longer than the processes are actually alive.
+///
+/// At 100ms this raced launchd and failed two ways in one 12-run baseline:
+/// `Teardown("send SIGTERM to process group was not permitted")` (EPERM
+/// retries exhausted) and `Teardown("process group survived SIGKILL grace")`.
+/// Neither was the property under test. Keep this comfortably above the
+/// reaper and below `MAX_TERMINATE_GRACE` (5s).
+const TEARDOWN_GRACE: Duration = Duration::from_secs(1);
+
+/// Upper bound for "the supervisor returned instead of waiting out a child's
+/// own 30-second sleep". It must clear the fixture's worst-case teardown —
+/// `terminate` spends up to `3 * TEARDOWN_GRACE` (SIGTERM, SIGKILL, gone) and
+/// `collect_readers` one more — or the teardown race simply moves into this
+/// assertion.
+const LIVENESS_BOUND: Duration = Duration::from_secs(10);
+
 fn limits(stdout_bytes: usize, stderr_bytes: usize) -> SupervisorLimits {
     SupervisorLimits {
         timeout: Duration::from_secs(2),
-        terminate_grace: Duration::from_millis(100),
+        terminate_grace: TEARDOWN_GRACE,
         stdout_bytes,
         stderr_bytes,
         poll_interval: Duration::from_millis(2),
@@ -101,9 +128,11 @@ fn exact_cap_succeeds_and_cap_plus_one_fails_closed_for_both_streams() {
 #[cfg(unix)]
 #[test]
 fn timeout_and_precancelled_execution_teardown_the_group() {
+    // Only the timeout is shortened. It is what the test drives; the teardown
+    // grace is not, and overriding it to 30ms made the fixture race launchd's
+    // reaper rather than assert anything about timeout classification.
     let mut short = limits(64, 64);
     short.timeout = Duration::from_millis(30);
-    short.terminate_grace = Duration::from_millis(30);
     let started = Instant::now();
     assert!(matches!(
         run(
@@ -114,7 +143,7 @@ fn timeout_and_precancelled_execution_teardown_the_group() {
         .unwrap(),
         SupervisorOutcome::TimedOut
     ));
-    assert!(started.elapsed() < Duration::from_secs(2));
+    assert!(started.elapsed() < LIVENESS_BOUND);
 
     let cancellation = CancellationToken::default();
     cancellation.cancel();
@@ -143,7 +172,7 @@ fn leader_exit_with_descendant_holding_pipes_is_bounded_and_kills_descendant() {
         &CancellationToken::default(),
     )
     .unwrap();
-    assert!(started.elapsed() < Duration::from_secs(2));
+    assert!(started.elapsed() < LIVENESS_BOUND);
     let SupervisorOutcome::Exited { status, stdout, .. } = outcome else {
         panic!("leader should retain its exit outcome")
     };
