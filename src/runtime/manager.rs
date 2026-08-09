@@ -4,7 +4,9 @@
 //! state transition through [`RuntimeStore`] and delegates execution through an
 //! injected [`Executor`].
 
-use super::executor::{CancellationToken, ExecutionAttempt, Executor, execute_catching_panics};
+use super::executor::{
+    CancellationToken, ExecutionAttempt, ExecutionErrorKind, Executor, execute_catching_panics,
+};
 use super::{NewRun, NewRunEvent, RunRecord, RuntimeStore, StoreError};
 use crate::app_core::{RunId, RunRequest, RunState};
 use serde_json::{Map, Value};
@@ -440,10 +442,10 @@ fn settle_attempt<C: Clock>(
             return Ok(());
         }
         let (next, terminal_event) = match attempt {
-            ExecutionAttempt::Failed(_) => (
-                RunState::Failed,
-                failure_event(shared, "executor_failed", "executor returned a failure"),
-            ),
+            ExecutionAttempt::Failed(error) => {
+                let (code, message) = execution_failure_evidence(error.kind());
+                (RunState::Failed, failure_event(shared, code, message))
+            }
             ExecutionAttempt::Panicked(_) => (
                 RunState::Failed,
                 failure_event(shared, "executor_panicked", "executor panicked"),
@@ -475,6 +477,30 @@ fn settle_attempt<C: Clock>(
         }
     }
     Err(StoreError::CorruptData("terminal run transition did not converge").into())
+}
+
+const fn execution_failure_evidence(kind: ExecutionErrorKind) -> (&'static str, &'static str) {
+    match kind {
+        ExecutionErrorKind::General => ("executor_failed", "executor returned a failure"),
+        ExecutionErrorKind::Unsupported => (
+            "executor_unsupported",
+            "executor does not support this request",
+        ),
+        ExecutionErrorKind::Spawn => ("executor_spawn_failed", "executor process failed to start"),
+        ExecutionErrorKind::TimedOut => ("executor_timed_out", "executor exceeded its deadline"),
+        ExecutionErrorKind::OutputLimit => (
+            "executor_output_limit",
+            "executor output exceeded its limit",
+        ),
+        ExecutionErrorKind::ProviderExit => (
+            "executor_provider_exit",
+            "executor process exited unsuccessfully",
+        ),
+        ExecutionErrorKind::Teardown => (
+            "executor_teardown_failed",
+            "executor process teardown failed",
+        ),
+    }
 }
 
 fn finish_cancelled<C: Clock>(shared: &Shared<C>, run_id: &RunId) -> Result<(), ManagerError> {
