@@ -1,4 +1,4 @@
-// Abbey desktop client — a read-only Tauri 2 front end for Abbey's shared
+// Abbey desktop client — a read-only Tauri 2 surface over Abbey's shared
 // application core.
 //
 // No console window on Windows release builds.

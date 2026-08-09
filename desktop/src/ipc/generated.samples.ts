@@ -24,7 +24,26 @@ export const claimsCommandFixture = {
   }
 } as const satisfies AppCommand;
 
-export const statusEventFixture = {
+export const statusV1EventFixture = {
+  "type": "status",
+  "payload": {
+    "protocol_version": 1,
+    "schema_version": 1,
+    "edition": "standard",
+    "state": "ready",
+    "version": "0.0.0-fixture",
+    "build_git": "fixture",
+    "build_target": "fixture",
+    "capabilities": {
+      "capabilities": [
+        "read_status",
+        "read_claims"
+      ]
+    }
+  }
+} as const satisfies AppEvent;
+
+export const statusV2EventFixture = {
   "type": "status",
   "payload": {
     "protocol_version": 2,
@@ -37,9 +56,22 @@ export const statusEventFixture = {
     "capabilities": {
       "capabilities": [
         "read_status",
-        "read_claims"
+        "read_claims",
+        "read_run",
+        "read_run_events",
+        "submit_run",
+        "cancel_run"
       ]
-    }
+    },
+    "run_routes": [
+      {
+        "backend": "abi",
+        "modes": [
+          "one_shot",
+          "background"
+        ]
+      }
+    ]
   }
 } as const satisfies AppEvent;
 
@@ -67,6 +99,41 @@ export const approvalEventFixture = {
   }
 } as const satisfies AppEvent;
 
+export const submitRunCommandFixture = {
+  "type": "submit_run",
+  "payload": {
+    "idempotency_key": "fixture-run-key",
+    "conversation_id": null,
+    "mode": "one_shot",
+    "backend": "abi",
+    "input": "fixture request",
+    "labels": [
+      "desktop-fixture"
+    ]
+  }
+} as const satisfies AppCommand;
+
+export const runEventsEventFixture = {
+  "type": "run_events",
+  "payload": {
+    "run_id": "0f6a6f1e-4b2e-4a29-9a6c-2f4d5c0a7b31",
+    "events": [
+      {
+        "run_id": "0f6a6f1e-4b2e-4a29-9a6c-2f4d5c0a7b31",
+        "sequence": 1,
+        "recorded_at": "2026-08-08T00:00:00Z",
+        "event": {
+          "type": "queued"
+        }
+      }
+    ],
+    "after_sequence": 0,
+    "next_after_sequence": 1,
+    "through_sequence": 1,
+    "has_more": false
+  }
+} as const satisfies AppEvent;
+
 export const claimRecordFixture = {
   "name": "fixture claim",
   "status": "out_of_scope",
@@ -81,5 +148,8 @@ export const capabilitySetFixture = {
   ]
 } as const satisfies CapabilitySet;
 
-/** Every capability the read-only app core can grant. */
-export const ALL_CAPABILITIES = ["read_status","read_claims"] as const;
+/** Capabilities consumed by the desktop's read-only Tauri bridge. */
+export const DESKTOP_READ_CAPABILITIES = ["read_status","read_claims"] as const;
+
+/** Every capability protocol v2 can advertise when a run route is bound. */
+export const ALL_APP_CAPABILITIES = ["read_status","read_claims","read_run","read_run_events","submit_run","cancel_run"] as const;

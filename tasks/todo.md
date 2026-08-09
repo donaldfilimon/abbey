@@ -196,7 +196,9 @@ design subtask never promotes the parent capability to Current.
     request-bound SHA-256 idempotency; atomic state/event updates; safe restart
     interruption; redacted audit metadata; one bounded deterministic worker; queued and
     running cancellation; explicit queue/failure/panic/shutdown outcomes. The shipped
-    protocol-v1 daemon remains read-only and advertises only Status/Claims.
+    At this historical slice boundary the protocol-v1 daemon remained read-only and
+    advertised only Status/Claims; Phase 4B.2 later added a separate bounded v2 run
+    surface without changing that compatibility contract.
   - [x] **Phase 4B.1 — bounded Unix supervisor + fixed delegated adapters
     (2026-08-08):** crate-private process-group supervision with bounded capture,
     deadlines, cancellation, TERM/KILL escalation, descendant teardown, reaping, and
@@ -285,14 +287,16 @@ design subtask never promotes the parent capability to Current.
     gate is untouched. It is a client of the *app core*, reaching `abbeyd` over the
     authenticated socket when a bearer is configured and the linked core otherwise —
     never silently falling back after a daemon failure. `desktop/codegen` parses
-    `src/app_core/{ids,contracts}.rs` and the desktop's own `src-tauri/src/ipc.rs` with
-    `syn` and emits the TypeScript; `--check` fails on drift. Rejected `ts-rs`/
+    `src/app_core/{ids,run,contracts}.rs` and the desktop's own `src-tauri/src/ipc.rs`
+    with `syn` and emits the TypeScript; `--check` fails on drift. Rejected `ts-rs`/
     `schemars`/`specta` because each needs a derive added to `src/app_core/`.
   - Tauri 2 + React + TypeScript + Bun/Vite as a client of `abbeyd`; no duplicated
     business logic; frontend IPC types generated from the Rust command/event schema
     — REAL: generated, and cross-checked rather than merely pinned — the generator also
     emits the actual `serde_json` output of real `app_core` values as
-    `as const satisfies`, so a wrong field name, `rename_all`, or tag fails `tsc`
+    `as const satisfies`, so a wrong field name, `rename_all`, or tag fails `tsc`.
+    Deterministic fixtures cover protocol-v1 and protocol-v2 status, a v2 submission,
+    validated string-wire idempotency keys, and fixed-watermark lifecycle paging
     (verified negatively: a deliberately wrong `CapabilitySet`/tag produced five `tsc`
     errors plus a `codegen --check` failure).
     — STILL PROPOSED: "client of `abbeyd`" is unproven at runtime. The daemon route is
@@ -305,13 +309,15 @@ design subtask never promotes the parent capability to Current.
     — REAL: Doctor/settings and a Claims/capability browser. Those are exactly what
     `CapabilitySet::standard()` grants (`ReadStatus` + `ReadClaims`), and view
     availability is computed from the live capability set, not a hardcoded boolean.
-    — STILL PROPOSED: the other eight render **no data at all**. `AppCommand` has two
-    variants, so there is nothing to fetch. Each states the contract-level reason and
-    then shows the *live* ledger rows for a filter, so the UI never asserts a status it
-    invented — memory, routes, role bindings, and the local mesh proof are Current in
-    Abbey and the placeholders say so instead of mislabelling them Proposed. Only
-    Training is marked capability-not-implemented. No mock data exists anywhere in the
-    window.
+    — STILL PROPOSED: the other eight render **no data at all**. Protocol v2 has bounded
+    submit/status/cancel/event-page commands, but the Tauri invoke allowlist remains the
+    four read-only status/claims/connection/identity commands and exposes no run UI.
+    Each unavailable view states that client boundary and then shows the *live* ledger
+    rows for a filter, so the UI never asserts a status it invented — memory, routes,
+    role bindings, and the local mesh proof are Current in Abbey and the placeholders
+    say so instead of mislabelling them Proposed. Only Training is marked
+    capability-not-implemented. No mock product data exists anywhere in the window;
+    generated serde fixtures are compile-time contract checks only.
   - Security: strict CSP, no remote JS/eval, no generic execute-shell invoke, narrow
     Rust commands, secrets never echoed to frontend logs/state; safe vs personal
     editions get different bundle identities and capability manifests

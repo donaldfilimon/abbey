@@ -4,16 +4,16 @@ import { ErrorCard } from "./ErrorCard";
 
 const REASON_HEADLINE = {
   not_on_contract:
-    "Not available — Abbey has no contract for this yet, so there is nothing to show.",
+    "Not available — the desktop does not expose this contract yet, so there is nothing to show.",
   capability_not_implemented:
     "Not available — this capability is not implemented anywhere in Abbey yet.",
 } as const;
 
 const REASON_NOTE = {
   not_on_contract:
-    "This is a limitation of the read-only application contract the desktop client " +
-    "speaks, not a statement about whether Abbey can do it. The ledger rows below are " +
-    "read live from Abbey and say what actually ships.",
+    "This is a limitation of the desktop's read-only invoke surface, not a statement " +
+    "about whether Abbey can do it. The ledger rows below are read live from Abbey " +
+    "and say what actually ships.",
   capability_not_implemented:
     "The ledger rows below are read live from Abbey and are the authority on status.",
 } as const;

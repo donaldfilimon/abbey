@@ -1,8 +1,10 @@
 # Abbey desktop (Tauri 2 + React + TypeScript)
 
-A desktop **client of Abbey's read-only application core**. It is not a second
-Abbey: it owns no agent, no memory, no tools, and no execution path. It reads
-`Status` and `Claims` and renders them.
+A desktop **client of Abbey's shared application core**. It is not a second
+Abbey: it owns no agent, no memory, no tools, and no execution path. This first
+slice exposes only the read-only `Status` and `Claims` commands. Abbey's app
+core and Unix daemon also define bounded protocol-v2 run lifecycle control,
+but the desktop does not dispatch or render that surface yet.
 
 Ledger status: `desktop-tauri-react` is **Proposed**. Nothing here changes that.
 The client compiles, typechecks, and reads a real application core in-process,
@@ -86,6 +88,7 @@ Two verification notes:
 `codegen/src/main.rs::SOURCES`:
 
 - `src/app_core/ids.rs`
+- `src/app_core/run.rs`
 - `src/app_core/contracts.rs`
 - `desktop/src-tauri/src/ipc.rs`
 
@@ -196,7 +199,7 @@ UI never asserts a status it invented.
 
 The distinction matters and is preserved: memory, routing audit, the local mesh
 proof, and the role bindings are **Current** in Abbey — they are simply not on
-the read-only contract. Only Training is marked
+the desktop's read-only invoke surface. Only Training is marked
 `capability_not_implemented`. Calling the Current ones "Proposed" would be a
 fabricated claim in the opposite direction.
 
@@ -222,8 +225,10 @@ Phase 7 in `tasks/todo.md` asks for more than this slice delivers:
   opened, so nothing here has been seen rendering.
 - **Not run on Ubuntu ARM64 or Win11 ARM.** `ClientError::UnsupportedPlatform`
   is surfaced honestly on Windows, where `abbeyd` has no named-pipe transport.
-- **Eight of the nine first-release views have no data source**, because
-  `AppCommand` has exactly two variants.
+- **Eight of the nine first-release views have no data source**, because the
+  Tauri invoke allowlist exposes only status, claims, connection metadata, and
+  bundle identity. Protocol-v2 run commands exist below that boundary but are
+  not wired into this UI.
 - **No per-edition capability manifest split.** Both editions ship the same
   `capabilities/default.json`; `CapabilitySet` is identical in both editions
   today, so there is nothing to differentiate yet.

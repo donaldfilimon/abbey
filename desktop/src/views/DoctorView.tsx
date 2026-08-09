@@ -1,5 +1,8 @@
 import type { BundleIdentity, ConnectionInfo, RuntimeStatus } from "../ipc/generated";
-import { ALL_CAPABILITIES } from "../ipc/generated.samples";
+import {
+  ALL_APP_CAPABILITIES,
+  DESKTOP_READ_CAPABILITIES,
+} from "../ipc/generated.samples";
 import { PERSONAL_EDITION, SAFE_EDITION } from "../ipc/generated.editions";
 
 interface Props {
@@ -65,12 +68,12 @@ export function DoctorView({ status, connection, identity }: Props) {
       <h2>Granted capabilities</h2>
       <div className="card">
         <p className="muted" style={{ marginTop: 0 }}>
-          The read-only application core can grant {ALL_CAPABILITIES.length}{" "}
-          capabilities. Views are enabled from this list at runtime, not from a
-          hardcoded switch.
+          The responding runtime granted {granted.length} capabilities. This
+          desktop consumes only {DESKTOP_READ_CAPABILITIES.length}: status and
+          claims. Additional run capabilities do not create a desktop run UI.
         </p>
         <dl className="kv">
-          {ALL_CAPABILITIES.map((capability) => (
+          {ALL_APP_CAPABILITIES.map((capability) => (
             <div key={capability} style={{ display: "contents" }}>
               <dt className="mono">{capability}</dt>
               <dd>{granted.includes(capability) ? "granted" : "not granted"}</dd>

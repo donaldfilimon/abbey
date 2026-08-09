@@ -286,7 +286,14 @@ mod unix {
         handler: &H,
         limiter: &mut AuthenticatedRateLimiter,
     ) {
-        if stream.set_read_timeout(Some(config.read_timeout)).is_err()
+        // The listener is nonblocking so the accept loop can observe shutdown.
+        // On BSD-family hosts an accepted stream can retain that mode, which
+        // would make `read_exact` fail with `WouldBlock` if accept wins the
+        // scheduling race against the client's first write. Per-connection I/O
+        // is synchronous and bounded by the deadlines below, so restore the
+        // stream's blocking contract before reading the frame.
+        if stream.set_nonblocking(false).is_err()
+            || stream.set_read_timeout(Some(config.read_timeout)).is_err()
             || stream
                 .set_write_timeout(Some(config.write_timeout))
                 .is_err()

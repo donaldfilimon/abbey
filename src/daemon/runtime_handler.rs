@@ -220,7 +220,7 @@ mod tests {
         RuntimeStatus,
     };
     use std::io::{Read as _, Write as _};
-    use std::os::unix::fs::PermissionsExt as _;
+    use std::os::unix::fs::{FileTypeExt as _, PermissionsExt as _};
     use std::os::unix::net::UnixStream;
     use std::path::{Path, PathBuf};
     use std::str::FromStr as _;
@@ -546,11 +546,19 @@ mod tests {
 
     fn wait_for_socket(socket: &Path) {
         let deadline = Instant::now() + Duration::from_secs(2);
-        while !socket.exists() {
-            assert!(Instant::now() < deadline, "daemon socket was not created");
+        loop {
+            if let Ok(metadata) = std::fs::metadata(socket) {
+                let mode = metadata.permissions().mode();
+                if metadata.file_type().is_socket() && mode & 0o077 == 0 {
+                    return;
+                }
+            }
+            assert!(
+                Instant::now() < deadline,
+                "daemon socket was not created with owner-only permissions"
+            );
             thread::sleep(Duration::from_millis(5));
         }
-        thread::sleep(Duration::from_millis(10));
     }
 
     fn wire_request(
@@ -562,10 +570,10 @@ mod tests {
             .set_read_timeout(Some(Duration::from_secs(1)))
             .unwrap();
         let bytes = serde_json::to_vec(&request).unwrap();
-        stream
-            .write_all(&(bytes.len() as u32).to_be_bytes())
-            .unwrap();
-        stream.write_all(&bytes).unwrap();
+        let mut frame = Vec::with_capacity(4 + bytes.len());
+        frame.extend_from_slice(&(bytes.len() as u32).to_be_bytes());
+        frame.extend_from_slice(&bytes);
+        stream.write_all(&frame).unwrap();
         let mut prefix = [0_u8; 4];
         stream.read_exact(&mut prefix).unwrap();
         let mut response = vec![0_u8; u32::from_be_bytes(prefix) as usize];

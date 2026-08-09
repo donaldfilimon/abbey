@@ -50,8 +50,10 @@ export interface Surface {
 }
 
 const CONTRACT_SHAPE =
-  "`AppCommand` has exactly two variants — `Status` and `Claims` — and " +
-  "`CapabilitySet::standard()` grants exactly `ReadStatus` and `ReadClaims`.";
+  "The desktop exposes only `Status` and `Claims`, and its in-process " +
+  "`CapabilitySet::standard()` grants exactly `ReadStatus` and `ReadClaims`. " +
+  "Abbey's protocol-v2 app core also defines bounded run lifecycle commands, " +
+  "but this desktop invoke surface does not dispatch them yet.";
 
 export const SURFACES: readonly Surface[] = [
   {
@@ -74,11 +76,9 @@ export const SURFACES: readonly Surface[] = [
     unavailable: {
       reason: "not_on_contract",
       detail:
-        `${CONTRACT_SHAPE} There is no command that starts, streams, or cancels an ` +
-        "agent run, so a chat view here would have nothing to send and nothing to " +
-        "receive. Abbey's CLI and TUI reach the agent through `actions::run_agent` " +
-        "inside their own process; the desktop is a client of the app core and has " +
-        "no such path.",
+        `${CONTRACT_SHAPE} Protocol v2 does not stream conversational output, and ` +
+        "the desktop has no command that starts or cancels an agent run, so a chat " +
+        "view here would still have nothing to send or receive.",
       ledgerFilter: "provider-neutral",
     },
   },
@@ -90,10 +90,10 @@ export const SURFACES: readonly Surface[] = [
     unavailable: {
       reason: "not_on_contract",
       detail:
-        "`src/app_core/run.rs` already defines `RunRequest`, `RunSnapshot`, " +
-        "`RunEventRecord`, and `RunLifecycleEvent` — but no `AppCommand` submits a " +
-        "run and no `AppEvent` streams one. The types exist; the transport does not. " +
-        "Reading them would require a command that has not been designed yet.",
+        "Protocol v2 defines bounded submit, status, cancel, and fixed-watermark " +
+        "lifecycle-page commands for startup-bound ABI/Foundation Models routes. " +
+        "The desktop's four read-only Tauri commands do not expose those operations " +
+        "yet, and lifecycle paging is not a live output subscription.",
       ledgerFilter: "provider-neutral",
     },
   },

@@ -16,9 +16,11 @@
 //! `--check` would be useless.
 
 use abbey::app_core::{
-    APP_PROTOCOL_VERSION, APP_SCHEMA_VERSION, AppCapability, AppCommand, AppEvent, ApprovalKind,
-    ApprovalRequest, CapabilitySet, ClaimRecord, ClaimStatus, ClaimsQuery, ClaimsSnapshot, Edition,
-    RunId, RuntimeState, RuntimeStatus,
+    APP_PROTOCOL_V1, APP_PROTOCOL_VERSION, APP_SCHEMA_V1, APP_SCHEMA_VERSION, AppCapability,
+    AppCommand, AppEvent, ApprovalKind, ApprovalRequest, BackendSelection, CapabilitySet,
+    ClaimRecord, ClaimStatus, ClaimsQuery, ClaimsSnapshot, Edition, IdempotencyKey, RunEventPage,
+    RunEventRecord, RunId, RunLifecycleEvent, RunMode, RunRequest, RunRouteCapability, RuntimeState,
+    RuntimeStatus,
 };
 use anyhow::{Context, Result};
 use std::fmt::Write as _;
@@ -44,9 +46,9 @@ import type {
 ",
     );
 
-    let status = RuntimeStatus {
-        protocol_version: APP_PROTOCOL_VERSION,
-        schema_version: APP_SCHEMA_VERSION,
+    let status_v1 = RuntimeStatus {
+        protocol_version: APP_PROTOCOL_V1,
+        schema_version: APP_SCHEMA_V1,
         edition: Edition::Standard,
         state: RuntimeState::Ready,
         // Deliberately not the build stamp: fixtures must not churn per commit.
@@ -56,6 +58,23 @@ import type {
         capabilities: CapabilitySet::standard(),
         run_routes: Vec::new(),
     };
+    let status_v2 = RuntimeStatus {
+        protocol_version: APP_PROTOCOL_VERSION,
+        schema_version: APP_SCHEMA_VERSION,
+        edition: Edition::Standard,
+        state: RuntimeState::Ready,
+        version: "0.0.0-fixture".to_owned(),
+        build_git: "fixture".to_owned(),
+        build_target: "fixture".to_owned(),
+        capabilities: CapabilitySet::runtime_v2(),
+        run_routes: vec![RunRouteCapability {
+            backend: BackendSelection::Abi,
+            modes: vec![RunMode::OneShot, RunMode::Background],
+        }],
+    };
+    let fixed_run_id = FIXED_RUN_ID
+        .parse::<RunId>()
+        .map_err(|error| anyhow::anyhow!("fixture run id is not canonical: {error}"))?;
 
     let claim = ClaimRecord {
         name: "fixture claim".to_owned(),
@@ -81,9 +100,15 @@ import type {
     )?;
     emit(
         &mut out,
-        "statusEventFixture",
+        "statusV1EventFixture",
         "AppEvent",
-        &AppEvent::Status(status),
+        &AppEvent::Status(status_v1),
+    )?;
+    emit(
+        &mut out,
+        "statusV2EventFixture",
+        "AppEvent",
+        &AppEvent::Status(status_v2),
     )?;
     emit(
         &mut out,
@@ -99,11 +124,40 @@ import type {
         "approvalEventFixture",
         "AppEvent",
         &AppEvent::ApprovalRequested(ApprovalRequest {
-            run_id: FIXED_RUN_ID
-                .parse::<RunId>()
-                .map_err(|error| anyhow::anyhow!("fixture run id is not canonical: {error}"))?,
+            run_id: fixed_run_id.clone(),
             kind: ApprovalKind::NetworkAccess,
             summary: "fixture approval".to_owned(),
+        }),
+    )?;
+    emit(
+        &mut out,
+        "submitRunCommandFixture",
+        "AppCommand",
+        &AppCommand::SubmitRun(RunRequest {
+            idempotency_key: "fixture-run-key".parse::<IdempotencyKey>()?,
+            conversation_id: None,
+            mode: RunMode::OneShot,
+            backend: BackendSelection::Abi,
+            input: "fixture request".to_owned(),
+            labels: vec!["desktop-fixture".to_owned()],
+        }),
+    )?;
+    emit(
+        &mut out,
+        "runEventsEventFixture",
+        "AppEvent",
+        &AppEvent::RunEvents(RunEventPage {
+            run_id: fixed_run_id.clone(),
+            events: vec![RunEventRecord {
+                run_id: fixed_run_id,
+                sequence: 1,
+                recorded_at: "2026-08-08T00:00:00Z".to_owned(),
+                event: RunLifecycleEvent::Queued,
+            }],
+            after_sequence: 0,
+            next_after_sequence: 1,
+            through_sequence: 1,
+            has_more: false,
         }),
     )?;
     emit(&mut out, "claimRecordFixture", "ClaimRecord", &claim)?;
@@ -118,9 +172,11 @@ import type {
 
     writeln!(
         out,
-        "\n/** Every capability the read-only app core can grant. */\nexport const ALL_CAPABILITIES = {} as const;",
+        "\n/** Capabilities consumed by the desktop's read-only Tauri bridge. */\nexport const DESKTOP_READ_CAPABILITIES = {} as const;\n\n/** Every capability protocol v2 can advertise when a run route is bound. */\nexport const ALL_APP_CAPABILITIES = {} as const;",
         serde_json::to_string(&[AppCapability::ReadStatus, AppCapability::ReadClaims])
-            .context("cannot serialize the capability list")?
+            .context("cannot serialize the desktop capability list")?,
+        serde_json::to_string(CapabilitySet::runtime_v2().as_slice())
+            .context("cannot serialize the protocol-v2 capability list")?
     )?;
 
     Ok(out)

@@ -232,13 +232,14 @@ fake accounting, shipped-edition allowlist bypass, hidden CoT, and bundled cloud
 remain Out of scope.
 
 **Current foundation (2026-08-08):** Abbey is now a library plus thin CLI binary,
-with stable versioned application IDs, Status/Claims commands and events, and a
-standard-edition read-only policy. The separate `abbeyd` binary serves only those
-two operations over a 64 KiB-bounded, authenticated, owner-only Unix socket and
-fails closed elsewhere. This is source/test/live-scratch evidence for a reusable
-application/control-plane seam—not completion of the Proposed owned executor/tool
-runtime, durable background jobs, memory ownership, Windows named pipes, desktop,
-or personal edition.
+with stable versioned application IDs and an exact protocol-v1 Status/Claims
+compatibility surface. Protocol v2 adds bounded startup-bound ABI-local/Foundation
+Models submission, durable status/cancel, and sanitized fixed-watermark event pages
+over the 64 KiB-bounded, authenticated, owner-only Unix socket. It exposes no arbitrary
+executable, argv, environment, workspace, tool, or shell authority and fails closed on
+unsupported platforms. This is source/test/live-scratch evidence for a reusable
+application/control-plane seam—not completion of the Proposed provider-neutral owned
+runtime, daemon-owned memory, Windows named pipes, desktop product, or personal edition.
 
 The local `abbey daemon status|claims` client now exercises that exact authenticated
 protocol through the real `abbey` and `abbeyd` binaries, with human and typed JSON
@@ -846,18 +847,22 @@ capability expansion roadmap without reopening or replacing that section.
   at Proposed):** `desktop/` holds a Tauri 2 + React 19 + TypeScript client on
   bun/Vite in its own cargo workspace, so `./check.sh` is unaffected and no file under
   `src/` was modified. Its TypeScript IPC types are *generated* from
-  `src/app_core/{ids,contracts}.rs` by a `syn` projection and, crucially,
-  cross-checked: the generator also emits the real `serde_json` output of real
-  `app_core` values as `as const satisfies`, so a wrong field name, `rename_all`, or
-  adjacent tag fails `tsc` rather than merely failing a checksum (proven negatively —
-  `CapabilitySet`, whose only field is private, is the canary). Bundle identity for
+  `src/app_core/{ids,run,contracts}.rs` by a `syn` projection and, crucially,
+  cross-checked: the generator parses `src/app_core/{ids,run,contracts}.rs` and emits
+  the real `serde_json` output of deterministic protocol-v1 and protocol-v2 status,
+  submission, idempotency-key, and fixed-watermark lifecycle values as
+  `as const satisfies`, so a wrong field name, `rename_all`, or adjacent tag fails
+  `tsc` rather than merely failing a checksum (proven negatively — `CapabilitySet`,
+  whose only field is private, is the canary). Bundle identity for
   both editions is written into the Tauri configs from `abbey::edition`, pinned by
   tests, and re-checked at startup. Exactly four enumerated read-only commands exist;
   no shell/fs/http/process plugin is in the manifest; the CSP forbids inline, eval, and
   wildcards; and the bearer crosses IPC only as a boolean plus a source kind.
   **Why the ledger row stays Proposed:** two views (Doctor, Capabilities) are real
-  because they are exactly the two capabilities the app core grants, the other eight
-  render no data and say why; and there is **no packaged runtime proof** — no
+  because they consume the two capabilities exposed through the desktop's read-only
+  Tauri bridge. Protocol v2 can advertise bounded run capabilities, and Doctor reports
+  them honestly, but no desktop invoke or run UI consumes them; the other eight views
+  render no data and say why. There is also **no packaged runtime proof** — no
   `tauri build`, no signing or notarization, no Ubuntu/Windows run, and no observed
   read against a live `abbeyd`, since every read on this machine came from the
   in-process core. `desktop-tauri-react` requires packaged runtime evidence, which

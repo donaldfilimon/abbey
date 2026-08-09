@@ -1,4 +1,4 @@
-//! Routing from the desktop client to Abbey's read-only application core.
+//! Routing from the desktop's read-only invoke surface to Abbey's application core.
 //!
 //! Two routes, chosen once per call and never blended:
 //!
@@ -156,7 +156,8 @@ fn from_client_error(error: ClientError) -> IpcError {
         | ClientError::RequestIdMismatch
         | ClientError::UnexpectedEvent { .. }
         | ClientError::InvalidRuntimeStatus(_)
-        | ClientError::InvalidClaimsSnapshot => (
+        | ClientError::InvalidClaimsSnapshot
+        | ClientError::InvalidRunResponse => (
             IpcErrorKind::Protocol,
             Some(format!(
                 "the desktop client and {} were built from different revisions",
@@ -194,7 +195,10 @@ mod tests {
         assert!(!info.bearer_configured);
         assert!(info.socket_path.is_none());
         let status = status().expect("in-process status");
-        assert_eq!(status.capabilities.as_slice().len(), 2);
+        assert_eq!(status.protocol_version, abbey::app_core::APP_PROTOCOL_V1);
+        assert_eq!(status.schema_version, abbey::app_core::APP_SCHEMA_V1);
+        assert_eq!(status.capabilities, abbey::app_core::CapabilitySet::standard());
+        assert!(status.run_routes.is_empty());
     }
 
     /// The discriminating test for "no silent fallback".
