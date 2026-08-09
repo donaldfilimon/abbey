@@ -27,6 +27,7 @@ mod improve;
 mod init;
 mod inventory;
 mod learn;
+mod mcp_host;
 mod media;
 mod memory;
 mod mesh;

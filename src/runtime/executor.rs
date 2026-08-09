@@ -37,15 +37,40 @@ impl CancellationToken {
 /// Bounded, display-safe execution failure retained by the run manager.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ExecutionError {
+    kind: ExecutionErrorKind,
     message: String,
 }
 
+/// Stable execution-failure class. Values contain no provider output or paths.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ExecutionErrorKind {
+    General,
+    Unsupported,
+    Spawn,
+    TimedOut,
+    OutputLimit,
+    ProviderExit,
+    Teardown,
+}
+
 impl ExecutionError {
+    /// Construct a general execution failure, preserving the Phase 4A API.
     #[must_use]
     pub fn new(message: impl Into<String>) -> Self {
+        Self::with_kind(ExecutionErrorKind::General, message)
+    }
+
+    #[must_use]
+    pub fn with_kind(kind: ExecutionErrorKind, message: impl Into<String>) -> Self {
         Self {
+            kind,
             message: bounded_message(message.into()),
         }
+    }
+
+    #[must_use]
+    pub fn kind(&self) -> ExecutionErrorKind {
+        self.kind
     }
 
     #[must_use]
@@ -151,8 +176,18 @@ mod tests {
     #[test]
     fn execution_errors_are_utf8_safely_bounded() {
         let error = ExecutionError::new("🦀".repeat(MAX_FAILURE_BYTES));
+        assert_eq!(error.kind(), ExecutionErrorKind::General);
         assert!(error.message().len() <= MAX_FAILURE_BYTES);
         assert!(error.message().ends_with("..."));
+    }
+
+    #[test]
+    fn execution_error_kind_is_stable_and_contains_no_extra_context() {
+        let error =
+            ExecutionError::with_kind(ExecutionErrorKind::TimedOut, "delegated process timed out");
+        assert_eq!(error.kind(), ExecutionErrorKind::TimedOut);
+        assert_eq!(error.message(), "delegated process timed out");
+        assert_eq!(error.to_string(), "delegated process timed out");
     }
 
     #[test]

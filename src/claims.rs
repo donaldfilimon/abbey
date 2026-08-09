@@ -432,7 +432,7 @@ pub fn refuse(verb: &str) -> Result<i32> {
         ),
         "mcp-host" | "acp-host" | "host" | "tool-runtime" | "tool-host" => (
             "tool runtime",
-            "An Abbey-owned provider-neutral tool runtime / MCP-ACP host is Proposed but not implemented. Inventory and peer launch are Current.",
+            "An Abbey-owned provider-neutral tool runtime that *consumes* external MCP/ACP servers is Proposed but not implemented. Current: config inventory, peer launch, and `abbey mcp serve` — Abbey's own read-only stdio MCP server (stdio only; no HTTP/TLS/OAuth).",
         ),
         "shell" | "unrestricted" | "os-unrestricted" | "allowlist-bypass" | "yolo-shell" => (
             SHELL_BYPASS_CLAIM_KEY,

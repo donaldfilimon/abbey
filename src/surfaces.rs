@@ -114,15 +114,25 @@ pub fn print_runtime_matrix() -> Result<i32> {
         ("voice TTS/STT", "Abbey→OS", "macOS say + Speech only"),
         ("local neural media", "—", "Proposed (unavailable)"),
         ("Abbey CoT engine", "—", "Out of scope (viewer is Current)"),
-        ("Abbey tool runtime", "—", "Proposed (unavailable)"),
+        (
+            "Abbey MCP server",
+            "Abbey",
+            "Current: abbey mcp serve — read-only stdio tools",
+        ),
+        (
+            "Abbey MCP client-host",
+            "—",
+            "Proposed (does not consume external servers)",
+        ),
     ];
     for (cap, who, note) in rows {
         println!("{cap:<28} {who:<16} {note}");
     }
     println!();
     println!(
-        "rule: tools during a turn run inside cursor-agent. Abbey does not host\n\
-         MCP/ACP sessions or dispatch arbitrary tool schemas.\n\
+        "rule: tools during a turn run inside cursor-agent. Abbey does not connect out\n\
+         to other providers' MCP/ACP servers or dispatch arbitrary tool schemas; it does\n\
+         serve its own read-only tools (`abbey mcp serve`).\n\
          refuse: abbey runtime host · abbey claims refuse mcp-host"
     );
     Ok(0)

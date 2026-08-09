@@ -222,6 +222,25 @@ fn queue_capacity_is_clamped_small() {
 }
 
 #[test]
+fn execution_failure_kinds_map_to_stable_non_secret_evidence() {
+    let cases = [
+        (ExecutionErrorKind::General, "executor_failed"),
+        (ExecutionErrorKind::Unsupported, "executor_unsupported"),
+        (ExecutionErrorKind::Spawn, "executor_spawn_failed"),
+        (ExecutionErrorKind::TimedOut, "executor_timed_out"),
+        (ExecutionErrorKind::OutputLimit, "executor_output_limit"),
+        (ExecutionErrorKind::ProviderExit, "executor_provider_exit"),
+        (ExecutionErrorKind::Teardown, "executor_teardown_failed"),
+    ];
+    for (kind, expected_code) in cases {
+        let (code, message) = execution_failure_evidence(kind);
+        assert_eq!(code, expected_code);
+        assert!(message.starts_with("executor "));
+        assert!(!message.contains("fixture"));
+    }
+}
+
+#[test]
 fn duplicate_idempotent_submit_executes_once() {
     let (_scratch, _store, executor, manager) = manager("duplicate", 2);
     let first = manager.submit(request("duplicate", "success")).unwrap();
