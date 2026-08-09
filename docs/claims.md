@@ -4,7 +4,7 @@ This file is generated from `src/claims.rs` by `tools/check_claims_sync.py --wri
 
 Schema: `1` · Digest: `3084c6ce170eb5db5d3e04fd31164a8f0963a2195be7a200a8625c4144e1e63b` · 30 Current · 1 Partial · 8 Proposed · 1 Blocked · 5 Out of scope.
 
-Workflow ledger: 26 goals (23 done, 1 in_progress, 1 proposed, 1 blocked) · 120 checked / 20 open todos. Goal evidence remains canonical in [`tasks/goals.md`](../tasks/goals.md).
+Workflow ledger: 26 goals (23 done, 1 in_progress, 1 proposed, 1 blocked) · 120 checked / 21 open todos. Goal evidence remains canonical in [`tasks/goals.md`](../tasks/goals.md).
 
 | Stable ID | Status | Capability | Implementation evidence | Automated tests | Local/live evidence | External evidence required | Next action | Blocker owner |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
