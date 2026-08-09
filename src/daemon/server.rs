@@ -512,7 +512,7 @@ mod unix {
 #[cfg(all(test, unix))]
 mod tests {
     use std::io::{Read as _, Write as _};
-    use std::os::unix::fs::PermissionsExt as _;
+    use std::os::unix::fs::{FileTypeExt as _, PermissionsExt as _};
     use std::os::unix::net::UnixStream;
     use std::thread;
     use std::time::{Duration, Instant};
@@ -701,12 +701,19 @@ mod tests {
             let thread =
                 thread::spawn(move || DaemonServer::new(config, Handler).serve(server_shutdown));
             let deadline = Instant::now() + Duration::from_secs(2);
-            while !socket.exists() {
-                assert!(Instant::now() < deadline, "daemon socket was not created");
+            loop {
+                if let Ok(metadata) = std::fs::metadata(&socket) {
+                    let mode = metadata.permissions().mode();
+                    if metadata.file_type().is_socket() && mode & 0o077 == 0 {
+                        break;
+                    }
+                }
+                assert!(
+                    Instant::now() < deadline,
+                    "daemon socket was not created with owner-only permissions"
+                );
                 thread::sleep(Duration::from_millis(5));
             }
-            let mode = std::fs::metadata(&socket).unwrap().permissions().mode();
-            assert_eq!(mode & 0o077, 0, "socket must be owner-only");
             Self {
                 root,
                 socket,
@@ -725,10 +732,10 @@ mod tests {
             stream
                 .set_read_timeout(Some(Duration::from_secs(1)))
                 .unwrap();
-            stream
-                .write_all(&declared.unwrap_or(bytes.len() as u32).to_be_bytes())
-                .unwrap();
-            stream.write_all(bytes).unwrap();
+            let mut frame = Vec::with_capacity(4 + bytes.len());
+            frame.extend_from_slice(&declared.unwrap_or(bytes.len() as u32).to_be_bytes());
+            frame.extend_from_slice(bytes);
+            stream.write_all(&frame).unwrap();
             read_response(&mut stream)
         }
 
