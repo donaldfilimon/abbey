@@ -75,6 +75,67 @@ fn out_of_scope_verbs_refuse_with_exit_2() {
     assert_eq!(run(&s, &["claims"]).0, 0);
 }
 
+/// `abbey accel verify` at the process level, in whichever build produced it.
+///
+/// The two builds are different guarantees, so both are asserted here rather
+/// than only whichever one CI happened to compile:
+///
+/// * without `--features accel` the verb must refuse with exit 2 and say so on
+///   stderr — never exit 0 with an empty success;
+/// * with the feature it must run the kernels and report the backend that
+///   actually served them. Exit 0 is asserted only when the report says Metal
+///   both ran and matched, because a host with no Metal device is an honest
+///   `NOT VERIFIED` (exit 1), not a test failure.
+#[test]
+fn accel_verify_is_honest_about_what_this_build_can_do() {
+    let s = Scratch::new("accel");
+    let (code, out, err) = run(&s, &["accel", "verify"]);
+
+    if cfg!(feature = "accel") {
+        assert!(
+            code == 0 || code == 1,
+            "compiled bridge should report, not error: code={code} err={err}"
+        );
+        assert!(
+            out.contains("backend used:"),
+            "the report must name the backend that ran: {out}"
+        );
+        // The honesty boundary ships with the output, not just the docs.
+        for boundary in [
+            "gpu_npu_tpu_compilation",
+            "training_or_model_inference",
+            "device_residency_or_placement",
+            "speedup_or_performance",
+        ] {
+            assert!(out.contains(boundary), "missing boundary {boundary}: {out}");
+        }
+        // Exit code and verdict may never disagree.
+        if out.contains("backend used:   gpu-metal") && out.contains("VERIFIED — every kernel") {
+            assert_eq!(code, 0, "a verified Metal run must exit 0: {out}");
+        } else {
+            assert_eq!(code, 1, "anything short of verified must exit 1: {out}");
+        }
+        // A CPU-served run must never describe itself as a Metal success.
+        if out.contains("backend used:   cpu") {
+            assert!(out.contains("NOT VERIFIED"), "{out}");
+        }
+    } else {
+        assert_eq!(code, 2, "the unbuilt bridge must refuse with exit 2: {err}");
+        assert!(
+            err.contains("--features accel"),
+            "the refusal must name the missing feature: {err}"
+        );
+        assert!(out.is_empty(), "a refusal must not print a report: {out}");
+    }
+
+    // Detection stays available and distinct in both builds — it is a different
+    // (report-only) capability, and it is not a refusal.
+    assert_eq!(run(&s, &["accel", "detect"]).0, 0);
+    // The Proposed row is untouched: compile/train/infer still refuses.
+    assert_eq!(run(&s, &["accel", "refuse"]).0, 2);
+    assert_eq!(run(&s, &["claims", "refuse", "gpu"]).0, 2);
+}
+
 #[test]
 fn os_control_requires_confirm_and_honours_the_allowlist() {
     let s = Scratch::new("os");
