@@ -23,6 +23,19 @@ Program phases; recount when changing checkboxes.
       0s / 0 jobs. ABI publication is resolved at
       `32e372d7f522f5a6c9c0ef92c5b9612b52cfea05`, and macOS ARM64 self-hosted is
       registered; do not collapse these separate facts into a green hosted run.
+      **Isolated 2026-08-09 by control experiment:** a minimal throwaway workflow
+      (`ubuntu-latest`, one `echo` step, no secrets, no conditions, no self-hosted
+      label) pushed to a scratch branch produced the *same* `startup_failure` with
+      `total_count: 0` jobs. The workflow definition is therefore **excluded** as the
+      cause — `rust.yml` never gets far enough to be evaluated. Repository state is
+      not the cause either: `actions/permissions` reports `enabled: true` /
+      `allowed_actions: "all"`, and both workflows are `state: active`. What remains
+      is account/organization-level scheduling for this **private** repository, which
+      no repository-side change can fix and which this account cannot introspect
+      (`/user/settings/billing/actions` returns 404). This narrows the blocker; it
+      does **not** identify a specific cause such as billing — do not record one
+      without evidence. Owner action: check Actions spending limits / payment state
+      for the account owning `donaldfilimon/abbey`.
 - [ ] **Blocked on runner provisioning:** provision/register Linux ARM64, enable
       its explicitly gated repository variable, and obtain a real `./check.sh`
       job; retain Windows runtime proof as a separate open evidence item.
