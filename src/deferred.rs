@@ -73,13 +73,14 @@ const TOPICS: &[Topic] = &[
         key: "host",
         title: "MCP / ACP host / tool runtime",
         current: &[
+            "abbey mcp serve — Abbey's own read-only stdio MCP server (no HTTP/TLS/OAuth)",
             "abbey mcp|acp — inventory + peer launch (stdio for real hosts)",
             "abbey runtime — who executes what during a turn",
             "--approve-mcps — cursor-agent auto-approves MCP tools (not Abbey)",
         ],
         status: claims::Status::Proposed,
-        unavailable: "Abbey as MCP host, ACP host, or in-process tool runtime",
-        instead: "abbey runtime · abbey mcp · abbey acp · --approve-mcps",
+        unavailable: "Abbey as an MCP/ACP *client-host* consuming external servers, or an in-process tool runtime",
+        instead: "abbey mcp serve · abbey runtime · abbey mcp · abbey acp · --approve-mcps",
         refuse: "mcp-host",
     },
 ];

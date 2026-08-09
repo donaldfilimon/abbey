@@ -1,8 +1,12 @@
 //! MCP configuration/provider views and ACP peer launch helpers.
 //!
-//! Abbey is not an MCP or ACP host runtime. Local MCP inventory is available
-//! under every Abbey model backend; mutations are routed only after the caller
-//! names a concrete external provider.
+//! Abbey is not an MCP or ACP **client/host** runtime: it does not connect out
+//! to other providers' MCP servers or route model work through them. It *does*
+//! serve its own read-only tools — see [`crate::mcp_host`] and `abbey mcp
+//! serve`, which is a separate code path that never prints to stdout.
+//!
+//! Local MCP inventory is available under every Abbey model backend; mutations
+//! are routed only after the caller names a concrete external provider.
 
 pub mod mcp;
 
@@ -24,7 +28,11 @@ pub struct AcpPeer {
 }
 
 pub fn print_mcp_status(cwd: &Path) -> Result<i32> {
-    println!("abbey mcp — configured inventory (Abbey is not an MCP host)");
+    println!(
+        "abbey mcp — configured inventory of other agents' MCP servers\n\
+         (Abbey does not connect to these; for Abbey's own read-only MCP server \
+         run `abbey mcp serve`)"
+    );
     println!("cwd: {}", cwd.display());
     let inventory = load_mcp_inventory(cwd);
     if inventory.groups.is_empty() && inventory.diagnostics.is_empty() {
@@ -192,6 +200,11 @@ pub fn dispatch_mcp(_cfg: &AgentConfig, cwd: &Path, args: &[String]) -> Result<i
     match args[0].as_str() {
         "status" | "inventory" | "show" => print_mcp_status(cwd),
         "paths" => print_mcp_paths(cwd),
+        // Abbey's own read-only MCP *server*. Nothing but JSON-RPC frames may
+        // reach stdout past this point, so it shares no code with the printing
+        // inventory surfaces above.
+        "serve" | "server" | "stdio" => crate::mcp_host::dispatch(&args[1..]),
+        "tools" => crate::mcp_host::print_registry(),
         "host" | "refuse" => crate::claims::refuse("mcp-host"),
         "provider" | "view" => {
             let provider = args
@@ -202,8 +215,11 @@ pub fn dispatch_mcp(_cfg: &AgentConfig, cwd: &Path, args: &[String]) -> Result<i
         }
         "help" | "-h" | "--help" => {
             println!(
-                "abbey mcp — local MCP config inventory + explicit provider management\n\n\
-                 Local (works under cursor/grok/fm/abi backends):\n\
+                "abbey mcp — Abbey's own read-only MCP server + local config inventory\n\n\
+                 Abbey as MCP server (stdio, read-only tools):\n\
+                   abbey mcp serve            # JSON-RPC 2.0 over stdin/stdout\n\
+                   abbey mcp tools            # describe the safe registry + limits\n\n\
+                 Local inventory (works under cursor/grok/fm/abi backends):\n\
                    abbey mcp status\n\
                    abbey mcp paths\n\
                    abbey mcp view codex\n\n\
@@ -212,7 +228,8 @@ pub fn dispatch_mcp(_cfg: &AgentConfig, cwd: &Path, args: &[String]) -> Result<i
                    abbey mcp codex list\n\
                    abbey mcp claude list\n\
                    abbey mcp <provider> enable|disable|login <id>\n\n\
-                 Abbey does not host MCP; management support is provider-owned."
+                 Abbey serves its own read-only tools; it is not a client/host for other\n\
+                 providers' MCP servers, and their management support is provider-owned."
             );
             Ok(0)
         }
