@@ -330,6 +330,22 @@ fn a_body_past_the_shared_request_ceiling_is_rejected_before_it_is_read() {
     assert!(response.body_str().contains(&MAX_REQUEST_BYTES.to_string()));
 }
 
+#[test]
+fn the_shipped_defaults_are_the_documented_constants() {
+    // Every socket test below injects a deliberately tiny config, so without
+    // this assertion the shipped numbers are never exercised and the limits.rs
+    // "constant -> boundary test" table would hold only transitively through
+    // `Default`. Changing a default to a literal must fail a test, not pass.
+    let shipped = HttpConfig::default();
+    assert_eq!(shipped.max_concurrent, MAX_CONCURRENT_REQUESTS);
+    assert_eq!(shipped.rate_budget, MAX_REQUESTS_PER_WINDOW);
+    assert_eq!(shipped.rate_window, RATE_LIMIT_WINDOW);
+    assert_eq!(shipped.read_timeout, HTTP_READ_TIMEOUT);
+    assert_eq!(shipped.write_timeout, HTTP_WRITE_TIMEOUT);
+    assert_eq!(shipped.max_sessions, MAX_HTTP_SESSIONS);
+    assert_eq!(shipped.session_idle, HTTP_SESSION_IDLE_TIMEOUT);
+}
+
 // -------------------------------------------------------------- socket layer
 
 /// Config for a socket test: tiny caps, short timeouts, generous elsewhere.
@@ -397,7 +413,7 @@ fn wait_until(mut probe: impl FnMut() -> bool, what: &str) {
 
 #[test]
 fn connections_past_the_concurrency_cap_are_refused_and_the_server_recovers() {
-    let server = listener(tight(1, 1000, Duration::from_millis(400)));
+    let server = listener(tight(1, 1000, Duration::from_millis(1200)));
     let addr = server.addr();
 
     // Hold the only permit: connect and say nothing. The worker sits in
@@ -450,7 +466,7 @@ fn requests_past_the_rate_budget_are_answered_429() {
 
 #[test]
 fn a_stalled_client_is_dropped_and_the_server_still_answers() {
-    let server = listener(tight(4, 1000, Duration::from_millis(300)));
+    let server = listener(tight(4, 1000, Duration::from_millis(1200)));
     let addr = server.addr();
 
     // Announce a body and never send it. Without an overall deadline this peer

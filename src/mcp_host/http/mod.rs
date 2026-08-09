@@ -5,11 +5,19 @@
 //!
 //! This module owns a socket and an HTTP framing layer, and nothing else. Every
 //! request body is handed to the *same* [`Server::handle_frame`] the stdio
-//! transport uses, and every response body is produced by the same
+//! transport uses, and every **JSON-RPC** response body is produced by the same
 //! [`Server::encode_frame`] — so protocol routing, the tool registry, the JSON
 //! depth/size limits, the call timeout, and outbound secret redaction are shared
 //! code, not a parallel implementation. `tests/mcp_http.rs` asserts the two
 //! transports advertise a byte-identical `tools/list` payload.
+//!
+//! The exception, stated precisely because "every response" would be an
+//! overclaim: transport-level refusals (403/404/405/413/415/429/431/501/503) are
+//! built by [`HttpResponse::rpc_error`] *before* dispatch, from static text plus
+//! at most an echo of the client's own request line. They never reach
+//! `encode_frame`, and so carry neither the redaction pass nor
+//! [`MAX_RESPONSE_BYTES`] — which is sound only because no tool output, no
+//! environment value, and no server state can appear in them.
 //!
 //! ## Loopback is a bind restriction, not an authentication story
 //!
