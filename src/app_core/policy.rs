@@ -11,6 +11,7 @@ impl StandardPolicy {
         let required = match command {
             AppCommand::Status => AppCapability::ReadStatus,
             AppCommand::Claims(_) => AppCapability::ReadClaims,
+            AppCommand::ReadRoutes(_) => AppCapability::ReadRoutes,
             AppCommand::SubmitRun(_) => AppCapability::SubmitRun,
             AppCommand::GetRun(_) => AppCapability::ReadRun,
             AppCommand::CancelRun(_) => AppCapability::CancelRun,

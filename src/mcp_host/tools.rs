@@ -17,6 +17,27 @@
 //! `platform` that are pure computation over constants and
 //! `available_parallelism` — the accelerator inventory stays a local CLI
 //! surface (`abbey platform compute`).
+//!
+//! ## Why the route audit is not an MCP tool
+//!
+//! `AppCommand::ReadRoutes` satisfies [`EffectClass::ReadOnly`] — it spawns
+//! nothing, writes nothing, and mutates no state — so the admission rule above
+//! would *let* it in. It is still not registered, for a reason the effect class
+//! cannot express: **this registry is also served over an unauthenticated
+//! loopback HTTP transport**, where `Mcp-Session-Id` is a routing key and not a
+//! credential. Loopback bounds who can reach the server (no off-host caller),
+//! not who may call it — any local process may, for as long as it runs.
+//!
+//! The two registered tools read a compiled-in table and pure host constants;
+//! there is nothing about the *user* in either. The route audit reads that
+//! user's activity from disk — which personas, roles, and models they route to,
+//! in which (digested) workspaces, and when. Exposing that to any local process
+//! is a privacy expansion, not a capability parity fix. The same read is
+//! available over `abbeyd`'s owner-only, bearer-authenticated Unix socket and
+//! in the desktop client, both of which authenticate the caller.
+//!
+//! Registering it later is the reviewable event, and it should wait for the
+//! HTTP transport to gain authentication.
 
 use serde_json::{Value, json};
 
@@ -201,6 +222,13 @@ fn app_payload(command: AppCommand) -> Result<Value, ToolError> {
         AppEvent::Status(status) => serde_json::to_value(status),
         AppEvent::Claims(snapshot) => serde_json::to_value(snapshot),
         AppEvent::ApprovalRequested(request) => serde_json::to_value(request),
+        // Deliberately unregistered — see the module header's "Why the route
+        // audit is not an MCP tool".
+        AppEvent::RouteAudit(_) => {
+            return Err(ToolError::new(
+                "the route audit is not exposed over MCP; use `abbey daemon routes`",
+            ));
+        }
         AppEvent::RunSubmitted(_)
         | AppEvent::RunStatus(_)
         | AppEvent::CancellationAcknowledged(_)

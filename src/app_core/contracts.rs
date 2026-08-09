@@ -1,8 +1,8 @@
 //! Stable serializable types at Abbey's application boundary.
 
 use super::{
-    RunEventPage, RunEventsQuery, RunId, RunQuery, RunRequest, RunRouteCapability, RunSnapshot,
-    RunSubmission,
+    RouteAuditPage, RouteAuditQuery, RunEventPage, RunEventsQuery, RunId, RunQuery, RunRequest,
+    RunRouteCapability, RunSnapshot, RunSubmission,
 };
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -44,6 +44,9 @@ pub enum Edition {
 pub enum AppCommand {
     Status,
     Claims(ClaimsQuery),
+    /// Bounded tail of the persona/role routing audit log. Read-only, and the
+    /// response omits the raw working directory — see [`RouteAuditPage`].
+    ReadRoutes(RouteAuditQuery),
     SubmitRun(RunRequest),
     GetRun(RunQuery),
     CancelRun(RunQuery),
@@ -55,6 +58,7 @@ impl AppCommand {
         match self {
             Self::Status => Ok(()),
             Self::Claims(query) => query.validate(),
+            Self::ReadRoutes(query) => query.validate(),
             Self::SubmitRun(request) => request.validate(),
             Self::GetRun(query) | Self::CancelRun(query) => query.validate(),
             Self::RunEvents(query) => query.validate(),
@@ -62,10 +66,15 @@ impl AppCommand {
     }
 
     /// Lowest application protocol version that can carry this command.
+    ///
+    /// The route audit is a protocol-v1 read: it touches no run, no store, and
+    /// no provider, so the read-only daemon surface can answer it. Placing it at
+    /// v2 would make it unreachable through `RuntimeHandler`'s v1 path, which is
+    /// what `AppService::default()` serves.
     #[must_use]
     pub const fn minimum_protocol_version(&self) -> u16 {
         match self {
-            Self::Status | Self::Claims(_) => APP_PROTOCOL_V1,
+            Self::Status | Self::Claims(_) | Self::ReadRoutes(_) => APP_PROTOCOL_V1,
             Self::SubmitRun(_) | Self::GetRun(_) | Self::CancelRun(_) | Self::RunEvents(_) => {
                 APP_PROTOCOL_VERSION
             }
@@ -84,6 +93,7 @@ impl AppCommand {
 pub enum AppEvent {
     Status(RuntimeStatus),
     Claims(ClaimsSnapshot),
+    RouteAudit(RouteAuditPage),
     ApprovalRequested(ApprovalRequest),
     RunSubmitted(RunSubmission),
     RunStatus(RunSnapshot),
@@ -96,6 +106,7 @@ impl AppEvent {
         match self {
             Self::Status(status) => status.validate(),
             Self::Claims(snapshot) => snapshot.validate(),
+            Self::RouteAudit(page) => page.validate(),
             Self::ApprovalRequested(request) => request.validate(),
             Self::RunSubmitted(submission) => submission.validate(),
             Self::RunStatus(snapshot) | Self::CancellationAcknowledged(snapshot) => {
@@ -145,6 +156,10 @@ impl RuntimeStatus {
         for route in &self.run_routes {
             route.validate()?;
         }
+        // `run_routes` is tied to submission authority and to nothing else.
+        // `AppCapability::ReadRoutes` is deliberately NOT part of this rule
+        // despite the name: it reads the routing *audit log*, which exists
+        // whether or not a provider route is bound.
         if self.capabilities.contains(AppCapability::SubmitRun) != !self.run_routes.is_empty() {
             return Err(ValidationError::new(
                 "run submission capability and configured routes are inconsistent",
@@ -164,6 +179,16 @@ pub enum AppCapability {
     ReadRunEvents,
     SubmitRun,
     CancelRun,
+    /// Read the persona/role routing **audit log**.
+    ///
+    /// Unrelated to [`RuntimeStatus::run_routes`], which declares startup-bound
+    /// *execution* routes. This capability grants no execution authority; it
+    /// reads a sanitized tail of an append-only JSONL file.
+    ///
+    /// Declared last on purpose: [`CapabilitySet`] is ordered by this enum's
+    /// declaration order, so appending keeps every existing pair's relative
+    /// order — and therefore every serialized set — unchanged.
+    ReadRoutes,
 }
 
 /// Ordered, duplicate-free capability declaration.
@@ -177,7 +202,11 @@ impl CapabilitySet {
     #[must_use]
     pub fn standard() -> Self {
         Self {
-            capabilities: vec![AppCapability::ReadStatus, AppCapability::ReadClaims],
+            capabilities: vec![
+                AppCapability::ReadStatus,
+                AppCapability::ReadClaims,
+                AppCapability::ReadRoutes,
+            ],
         }
     }
 
@@ -203,6 +232,8 @@ impl CapabilitySet {
             capabilities.push(AppCapability::SubmitRun);
         }
         capabilities.push(AppCapability::CancelRun);
+        // Always granted: the audit read depends on no provider route.
+        capabilities.push(AppCapability::ReadRoutes);
         Self { capabilities }
     }
 

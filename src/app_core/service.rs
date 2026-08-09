@@ -2,7 +2,7 @@
 
 use super::{
     AppCommand, AppContext, AppEvent, ClaimRecord, ClaimStatus, ClaimsQuery, ClaimsSnapshot,
-    StandardPolicy, ValidationError,
+    RouteAuditPage, RouteAuditQuery, StandardPolicy, ValidationError,
 };
 use std::fmt;
 
@@ -36,6 +36,7 @@ impl AppService {
         match command {
             AppCommand::Status => Ok(AppEvent::Status(self.context.status().clone())),
             AppCommand::Claims(query) => Ok(AppEvent::Claims(claims_snapshot(&query))),
+            AppCommand::ReadRoutes(query) => Ok(AppEvent::RouteAudit(route_audit_page(&query))),
             AppCommand::SubmitRun(_)
             | AppCommand::GetRun(_)
             | AppCommand::CancelRun(_)
@@ -102,6 +103,28 @@ fn claims_snapshot(query: &ClaimsQuery) -> ClaimsSnapshot {
     ClaimsSnapshot {
         matched: claims.len(),
         claims,
+    }
+}
+
+/// Read a bounded tail of the routing audit log and sanitize every record.
+///
+/// Fails soft to an empty page: a missing state root or an unreadable log is
+/// "no routing has been audited here", not an error worth propagating to a
+/// read-only caller. Individual malformed JSONL lines are already isolated by
+/// [`crate::route_log::recent_routes`], and records this projection cannot
+/// represent honestly are dropped by `sanitize_record` rather than emitted.
+fn route_audit_page(query: &RouteAuditQuery) -> RouteAuditPage {
+    let limit = query.limit;
+    let entries = super::routes::audit_state_root()
+        .and_then(|root| crate::route_log::recent_routes(&root, usize::from(limit)).ok())
+        .unwrap_or_default()
+        .iter()
+        .filter_map(super::routes::sanitize_record)
+        .collect::<Vec<_>>();
+    RouteAuditPage {
+        returned: u16::try_from(entries.len()).unwrap_or(limit),
+        limit,
+        entries,
     }
 }
 
