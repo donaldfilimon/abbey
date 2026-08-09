@@ -17,18 +17,37 @@ import sys
 def run_is_real_evidence(run: dict, jobs: list[dict]) -> tuple[bool, str]:
     """Return (is_evidence, reason) for one workflow run.
 
-    Evidence requires jobs that actually ran. A run with no jobs never
-    reached a runner, whatever its conclusion says.
+    Evidence requires jobs that actually ran and succeeded. A run with no jobs,
+    in-progress jobs, or incomplete status never reached completion.
     """
-    executed = [j for j in jobs if j.get("conclusion") not in (None, "skipped")]
+    # Check if run is still in progress based on status field
+    status = run.get("status")
+    if status is not None and status != "completed":
+        return False, f"run still in progress: status is {status!r}"
+
+    # Check if no jobs were scheduled
     if not jobs:
         return False, (
             f"zero jobs scheduled (run conclusion={run.get('conclusion')!r}); "
             "infrastructure evidence only, not source-test evidence"
         )
+
+    # Check for in-progress jobs (conclusion=None means not yet finished)
+    in_progress = [j for j in jobs if j.get("conclusion") is None]
+    if in_progress:
+        names = ", ".join(str(j.get("name")) for j in in_progress)
+        return False, f"run still in progress: {len(in_progress)} job(s) not yet finished ({names})"
+
+    # Now check for truly skipped jobs vs executed jobs
+    # At this point, no job has conclusion=None, so all are either "skipped" or something else
+    executed = [j for j in jobs if j.get("conclusion") != "skipped"]
+
+    # If all jobs are skipped, nothing executed
     if not executed:
         names = ", ".join(str(j.get("name")) for j in jobs)
         return False, f"all {len(jobs)} job(s) skipped ({names}); nothing executed"
+
+    # Check if any executed jobs failed
     failed = [j for j in executed if j.get("conclusion") != "success"]
     if failed:
         names = ", ".join(str(j.get("name")) for j in failed)
@@ -36,6 +55,8 @@ def run_is_real_evidence(run: dict, jobs: list[dict]) -> tuple[bool, str]:
             f"{len(executed)} job(s) executed but {len(failed)} failed ({names}); "
             "real execution evidence, not a passing gate"
         )
+
+    # All executed jobs succeeded
     return True, f"{len(executed)} job(s) executed and succeeded"
 
 

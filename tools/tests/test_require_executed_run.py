@@ -52,3 +52,46 @@ class RunEvidence(unittest.TestCase):
         ok, reason = module.run_is_real_evidence(run, jobs)
         self.assertFalse(ok)
         self.assertIn("skipped", reason)
+
+    def test_in_progress_sibling_with_succeeded_job_is_not_evidence(self) -> None:
+        # Critical fix: a run with one succeeded job and one still-running job
+        # is not evidence. This is the shape of polling a two-job matrix mid-flight.
+        run = {"conclusion": None, "status": "in_progress"}
+        jobs = [
+            {"name": "gate (Linux ARM64)", "conclusion": "success"},
+            {"name": "gate (macOS ARM64)", "conclusion": None}
+        ]
+        ok, reason = module.run_is_real_evidence(run, jobs)
+        self.assertFalse(ok)
+        self.assertIn("in progress", reason)
+
+    def test_single_in_progress_job_is_not_evidence(self) -> None:
+        # Important fix: reason must not mislabel conclusion=None as "skipped".
+        # conclusion=None means "hasn't finished", not "skipped by workflow logic".
+        run = {"conclusion": None}
+        jobs = [{"name": "gate (Linux ARM64)", "conclusion": None}]
+        ok, reason = module.run_is_real_evidence(run, jobs)
+        self.assertFalse(ok)
+        self.assertNotIn("skipped", reason)
+        self.assertIn("in progress", reason)
+
+    def test_run_status_in_progress_with_all_jobs_succeeded_is_not_evidence(self) -> None:
+        # A run with status="in_progress" is not evidence even if all jobs
+        # report success (they may not be the final state).
+        run = {"conclusion": None, "status": "in_progress"}
+        jobs = [
+            {"name": "gate (Linux ARM64)", "conclusion": "success"},
+            {"name": "gate (macOS ARM64)", "conclusion": "success"}
+        ]
+        ok, reason = module.run_is_real_evidence(run, jobs)
+        self.assertFalse(ok)
+        self.assertIn("in_progress", reason)
+
+    def test_run_with_no_status_key_and_all_jobs_succeeded_is_evidence(self) -> None:
+        # Regression guard: when run dict omits "status" key entirely (some API
+        # responses), the .get() must return None and not block evidence.
+        run = {"conclusion": "success"}  # no "status" key
+        jobs = [{"name": "gate (Linux ARM64)", "conclusion": "success"}]
+        ok, reason = module.run_is_real_evidence(run, jobs)
+        self.assertTrue(ok, reason)
+        self.assertIn("1 job", reason)
