@@ -233,10 +233,7 @@ design subtask never promotes the parent capability to Current.
     memory, and WDBX canaries remain byte-identical. Raw IDs/cwd, backend bindings,
     titles, reconstructed runs, prompts, outputs, override paths, and protocol/UI
     authority are absent from `runtime.sqlite` and daemon diagnostics.
-  - [ ] **Phase 4B.5 — cut new conversation-identity writes over to canonical
-    runtime.sqlite metadata with backward-compatible edition-scoped legacy mirrors and
-    crash/reopen proof; no transcript, semantic-memory, backend/title inference, or
-    protocol/UI authority.**
+  - [ ] **Phase 4B.5 — cut new conversation-identity writes over to canonical runtime.sqlite metadata with backward-compatible edition-scoped legacy mirrors and crash/reopen proof; no transcript, semantic-memory, backend/title inference, or protocol/UI authority.**
   - Phase 4 evidence bar: CLI and TUI use the same typed commands and lifecycle-event
     reducer; serialized frontend-neutral fixtures are stable. Phase 7 proves the future
     React/Tauri client consumes those contracts. Paginated event retrieval and a live
