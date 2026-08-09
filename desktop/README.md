@@ -186,7 +186,7 @@ bun run tauri build --config src-tauri/tauri.personal.conf.json
 
 ## Views: real vs placeholder
 
-**Real** (backed by the two capabilities the app core grants):
+**Real** (backed by the two capabilities the desktop bridge consumes):
 
 - **Doctor** — runtime state, protocol/schema versions, build stamp, edition,
   granted capabilities, connection route, bundle identity.
@@ -203,9 +203,11 @@ the desktop's read-only invoke surface. Only Training is marked
 `capability_not_implemented`. Calling the Current ones "Proposed" would be a
 fabricated claim in the opposite direction.
 
-View availability is computed from the `CapabilitySet` returned by `app_status`
-at runtime, not from a hardcoded boolean, so the day the contract grants more,
-the UI follows.
+View availability for the two read surfaces is computed from the `CapabilitySet`
+returned by `app_status`, not from a hardcoded boolean. Additional protocol-v2
+capabilities are reported in Doctor, but they never auto-create a view or widen the
+four-command Tauri allowlist; each new desktop operation needs an explicit narrow
+invoke, reducer, UI, and evidence slice.
 
 ## Unmet bars
 

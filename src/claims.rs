@@ -664,8 +664,11 @@ mod tests {
             .expect("app-core daemon claim");
         assert_eq!(daemon.status, Status::Current);
         assert!(daemon.note.contains("abbey daemon status|claims"));
+        assert!(daemon.note.contains("protocol-v1"));
         assert!(daemon.note.contains("read-only"));
-        assert!(daemon.note.contains("not implemented"));
+        assert!(daemon.note.contains("separate protocol-v2 surface"));
+        assert!(daemon.note.contains("provider-neutral"));
+        assert!(daemon.note.contains("remain unavailable"));
 
         let bounded_runs = CLAIMS
             .iter()

@@ -592,6 +592,35 @@ mod tests {
     }
 
     #[test]
+    fn an_accepted_connection_waits_for_a_delayed_partial_frame() {
+        let harness = Harness::start();
+        let mut stream = UnixStream::connect(&harness.socket).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(1)))
+            .unwrap();
+
+        let bytes = serde_json::to_vec(&request(TEST_BEARER, PROTOCOL_VERSION)).unwrap();
+        let prefix = (bytes.len() as u32).to_be_bytes();
+        stream.write_all(&prefix[..2]).unwrap();
+
+        // `for_test` polls accept every 5 ms and gives each connection a
+        // 300 ms read deadline. The partial prefix makes the accepted stream
+        // enter `read_exact` before the frame is complete. Without restoring
+        // blocking mode, the inherited nonblocking stream returns `WouldBlock`
+        // here instead of honoring its bounded deadline.
+        thread::sleep(Duration::from_millis(100));
+
+        let mut frame = Vec::with_capacity(2 + bytes.len());
+        frame.extend_from_slice(&prefix[2..]);
+        frame.extend_from_slice(&bytes);
+        stream.write_all(&frame).unwrap();
+
+        let response = read_response(&mut stream);
+        assert!(matches!(response.payload, ResponsePayload::Ok { .. }));
+        harness.stop();
+    }
+
+    #[test]
     fn malformed_and_oversize_frames_are_rejected() {
         let harness = Harness::start();
         let malformed = harness.raw_frame(b"not-json", Some(8));
