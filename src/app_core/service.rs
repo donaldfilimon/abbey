@@ -114,17 +114,42 @@ fn claims_snapshot(query: &ClaimsQuery) -> ClaimsSnapshot {
 /// [`crate::route_log::recent_routes`], and records this projection cannot
 /// represent honestly are dropped by `sanitize_record` rather than emitted.
 fn route_audit_page(query: &RouteAuditQuery) -> RouteAuditPage {
+    match super::routes::audit_state_root() {
+        Some(root) => route_audit_page_in(&root, query),
+        None => empty_route_audit_page(query.limit),
+    }
+}
+
+/// The state-directory-explicit half of [`route_audit_page`].
+///
+/// Split out so tests can drive a scratch log directly: `std::env::set_var` is
+/// `unsafe` in edition 2024 and this crate denies `unsafe_code`, so a unit test
+/// cannot point `ABBEY_STATE_DIR` at a temporary directory. The env-resolved
+/// path is covered end-to-end by `tests/daemon_cli.rs`, which sets the variable
+/// on a real spawned process.
+fn route_audit_page_in(state_dir: &std::path::Path, query: &RouteAuditQuery) -> RouteAuditPage {
     let limit = query.limit;
-    let entries = super::routes::audit_state_root()
-        .and_then(|root| crate::route_log::recent_routes(&root, usize::from(limit)).ok())
-        .unwrap_or_default()
+    let Ok(records) = crate::route_log::recent_routes(state_dir, usize::from(limit)) else {
+        return empty_route_audit_page(limit);
+    };
+    let entries = records
         .iter()
         .filter_map(super::routes::sanitize_record)
         .collect::<Vec<_>>();
     RouteAuditPage {
+        // `recent_routes` already caps at `limit`, and sanitization only ever
+        // drops records, so this cannot exceed `u16::from(limit)`.
         returned: u16::try_from(entries.len()).unwrap_or(limit),
         limit,
         entries,
+    }
+}
+
+const fn empty_route_audit_page(limit: u16) -> RouteAuditPage {
+    RouteAuditPage {
+        entries: Vec::new(),
+        returned: 0,
+        limit,
     }
 }
 
@@ -150,7 +175,7 @@ mod tests {
         };
         assert_eq!(status.protocol_version, super::super::APP_PROTOCOL_V1);
         assert_eq!(status.schema_version, super::super::APP_SCHEMA_V1);
-        assert_eq!(status.capabilities.as_slice().len(), 2);
+        assert_eq!(status.capabilities.as_slice().len(), 3);
     }
 
     #[test]
@@ -166,6 +191,164 @@ mod tests {
         };
         assert_eq!(snapshot.matched, 1);
         assert_eq!(snapshot.claims[0].status, ClaimStatus::Blocked);
+    }
+
+    /// Owner-only scratch directory that removes itself.
+    struct Scratch(std::path::PathBuf);
+
+    impl Scratch {
+        fn new(tag: &str) -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "abbey-route-audit-{tag}-{}-{}",
+                std::process::id(),
+                &uuid::Uuid::new_v4().simple().to_string()[..8]
+            ));
+            std::fs::create_dir_all(&path).expect("create scratch state dir");
+            Self(path)
+        }
+
+        fn write_log(&self, lines: &[String]) {
+            std::fs::write(
+                crate::route_log::route_log_path(&self.0),
+                format!("{}\n", lines.join("\n")),
+            )
+            .expect("write route log");
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn record_line(index: usize, cwd: &str, reason: &str) -> String {
+        let mut record =
+            crate::route_log::RouteRecord::new(cwd, "Abbey", "max", "fable", reason, 0.5);
+        record.ts = format!("2026-08-08T12:{:02}:00Z", index % 60);
+        serde_json::to_string(&record).expect("serialize route record")
+    }
+
+    #[test]
+    fn an_absent_log_reads_as_an_empty_page_rather_than_an_error() {
+        let scratch = Scratch::new("empty");
+        let page = route_audit_page_in(&scratch.0, &RouteAuditQuery::default());
+        assert!(page.entries.is_empty());
+        assert_eq!(page.returned, 0);
+        assert_eq!(page.limit, super::super::MAX_ROUTE_AUDIT_PAGE);
+        page.validate().unwrap();
+
+        // An empty file is the same answer, not a parse failure.
+        scratch.write_log(&[String::new()]);
+        let page = route_audit_page_in(&scratch.0, &RouteAuditQuery::default());
+        assert_eq!(page.returned, 0);
+        page.validate().unwrap();
+    }
+
+    #[test]
+    fn reads_are_capped_and_return_the_most_recent_decisions() {
+        let scratch = Scratch::new("cap");
+        let lines = (0..80)
+            .map(|index| record_line(index, "/tmp/project", &format!("decision-{index}")))
+            .collect::<Vec<_>>();
+        scratch.write_log(&lines);
+
+        let capped = route_audit_page_in(&scratch.0, &RouteAuditQuery::default());
+        assert_eq!(
+            capped.returned,
+            super::super::MAX_ROUTE_AUDIT_PAGE,
+            "the page must never exceed its cap"
+        );
+        assert_eq!(capped.entries.len(), 50);
+        capped.validate().unwrap();
+        // Tail semantics: the newest decision is last, the oldest 30 are gone.
+        assert!(
+            capped
+                .entries
+                .last()
+                .unwrap()
+                .reason
+                .contains("decision-79")
+        );
+        assert!(
+            capped
+                .entries
+                .first()
+                .unwrap()
+                .reason
+                .contains("decision-30")
+        );
+
+        let narrow = route_audit_page_in(&scratch.0, &RouteAuditQuery { limit: 3 });
+        assert_eq!(narrow.returned, 3);
+        assert_eq!(narrow.limit, 3);
+        narrow.validate().unwrap();
+    }
+
+    #[test]
+    fn one_malformed_jsonl_line_does_not_poison_the_read() {
+        let scratch = Scratch::new("malformed");
+        scratch.write_log(&[
+            record_line(1, "/tmp/project", "first"),
+            "{ this is not json".to_owned(),
+            "null".to_owned(),
+            r#"{"ts":"2026-08-08T12:05:00Z"}"#.to_owned(),
+            record_line(2, "/tmp/project", "second"),
+        ]);
+
+        let page = route_audit_page_in(&scratch.0, &RouteAuditQuery::default());
+        assert_eq!(page.returned, 2, "well-formed records must survive");
+        assert!(page.entries[0].reason.contains("first"));
+        assert!(page.entries[1].reason.contains("second"));
+        page.validate().unwrap();
+    }
+
+    /// The redaction bar: nothing that reaches the wire may carry a path.
+    #[test]
+    fn no_absolute_path_home_segment_or_control_character_survives_serialization() {
+        let home = std::env::var("HOME").expect("HOME is set in the test environment");
+        let secret = format!("{home}/abbey-route-audit/secret-project");
+        let scratch = Scratch::new("redaction");
+        scratch.write_log(&[record_line(
+            1,
+            &secret,
+            &format!("persona=Abbey class=Code cwd={secret} log=/var/log/abbey.jsonl\u{7}"),
+        )]);
+
+        let page = route_audit_page_in(&scratch.0, &RouteAuditQuery::default());
+        assert_eq!(page.returned, 1);
+        page.validate().unwrap();
+        let serialized =
+            serde_json::to_string(&AppEvent::RouteAudit(page.clone())).expect("serialize page");
+
+        for leaked in [secret.as_str(), home.as_str(), "/var/log/abbey.jsonl"] {
+            assert!(
+                !serialized.contains(leaked),
+                "route audit leaked {leaked} in {serialized}"
+            );
+        }
+        // No whitespace-delimited token anywhere in the payload is an absolute
+        // path, and nothing in it is a control character.
+        let entry = &page.entries[0];
+        for field in [
+            entry.recorded_at.as_str(),
+            entry.persona.as_str(),
+            entry.role.as_str(),
+            entry.model.as_str(),
+            entry.reason.as_str(),
+            entry.workspace.as_deref().unwrap_or_default(),
+        ] {
+            assert!(
+                !field.chars().any(char::is_control),
+                "control char in {field}"
+            );
+            assert!(
+                !field.split_whitespace().any(|token| token.starts_with('/')),
+                "absolute path in {field}"
+            );
+        }
+        assert!(entry.reason.contains("[path]"));
+        assert!(entry.workspace.as_deref().unwrap().starts_with("ws-"));
     }
 
     #[test]

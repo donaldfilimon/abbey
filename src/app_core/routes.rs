@@ -121,7 +121,12 @@ impl RouteAuditEntry {
         validate_field(&self.role, MAX_ROUTE_FIELD_BYTES)?;
         validate_field(&self.model, MAX_ROUTE_FIELD_BYTES)?;
         validate_field(&self.reason, MAX_ROUTE_REASON_BYTES)?;
-        for optional in [&self.stage, &self.correlation, &self.alternate, &self.fallback] {
+        for optional in [
+            &self.stage,
+            &self.correlation,
+            &self.alternate,
+            &self.fallback,
+        ] {
             if let Some(value) = optional {
                 validate_field(value, MAX_ROUTE_FIELD_BYTES)?;
             }
@@ -322,12 +327,22 @@ fn is_redactable_path(token: &str) -> bool {
 /// `C:\`-style drive. The home-directory check is deliberately absent — the
 /// receiving desktop has a different `HOME` than the daemon that produced the
 /// page, so a `HOME`-relative rule would be a machine-dependent wire invariant.
+///
+/// Every `key=value` segment of the token is tested, not just its start. Abbey's
+/// own reasons are `key=value` shaped (`persona=`, `class=`, `stage=`, `exit=`),
+/// so a prefix-only test let `log=/var/log/abbey.jsonl` through — caught by the
+/// redaction test before this shipped.
 fn is_structural_path(token: &str) -> bool {
-    let token = token.trim_matches(|c: char| matches!(c, '"' | '\'' | '(' | ')' | ',' | ';'));
-    if token.starts_with('/') || token.starts_with('~') || token.starts_with("\\\\") {
+    token.split('=').any(segment_is_path)
+}
+
+fn segment_is_path(segment: &str) -> bool {
+    let segment =
+        segment.trim_matches(|c: char| matches!(c, '"' | '\'' | '(' | ')' | '[' | ']' | ',' | ';'));
+    if segment.starts_with('/') || segment.starts_with('~') || segment.starts_with("\\\\") {
         return true;
     }
-    let bytes = token.as_bytes();
+    let bytes = segment.as_bytes();
     bytes.len() >= 3
         && bytes[0].is_ascii_alphabetic()
         && bytes[1] == b':'
@@ -395,4 +410,251 @@ fn validate_field(value: &str, max_bytes: usize) -> Result<(), ValidationError> 
         ));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::route_log::RouteRecord;
+
+    fn record(cwd: &str, reason: &str) -> RouteRecord {
+        let mut record = RouteRecord::new(cwd, "Abbey", "max", "fable", reason, 0.82);
+        record.ts = "2026-08-08T12:00:00Z".into();
+        record
+    }
+
+    #[test]
+    fn wire_shapes_are_tagged_and_reject_unknown_fields() {
+        let command = super::super::AppCommand::ReadRoutes(RouteAuditQuery { limit: 7 });
+        assert_eq!(
+            serde_json::to_value(&command).unwrap(),
+            serde_json::json!({"type": "read_routes", "payload": {"limit": 7}})
+        );
+        // Round-trip, then prove the extra key is refused on both sides.
+        assert_eq!(
+            serde_json::from_value::<super::super::AppCommand>(
+                serde_json::to_value(&command).unwrap()
+            )
+            .unwrap(),
+            command
+        );
+        assert!(
+            serde_json::from_value::<super::super::AppCommand>(serde_json::json!({
+                "type": "read_routes",
+                "payload": {"limit": 7, "cwd": "/Users/someone"}
+            }))
+            .is_err()
+        );
+
+        let event = super::super::AppEvent::RouteAudit(RouteAuditPage {
+            entries: vec![sanitize_record(&record("/tmp/project", "persona=Abbey")).unwrap()],
+            returned: 1,
+            limit: 50,
+        });
+        let encoded = serde_json::to_value(&event).unwrap();
+        assert_eq!(encoded["type"], "route_audit");
+        assert_eq!(
+            serde_json::from_value::<super::super::AppEvent>(encoded.clone()).unwrap(),
+            event
+        );
+        let mut hostile = encoded;
+        hostile["payload"]["cwd"] = serde_json::json!("/tmp/project");
+        assert!(serde_json::from_value::<super::super::AppEvent>(hostile).is_err());
+    }
+
+    #[test]
+    fn the_working_directory_becomes_an_opaque_digest_and_never_a_path() {
+        let entry = sanitize_record(&record("/Users/someone/code/abbey", "persona=Abbey")).unwrap();
+        let workspace = entry.workspace.clone().expect("a digest");
+        assert!(workspace.starts_with("ws-"));
+        assert_eq!(
+            workspace.len(),
+            WORKSPACE_PREFIX.len() + WORKSPACE_DIGEST_HEX
+        );
+        assert!(workspace[3..].bytes().all(|b| b.is_ascii_hexdigit()));
+        assert!(!workspace.chars().any(|c| c.is_ascii_uppercase()));
+
+        // Stable for the same path, different for another.
+        assert_eq!(
+            sanitize_record(&record("/Users/someone/code/abbey", "x"))
+                .unwrap()
+                .workspace,
+            entry.workspace
+        );
+        assert_ne!(
+            sanitize_record(&record("/Users/someone/code/other", "x"))
+                .unwrap()
+                .workspace,
+            entry.workspace
+        );
+        // An empty cwd omits the field rather than digesting "".
+        assert!(
+            sanitize_record(&record("   ", "x"))
+                .unwrap()
+                .workspace
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn free_text_is_bounded_control_stripped_and_path_redacted() {
+        let entry = sanitize_record(&record(
+            "/tmp/project",
+            "persona=Abbey\u{7}\n role=max wrote /etc/passwd and C:\\Windows\\System32 and ~/.ssh/id_rsa",
+        ))
+        .unwrap();
+        assert!(!entry.reason.chars().any(char::is_control));
+        assert!(!entry.reason.contains("/etc/passwd"));
+        assert!(!entry.reason.contains("C:\\Windows"));
+        assert!(!entry.reason.contains("~/.ssh"));
+        assert_eq!(entry.reason.matches("[path]").count(), 3);
+        assert!(entry.reason.contains("persona=Abbey"));
+
+        // A path hidden behind a `key=` prefix must be caught too — a
+        // prefix-only detector missed exactly this shape.
+        let keyed =
+            sanitize_record(&record("/tmp/p", "stage=gate log=/var/log/abbey.jsonl")).unwrap();
+        assert!(!keyed.reason.contains("/var/log"));
+        assert!(keyed.reason.contains("stage=gate"));
+        assert!(keyed.reason.contains("[path]"));
+        keyed.validate().unwrap();
+
+        let long = sanitize_record(&record("/tmp/p", &"x".repeat(4_000))).unwrap();
+        assert!(long.reason.len() <= MAX_ROUTE_REASON_BYTES);
+        long.validate().unwrap();
+
+        // Multi-byte truncation must land on a character boundary.
+        let wide = sanitize_record(&record("/tmp/p", &"日".repeat(400))).unwrap();
+        assert!(wide.reason.len() <= MAX_ROUTE_REASON_BYTES);
+        wide.validate().unwrap();
+    }
+
+    #[test]
+    fn confidence_is_quantized_and_clamps_instead_of_wrapping() {
+        assert_eq!(quantize_confidence(0.82), 82);
+        assert_eq!(quantize_confidence(0.0), 0);
+        assert_eq!(quantize_confidence(1.0), 100);
+        assert_eq!(quantize_confidence(f32::NAN), 0);
+        assert_eq!(quantize_confidence(f32::INFINITY), 0);
+        assert_eq!(quantize_confidence(f32::NEG_INFINITY), 0);
+        assert_eq!(quantize_confidence(1e30), 100);
+        assert_eq!(quantize_confidence(-5.0), 0);
+    }
+
+    #[test]
+    fn validation_rejects_an_unsanitized_page_from_any_peer() {
+        let good = sanitize_record(&record("/tmp/project", "persona=Abbey")).unwrap();
+        good.validate().unwrap();
+
+        // The whole point of consumer-side validation: a differently-built
+        // daemon cannot push a raw absolute path through the socket.
+        for poisoned in [
+            RouteAuditEntry {
+                reason: "routed in /Users/someone/secret".into(),
+                ..good.clone()
+            },
+            RouteAuditEntry {
+                model: "C:\\models\\local".into(),
+                ..good.clone()
+            },
+            RouteAuditEntry {
+                persona: "Ab\u{7}bey".into(),
+                ..good.clone()
+            },
+            RouteAuditEntry {
+                workspace: Some("/Users/someone/code".into()),
+                ..good.clone()
+            },
+            RouteAuditEntry {
+                workspace: Some("ws-NOTHEXAAAAA".into()),
+                ..good.clone()
+            },
+            RouteAuditEntry {
+                recorded_at: "yesterday".into(),
+                ..good.clone()
+            },
+            RouteAuditEntry {
+                confidence_percent: 101,
+                ..good.clone()
+            },
+            RouteAuditEntry {
+                tools: vec!["media".into(); MAX_ROUTE_TOOLS + 1],
+                ..good.clone()
+            },
+        ] {
+            assert!(
+                poisoned.validate().is_err(),
+                "validate accepted {poisoned:?}"
+            );
+        }
+
+        // Page-level consistency.
+        let page = RouteAuditPage {
+            entries: vec![good.clone()],
+            returned: 1,
+            limit: 50,
+        };
+        page.validate().unwrap();
+        for invalid in [
+            RouteAuditPage {
+                returned: 2,
+                ..page.clone()
+            },
+            RouteAuditPage {
+                limit: 0,
+                ..page.clone()
+            },
+            RouteAuditPage {
+                limit: MAX_ROUTE_AUDIT_PAGE + 1,
+                ..page.clone()
+            },
+            RouteAuditPage {
+                entries: vec![good; 2],
+                returned: 2,
+                limit: 1,
+            },
+        ] {
+            assert!(invalid.validate().is_err(), "validate accepted {invalid:?}");
+        }
+    }
+
+    #[test]
+    fn a_record_that_cannot_be_represented_honestly_is_dropped() {
+        let mut undated = record("/tmp/p", "persona=Abbey");
+        undated.ts = "not-a-timestamp".into();
+        assert!(sanitize_record(&undated).is_none());
+
+        let mut blank = record("/tmp/p", "persona=Abbey");
+        blank.persona = "  \u{7} ".into();
+        assert!(sanitize_record(&blank).is_none());
+
+        // A reason that sanitizes to nothing still yields an entry — the
+        // decision itself is audit-worthy even when its rationale is not.
+        let mut pathy = record("/tmp/p", "/Users/someone/only-a-path");
+        pathy.reason = "/Users/someone/only-a-path".into();
+        let entry = sanitize_record(&pathy).unwrap();
+        assert_eq!(entry.reason, "[path]");
+        entry.validate().unwrap();
+    }
+
+    #[test]
+    fn query_bounds_are_enforced() {
+        RouteAuditQuery::default().validate().unwrap();
+        assert_eq!(RouteAuditQuery::default().limit, MAX_ROUTE_AUDIT_PAGE);
+        assert!(RouteAuditQuery { limit: 0 }.validate().is_err());
+        assert!(
+            RouteAuditQuery {
+                limit: MAX_ROUTE_AUDIT_PAGE + 1
+            }
+            .validate()
+            .is_err()
+        );
+        // An omitted limit deserializes to the cap, not to zero.
+        assert_eq!(
+            serde_json::from_value::<RouteAuditQuery>(serde_json::json!({}))
+                .unwrap()
+                .limit,
+            MAX_ROUTE_AUDIT_PAGE
+        );
+    }
 }

@@ -452,7 +452,11 @@ mod tests {
         capabilities.validate().unwrap();
         assert_eq!(
             capabilities.as_slice(),
-            &[AppCapability::ReadStatus, AppCapability::ReadClaims]
+            &[
+                AppCapability::ReadStatus,
+                AppCapability::ReadClaims,
+                AppCapability::ReadRoutes,
+            ]
         );
     }
 
@@ -469,6 +473,7 @@ mod tests {
                 AppCapability::ReadRunEvents,
                 AppCapability::SubmitRun,
                 AppCapability::CancelRun,
+                AppCapability::ReadRoutes,
             ]
         );
 
@@ -517,9 +522,12 @@ mod tests {
                 AppCapability::ReadRun,
                 AppCapability::ReadRunEvents,
                 AppCapability::CancelRun,
+                AppCapability::ReadRoutes,
             ]
         );
         assert!(!capabilities.contains(AppCapability::SubmitRun));
+        // The audit read never depends on a provider route.
+        assert!(capabilities.contains(AppCapability::ReadRoutes));
         assert_eq!(
             CapabilitySet::runtime_v2_for_routes(true),
             CapabilitySet::runtime_v2()

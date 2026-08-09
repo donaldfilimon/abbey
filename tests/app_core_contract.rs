@@ -56,10 +56,15 @@ fn standard_service_advertises_only_implemented_read_capabilities() {
     assert!(wire.get("run_routes").is_none());
     assert_eq!(
         status.capabilities.as_slice(),
-        &[AppCapability::ReadStatus, AppCapability::ReadClaims]
+        &[
+            AppCapability::ReadStatus,
+            AppCapability::ReadClaims,
+            AppCapability::ReadRoutes,
+        ]
     );
     assert!(status.capabilities.contains(AppCapability::ReadStatus));
     assert!(status.capabilities.contains(AppCapability::ReadClaims));
+    assert!(status.capabilities.contains(AppCapability::ReadRoutes));
 }
 
 #[test]
