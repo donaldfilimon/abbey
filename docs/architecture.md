@@ -43,9 +43,9 @@ prerequisite or proof · **Out of scope** = explicitly excluded.
 | Module | Responsibility |
 |--------|----------------|
 | `main` / `entry` | Pre-Clap SIGPIPE shim + library-owned CLI/TUI/slash routing |
-| `lib` / `app_core` | Private implementation graph plus public protocol-v1 Status/Claims and protocol-v2 bounded-run contracts/policy |
+| `lib` / `app_core` | Private implementation graph plus public protocol-v1 reads (Status/Claims/ReadRoutes) and protocol-v2 bounded-run contracts/policy |
 | `run_control` | Closed CLI/TUI run grammar plus deterministic sanitized snapshot/fixed-watermark reducer; no transport or execution authority |
-| `daemon` / `bin/abbeyd` | Authenticated 64 KiB Unix transport: exact v1 Status/Claims compatibility plus v2 startup-bound fixed-provider submit/status/cancel/paged events; no arbitrary model/tool/shell/memory authority; non-Unix fails closed |
+| `daemon` / `bin/abbeyd` | Authenticated 64 KiB Unix transport: exact v1 read compatibility (Status/Claims/ReadRoutes) plus v2 startup-bound fixed-provider submit/status/cancel/paged events; no arbitrary model/tool/shell/memory authority; non-Unix fails closed |
 | `actions` | `RunSpec` + `run_agent` / review / commit / pr (one path) |
 | `commands` | Clap subcommand match → actions |
 | `slash` / `slash_dispatch` | Catalog + shared slash handler → actions; `/daemon run` uses the same reducer as the CLI |
@@ -157,7 +157,7 @@ prerequisite or proof · **Out of scope** = explicitly excluded.
   does not auto-mark goals done; not a multi-node mesh
 - Claims gate CLI: `abbey claims` / `refuse` for Partial, Proposed, Blocked, and
   Out-of-scope surfaces. Approved roadmap verbs still return exit 2 until proven.
-- Shared application library plus `abbeyd`: protocol v1 preserves exact Status/Claims
+- Shared application library plus `abbeyd`: protocol v1 preserves exact Status/Claims/ReadRoutes
   events over an owner-only Unix socket with bounded frames/timeouts and bearer-file
   authentication. Protocol v2 reaches only startup-bound ABI-local/Foundation Models
   recipes for typed submission, durable status/cancel, and fixed-watermark sanitized

@@ -74,7 +74,10 @@ impl RuntimeHandler {
     fn handle_runtime(&self, command: AppCommand) -> Result<AppEvent, HandlerFailure> {
         command.validate().map_err(|_| invalid_command_failure())?;
         match command {
-            AppCommand::Status | AppCommand::Claims(_) => self
+            // `ReadRoutes` needs no runtime route, store, or provider — it is a
+            // read of the same append-only audit log the v1 service reads, so
+            // it joins the pure app-core arm rather than getting a route here.
+            AppCommand::Status | AppCommand::Claims(_) | AppCommand::ReadRoutes(_) => self
                 .runtime_v2
                 .handle(command)
                 .map_err(|_| internal_failure()),

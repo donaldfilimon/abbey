@@ -80,7 +80,7 @@ Key modules (`src/`):
 |---|---|
 | `main.rs` | pre-Clap SIGPIPE shim delegating to the library; must stay under 200 lines |
 | `lib.rs` / `entry.rs` | private implementation graph + library-owned CLI/TUI routing |
-| `app_core/` | public versioned protocol-v1 Status/Claims compatibility plus protocol-v2 bounded run contracts |
+| `app_core/` | public versioned protocol-v1 read contracts (Status/Claims/ReadRoutes) plus protocol-v2 bounded run contracts; `routes.rs` holds the sanitized route-audit view |
 | `daemon/` / `bin/abbeyd.rs` | authenticated bounded Unix v1 reads and v2 startup-bound run control; no arbitrary executable/argv/env/workspace/tools |
 | `runtime/` (`manager.rs`, `store.rs`, `store/identity.rs`, `identity.rs`, `supervisor.rs`, `executor.rs`, `delegated.rs`, `migrations.rs`) | durable run lifecycle, opaque schema-v4 conversation identity mutations, bounded process-group supervision, and fixed ABI-local/Foundation Models adapters; no provider-neutral model or tool runtime |
 | `edition.rs` | compile-time safe (default) and separately identified `personal-edition` namespaces; neither edition implements unrestricted execution |

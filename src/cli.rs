@@ -706,6 +706,18 @@ pub enum DaemonCmd {
         #[arg(long)]
         json: bool,
     },
+    /// Read a bounded, sanitized tail of the persona/role routing audit log
+    ///
+    /// The working directory of each decision is reported as an opaque
+    /// `ws-<digest>` label — never as a filesystem path.
+    Routes {
+        /// Maximum decisions to return (1 through 50)
+        #[arg(long, default_value_t = crate::app_core::MAX_ROUTE_AUDIT_PAGE, value_parser = clap::value_parser!(u16).range(1..=i64::from(crate::app_core::MAX_ROUTE_AUDIT_PAGE)))]
+        limit: u16,
+        /// Emit the typed application event as JSON
+        #[arg(long)]
+        json: bool,
+    },
     /// Submit, inspect, cancel, or page events for bounded protocol-v2 runs
     Run {
         #[command(subcommand)]

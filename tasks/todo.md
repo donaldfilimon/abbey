@@ -395,9 +395,23 @@ design subtask never promotes the parent capability to Current.
     namespace, daemon socket, audit log path, and the per-file state overrides
     `*_CHAT_FILE`/`*_MODEL_FILE`/`*_HISTORY_FILE`), `abbey edition`, edition-aware
     `install.sh` (Unix), `tests/edition_isolation.rs`, and a `check.sh` gate for the
-    new feature. Ledger: `edition-compile-time-separation` (Current). NOT covered:
-    `install.ps1` still writes literal `abbey.exe`/`_abbey.ps1` names, so Windows
-    packaging has no edition separation yet.
+    new feature. Ledger: `edition-compile-time-separation` (Current).
+  - UPDATED 2026-08-09 — `install.ps1` no longer writes literal `abbey.exe`/`_abbey.ps1`.
+    NOW REAL (source + parser test): it reads the same `ABBEY_CARGO_FEATURES` selector
+    install.sh uses and derives the installed binary, daemon, and completion names from
+    the compiled binary via `abbey edition --name`/`--daemon-name`, with no fallback
+    literal (a failed probe throws, because falling back is the clobber being closed);
+    the release artifact path deliberately keeps the edition-independent cargo `[[bin]]`
+    name. Derived: safe → `abbey.exe`/`_abbey.ps1` (daemon `abbeyd.exe`, reported only);
+    personal → `abbey-personal.exe`/`_abbey-personal.ps1` (daemon
+    `abbey-personal-daemon.exe`). `tools/tests/test_install_ps1_editions.py` pins the
+    absent literals, the derivation, the safe names, and that the two editions' installed
+    filenames differ; check.sh already discovers it. STILL ABSENT: any Windows *runtime*
+    proof — PowerShell does not exist on this machine, so install.ps1 has never been
+    executed and Windows packaging is not shown to work; no Windows daemon (the
+    authenticated transport is Unix-socket-only); no packaging, signing, or notarization;
+    and no unrestricted runtime in any edition. Ledger:
+    `edition-windows-install-naming` (Partial, local evidence Required).
   - Safe public/default edition: explicit approvals for shell/fs-mutation/network/
     elevation, scoped tool allowlists, only the safe tool registry via network MCP, no
     auto-install of privileged helpers; stays the default abbey binary/package/bundle
