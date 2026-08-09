@@ -537,8 +537,8 @@ mod tests {
 
     #[test]
     fn gate_has_all_five_statuses() {
-        assert_eq!(CLAIMS.len(), 43);
-        assert_eq!(by_status(Status::Current).count(), 28);
+        assert_eq!(CLAIMS.len(), 44);
+        assert_eq!(by_status(Status::Current).count(), 29);
         assert_eq!(by_status(Status::Partial).count(), 1);
         assert_eq!(by_status(Status::Proposed).count(), 8);
         assert_eq!(by_status(Status::Blocked).count(), 1);
