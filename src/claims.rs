@@ -313,15 +313,15 @@ pub fn print_claims(filter: Option<&str>) -> Result<i32> {
     let filter = filter.map(str::trim).filter(|s| !s.is_empty());
     match filter.map(str::to_ascii_lowercase).as_deref() {
         None | Some("all") => {
-            print_section(Status::Current);
-            println!();
-            print_section(Status::Partial);
-            println!();
-            print_section(Status::Proposed);
-            println!();
-            print_section(Status::Blocked);
-            println!();
-            print_section(Status::OutOfScope);
+            // Ordered by Status::ALL so this listing and the tests that
+            // partition the registry cannot disagree about which statuses
+            // exist, and a new status appears here without a second edit.
+            for (index, status) in Status::ALL.iter().enumerate() {
+                if index > 0 {
+                    println!();
+                }
+                print_section(*status);
+            }
             print_footer();
         }
         Some("current" | "shipped") => print_section(Status::Current),
