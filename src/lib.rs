@@ -16,6 +16,7 @@ mod config;
 pub mod daemon;
 mod deferred;
 mod doctor;
+pub mod edition;
 mod entry;
 mod generate;
 mod gitops;

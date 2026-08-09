@@ -3,10 +3,19 @@
 #![cfg(unix)]
 
 use abbey::app_core::{AppEvent, ClaimStatus, Edition, RuntimeState};
+use abbey::edition;
 use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 use std::time::{Duration, Instant};
+
+/// The compiled edition this test binary was built for. The safe build must
+/// still report `standard`; the personal build must report itself rather than
+/// impersonating the public edition.
+#[cfg(not(feature = "personal-edition"))]
+const EXPECTED_EDITION: Edition = Edition::Standard;
+#[cfg(feature = "personal-edition")]
+const EXPECTED_EDITION: Edition = Edition::Personal;
 
 const ABBEY_BIN: &str = env!("CARGO_BIN_EXE_abbey");
 const ABBEYD_BIN: &str = env!("CARGO_BIN_EXE_abbeyd");
@@ -30,9 +39,9 @@ impl Harness {
             .expect("make daemon CLI scratch directory private");
         let socket = root.join("abbeyd.sock");
         let child = Command::new(ABBEYD_BIN)
-            .env("ABBEY_STATE_DIR", &root)
-            .env("ABBEYD_SOCKET_PATH", &socket)
-            .env("ABBEYD_BEARER_TOKEN", BEARER)
+            .env(edition::ACTIVE.state_dir_env(), &root)
+            .env(edition::ACTIVE.daemon_socket_env(), &socket)
+            .env(edition::ACTIVE.daemon_bearer_env(), BEARER)
             .spawn()
             .expect("start abbeyd");
 
@@ -50,7 +59,7 @@ impl Harness {
 
     fn abbey(&self, bearer: &str, args: &[&str]) -> std::process::Output {
         self.command(args)
-            .env("ABBEYD_BEARER_TOKEN", bearer)
+            .env(edition::ACTIVE.daemon_bearer_env(), bearer)
             .output()
             .expect("run abbey daemon command")
     }
@@ -59,10 +68,10 @@ impl Harness {
         let mut command = Command::new(ABBEY_BIN);
         command
             .args(args)
-            .env("ABBEY_STATE_DIR", &self.root)
-            .env("ABBEYD_SOCKET_PATH", &self.socket)
-            .env_remove("ABBEYD_BEARER_TOKEN")
-            .env_remove("ABBEYD_BEARER_TOKEN_FILE")
+            .env(edition::ACTIVE.state_dir_env(), &self.root)
+            .env(edition::ACTIVE.daemon_socket_env(), &self.socket)
+            .env_remove(edition::ACTIVE.daemon_bearer_env())
+            .env_remove(edition::ACTIVE.daemon_bearer_file_env())
             // A local control-plane query must not resolve a model executor.
             .env("ABBEY_AGENT_BIN", self.root.join("missing-agent"));
         command
@@ -84,7 +93,16 @@ fn status_and_filtered_claims_round_trip_through_real_binaries() {
     let human = harness.abbey(BEARER, &["daemon", "status"]);
     assert_success(&human, "daemon human status");
     let human = String::from_utf8(human.stdout).unwrap();
-    assert!(human.contains("abbeyd: ready (standard edition)"));
+    // The daemon names the edition it was actually compiled as; a personal
+    // build must never present itself as the standard one.
+    let expected_edition_word = match EXPECTED_EDITION {
+        Edition::Standard => "standard",
+        Edition::Personal => "personal",
+    };
+    assert!(
+        human.contains(&format!("abbeyd: ready ({expected_edition_word} edition)")),
+        "{human}"
+    );
     assert!(human.contains("capabilities: read_status, read_claims"));
 
     let status = harness.abbey(BEARER, &["daemon", "status", "--json"]);
@@ -93,7 +111,7 @@ fn status_and_filtered_claims_round_trip_through_real_binaries() {
     let AppEvent::Status(status) = status_event else {
         panic!("daemon status returned the wrong event");
     };
-    assert_eq!(status.edition, Edition::Standard);
+    assert_eq!(status.edition, EXPECTED_EDITION);
     assert_eq!(status.state, RuntimeState::Ready);
 
     let claims = harness.abbey(
@@ -169,8 +187,8 @@ fn authentication_failure_does_not_disclose_local_secrets() {
     std::fs::set_permissions(&bearer_file, std::fs::Permissions::from_mode(0o600)).unwrap();
     let conflicting = harness
         .command(&["daemon", "status"])
-        .env("ABBEYD_BEARER_TOKEN", wrong_bearer)
-        .env("ABBEYD_BEARER_TOKEN_FILE", &bearer_file)
+        .env(edition::ACTIVE.daemon_bearer_env(), wrong_bearer)
+        .env(edition::ACTIVE.daemon_bearer_file_env(), &bearer_file)
         .output()
         .expect("run daemon command with conflicting bearer sources");
     assert!(!conflicting.status.success());

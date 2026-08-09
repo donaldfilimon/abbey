@@ -42,7 +42,7 @@ impl AppService {
 
 impl Default for AppService {
     fn default() -> Self {
-        Self::new(AppContext::standard())
+        Self::new(AppContext::active())
     }
 }
 

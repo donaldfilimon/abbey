@@ -6,7 +6,8 @@
 //! hand; encoding it means a regression fails the gate instead of surviving
 //! until someone re-checks manually.
 //!
-//! Every test runs against a throwaway `ABBEY_STATE_DIR` so nothing touches the
+//! Every test runs against a throwaway state dir (this edition's own state
+//! variable, `edition::ACTIVE.state_dir_env()`) so nothing touches the
 //! developer's real chat id, memory store, or route log. Nothing here spawns
 //! cursor-agent — only local surfaces are exercised.
 
@@ -42,7 +43,7 @@ impl Drop for Scratch {
 fn run(scratch: &Scratch, args: &[&str]) -> (i32, String, String) {
     let out = Command::new(BIN)
         .args(args)
-        .env("ABBEY_STATE_DIR", &scratch.0)
+        .env(abbey::edition::ACTIVE.state_dir_env(), &scratch.0)
         .output()
         .expect("spawn abbey");
     (
@@ -167,7 +168,7 @@ fn closing_a_pipe_early_is_not_an_error() {
     let s = Scratch::new("sigpipe");
     let mut producer = Command::new(BIN)
         .args(["claims"])
-        .env("ABBEY_STATE_DIR", &s.0)
+        .env(abbey::edition::ACTIVE.state_dir_env(), &s.0)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()

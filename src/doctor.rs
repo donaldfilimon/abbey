@@ -514,6 +514,9 @@ pub fn cmd_doctor(state: &AbbeyState, cfg: &AgentConfig) -> Result<i32> {
     for line in build_info::lines() {
         let _ = output::println(line);
     }
+    for line in crate::edition::identity_lines(&state.state_dir) {
+        let _ = output::println(line);
+    }
     let lines = [
         format!("agent:     {}", cfg.agent_path.display()),
         format!("agent ver: {}", cfg.agent_version()),

@@ -58,6 +58,15 @@ cargo clippy --features wdbx --all-targets -- -D warnings
 echo "== test (--features wdbx) =="
 cargo test --features wdbx
 
+# The personal edition is a compile-time cfg: its identity table, path
+# resolution, and isolation tests are invisible to the default-feature runs
+# above. Gate it explicitly or the separated edition rots unnoticed.
+echo "== clippy (--features personal-edition) =="
+cargo clippy --features personal-edition --all-targets -- -D warnings
+
+echo "== test (--features personal-edition) =="
+cargo test --features personal-edition
+
 echo "== claims/docs synchronization =="
 python3 -m unittest discover -s tools/tests -p 'test_*.py'
 python3 tools/check_claims_sync.py

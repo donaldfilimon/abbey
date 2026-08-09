@@ -66,14 +66,19 @@ pub struct DaemonConfig {
 impl DaemonConfig {
     /// Load a fail-closed daemon configuration.
     ///
-    /// `ABBEYD_BEARER_TOKEN` and `ABBEYD_BEARER_TOKEN_FILE` are mutually
-    /// exclusive. Private key material is never read from Abbey's TOML config.
+    /// The inline-token and token-file variables are mutually exclusive.
+    /// Private key material is never read from Abbey's TOML config.
+    ///
+    /// The variable *names* belong to the active edition (safe:
+    /// `ABBEYD_BEARER_TOKEN` / `ABBEYD_BEARER_TOKEN_FILE`), so one exported
+    /// bearer secret never authenticates against the other edition's daemon.
     pub fn from_env() -> Result<Self, ConfigError> {
-        let socket_path = std::env::var_os("ABBEYD_SOCKET_PATH")
+        let edition = crate::edition::ACTIVE;
+        let socket_path = std::env::var_os(edition.daemon_socket_env())
             .map(PathBuf::from)
             .unwrap_or_else(default_socket_path);
-        let bearer_env = std::env::var_os("ABBEYD_BEARER_TOKEN");
-        let bearer_file = std::env::var_os("ABBEYD_BEARER_TOKEN_FILE");
+        let bearer_env = std::env::var_os(edition.daemon_bearer_env());
+        let bearer_file = std::env::var_os(edition.daemon_bearer_file_env());
 
         let bearer = match (bearer_env, bearer_file) {
             (Some(_), Some(_)) => return Err(ConfigError::ConflictingBearerSources),
@@ -112,9 +117,17 @@ impl DaemonConfig {
 
 #[derive(Debug, Error)]
 pub enum ConfigError {
-    #[error("set exactly one of ABBEYD_BEARER_TOKEN or ABBEYD_BEARER_TOKEN_FILE")]
+    #[error(
+        "set exactly one of {} or {}",
+        crate::edition::ACTIVE.daemon_bearer_env(),
+        crate::edition::ACTIVE.daemon_bearer_file_env()
+    )]
     MissingBearer,
-    #[error("ABBEYD_BEARER_TOKEN and ABBEYD_BEARER_TOKEN_FILE cannot both be set")]
+    #[error(
+        "{} and {} cannot both be set",
+        crate::edition::ACTIVE.daemon_bearer_env(),
+        crate::edition::ACTIVE.daemon_bearer_file_env()
+    )]
     ConflictingBearerSources,
     #[error("daemon bearer token must be valid UTF-8")]
     BearerNotUtf8,
@@ -141,13 +154,15 @@ pub enum ConfigError {
 }
 
 fn default_socket_path() -> PathBuf {
-    if let Some(root) = std::env::var_os("ABBEY_STATE_DIR") {
-        return PathBuf::from(root).join("daemon/abbeyd.sock");
+    let edition = crate::edition::ACTIVE;
+    if let Some(root) = std::env::var_os(edition.state_dir_env()) {
+        return edition.daemon_socket_path(Path::new(&root));
     }
-    dirs::state_dir()
+    let root = dirs::state_dir()
         .or_else(dirs::data_local_dir)
         .unwrap_or_else(std::env::temp_dir)
-        .join("abbey/daemon/abbeyd.sock")
+        .join(edition.slug());
+    edition.daemon_socket_path(&root)
 }
 
 fn trim_line_ending(mut bytes: &[u8]) -> &[u8] {
