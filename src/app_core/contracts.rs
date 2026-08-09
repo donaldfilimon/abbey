@@ -1,13 +1,20 @@
 //! Stable serializable types at Abbey's application boundary.
 
-use super::RunId;
+use super::{
+    RunEventPage, RunEventsQuery, RunId, RunQuery, RunRequest, RunRouteCapability, RunSnapshot,
+    RunSubmission,
+};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-/// Version of the command/event exchange protocol.
-pub const APP_PROTOCOL_VERSION: u16 = 1;
-/// Version of the serialized application-state schema.
-pub const APP_SCHEMA_VERSION: u16 = 1;
+/// Original read-only Status/Claims command/event protocol.
+pub const APP_PROTOCOL_V1: u16 = 1;
+/// Original read-only serialized application-state schema.
+pub const APP_SCHEMA_V1: u16 = 1;
+/// Current command/event exchange protocol.
+pub const APP_PROTOCOL_VERSION: u16 = 2;
+/// Current serialized application-state schema.
+pub const APP_SCHEMA_VERSION: u16 = 2;
 
 const MAX_CLAIMS_FILTER_BYTES: usize = 256;
 const MAX_APPROVAL_SUMMARY_BYTES: usize = 1_024;
@@ -28,10 +35,19 @@ pub enum Edition {
 
 /// Commands accepted by the initial shared application service.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "type", content = "payload", rename_all = "snake_case")]
+#[serde(
+    tag = "type",
+    content = "payload",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
 pub enum AppCommand {
     Status,
     Claims(ClaimsQuery),
+    SubmitRun(RunRequest),
+    GetRun(RunQuery),
+    CancelRun(RunQuery),
+    RunEvents(RunEventsQuery),
 }
 
 impl AppCommand {
@@ -39,17 +55,55 @@ impl AppCommand {
         match self {
             Self::Status => Ok(()),
             Self::Claims(query) => query.validate(),
+            Self::SubmitRun(request) => request.validate(),
+            Self::GetRun(query) | Self::CancelRun(query) => query.validate(),
+            Self::RunEvents(query) => query.validate(),
+        }
+    }
+
+    /// Lowest application protocol version that can carry this command.
+    #[must_use]
+    pub const fn minimum_protocol_version(&self) -> u16 {
+        match self {
+            Self::Status | Self::Claims(_) => APP_PROTOCOL_V1,
+            Self::SubmitRun(_) | Self::GetRun(_) | Self::CancelRun(_) | Self::RunEvents(_) => {
+                APP_PROTOCOL_VERSION
+            }
         }
     }
 }
 
 /// Events emitted by the presentation-neutral application service.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "type", content = "payload", rename_all = "snake_case")]
+#[serde(
+    tag = "type",
+    content = "payload",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
 pub enum AppEvent {
     Status(RuntimeStatus),
     Claims(ClaimsSnapshot),
     ApprovalRequested(ApprovalRequest),
+    RunSubmitted(RunSubmission),
+    RunStatus(RunSnapshot),
+    CancellationAcknowledged(RunSnapshot),
+    RunEvents(RunEventPage),
+}
+
+impl AppEvent {
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        match self {
+            Self::Status(status) => status.validate(),
+            Self::Claims(snapshot) => snapshot.validate(),
+            Self::ApprovalRequested(request) => request.validate(),
+            Self::RunSubmitted(submission) => submission.validate(),
+            Self::RunStatus(snapshot) | Self::CancellationAcknowledged(snapshot) => {
+                snapshot.validate()
+            }
+            Self::RunEvents(page) => page.validate(),
+        }
+    }
 }
 
 /// Runtime state exposed without process or user-state details.
@@ -71,6 +125,33 @@ pub struct RuntimeStatus {
     pub build_git: String,
     pub build_target: String,
     pub capabilities: CapabilitySet,
+    /// Startup-bound execution routes. Empty and omitted for protocol v1.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub run_routes: Vec<RunRouteCapability>,
+}
+
+impl RuntimeStatus {
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        self.capabilities.validate()?;
+        if self
+            .run_routes
+            .windows(2)
+            .any(|pair| pair[0].backend >= pair[1].backend)
+        {
+            return Err(ValidationError::new(
+                "run routes must be strictly ordered and duplicate-free",
+            ));
+        }
+        for route in &self.run_routes {
+            route.validate()?;
+        }
+        if self.capabilities.contains(AppCapability::SubmitRun) != !self.run_routes.is_empty() {
+            return Err(ValidationError::new(
+                "run submission capability and configured routes are inconsistent",
+            ));
+        }
+        Ok(())
+    }
 }
 
 /// Application operations granted by this edition.
@@ -79,6 +160,10 @@ pub struct RuntimeStatus {
 pub enum AppCapability {
     ReadStatus,
     ReadClaims,
+    ReadRun,
+    ReadRunEvents,
+    SubmitRun,
+    CancelRun,
 }
 
 /// Ordered, duplicate-free capability declaration.
@@ -94,6 +179,31 @@ impl CapabilitySet {
         Self {
             capabilities: vec![AppCapability::ReadStatus, AppCapability::ReadClaims],
         }
+    }
+
+    /// Complete Phase 4B.2 operation set. Configured routes remain a separate,
+    /// strictly bounded declaration on [`RuntimeStatus`].
+    #[must_use]
+    pub fn runtime_v2() -> Self {
+        Self::runtime_v2_for_routes(true)
+    }
+
+    /// Phase 4B.2 operations available for the startup-bound route set.
+    /// Submission is advertised only when at least one executable route exists;
+    /// durable reads and cancellation remain available without a provider.
+    #[must_use]
+    pub fn runtime_v2_for_routes(has_routes: bool) -> Self {
+        let mut capabilities = vec![
+            AppCapability::ReadStatus,
+            AppCapability::ReadClaims,
+            AppCapability::ReadRun,
+            AppCapability::ReadRunEvents,
+        ];
+        if has_routes {
+            capabilities.push(AppCapability::SubmitRun);
+        }
+        capabilities.push(AppCapability::CancelRun);
+        Self { capabilities }
     }
 
     #[must_use]
@@ -172,6 +282,17 @@ pub struct ClaimsSnapshot {
     pub matched: usize,
 }
 
+impl ClaimsSnapshot {
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        if self.matched != self.claims.len() {
+            return Err(ValidationError::new(
+                "claims snapshot matched count is inconsistent",
+            ));
+        }
+        Ok(())
+    }
+}
+
 /// Sensitive operation class shown to a user before any future execution.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -246,6 +367,13 @@ mod tests {
                 "payload": {"status": "current", "contains": "memory"}
             })
         );
+        assert!(
+            serde_json::from_value::<AppCommand>(serde_json::json!({
+                "type": "status",
+                "extra": true
+            }))
+            .is_err()
+        );
     }
 
     #[test]
@@ -260,6 +388,14 @@ mod tests {
                 "type": "claims",
                 "payload": {"claims": [], "matched": 0}
             })
+        );
+        assert!(
+            serde_json::from_value::<AppEvent>(serde_json::json!({
+                "type": "claims",
+                "payload": {"claims": [], "matched": 0},
+                "extra": true
+            }))
+            .is_err()
         );
     }
 
@@ -286,6 +422,76 @@ mod tests {
         assert_eq!(
             capabilities.as_slice(),
             &[AppCapability::ReadStatus, AppCapability::ReadClaims]
+        );
+    }
+
+    #[test]
+    fn runtime_capabilities_and_routes_are_strictly_ordered() {
+        let capabilities = CapabilitySet::runtime_v2();
+        capabilities.validate().unwrap();
+        assert_eq!(
+            capabilities.as_slice(),
+            &[
+                AppCapability::ReadStatus,
+                AppCapability::ReadClaims,
+                AppCapability::ReadRun,
+                AppCapability::ReadRunEvents,
+                AppCapability::SubmitRun,
+                AppCapability::CancelRun,
+            ]
+        );
+
+        let status = RuntimeStatus {
+            protocol_version: APP_PROTOCOL_VERSION,
+            schema_version: APP_SCHEMA_VERSION,
+            edition: Edition::Standard,
+            state: RuntimeState::Ready,
+            version: "test".into(),
+            build_git: "test".into(),
+            build_target: "test".into(),
+            capabilities,
+            run_routes: vec![
+                RunRouteCapability {
+                    backend: crate::app_core::BackendSelection::Abi,
+                    modes: vec![
+                        crate::app_core::RunMode::OneShot,
+                        crate::app_core::RunMode::Background,
+                    ],
+                },
+                RunRouteCapability {
+                    backend: crate::app_core::BackendSelection::FoundationModels,
+                    modes: vec![
+                        crate::app_core::RunMode::OneShot,
+                        crate::app_core::RunMode::Background,
+                    ],
+                },
+            ],
+        };
+        status.validate().unwrap();
+
+        let mut invalid = status;
+        invalid.run_routes.reverse();
+        assert!(invalid.validate().is_err());
+    }
+
+    #[test]
+    fn runtime_without_routes_omits_only_submission_authority() {
+        let capabilities = CapabilitySet::runtime_v2_for_routes(false);
+        capabilities.validate().unwrap();
+        assert_eq!(
+            capabilities.as_slice(),
+            &[
+                AppCapability::ReadStatus,
+                AppCapability::ReadClaims,
+                AppCapability::ReadRun,
+                AppCapability::ReadRunEvents,
+                AppCapability::CancelRun,
+            ]
+        );
+        assert!(!capabilities.contains(AppCapability::SubmitRun));
+        assert_eq!(
+            CapabilitySet::runtime_v2_for_routes(true),
+            CapabilitySet::runtime_v2()
         );
     }
 }

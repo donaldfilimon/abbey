@@ -1,5 +1,7 @@
 use super::*;
-use crate::app_core::{BackendSelection, IdempotencyKey, RunMode};
+use crate::app_core::{
+    BackendSelection, IdempotencyKey, RunCancellationReason, RunLifecycleEvent, RunMode,
+};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64};
@@ -206,6 +208,14 @@ fn terminal<E: Executor, C: Clock>(manager: &RunManager<E, C>, id: &RunId) -> Ru
         .expect("run exists")
 }
 
+fn projected_cancellation_reason(store: &RuntimeStore, id: &RunId) -> RunCancellationReason {
+    let page = store.run_events_page(id, 0, None, 16).unwrap();
+    match page.events.last().map(|record| &record.event) {
+        Some(RunLifecycleEvent::Cancelled { reason }) => *reason,
+        other => panic!("expected projected cancellation event, found {other:?}"),
+    }
+}
+
 #[test]
 fn queue_capacity_is_clamped_small() {
     assert_eq!(
@@ -271,12 +281,16 @@ fn idempotency_digest_is_computed_from_the_validated_request() {
 
 #[test]
 fn queued_cancellation_is_terminal_without_execution() {
-    let (_scratch, _store, executor, manager) = manager("queued-cancel", 2);
+    let (_scratch, store, executor, manager) = manager("queued-cancel", 2);
     let blocker = manager.submit(request("blocker", "block")).unwrap();
     executor.wait_until_entered("block");
     let queued = manager.submit(request("queued", "never-execute")).unwrap();
     let cancelled = manager.cancel(&queued.run.id).unwrap();
     assert_eq!(cancelled.status, RunState::Cancelled);
+    assert_eq!(
+        projected_cancellation_reason(&store, &queued.run.id),
+        RunCancellationReason::Requested
+    );
     executor.release();
     assert_eq!(
         terminal(&manager, &blocker.run.id).status,
@@ -446,6 +460,14 @@ fn shutdown_cancels_running_and_queued_work_before_returning() {
     assert_eq!(
         store.get_run(&queued.run.id).unwrap().unwrap().status,
         RunState::Cancelled
+    );
+    assert_eq!(
+        projected_cancellation_reason(&store, &active.run.id),
+        RunCancellationReason::ManagerShutdown
+    );
+    assert_eq!(
+        projected_cancellation_reason(&store, &queued.run.id),
+        RunCancellationReason::ManagerShutdown
     );
     assert_eq!(executor.calls_for("never-execute"), 0);
 }

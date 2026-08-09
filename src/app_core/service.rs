@@ -36,6 +36,10 @@ impl AppService {
         match command {
             AppCommand::Status => Ok(AppEvent::Status(self.context.status().clone())),
             AppCommand::Claims(query) => Ok(AppEvent::Claims(claims_snapshot(&query))),
+            AppCommand::SubmitRun(_)
+            | AppCommand::GetRun(_)
+            | AppCommand::CancelRun(_)
+            | AppCommand::RunEvents(_) => Err(AppServiceError::NotPermitted),
         }
     }
 }
@@ -121,8 +125,8 @@ mod tests {
         let AppEvent::Status(status) = event else {
             panic!("expected status event");
         };
-        assert_eq!(status.protocol_version, super::super::APP_PROTOCOL_VERSION);
-        assert_eq!(status.schema_version, super::super::APP_SCHEMA_VERSION);
+        assert_eq!(status.protocol_version, super::super::APP_PROTOCOL_V1);
+        assert_eq!(status.schema_version, super::super::APP_SCHEMA_V1);
         assert_eq!(status.capabilities.as_slice().len(), 2);
     }
 

@@ -255,7 +255,7 @@ impl<E: Executor, C: Clock> RunManager<E, C> {
                     run_id,
                     RunState::Queued,
                     RunState::Cancelled,
-                    event(&self.shared, "run_cancelled", None, None),
+                    cancellation_event(&self.shared, CancellationReason::Requested),
                 ),
                 RunState::Starting | RunState::Running => self.shared.store.transition_run(
                     run_id,
@@ -353,7 +353,7 @@ fn worker_entry<E: Executor, C: Clock>(
         || -> Result<(), ManagerError> {
             while let Ok(item) = receiver.recv() {
                 if shared.shutting_down.load(Ordering::Acquire) {
-                    cancel_queued(&shared, &item.run_id, "manager_shutdown")?;
+                    cancel_queued(&shared, &item.run_id, CancellationReason::ManagerShutdown)?;
                     continue;
                 }
                 execute_item(&shared, executor.as_ref(), item)?;
@@ -457,7 +457,7 @@ fn settle_attempt<C: Clock>(
                 if cancelling {
                     (
                         RunState::Cancelled,
-                        event(shared, "run_cancelled", None, None),
+                        cancellation_event(shared, cancellation_reason(shared, record.status)),
                     )
                 } else {
                     (
@@ -516,7 +516,7 @@ fn finish_cancelled<C: Clock>(shared: &Shared<C>, run_id: &RunId) -> Result<(), 
             run_id,
             record.status,
             RunState::Cancelled,
-            event(shared, "run_cancelled", None, None),
+            cancellation_event(shared, cancellation_reason(shared, record.status)),
         ) {
             Ok(_) => return Ok(()),
             Err(StoreError::UnexpectedStatus { .. }) => continue,
@@ -529,13 +529,13 @@ fn finish_cancelled<C: Clock>(shared: &Shared<C>, run_id: &RunId) -> Result<(), 
 fn cancel_queued<C: Clock>(
     shared: &Shared<C>,
     run_id: &RunId,
-    reason: &str,
+    reason: CancellationReason,
 ) -> Result<(), ManagerError> {
     let transition = shared.store.transition_run(
         run_id,
         RunState::Queued,
         RunState::Cancelled,
-        event(shared, "run_cancelled", Some("reason"), Some(reason)),
+        cancellation_event(shared, reason),
     );
     match transition {
         Ok(_) | Err(StoreError::TerminalRun { .. }) => {}
@@ -669,6 +669,38 @@ fn failure_event<C: Clock>(shared: &Shared<C>, code: &str, message: &str) -> New
         kind: "run_failed".into(),
         payload: Value::Object(payload),
     }
+}
+
+#[derive(Clone, Copy)]
+enum CancellationReason {
+    Requested,
+    ManagerShutdown,
+}
+
+impl CancellationReason {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Requested => "requested",
+            Self::ManagerShutdown => "manager_shutdown",
+        }
+    }
+}
+
+fn cancellation_reason<C: Clock>(shared: &Shared<C>, state: RunState) -> CancellationReason {
+    if shared.shutting_down.load(Ordering::Acquire) && state != RunState::CancelRequested {
+        CancellationReason::ManagerShutdown
+    } else {
+        CancellationReason::Requested
+    }
+}
+
+fn cancellation_event<C: Clock>(shared: &Shared<C>, reason: CancellationReason) -> NewRunEvent {
+    event(
+        shared,
+        "run_cancelled",
+        Some("reason"),
+        Some(reason.as_str()),
+    )
 }
 
 fn interrupt_admitted<C: Clock>(shared: &Shared<C>) -> Result<(), ManagerError> {

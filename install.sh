@@ -51,7 +51,7 @@ if [ -f "$DAEMON_BIN" ]; then
   chmod 755 "$STAGED_DAEMON"
   mv -f "$STAGED_DAEMON" "$DEST_DIR/$EDITION_DAEMON"
   STAGED_DAEMON=""
-  echo "installed: $DEST_DIR/$EDITION_DAEMON (read-only Unix daemon; explicit bearer required)"
+  echo "installed: $DEST_DIR/$EDITION_DAEMON (authenticated Unix daemon; bounded run control)"
 fi
 
 write_completion() {

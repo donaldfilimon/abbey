@@ -537,8 +537,8 @@ mod tests {
 
     #[test]
     fn gate_has_all_five_statuses() {
-        assert_eq!(CLAIMS.len(), 41);
-        assert_eq!(by_status(Status::Current).count(), 26);
+        assert_eq!(CLAIMS.len(), 42);
+        assert_eq!(by_status(Status::Current).count(), 27);
         assert_eq!(by_status(Status::Partial).count(), 1);
         assert_eq!(by_status(Status::Proposed).count(), 8);
         assert_eq!(by_status(Status::Blocked).count(), 1);
@@ -666,6 +666,23 @@ mod tests {
         assert!(daemon.note.contains("abbey daemon status|claims"));
         assert!(daemon.note.contains("read-only"));
         assert!(daemon.note.contains("not implemented"));
+
+        let bounded_runs = CLAIMS
+            .iter()
+            .find(|claim| claim.id == "daemon-protocol-v2-bounded-runs")
+            .expect("bounded protocol-v2 run claim");
+        assert_eq!(bounded_runs.status, Status::Current);
+        assert!(bounded_runs.note.contains("startup-bound"));
+        assert!(
+            bounded_runs
+                .note
+                .contains("Requests cannot select executables")
+        );
+        assert!(
+            bounded_runs
+                .note
+                .contains("Windows named pipes/Job Objects")
+        );
 
         let owned_runtime = CLAIMS
             .iter()

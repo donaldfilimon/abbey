@@ -7,6 +7,9 @@ use thiserror::Error;
 pub const DEFAULT_MAX_FRAME_LEN: usize = 64 * 1024;
 const MIN_BEARER_LEN: usize = 32;
 const MAX_BEARER_LEN: usize = 4096;
+const MAX_AUTHENTICATED_REQUESTS: u16 = 1_024;
+const MIN_RATE_WINDOW: Duration = Duration::from_millis(10);
+const MAX_RATE_WINDOW: Duration = Duration::from_secs(60);
 
 /// Authentication material whose `Debug` implementation is always redacted.
 #[derive(Clone)]
@@ -53,6 +56,34 @@ impl fmt::Debug for BearerSecret {
     }
 }
 
+/// Fixed-memory rate limit applied only after successful authentication.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AuthenticatedRateLimit {
+    pub(crate) requests: u16,
+    pub(crate) window: Duration,
+}
+
+impl AuthenticatedRateLimit {
+    pub fn new(requests: u16, window: Duration) -> Result<Self, ConfigError> {
+        if requests == 0
+            || requests > MAX_AUTHENTICATED_REQUESTS
+            || !(MIN_RATE_WINDOW..=MAX_RATE_WINDOW).contains(&window)
+        {
+            return Err(ConfigError::InvalidRateLimit);
+        }
+        Ok(Self { requests, window })
+    }
+}
+
+impl Default for AuthenticatedRateLimit {
+    fn default() -> Self {
+        Self {
+            requests: 64,
+            window: Duration::from_secs(1),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct DaemonConfig {
     pub socket_path: PathBuf,
@@ -61,9 +92,25 @@ pub struct DaemonConfig {
     pub read_timeout: Duration,
     pub write_timeout: Duration,
     pub accept_poll_interval: Duration,
+    pub authenticated_rate_limit: AuthenticatedRateLimit,
 }
 
 impl DaemonConfig {
+    /// Construct a local IPC configuration from already-validated bearer
+    /// material using the same bounded production defaults as [`Self::from_env`].
+    #[must_use]
+    pub fn local(socket_path: impl Into<PathBuf>, bearer: BearerSecret) -> Self {
+        Self {
+            socket_path: socket_path.into(),
+            bearer,
+            max_frame_len: DEFAULT_MAX_FRAME_LEN,
+            read_timeout: Duration::from_secs(5),
+            write_timeout: Duration::from_secs(5),
+            accept_poll_interval: Duration::from_millis(25),
+            authenticated_rate_limit: AuthenticatedRateLimit::default(),
+        }
+    }
+
     /// Load a fail-closed daemon configuration.
     ///
     /// The inline-token and token-file variables are mutually exclusive.
@@ -99,19 +146,20 @@ impl DaemonConfig {
             read_timeout: Duration::from_secs(5),
             write_timeout: Duration::from_secs(5),
             accept_poll_interval: Duration::from_millis(25),
+            authenticated_rate_limit: AuthenticatedRateLimit::default(),
         })
     }
 
     #[cfg(test)]
     pub(crate) fn for_test(socket_path: PathBuf, bearer: &[u8]) -> Self {
-        Self {
+        let mut config = Self::local(
             socket_path,
-            bearer: BearerSecret::parse(bearer).expect("valid test bearer"),
-            max_frame_len: DEFAULT_MAX_FRAME_LEN,
-            read_timeout: Duration::from_millis(300),
-            write_timeout: Duration::from_millis(300),
-            accept_poll_interval: Duration::from_millis(5),
-        }
+            BearerSecret::parse(bearer).expect("valid test bearer"),
+        );
+        config.read_timeout = Duration::from_millis(300);
+        config.write_timeout = Duration::from_millis(300);
+        config.accept_poll_interval = Duration::from_millis(5);
+        config
     }
 }
 
@@ -135,6 +183,8 @@ pub enum ConfigError {
     BearerLength,
     #[error("daemon bearer token must not contain control characters")]
     BearerControlCharacter,
+    #[error("authenticated daemon rate limit is outside its supported bounds")]
+    InvalidRateLimit,
     #[error("bearer file must be a regular file, not a symlink: {0}")]
     BearerFileType(PathBuf),
     #[error("bearer file must be owned by the current user: {0}")]
@@ -215,6 +265,15 @@ mod tests {
         let secret = BearerSecret::parse(b"0123456789abcdef0123456789abcdef").unwrap();
         let rendered = format!("{secret:?}");
         assert_eq!(rendered, "BearerSecret([REDACTED])");
+    }
+
+    #[test]
+    fn authenticated_rate_limit_is_bounded() {
+        assert!(AuthenticatedRateLimit::new(0, Duration::from_secs(1)).is_err());
+        assert!(AuthenticatedRateLimit::new(1_025, Duration::from_secs(1)).is_err());
+        assert!(AuthenticatedRateLimit::new(1, Duration::from_millis(9)).is_err());
+        assert!(AuthenticatedRateLimit::new(1, Duration::from_secs(61)).is_err());
+        assert!(AuthenticatedRateLimit::new(1, Duration::from_secs(1)).is_ok());
     }
 
     #[cfg(unix)]

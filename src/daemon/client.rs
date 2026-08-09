@@ -7,11 +7,14 @@ use std::path::PathBuf;
 use thiserror::Error;
 
 use crate::app_core::{
-    APP_PROTOCOL_VERSION, APP_SCHEMA_VERSION, AppCommand, AppEvent, CapabilitySet, ClaimsSnapshot,
-    RuntimeStatus,
+    APP_PROTOCOL_V1, APP_PROTOCOL_VERSION, APP_SCHEMA_V1, APP_SCHEMA_VERSION, AppCommand, AppEvent,
+    CapabilitySet, ClaimsSnapshot, RuntimeStatus,
 };
 
-use super::{DaemonConfig, PROTOCOL_VERSION, RequestEnvelope, ResponseEnvelope, ResponsePayload};
+use super::{
+    CURRENT_PROTOCOL_VERSION, DaemonConfig, PROTOCOL_VERSION, RequestEnvelope, ResponseEnvelope,
+    ResponsePayload,
+};
 
 /// Object-oriented client for one configured Abbey daemon installation.
 #[derive(Clone)]
@@ -25,10 +28,22 @@ impl DaemonClient {
         Self { config }
     }
 
-    /// Send one typed, read-only application command.
+    /// Send one typed application command using the newest protocol.
+    ///
+    /// Read-only v1 commands may retry once when an older daemon explicitly
+    /// reports `unsupported_version`. Mutating v2 commands are never
+    /// downgraded or replayed automatically.
     #[cfg(unix)]
     pub fn request(&self, command: AppCommand) -> Result<AppEvent, ClientError> {
-        unix::request(&self.config, command)
+        let may_downgrade = command.minimum_protocol_version() == APP_PROTOCOL_V1;
+        match unix::request(&self.config, command.clone(), CURRENT_PROTOCOL_VERSION) {
+            Err(ClientError::Daemon { code, .. })
+                if may_downgrade && code == "unsupported_version" =>
+            {
+                unix::request(&self.config, command, PROTOCOL_VERSION)
+            }
+            result => result,
+        }
     }
 
     /// Windows remains fail-closed until the named-pipe transport lands.
@@ -90,6 +105,8 @@ pub enum ClientError {
     InvalidRuntimeStatus(&'static str),
     #[error("abbeyd returned an inconsistent claims snapshot")]
     InvalidClaimsSnapshot,
+    #[error("abbeyd returned an invalid or mismatched run response")]
+    InvalidRunResponse,
     #[error("abbeyd rejected the request ({code}): {message}")]
     Daemon { code: String, message: String },
     #[error("abbeyd connection worker stopped unexpectedly")]
@@ -108,12 +125,13 @@ mod unix {
     pub(super) fn request(
         config: &DaemonConfig,
         command: AppCommand,
+        version: u16,
     ) -> Result<AppEvent, ClientError> {
         let expected_event = ExpectedEvent::for_command(&command);
         let request_id = uuid::Uuid::new_v4().to_string();
         let bearer = config.bearer.as_str().to_owned();
         let request = RequestEnvelope {
-            version: PROTOCOL_VERSION,
+            version,
             request_id: request_id.clone(),
             bearer,
             command,
@@ -139,28 +157,56 @@ mod unix {
             .map_err(ClientError::Write)?;
 
         let response = read_response(&mut stream, config.max_frame_len)?;
-        if response.version != PROTOCOL_VERSION {
-            return Err(ClientError::ProtocolMismatch {
-                expected: PROTOCOL_VERSION,
-                received: response.version,
-            });
-        }
         if response.request_id != request_id {
             return Err(ClientError::RequestIdMismatch);
         }
+        if response.version != version {
+            if version == CURRENT_PROTOCOL_VERSION
+                && response.version == PROTOCOL_VERSION
+                && matches!(
+                    &response.payload,
+                    ResponsePayload::Error { code, .. } if code == "unsupported_version"
+                )
+            {
+                return Err(response_error(response.payload, config));
+            }
+            return Err(ClientError::ProtocolMismatch {
+                expected: version,
+                received: response.version,
+            });
+        }
         match response.payload {
-            ResponsePayload::Ok { event } => validate_event(expected_event, event),
-            ResponsePayload::Error { code, message } => Err(ClientError::Daemon {
-                code: redact_bearer(code, config.bearer.as_str()),
-                message: redact_bearer(message, config.bearer.as_str()),
-            }),
+            ResponsePayload::Ok { event } => validate_event(expected_event, event, version),
+            payload @ ResponsePayload::Error { .. } => Err(response_error(payload, config)),
         }
     }
 
-    #[derive(Clone, Copy)]
+    fn response_error(payload: ResponsePayload, config: &DaemonConfig) -> ClientError {
+        let ResponsePayload::Error { code, message } = payload else {
+            return ClientError::MalformedResponse;
+        };
+        ClientError::Daemon {
+            code: redact_bearer(code, config.bearer.as_str()),
+            message: redact_bearer(message, config.bearer.as_str()),
+        }
+    }
+
+    #[derive(Clone)]
     enum ExpectedEvent {
         Status,
         Claims,
+        RunSubmitted {
+            idempotency_key: crate::app_core::IdempotencyKey,
+            conversation_id: Option<crate::app_core::ConversationId>,
+        },
+        RunStatus(crate::app_core::RunId),
+        Cancellation(crate::app_core::RunId),
+        RunEvents {
+            run_id: crate::app_core::RunId,
+            after_sequence: u64,
+            through_sequence: Option<u64>,
+            limit: u16,
+        },
     }
 
     impl ExpectedEvent {
@@ -168,6 +214,18 @@ mod unix {
             match command {
                 AppCommand::Status => Self::Status,
                 AppCommand::Claims(_) => Self::Claims,
+                AppCommand::SubmitRun(request) => Self::RunSubmitted {
+                    idempotency_key: request.idempotency_key.clone(),
+                    conversation_id: request.conversation_id.clone(),
+                },
+                AppCommand::GetRun(query) => Self::RunStatus(query.run_id.clone()),
+                AppCommand::CancelRun(query) => Self::Cancellation(query.run_id.clone()),
+                AppCommand::RunEvents(query) => Self::RunEvents {
+                    run_id: query.run_id.clone(),
+                    after_sequence: query.after_sequence,
+                    through_sequence: query.through_sequence,
+                    limit: query.limit,
+                },
             }
         }
 
@@ -175,14 +233,69 @@ mod unix {
             match self {
                 Self::Status => "status event",
                 Self::Claims => "claims event",
+                Self::RunSubmitted { .. } => "run submitted event",
+                Self::RunStatus(_) => "run status event",
+                Self::Cancellation(_) => "cancellation acknowledgement",
+                Self::RunEvents { .. } => "run events page",
             }
         }
     }
 
-    fn validate_event(expected: ExpectedEvent, event: AppEvent) -> Result<AppEvent, ClientError> {
-        match (expected, &event) {
-            (ExpectedEvent::Status, AppEvent::Status(status)) => validate_status(status)?,
+    fn validate_event(
+        expected: ExpectedEvent,
+        event: AppEvent,
+        version: u16,
+    ) -> Result<AppEvent, ClientError> {
+        match (&expected, &event) {
+            (ExpectedEvent::Status, AppEvent::Status(status)) => validate_status(status, version)?,
             (ExpectedEvent::Claims, AppEvent::Claims(snapshot)) => validate_claims(snapshot)?,
+            (
+                ExpectedEvent::RunSubmitted {
+                    idempotency_key,
+                    conversation_id,
+                },
+                AppEvent::RunSubmitted(submission),
+            ) => {
+                submission
+                    .validate()
+                    .map_err(|_| ClientError::InvalidRunResponse)?;
+                if &submission.run.idempotency_key != idempotency_key
+                    || &submission.run.conversation_id != conversation_id
+                {
+                    return Err(ClientError::InvalidRunResponse);
+                }
+            }
+            (ExpectedEvent::RunStatus(expected_id), AppEvent::RunStatus(snapshot))
+            | (
+                ExpectedEvent::Cancellation(expected_id),
+                AppEvent::CancellationAcknowledged(snapshot),
+            ) => {
+                snapshot
+                    .validate()
+                    .map_err(|_| ClientError::InvalidRunResponse)?;
+                if &snapshot.run_id != expected_id {
+                    return Err(ClientError::InvalidRunResponse);
+                }
+            }
+            (
+                ExpectedEvent::RunEvents {
+                    run_id,
+                    after_sequence,
+                    through_sequence,
+                    limit,
+                },
+                AppEvent::RunEvents(page),
+            ) => {
+                page.validate()
+                    .map_err(|_| ClientError::InvalidRunResponse)?;
+                if &page.run_id != run_id
+                    || page.after_sequence != *after_sequence
+                    || through_sequence.is_some_and(|through| page.through_sequence != through)
+                    || page.events.len() > usize::from(*limit)
+                {
+                    return Err(ClientError::InvalidRunResponse);
+                }
+            }
             (_, received) => {
                 return Err(ClientError::UnexpectedEvent {
                     expected: expected.name(),
@@ -193,24 +306,45 @@ mod unix {
         Ok(event)
     }
 
-    fn validate_status(status: &RuntimeStatus) -> Result<(), ClientError> {
-        if status.protocol_version != APP_PROTOCOL_VERSION {
+    fn validate_status(status: &RuntimeStatus, version: u16) -> Result<(), ClientError> {
+        let (expected_protocol, expected_schema) = match version {
+            APP_PROTOCOL_V1 => (APP_PROTOCOL_V1, APP_SCHEMA_V1),
+            APP_PROTOCOL_VERSION => (APP_PROTOCOL_VERSION, APP_SCHEMA_VERSION),
+            _ => {
+                return Err(ClientError::InvalidRuntimeStatus(
+                    "unsupported application protocol version",
+                ));
+            }
+        };
+        if status.protocol_version != expected_protocol {
             return Err(ClientError::InvalidRuntimeStatus(
                 "application protocol version does not match",
             ));
         }
-        if status.schema_version != APP_SCHEMA_VERSION {
+        if status.schema_version != expected_schema {
             return Err(ClientError::InvalidRuntimeStatus(
                 "application schema version does not match",
             ));
         }
         status
-            .capabilities
             .validate()
             .map_err(|_| ClientError::InvalidRuntimeStatus("capability set is invalid"))?;
-        if status.capabilities != CapabilitySet::standard() {
+        if version == APP_PROTOCOL_V1
+            && (status.capabilities != CapabilitySet::standard() || !status.run_routes.is_empty())
+        {
             return Err(ClientError::InvalidRuntimeStatus(
                 "read-only capability set is not supported",
+            ));
+        }
+        if version == APP_PROTOCOL_VERSION
+            && status
+                .capabilities
+                .as_slice()
+                .iter()
+                .any(|capability| !CapabilitySet::runtime_v2().as_slice().contains(capability))
+        {
+            return Err(ClientError::InvalidRuntimeStatus(
+                "runtime capability set is not supported",
             ));
         }
         Ok(())
@@ -228,6 +362,10 @@ mod unix {
             AppEvent::Status(_) => "status event",
             AppEvent::Claims(_) => "claims event",
             AppEvent::ApprovalRequested(_) => "approval request",
+            AppEvent::RunSubmitted(_) => "run submitted event",
+            AppEvent::RunStatus(_) => "run status event",
+            AppEvent::CancellationAcknowledged(_) => "cancellation acknowledgement",
+            AppEvent::RunEvents(_) => "run events page",
         }
     }
 
@@ -284,8 +422,10 @@ mod tests {
 
     use super::*;
     use crate::app_core::{
-        AppEvent, AppService, ApprovalKind, ApprovalRequest, ClaimsQuery, ClaimsSnapshot, RunId,
-        RuntimeState,
+        AppContext, AppEvent, AppService, ApprovalKind, ApprovalRequest, BackendSelection,
+        ClaimsQuery, ClaimsSnapshot, ConversationId, IdempotencyKey, RunEventPage, RunEventRecord,
+        RunId, RunLifecycleEvent, RunMode, RunRequest, RunRouteCapability, RunSnapshot, RunState,
+        RunSubmission, RunSubmissionDisposition, RuntimeState,
     };
     use crate::daemon::{DaemonServer, Shutdown};
 
@@ -305,10 +445,75 @@ mod tests {
     }
 
     #[test]
+    fn read_only_request_downgrades_once_but_mutation_never_replays() {
+        let root = scratch_dir("downgrade");
+        let config = test_config(root.join("abbeyd.sock"));
+        let listener = UnixListener::bind(&config.socket_path).unwrap();
+        let thread = thread::spawn(move || {
+            let (mut first, _) = listener.accept().unwrap();
+            let first_request = read_request(&mut first);
+            assert_eq!(first_request.version, CURRENT_PROTOCOL_VERSION);
+            let unsupported = ResponseEnvelope::error_for(
+                PROTOCOL_VERSION,
+                first_request.request_id,
+                "unsupported_version",
+                "protocol version is unsupported",
+            );
+            first.write_all(&encoded_response(unsupported)).unwrap();
+
+            let (mut second, _) = listener.accept().unwrap();
+            let second_request = read_request(&mut second);
+            assert_eq!(second_request.version, PROTOCOL_VERSION);
+            let event = AppService::default()
+                .handle(second_request.command)
+                .unwrap();
+            second
+                .write_all(&encoded_response(ResponseEnvelope::ok_for(
+                    PROTOCOL_VERSION,
+                    second_request.request_id,
+                    event,
+                )))
+                .unwrap();
+        });
+        let event = DaemonClient::new(config)
+            .request(AppCommand::Status)
+            .unwrap();
+        assert!(
+            matches!(event, AppEvent::Status(status) if status.protocol_version == PROTOCOL_VERSION)
+        );
+        thread.join().unwrap();
+        std::fs::remove_dir_all(root).unwrap();
+
+        let (config, thread, root) = fake_server(|request| {
+            assert_eq!(request.version, CURRENT_PROTOCOL_VERSION);
+            encoded_response(ResponseEnvelope::error_for(
+                PROTOCOL_VERSION,
+                request.request_id,
+                "unsupported_version",
+                "protocol version is unsupported",
+            ))
+        });
+        let request = RunRequest {
+            idempotency_key: "mutation-no-replay".parse::<IdempotencyKey>().unwrap(),
+            conversation_id: None,
+            mode: RunMode::OneShot,
+            backend: BackendSelection::Abi,
+            input: "bounded request".into(),
+            labels: Vec::new(),
+        };
+        assert!(matches!(
+            DaemonClient::new(config).request(AppCommand::SubmitRun(request)),
+            Err(ClientError::Daemon { code, .. }) if code == "unsupported_version"
+        ));
+        thread.join().unwrap();
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn rejects_cross_kind_and_approval_events() {
         let (config, thread, root) = fake_server(|request| {
             encoded_response(ResponseEnvelope {
-                version: PROTOCOL_VERSION,
+                version: request.version,
                 request_id: request.request_id,
                 payload: ResponsePayload::Ok {
                     event: AppEvent::Claims(ClaimsSnapshot {
@@ -327,7 +532,7 @@ mod tests {
 
         let (config, thread, root) = fake_server(|request| {
             encoded_response(ResponseEnvelope {
-                version: PROTOCOL_VERSION,
+                version: request.version,
                 request_id: request.request_id,
                 payload: ResponsePayload::Ok {
                     event: AppService::default().handle(AppCommand::Status).unwrap(),
@@ -343,7 +548,7 @@ mod tests {
 
         let (config, thread, root) = fake_server(|request| {
             encoded_response(ResponseEnvelope {
-                version: PROTOCOL_VERSION,
+                version: request.version,
                 request_id: request.request_id,
                 payload: ResponsePayload::Ok {
                     event: AppEvent::ApprovalRequested(ApprovalRequest {
@@ -365,14 +570,10 @@ mod tests {
     #[test]
     fn validates_status_and_claims_invariants() {
         let (config, thread, root) = fake_server(|request| {
-            let AppEvent::Status(mut status) =
-                AppService::default().handle(AppCommand::Status).unwrap()
-            else {
-                unreachable!();
-            };
+            let mut status = v2_status();
             status.schema_version += 1;
             encoded_response(ResponseEnvelope {
-                version: PROTOCOL_VERSION,
+                version: request.version,
                 request_id: request.request_id,
                 payload: ResponsePayload::Ok {
                     event: AppEvent::Status(status),
@@ -388,10 +589,10 @@ mod tests {
 
         let (config, thread, root) = fake_server(|request| {
             let response = ResponseEnvelope {
-                version: PROTOCOL_VERSION,
+                version: request.version,
                 request_id: request.request_id,
                 payload: ResponsePayload::Ok {
-                    event: AppService::default().handle(AppCommand::Status).unwrap(),
+                    event: AppEvent::Status(v2_status()),
                 },
             };
             let mut value = serde_json::to_value(response).unwrap();
@@ -408,7 +609,7 @@ mod tests {
 
         let (config, thread, root) = fake_server(|request| {
             encoded_response(ResponseEnvelope {
-                version: PROTOCOL_VERSION,
+                version: request.version,
                 request_id: request.request_id,
                 payload: ResponsePayload::Ok {
                     event: AppEvent::Claims(ClaimsSnapshot {
@@ -430,7 +631,7 @@ mod tests {
     fn rejects_mismatched_protocol_version_and_request_id() {
         let (config, thread, root) = fake_server(|request| {
             encoded_response(ResponseEnvelope {
-                version: PROTOCOL_VERSION + 1,
+                version: request.version + 1,
                 request_id: request.request_id,
                 payload: ResponsePayload::Error {
                     code: "ignored".into(),
@@ -445,9 +646,9 @@ mod tests {
         thread.join().unwrap();
         std::fs::remove_dir_all(root).unwrap();
 
-        let (config, thread, root) = fake_server(|_request| {
+        let (config, thread, root) = fake_server(|request| {
             encoded_response(ResponseEnvelope {
-                version: PROTOCOL_VERSION,
+                version: request.version,
                 request_id: "different-request".into(),
                 payload: ResponsePayload::Error {
                     code: "ignored".into(),
@@ -458,6 +659,116 @@ mod tests {
         assert!(matches!(
             DaemonClient::new(config).request(AppCommand::Status),
             Err(ClientError::RequestIdMismatch)
+        ));
+        thread.join().unwrap();
+        std::fs::remove_dir_all(root).unwrap();
+
+        let (config, thread, root) = fake_server(|_request| {
+            encoded_response(ResponseEnvelope::error_for(
+                PROTOCOL_VERSION,
+                "different-request",
+                "unsupported_version",
+                "protocol version is unsupported",
+            ))
+        });
+        assert!(matches!(
+            DaemonClient::new(config).request(AppCommand::Status),
+            Err(ClientError::RequestIdMismatch)
+        ));
+        thread.join().unwrap();
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn run_responses_must_match_submission_identity_and_requested_page_limit() {
+        let submitted = RunRequest {
+            idempotency_key: "expected-submission".parse().unwrap(),
+            conversation_id: None,
+            mode: RunMode::OneShot,
+            backend: BackendSelection::Abi,
+            input: "bounded request".into(),
+            labels: Vec::new(),
+        };
+        let (config, thread, root) = fake_server(|request| {
+            encoded_response(ResponseEnvelope::ok_for(
+                request.version,
+                request.request_id,
+                AppEvent::RunSubmitted(RunSubmission {
+                    disposition: RunSubmissionDisposition::Enqueued,
+                    run: run_snapshot("different-submission", None),
+                }),
+            ))
+        });
+        assert!(matches!(
+            DaemonClient::new(config).request(AppCommand::SubmitRun(submitted)),
+            Err(ClientError::InvalidRunResponse)
+        ));
+        thread.join().unwrap();
+        std::fs::remove_dir_all(root).unwrap();
+
+        let expected_conversation = ConversationId::new();
+        let different_conversation = ConversationId::new();
+        let submitted = RunRequest {
+            idempotency_key: "conversation-bound".parse().unwrap(),
+            conversation_id: Some(expected_conversation),
+            mode: RunMode::OneShot,
+            backend: BackendSelection::Abi,
+            input: "bounded request".into(),
+            labels: Vec::new(),
+        };
+        let (config, thread, root) = fake_server(move |request| {
+            encoded_response(ResponseEnvelope::ok_for(
+                request.version,
+                request.request_id,
+                AppEvent::RunSubmitted(RunSubmission {
+                    disposition: RunSubmissionDisposition::Enqueued,
+                    run: run_snapshot("conversation-bound", Some(different_conversation)),
+                }),
+            ))
+        });
+        assert!(matches!(
+            DaemonClient::new(config).request(AppCommand::SubmitRun(submitted)),
+            Err(ClientError::InvalidRunResponse)
+        ));
+        thread.join().unwrap();
+        std::fs::remove_dir_all(root).unwrap();
+
+        let run_id = RunId::new();
+        let response_id = run_id.clone();
+        let (config, thread, root) = fake_server(move |request| {
+            let events = [RunLifecycleEvent::Queued, RunLifecycleEvent::Starting]
+                .into_iter()
+                .enumerate()
+                .map(|(offset, event)| RunEventRecord {
+                    run_id: response_id.clone(),
+                    sequence: u64::try_from(offset + 1).unwrap(),
+                    recorded_at: "2026-08-08T00:00:00Z".into(),
+                    event,
+                })
+                .collect();
+            encoded_response(ResponseEnvelope::ok_for(
+                request.version,
+                request.request_id,
+                AppEvent::RunEvents(RunEventPage {
+                    run_id: response_id,
+                    events,
+                    after_sequence: 0,
+                    next_after_sequence: 2,
+                    through_sequence: 2,
+                    has_more: false,
+                }),
+            ))
+        });
+        assert!(matches!(
+            DaemonClient::new(config).request(AppCommand::RunEvents(
+                crate::app_core::RunEventsQuery {
+                    run_id,
+                    after_sequence: 0,
+                    through_sequence: None,
+                    limit: 1,
+                }
+            )),
+            Err(ClientError::InvalidRunResponse)
         ));
         thread.join().unwrap();
         std::fs::remove_dir_all(root).unwrap();
@@ -521,7 +832,7 @@ mod tests {
 
         let (config, thread, root) = fake_server(|request| {
             encoded_response(ResponseEnvelope {
-                version: PROTOCOL_VERSION,
+                version: request.version,
                 request_id: request.request_id,
                 payload: ResponsePayload::Error {
                     code: format!("denied-{TEST_BEARER}"),
@@ -537,6 +848,30 @@ mod tests {
         assert!(!error.to_string().contains(TEST_BEARER));
         thread.join().unwrap();
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    fn v2_status() -> RuntimeStatus {
+        let route = RunRouteCapability {
+            backend: BackendSelection::Abi,
+            modes: vec![RunMode::OneShot, RunMode::Background],
+        };
+        AppContext::runtime_v2(vec![route])
+            .unwrap()
+            .status()
+            .clone()
+    }
+
+    fn run_snapshot(key: &str, conversation_id: Option<ConversationId>) -> RunSnapshot {
+        RunSnapshot {
+            run_id: RunId::new(),
+            conversation_id,
+            idempotency_key: key.parse().unwrap(),
+            state: RunState::Queued,
+            created_at: "2026-08-08T00:00:00Z".into(),
+            updated_at: "2026-08-08T00:00:00Z".into(),
+            failure: None,
+            event_count: 1,
+        }
     }
 
     struct RealServer {

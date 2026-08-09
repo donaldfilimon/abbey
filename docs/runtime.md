@@ -1,16 +1,15 @@
 # Durable runtime architecture
 
-Abbey has two deliberately separate runtime layers:
+Abbey has two deliberately bounded runtime protocols over one local daemon:
 
-1. The shipped protocol-v1 `abbeyd` control plane, which is authenticated and read-only.
-   It accepts only `Status` and `Claims`.
-2. The `abbey::runtime` lifecycle foundation, which can persist and coordinate typed runs
-   and now includes a crate-private Unix supervisor plus fixed ABI-local/Foundation Models
-   adapters. Those adapters are not reachable through the protocol-v1 daemon, CLI, TUI,
-   MCP, or any network protocol.
+1. Protocol v1 remains an authenticated read-only compatibility surface accepting only
+   `Status` and `Claims`.
+2. Protocol v2 adds typed run submission, durable status/cancellation, and paged sanitized
+   lifecycle events for startup-bound ABI-local and Foundation Models recipes on Unix.
 
-The second layer exists so durability and cancellation semantics can be proven before
-any execution authority is added.
+The v2 request can select only a closed backend and mode plus literal input. It cannot
+choose a program, argv prefix, environment, workspace, trust flag, tool, or shell.
+Provider-neutral model/tool ownership remains a separate Proposed capability.
 
 ## Contracts
 
@@ -92,9 +91,22 @@ Cursor/Grok and interactive/automation modes fail before spawn. The child enviro
 cleared and rebuilt from a fixed benign allowlist, excluding daemon and provider secrets.
 Captured bytes and configured paths are redacted from `Debug` and durable errors.
 
-This is a library-level Phase 4B.1 proof. Protocol v1 still cannot submit a run. Windows
-delegated execution remains fail-closed until named-pipe and Job Object implementation plus
-runtime evidence exist.
+Protocol v1 still cannot submit a run. Protocol v2 reaches only these fixed delegated
+recipes. Windows delegated execution remains fail-closed until named-pipe and Job Object
+implementation plus runtime evidence exist.
+
+## Protocol-v2 paging and compatibility
+
+`RunEvents` returns at most 16 sanitized lifecycle records. The first page captures a
+durable high-water sequence; continuations use an exclusive cursor and must repeat that
+watermark. Gaps, future cursors, invalid lifecycle kinds, or disagreement between the
+latest event and durable run state fail closed. Later appends never move an in-progress
+page traversal, and raw prompts or provider stdout/stderr never enter a snapshot or page.
+
+`DaemonClient` starts with protocol v2. It may retry the replay-safe `Status` or `Claims`
+request once with v1 only after an explicit `unsupported_version`. It never retries
+`SubmitRun` or `CancelRun`, because a lost mutation response does not prove the operation
+was not committed.
 
 ## Audit boundary
 
@@ -107,9 +119,10 @@ run state; audit events record bounded operational facts. Neither is a transcrip
 
 ## Claim boundary
 
-The current product claim remains the authenticated read-only daemon. Phase 4A proves the
-durable lifecycle foundation and Phase 4B.1 proves bounded fixed-recipe Unix delegation as
-an internal library seam. Neither adds daemon submission authority, tool dispatch,
-automations, live event streaming, daemon-owned memory, Windows named pipes/Job Objects,
-or a desktop client. Those surfaces remain Proposed or incomplete until their own source,
-automated tests, and required live evidence exist.
+The Current product surface is exact v1 read compatibility plus authenticated protocol-v2
+fixed-recipe local run control on Unix. A real scratch-daemon test proves idempotent single
+launch, terminal persistence, cancellation and descendant death, fixed-watermark paging,
+restart/reopen, and absence of bearer, prompt, provider-output, and executable-path
+disclosure. CLI/TUI lifecycle parity, tool dispatch, automations, live subscriptions,
+daemon-owned memory, Windows named pipes/Job Objects, and a finished desktop client remain
+separate incomplete or Proposed evidence slices.

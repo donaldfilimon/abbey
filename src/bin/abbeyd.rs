@@ -1,9 +1,8 @@
-//! Abbey's bounded local read-only daemon endpoint.
+//! Abbey's bounded authenticated local daemon endpoint.
 
 use std::process::ExitCode;
 
-use abbey::app_core::AppService;
-use abbey::daemon::{DaemonConfig, DaemonServer, Shutdown};
+use abbey::daemon::{DaemonConfig, DaemonServer, RuntimeDaemonConfig, RuntimeHandler, Shutdown};
 
 fn main() -> ExitCode {
     match run() {
@@ -16,9 +15,12 @@ fn main() -> ExitCode {
 }
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
-    let config = DaemonConfig::from_env()?;
+    // Block process-termination signals before RuntimeHandler starts its
+    // manager worker. POSIX signal masks are inherited at thread creation.
     let shutdown = shutdown_on_signals()?;
-    DaemonServer::new(config, AppService::default()).serve(shutdown)?;
+    let config = DaemonConfig::from_env()?;
+    let runtime = RuntimeHandler::start(RuntimeDaemonConfig::from_env()?)?;
+    DaemonServer::new(config, runtime).serve(shutdown)?;
     Ok(())
 }
 

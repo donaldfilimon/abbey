@@ -11,6 +11,10 @@ impl StandardPolicy {
         let required = match command {
             AppCommand::Status => AppCapability::ReadStatus,
             AppCommand::Claims(_) => AppCapability::ReadClaims,
+            AppCommand::SubmitRun(_) => AppCapability::SubmitRun,
+            AppCommand::GetRun(_) => AppCapability::ReadRun,
+            AppCommand::CancelRun(_) => AppCapability::CancelRun,
+            AppCommand::RunEvents(_) => AppCapability::ReadRunEvents,
         };
         capabilities.contains(required)
     }
@@ -19,7 +23,7 @@ impl StandardPolicy {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app_core::ClaimsQuery;
+    use crate::app_core::{BackendSelection, ClaimsQuery, IdempotencyKey, RunMode, RunRequest};
 
     #[test]
     fn policy_only_recognizes_declared_read_operations() {
@@ -27,5 +31,19 @@ mod tests {
         let capabilities = CapabilitySet::standard();
         assert!(policy.permits(&AppCommand::Status, &capabilities));
         assert!(policy.permits(&AppCommand::Claims(ClaimsQuery::default()), &capabilities));
+
+        let request = RunRequest {
+            idempotency_key: "policy-request".parse::<IdempotencyKey>().unwrap(),
+            conversation_id: None,
+            mode: RunMode::Background,
+            backend: BackendSelection::Abi,
+            input: "bounded input".into(),
+            labels: Vec::new(),
+        };
+        assert!(!policy.permits(&AppCommand::SubmitRun(request.clone()), &capabilities));
+        assert!(policy.permits(
+            &AppCommand::SubmitRun(request),
+            &CapabilitySet::runtime_v2()
+        ));
     }
 }

@@ -201,6 +201,14 @@ fn app_payload(command: AppCommand) -> Result<Value, ToolError> {
         AppEvent::Status(status) => serde_json::to_value(status),
         AppEvent::Claims(snapshot) => serde_json::to_value(snapshot),
         AppEvent::ApprovalRequested(request) => serde_json::to_value(request),
+        AppEvent::RunSubmitted(_)
+        | AppEvent::RunStatus(_)
+        | AppEvent::CancellationAcknowledged(_)
+        | AppEvent::RunEvents(_) => {
+            return Err(ToolError::new(
+                "application service returned an execution event to a read-only MCP tool",
+            ));
+        }
     };
     payload.map_err(|error| ToolError::new(format!("cannot serialize application event: {error}")))
 }

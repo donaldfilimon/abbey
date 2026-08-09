@@ -2,13 +2,17 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Instant;
 
 use thiserror::Error;
 
 use crate::app_core::{AppCommand, AppEvent, AppService};
 
 use super::config::DaemonConfig;
-use super::protocol::{PROTOCOL_VERSION, RequestEnvelope, ResponseEnvelope};
+use super::protocol::{
+    CURRENT_PROTOCOL_VERSION, PROTOCOL_VERSION, RequestEnvelope, ResponseEnvelope,
+    SUPPORTED_PROTOCOL_VERSIONS,
+};
 
 const MAX_REQUEST_ID_LEN: usize = 128;
 
@@ -20,6 +24,54 @@ pub trait ReadOnlyHandler: Send + Sync + 'static {
 impl ReadOnlyHandler for AppService {
     fn handle(&self, command: AppCommand) -> Result<AppEvent, String> {
         AppService::handle(self, command).map_err(|error| error.to_string())
+    }
+}
+
+/// Version-aware daemon application boundary with stable, non-sensitive errors.
+pub trait DaemonHandler: Send + Sync + 'static {
+    fn supports_version(&self, version: u16) -> bool;
+    fn handle_versioned(
+        &self,
+        version: u16,
+        command: AppCommand,
+    ) -> Result<AppEvent, HandlerFailure>;
+}
+
+impl<T: ReadOnlyHandler> DaemonHandler for T {
+    fn supports_version(&self, version: u16) -> bool {
+        version == PROTOCOL_VERSION
+    }
+
+    fn handle_versioned(
+        &self,
+        _version: u16,
+        command: AppCommand,
+    ) -> Result<AppEvent, HandlerFailure> {
+        self.handle(command)
+            .map_err(|_| HandlerFailure::new("handler_failed", "request handling failed"))
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HandlerFailure {
+    code: &'static str,
+    message: &'static str,
+}
+
+impl HandlerFailure {
+    #[must_use]
+    pub const fn new(code: &'static str, message: &'static str) -> Self {
+        Self { code, message }
+    }
+
+    #[must_use]
+    pub const fn code(self) -> &'static str {
+        self.code
+    }
+
+    #[must_use]
+    pub const fn message(self) -> &'static str {
+        self.message
     }
 }
 
@@ -41,7 +93,7 @@ pub struct DaemonServer<H> {
     handler: H,
 }
 
-impl<H: ReadOnlyHandler> DaemonServer<H> {
+impl<H: DaemonHandler> DaemonServer<H> {
     pub fn new(config: DaemonConfig, handler: H) -> Self {
         Self { config, handler }
     }
@@ -81,52 +133,86 @@ pub enum ServerError {
     },
 }
 
-fn dispatch<H: ReadOnlyHandler>(
+fn dispatch_authenticated<H: DaemonHandler>(
     request: RequestEnvelope,
-    config: &DaemonConfig,
     handler: &H,
 ) -> ResponseEnvelope {
-    if request.request_id.is_empty() || request.request_id.len() > MAX_REQUEST_ID_LEN {
+    if !valid_request_id(&request.request_id) {
         return ResponseEnvelope::error("", "invalid_request_id", "request_id is invalid");
     }
-    if request.version != PROTOCOL_VERSION {
-        return ResponseEnvelope::error(
+    if !SUPPORTED_PROTOCOL_VERSIONS.contains(&request.version)
+        || !handler.supports_version(request.version)
+    {
+        return ResponseEnvelope::error_for(
+            CURRENT_PROTOCOL_VERSION,
             request.request_id,
             "unsupported_version",
-            format!("supported protocol version is {PROTOCOL_VERSION}"),
+            "protocol version is unsupported",
         );
     }
-    if !config.bearer.matches(request.bearer.as_bytes()) {
-        return ResponseEnvelope::error(
+    if request.command.minimum_protocol_version() > request.version {
+        return ResponseEnvelope::error_for(
+            request.version,
             request.request_id,
-            "unauthorized",
-            "authentication failed",
+            "unsupported_command",
+            "command is unavailable in this protocol version",
+        );
+    }
+    if request.command.validate().is_err() {
+        return ResponseEnvelope::error_for(
+            request.version,
+            request.request_id,
+            "invalid_command",
+            "command payload is invalid",
         );
     }
 
-    let result = handler.handle(request.command);
+    let result = handler.handle_versioned(request.version, request.command);
     match result {
-        Ok(event) => ResponseEnvelope::ok(request.request_id, event),
-        Err(message) => ResponseEnvelope::error(
+        Ok(event) => ResponseEnvelope::ok_for(request.version, request.request_id, event),
+        Err(failure) => ResponseEnvelope::error_for(
+            request.version,
             request.request_id,
-            "handler_failed",
-            bounded_message(message),
+            failure.code,
+            failure.message,
         ),
     }
 }
 
-fn bounded_message(mut message: String) -> String {
-    const MAX_ERROR_LEN: usize = 512;
-    if message.len() <= MAX_ERROR_LEN {
-        return message;
+fn valid_request_id(request_id: &str) -> bool {
+    !request_id.is_empty()
+        && request_id.len() <= MAX_REQUEST_ID_LEN
+        && request_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b':' | b'-'))
+}
+
+struct AuthenticatedRateLimiter {
+    limit: super::config::AuthenticatedRateLimit,
+    window_started: Instant,
+    accepted: u16,
+}
+
+impl AuthenticatedRateLimiter {
+    fn new(limit: super::config::AuthenticatedRateLimit) -> Self {
+        Self {
+            limit,
+            window_started: Instant::now(),
+            accepted: 0,
+        }
     }
-    let mut boundary = MAX_ERROR_LEN;
-    while !message.is_char_boundary(boundary) {
-        boundary -= 1;
+
+    fn admit(&mut self) -> bool {
+        if self.window_started.elapsed() >= self.limit.window {
+            self.window_started = Instant::now();
+            self.accepted = 0;
+        }
+        if self.accepted >= self.limit.requests {
+            return false;
+        }
+        self.accepted += 1;
+        true
     }
-    message.truncate(boundary);
-    message.push('…');
-    message
 }
 
 #[cfg(unix)]
@@ -139,7 +225,7 @@ mod unix {
 
     use super::*;
 
-    pub(super) fn serve<H: ReadOnlyHandler>(
+    pub(super) fn serve<H: DaemonHandler>(
         config: DaemonConfig,
         handler: H,
         shutdown: Shutdown,
@@ -169,12 +255,16 @@ mod unix {
                 source,
             })?;
 
+        let mut limiter = AuthenticatedRateLimiter::new(config.authenticated_rate_limit);
+
         // Exactly one request is handled at a time. This intentionally creates
         // no user-space connection queue; per-connection deadlines bound idle
         // occupancy until a dedicated concurrency policy is introduced.
         while !shutdown.requested() {
             match listener.accept() {
-                Ok((stream, _address)) => handle_connection(stream, &config, &handler),
+                Ok((stream, _address)) => {
+                    handle_connection(stream, &config, &handler, &mut limiter);
+                }
                 Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
                     thread::sleep(config.accept_poll_interval);
                 }
@@ -190,10 +280,11 @@ mod unix {
         Ok(())
     }
 
-    fn handle_connection<H: ReadOnlyHandler>(
+    fn handle_connection<H: DaemonHandler>(
         mut stream: UnixStream,
         config: &DaemonConfig,
         handler: &H,
+        limiter: &mut AuthenticatedRateLimiter,
     ) {
         if stream.set_read_timeout(Some(config.read_timeout)).is_err()
             || stream
@@ -204,9 +295,39 @@ mod unix {
         }
 
         let response = match read_frame(&mut stream, config.max_frame_len) {
-            Ok(bytes) => match serde_json::from_slice::<RequestEnvelope>(&bytes) {
-                Ok(request) => dispatch(request, config, handler),
-                Err(_) => {
+            Ok(bytes) => match authenticate_frame(&bytes, config) {
+                FrameAuthentication::Authenticated {
+                    response_version,
+                    request_id,
+                } => {
+                    if !limiter.admit() {
+                        ResponseEnvelope::error_for(
+                            response_version,
+                            request_id,
+                            "rate_limited",
+                            "authenticated request rate limit exceeded",
+                        )
+                    } else {
+                        match serde_json::from_slice::<RequestEnvelope>(&bytes) {
+                            Ok(request) => dispatch_authenticated(request, handler),
+                            Err(_) => ResponseEnvelope::error(
+                                "",
+                                "malformed_request",
+                                "request is not valid JSON",
+                            ),
+                        }
+                    }
+                }
+                FrameAuthentication::Unauthorized {
+                    response_version,
+                    request_id,
+                } => ResponseEnvelope::error_for(
+                    response_version,
+                    request_id,
+                    "unauthorized",
+                    "authentication failed",
+                ),
+                FrameAuthentication::Malformed => {
                     ResponseEnvelope::error("", "malformed_request", "request is not valid JSON")
                 }
             },
@@ -219,6 +340,60 @@ mod unix {
             Err(FrameError::Io) => return,
         };
         let _ = write_response(&mut stream, response, config.max_frame_len);
+    }
+
+    enum FrameAuthentication {
+        Authenticated {
+            response_version: u16,
+            request_id: String,
+        },
+        Unauthorized {
+            response_version: u16,
+            request_id: String,
+        },
+        Malformed,
+    }
+
+    fn authenticate_frame(bytes: &[u8], config: &DaemonConfig) -> FrameAuthentication {
+        let value = match serde_json::from_slice::<serde_json::Value>(bytes) {
+            Ok(value) => value,
+            Err(_) => return FrameAuthentication::Malformed,
+        };
+        let candidate = value
+            .as_object()
+            .and_then(|object| object.get("bearer"))
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default();
+        let response_version = value
+            .as_object()
+            .and_then(|object| object.get("version"))
+            .and_then(serde_json::Value::as_u64)
+            .and_then(|version| u16::try_from(version).ok())
+            .unwrap_or(PROTOCOL_VERSION);
+        let request_id = value
+            .as_object()
+            .and_then(|object| object.get("request_id"))
+            .and_then(serde_json::Value::as_str)
+            .filter(|request_id| valid_request_id(request_id))
+            .unwrap_or_default()
+            .to_owned();
+        if config.bearer.matches(candidate.as_bytes()) {
+            let response_version = Some(response_version)
+                .filter(|version| SUPPORTED_PROTOCOL_VERSIONS.contains(version))
+                .unwrap_or(CURRENT_PROTOCOL_VERSION);
+            FrameAuthentication::Authenticated {
+                response_version,
+                request_id,
+            }
+        } else {
+            // Echoing the caller's envelope version lets either compatible
+            // client decode the generic denial without disclosing which
+            // versions or capabilities the daemon actually supports.
+            FrameAuthentication::Unauthorized {
+                response_version,
+                request_id,
+            }
+        }
     }
 
     fn read_frame(stream: &mut UnixStream, max: usize) -> Result<Vec<u8>, FrameError> {
@@ -236,14 +411,15 @@ mod unix {
         Ok(bytes)
     }
 
-    fn write_response(
+    pub(super) fn write_response(
         stream: &mut UnixStream,
         response: ResponseEnvelope,
         max: usize,
     ) -> io::Result<()> {
         let mut bytes = serde_json::to_vec(&response).map_err(io::Error::other)?;
         if bytes.len() > max {
-            bytes = serde_json::to_vec(&ResponseEnvelope::error(
+            bytes = serde_json::to_vec(&ResponseEnvelope::error_for(
+                response.version,
                 response.request_id,
                 "response_too_large",
                 "handler response exceeds configured limit",
@@ -380,8 +556,31 @@ mod tests {
             PROTOCOL_VERSION,
         ));
         assert_error(&unauthorized, "unauthorized");
+        let hidden_version = harness.request(request(
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            CURRENT_PROTOCOL_VERSION + 99,
+        ));
+        assert_error(&hidden_version, "unauthorized");
         let incompatible = harness.request(request(TEST_BEARER, PROTOCOL_VERSION + 1));
         assert_error(&incompatible, "unsupported_version");
+        harness.stop();
+    }
+
+    #[test]
+    fn only_authenticated_requests_consume_the_bounded_rate_limit() {
+        let harness = Harness::start_with_rate(1);
+        for _ in 0..3 {
+            let response = harness.request(request(
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                PROTOCOL_VERSION,
+            ));
+            assert_error(&response, "unauthorized");
+        }
+        let admitted = harness.request(request(TEST_BEARER, PROTOCOL_VERSION));
+        assert!(matches!(admitted.payload, ResponsePayload::Ok { .. }));
+        let limited = harness.request(request(TEST_BEARER, CURRENT_PROTOCOL_VERSION));
+        assert_error(&limited, "rate_limited");
+        assert_eq!(limited.version, CURRENT_PROTOCOL_VERSION);
         harness.stop();
     }
 
@@ -393,6 +592,44 @@ mod tests {
         let oversize = harness.raw_frame(&[], Some((64 * 1024 + 1) as u32));
         assert_error(&oversize, "frame_too_large");
         harness.stop();
+    }
+
+    #[test]
+    fn reflected_request_ids_use_a_bounded_ascii_grammar() {
+        let harness = Harness::start();
+        for request_id in ["has space", "line\nbreak", "unicode-λ"] {
+            let response = harness.request(RequestEnvelope {
+                version: PROTOCOL_VERSION,
+                request_id: request_id.into(),
+                bearer: TEST_BEARER.into(),
+                command: AppCommand::Status,
+            });
+            assert_error(&response, "invalid_request_id");
+            assert!(response.request_id.is_empty());
+        }
+        let response = harness.request(RequestEnvelope {
+            version: PROTOCOL_VERSION,
+            request_id: "x".repeat(MAX_REQUEST_ID_LEN + 1),
+            bearer: TEST_BEARER.into(),
+            command: AppCommand::Status,
+        });
+        assert_error(&response, "invalid_request_id");
+        harness.stop();
+    }
+
+    #[test]
+    fn oversized_v2_response_fallback_retains_requested_version() {
+        let (mut writer, mut reader) = UnixStream::pair().unwrap();
+        let response = ResponseEnvelope::error_for(
+            CURRENT_PROTOCOL_VERSION,
+            "v2-request",
+            "large",
+            "x".repeat(2_048),
+        );
+        unix::write_response(&mut writer, response, 512).unwrap();
+        let response = read_response(&mut reader);
+        assert_eq!(response.version, CURRENT_PROTOCOL_VERSION);
+        assert_error(&response, "response_too_large");
     }
 
     #[test]
@@ -436,7 +673,7 @@ mod tests {
                 contains: Some("\n".into()),
             }),
         });
-        assert_error(&response, "handler_failed");
+        assert_error(&response, "invalid_command");
         harness.stop();
     }
 
@@ -449,9 +686,16 @@ mod tests {
 
     impl Harness {
         fn start() -> Self {
+            Self::start_with_rate(64)
+        }
+
+        fn start_with_rate(requests: u16) -> Self {
             let root = scratch_dir("server");
             let socket = root.join("abbeyd.sock");
-            let config = DaemonConfig::for_test(socket.clone(), TEST_BEARER.as_bytes());
+            let mut config = DaemonConfig::for_test(socket.clone(), TEST_BEARER.as_bytes());
+            config.authenticated_rate_limit =
+                crate::daemon::AuthenticatedRateLimit::new(requests, Duration::from_secs(60))
+                    .unwrap();
             let shutdown = Shutdown::default();
             let server_shutdown = shutdown.clone();
             let thread =

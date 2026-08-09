@@ -523,6 +523,10 @@ fn format_daemon_event(event: &AppEvent) -> Result<String> {
                 .map(|capability| match capability {
                     AppCapability::ReadStatus => "read_status",
                     AppCapability::ReadClaims => "read_claims",
+                    AppCapability::ReadRun => "read_run",
+                    AppCapability::ReadRunEvents => "read_run_events",
+                    AppCapability::SubmitRun => "submit_run",
+                    AppCapability::CancelRun => "cancel_run",
                 })
                 .collect::<Vec<_>>()
                 .join(", ");
@@ -553,7 +557,11 @@ fn format_daemon_event(event: &AppEvent) -> Result<String> {
             }
             Ok(rendered)
         }
-        AppEvent::ApprovalRequested(_) => Err(anyhow!(
+        AppEvent::ApprovalRequested(_)
+        | AppEvent::RunSubmitted(_)
+        | AppEvent::RunStatus(_)
+        | AppEvent::CancellationAcknowledged(_)
+        | AppEvent::RunEvents(_) => Err(anyhow!(
             "daemon returned an event outside the read-only CLI contract"
         )),
     }
@@ -587,6 +595,7 @@ mod daemon_tests {
             build_git: "abc123".into(),
             build_target: "aarch64-apple-darwin".into(),
             capabilities: CapabilitySet::standard(),
+            run_routes: Vec::new(),
         }))
         .unwrap();
         assert!(text.contains("abbeyd: ready (standard edition)"));

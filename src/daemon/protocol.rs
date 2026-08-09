@@ -1,8 +1,13 @@
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
-use crate::app_core::{APP_PROTOCOL_VERSION, AppCommand, AppEvent};
+use crate::app_core::{APP_PROTOCOL_V1, APP_PROTOCOL_VERSION, AppCommand, AppEvent};
 
-pub const PROTOCOL_VERSION: u16 = APP_PROTOCOL_VERSION;
+/// Original read-only daemon protocol retained by [`DaemonClient`](super::DaemonClient).
+pub const PROTOCOL_VERSION: u16 = APP_PROTOCOL_V1;
+/// Latest daemon protocol understood by the server.
+pub const CURRENT_PROTOCOL_VERSION: u16 = APP_PROTOCOL_VERSION;
+pub const SUPPORTED_PROTOCOL_VERSIONS: &[u16] = &[PROTOCOL_VERSION, CURRENT_PROTOCOL_VERSION];
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -11,6 +16,18 @@ pub struct RequestEnvelope {
     pub request_id: String,
     pub bearer: String,
     pub command: AppCommand,
+}
+
+impl fmt::Debug for RequestEnvelope {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RequestEnvelope")
+            .field("version", &self.version)
+            .field("request_id", &self.request_id)
+            .field("bearer", &"[REDACTED]")
+            .field("command", &self.command)
+            .finish()
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
@@ -29,9 +46,9 @@ pub enum ResponsePayload {
 }
 
 impl ResponseEnvelope {
-    pub(crate) fn ok(request_id: String, event: AppEvent) -> Self {
+    pub(crate) fn ok_for(version: u16, request_id: String, event: AppEvent) -> Self {
         Self {
-            version: PROTOCOL_VERSION,
+            version,
             request_id,
             payload: ResponsePayload::Ok { event },
         }
@@ -42,8 +59,17 @@ impl ResponseEnvelope {
         code: impl Into<String>,
         message: impl Into<String>,
     ) -> Self {
+        Self::error_for(PROTOCOL_VERSION, request_id, code, message)
+    }
+
+    pub(crate) fn error_for(
+        version: u16,
+        request_id: impl Into<String>,
+        code: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Self {
         Self {
-            version: PROTOCOL_VERSION,
+            version,
             request_id: request_id.into(),
             payload: ResponsePayload::Error {
                 code: code.into(),
@@ -78,5 +104,27 @@ mod tests {
             }
         });
         assert!(serde_json::from_value::<ResponseEnvelope>(unknown_outcome).is_err());
+    }
+
+    #[test]
+    fn protocol_v1_envelope_fixture_and_secret_redaction_remain_exact() {
+        let request = RequestEnvelope {
+            version: PROTOCOL_VERSION,
+            request_id: "r1".into(),
+            bearer: "super-secret-bearer".into(),
+            command: AppCommand::Status,
+        };
+        assert_eq!(
+            serde_json::to_value(&request).unwrap(),
+            serde_json::json!({
+                "version": 1,
+                "request_id": "r1",
+                "bearer": "super-secret-bearer",
+                "command": {"type": "status"}
+            })
+        );
+        let debug = format!("{request:?}");
+        assert!(!debug.contains("super-secret-bearer"));
+        assert!(debug.contains("[REDACTED]"));
     }
 }

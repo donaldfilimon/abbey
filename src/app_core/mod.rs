@@ -12,14 +12,16 @@ mod service;
 
 pub use context::AppContext;
 pub use contracts::{
-    APP_PROTOCOL_VERSION, APP_SCHEMA_VERSION, AppCapability, AppCommand, AppEvent, ApprovalKind,
-    ApprovalRequest, CapabilitySet, ClaimRecord, ClaimStatus, ClaimsQuery, ClaimsSnapshot, Edition,
-    RuntimeState, RuntimeStatus, ValidationError,
+    APP_PROTOCOL_V1, APP_PROTOCOL_VERSION, APP_SCHEMA_V1, APP_SCHEMA_VERSION, AppCapability,
+    AppCommand, AppEvent, ApprovalKind, ApprovalRequest, CapabilitySet, ClaimRecord, ClaimStatus,
+    ClaimsQuery, ClaimsSnapshot, Edition, RuntimeState, RuntimeStatus, ValidationError,
 };
 pub use ids::{ConversationId, IdError, RunId};
 pub use policy::StandardPolicy;
 pub use run::{
-    BackendSelection, ConversationMetadata, IdempotencyKey, RunEventRecord, RunFailure,
-    RunLifecycleEvent, RunMode, RunRequest, RunSnapshot, RunState,
+    BackendSelection, ConversationMetadata, IdempotencyKey, MAX_RUN_EVENT_PAGE,
+    RunCancellationReason, RunEventPage, RunEventRecord, RunEventsQuery, RunFailure,
+    RunInterruptionReason, RunLifecycleEvent, RunMode, RunQuery, RunRequest, RunRouteCapability,
+    RunSnapshot, RunState, RunSubmission, RunSubmissionDisposition,
 };
 pub use service::{AppService, AppServiceError};
