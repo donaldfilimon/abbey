@@ -54,7 +54,7 @@ pub(super) fn save_chat(state: &AbbeyState, id: &str) -> Result<()> {
     Ok(())
 }
 
-pub(super) fn clear_legacy_chat(state: &AbbeyState, all: bool) -> Result<()> {
+pub(super) fn clear_chat(state: &AbbeyState, all: bool) -> Result<()> {
     let _ = fs::remove_file(state.active_chat_file());
     if all || !state.per_cwd {
         let _ = fs::remove_file(&state.chat_file);

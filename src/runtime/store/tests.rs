@@ -178,7 +178,17 @@ fn legacy_metadata_backup_and_schema_v2_import_are_exact_and_idempotent() {
                 row.get::<_, i64>(0)
             })
             .unwrap(),
-            3
+            4
+        );
+        assert_eq!(
+            conn.query_row(
+                "SELECT COUNT(*) FROM sqlite_master
+                 WHERE type='table' AND name='conversation_identity_mutations'",
+                [],
+                |row| row.get::<_, i64>(0)
+            )
+            .unwrap(),
+            1
         );
         assert_eq!(
             conn.query_row(

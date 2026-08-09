@@ -20,7 +20,7 @@ pub use manager::{
     Clock, ManagerError, RunManager, RunManagerConfig, SubmitDisposition, SubmitResult, SystemClock,
 };
 
-pub(crate) use identity::{ConversationIdentityScope, IdentityCommit};
+pub(crate) use identity::{ConversationIdentityScope, IdentityCommit, IdentityScopeState};
 
 pub(crate) use legacy::prepare as prepare_legacy_import;
 

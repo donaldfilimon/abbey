@@ -233,20 +233,20 @@ fn concurrent_saves_serialize_canonical_and_mirror_updates() {
 }
 
 #[test]
-fn legacy_clear_current_and_all_keep_existing_mirror_parity() {
+fn canonical_clear_current_and_all_keep_existing_mirror_parity() {
     let scratch = ScratchState::new("clear-parity", true);
     save_chat(&scratch.state, "clear-private-id").unwrap();
     let other = scratch.state.cwd_dir.join("other-project");
     fs::write(&other, b"other-private-id\n").unwrap();
 
-    clear_legacy_chat(&scratch.state, false).unwrap();
+    clear_chat(&scratch.state, false).unwrap();
     assert!(!scratch.state.active_chat_file().exists());
     assert!(scratch.state.chat_file.exists());
     assert!(scratch.state.chat_file.with_extension("export").exists());
     assert!(other.exists());
     assert!(scratch.state.history_file.exists());
 
-    clear_legacy_chat(&scratch.state, true).unwrap();
+    clear_chat(&scratch.state, true).unwrap();
     assert!(!scratch.state.chat_file.exists());
     assert!(!scratch.state.chat_file.with_extension("export").exists());
     assert!(

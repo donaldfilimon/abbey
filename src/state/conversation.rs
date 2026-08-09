@@ -1,7 +1,7 @@
 //! Canonical identity commit plus crash-safe legacy-mirror projection.
 
 use super::{AbbeyState, HistoryEntry};
-use crate::runtime::{ConversationIdentityScope, IdentityCommit, RuntimeStore};
+use crate::runtime::{ConversationIdentityScope, IdentityCommit, IdentityScopeState, RuntimeStore};
 use anyhow::{Context, Result, bail, ensure};
 use fs4::fs_std::FileExt as _;
 use serde::{Deserialize, Serialize};
@@ -9,6 +9,8 @@ use std::fmt;
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
+
+mod clear;
 
 const JOURNAL_SCHEMA: u32 = 1;
 const JOURNAL_DIR: &str = "conversation-mirror-journal";
@@ -96,14 +98,16 @@ pub(super) fn read_chat(state: &AbbeyState) -> Result<Option<String>> {
     let journal = lock_journal(state)?;
     recover_pending(state, &journal)?;
 
-    let active = resolved_mirror_path(state, &state.active_chat_file())?;
-    if let Some(id) = read_first_line_bounded(&active)? {
-        return Ok(Some(id));
-    }
+    let store = open_metadata_store(state)?;
     if state.per_cwd {
-        return read_first_line_bounded(&resolved_mirror_path(state, &state.chat_file)?);
+        let active = resolved_mirror_path(state, &state.active_chat_file())?;
+        let scope = ConversationIdentityScope::working_directory(&state.cwd);
+        if let Some(id) = read_authoritative_mirror(&store, &scope, &active)? {
+            return Ok(Some(id));
+        }
     }
-    Ok(None)
+    let global = resolved_mirror_path(state, &state.chat_file)?;
+    read_authoritative_mirror(&store, &ConversationIdentityScope::global(), &global)
 }
 
 pub(super) fn ensure_ready(state: &AbbeyState) -> Result<()> {
@@ -206,29 +210,26 @@ pub(super) fn save_chat(state: &AbbeyState, id: &str) -> Result<()> {
     Ok(())
 }
 
-/// Serialized legacy clear; canonical tombstones remain Phase 4B.6 work.
-pub(super) fn clear_legacy_chat(state: &AbbeyState, all: bool) -> Result<()> {
-    validate_layout(state)?;
-    let journal = lock_journal(state)?;
-    recover_pending(state, &journal)?;
-    let _ = fs::remove_file(resolved_mirror_path(state, &state.active_chat_file())?);
-    if all || !state.per_cwd {
-        let global = resolved_mirror_path(state, &state.chat_file)?;
-        let _ = fs::remove_file(&global);
-        let _ = fs::remove_file(global.with_extension("export"));
-    }
-    let cwd_dir = canonical_directory(&resolved_path(state, &state.cwd_dir)?)?;
-    if all && let Ok(entries) = fs::read_dir(&cwd_dir) {
-        for entry in entries.flatten() {
-            let _ = fs::remove_file(entry.path());
+pub(super) fn clear_chat(state: &AbbeyState, all: bool) -> Result<()> {
+    clear::clear_chat(state, all)
+}
+
+fn read_authoritative_mirror(
+    store: &RuntimeStore,
+    scope: &ConversationIdentityScope,
+    path: &Path,
+) -> Result<Option<String>> {
+    let candidate = read_first_line_bounded(path)?;
+    match store
+        .identity_scope_state(crate::edition::ACTIVE.slug(), scope, candidate.as_deref())
+        .context("canonical conversation identity selection could not be read")?
+    {
+        IdentityScopeState::Current | IdentityScopeState::Untracked => Ok(candidate),
+        IdentityScopeState::Tombstoned => Ok(None),
+        IdentityScopeState::Diverged => {
+            bail!("conversation mirror diverged from canonical identity selection")
         }
     }
-    sync_directory(&canonical_directory(&resolved_path(
-        state,
-        &state.state_dir,
-    )?)?)?;
-    sync_directory(&cwd_dir)?;
-    Ok(())
 }
 
 fn validate_external_id(value: &str) -> Result<&str> {
@@ -315,6 +316,9 @@ fn recover_pending(state: &AbbeyState, journal: &JournalGuard) -> Result<()> {
     let Some(bytes) = read_optional_bounded(&journal.pending, MAX_JOURNAL_BYTES)? else {
         return Ok(());
     };
+    if clear::is_clear_plan(&bytes)? {
+        return clear::recover_pending(state, journal, &bytes);
+    }
     let plan: JournalPlan = serde_json::from_slice(&bytes)
         .context("conversation mirror journal is malformed; refusing recovery")?;
     validate_plan(state, &plan)?;
@@ -663,7 +667,6 @@ fn validate_target_parent(path: &Path) -> Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
 fn validate_secure_directory(path: &Path) -> Result<()> {
     use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
     let metadata = fs::symlink_metadata(path)?;
@@ -678,15 +681,6 @@ fn validate_secure_directory(path: &Path) -> Result<()> {
     ensure!(
         metadata.permissions().mode() & 0o022 == 0,
         "conversation mirror parent is writable by another user"
-    );
-    Ok(())
-}
-
-#[cfg(not(unix))]
-fn validate_secure_directory(path: &Path) -> Result<()> {
-    ensure!(
-        fs::symlink_metadata(path)?.file_type().is_dir(),
-        "conversation mirror parent is not a real directory"
     );
     Ok(())
 }
@@ -823,15 +817,11 @@ fn sync_directory(path: &Path) -> Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
 fn configure_private_open(options: &mut OpenOptions) {
     use std::os::unix::fs::OpenOptionsExt as _;
     options.mode(0o600);
     options.custom_flags(libc::O_CLOEXEC | libc::O_NOFOLLOW);
 }
-
-#[cfg(not(unix))]
-fn configure_private_open(_options: &mut OpenOptions) {}
 
 fn validate_open_file(file: &File) -> Result<()> {
     ensure!(
@@ -842,7 +832,6 @@ fn validate_open_file(file: &File) -> Result<()> {
     make_open_file_private(file)
 }
 
-#[cfg(unix)]
 fn validate_open_owner(file: &File) -> Result<()> {
     use std::os::unix::fs::MetadataExt as _;
     ensure!(
@@ -852,24 +841,12 @@ fn validate_open_owner(file: &File) -> Result<()> {
     Ok(())
 }
 
-#[cfg(not(unix))]
-fn validate_open_owner(_file: &File) -> Result<()> {
-    Ok(())
-}
-
-#[cfg(unix)]
 fn make_open_file_private(file: &File) -> Result<()> {
     use std::os::unix::fs::PermissionsExt as _;
     file.set_permissions(fs::Permissions::from_mode(0o600))?;
     Ok(())
 }
 
-#[cfg(not(unix))]
-fn make_open_file_private(_file: &File) -> Result<()> {
-    Ok(())
-}
-
-#[cfg(unix)]
 fn validate_owner(path: &Path, directory: bool) -> Result<()> {
     use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
     let metadata = fs::symlink_metadata(path)?;
@@ -892,65 +869,27 @@ fn validate_owner(path: &Path, directory: bool) -> Result<()> {
     Ok(())
 }
 
-#[cfg(not(unix))]
-fn validate_owner(path: &Path, directory: bool) -> Result<()> {
-    let metadata = fs::symlink_metadata(path)?;
-    ensure!(
-        if directory {
-            metadata.file_type().is_dir()
-        } else {
-            metadata.file_type().is_file()
-        },
-        "conversation journal has the wrong file type"
-    );
-    Ok(())
-}
-
-#[cfg(unix)]
 fn set_private_directory_permissions(path: &Path) -> Result<()> {
     use std::os::unix::fs::PermissionsExt as _;
     fs::set_permissions(path, fs::Permissions::from_mode(0o700))?;
     Ok(())
 }
 
-#[cfg(not(unix))]
-fn set_private_directory_permissions(_path: &Path) -> Result<()> {
-    Ok(())
-}
-
-#[cfg(unix)]
 fn set_private_file_permissions(path: &Path) -> Result<()> {
     use std::os::unix::fs::PermissionsExt as _;
     fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
     Ok(())
 }
 
-#[cfg(not(unix))]
-fn set_private_file_permissions(_path: &Path) -> Result<()> {
-    Ok(())
-}
-
-#[cfg(unix)]
 fn path_to_hex(path: &Path) -> String {
     use std::os::unix::ffi::OsStrExt as _;
     lower_hex(path.as_os_str().as_bytes())
 }
 
-#[cfg(not(unix))]
-fn path_to_hex(path: &Path) -> String {
-    lower_hex(path.to_string_lossy().as_bytes())
-}
-
-#[cfg(unix)]
 fn path_from_hex(value: &str) -> Result<PathBuf> {
     use std::ffi::OsString;
     use std::os::unix::ffi::OsStringExt as _;
     Ok(PathBuf::from(OsString::from_vec(decode_hex(value)?)))
-}
-
-#[cfg(not(unix))]
-fn path_from_hex(value: &str) -> Result<PathBuf> {
-    Ok(PathBuf::from(String::from_utf8(decode_hex(value)?)?))
 }
 
 fn lower_hex(bytes: &[u8]) -> String {

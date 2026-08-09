@@ -158,7 +158,7 @@ fn assert_database(database: &Path) {
             0
         ))
         .unwrap(),
-        3
+        4
     );
     for (table, expected) in [
         ("legacy_conversation_imports", 1),
@@ -167,6 +167,11 @@ fn assert_database(database: &Path) {
         ("conversation_identity_aliases", 2),
         ("conversation_identity_scopes", 0),
         ("conversation_identity_commit", 0),
+        ("conversation_identity_tombstones", 0),
+        ("conversation_identity_clear_all", 0),
+        ("conversation_identity_mutations", 0),
+        ("conversation_identity_mutation_scopes", 0),
+        ("conversation_identity_migrated_scopes", 0),
         ("runs", 0),
         ("conversation_backends", 0),
     ] {

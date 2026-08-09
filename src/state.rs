@@ -137,7 +137,7 @@ impl AbbeyState {
     }
 
     pub fn clear_chat(&self, all: bool) -> Result<()> {
-        conversation::clear_legacy_chat(self, all)
+        conversation::clear_chat(self, all)
     }
 
     pub fn history(&self, n: usize) -> Vec<HistoryEntry> {

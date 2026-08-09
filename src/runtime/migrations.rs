@@ -3,7 +3,7 @@
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 use thiserror::Error;
 
-pub(super) const CURRENT_SCHEMA_VERSION: i64 = 3;
+pub(super) const CURRENT_SCHEMA_VERSION: i64 = 4;
 
 const CREATE_LEDGER: &str = r#"
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -193,7 +193,151 @@ CREATE INDEX idx_conversation_identity_scope_alias
     ON conversation_identity_scopes(alias_sha256, conversation_id);
 "#;
 
-const MIGRATIONS: &[(i64, &str)] = &[(1, MIGRATION_1), (2, MIGRATION_2), (3, MIGRATION_3)];
+const MIGRATION_4: &str = r#"
+ALTER TABLE conversation_identity_commit RENAME TO conversation_identity_commit_v3;
+
+CREATE TABLE conversation_identity_commit (
+    singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+    revision INTEGER NOT NULL CHECK (revision > 0),
+    operation TEXT NOT NULL CHECK (
+        operation IN ('save', 'clear_scope', 'clear_all')
+    ),
+    edition_sha256 TEXT NOT NULL CHECK (
+        length(edition_sha256) = 64
+        AND edition_sha256 NOT GLOB '*[^0-9a-f]*'
+    ),
+    scope_sha256 TEXT NOT NULL CHECK (
+        length(scope_sha256) = 64
+        AND scope_sha256 NOT GLOB '*[^0-9a-f]*'
+    ),
+    scope_set_sha256 TEXT NOT NULL CHECK (
+        length(scope_set_sha256) = 64
+        AND scope_set_sha256 NOT GLOB '*[^0-9a-f]*'
+    ),
+    alias_sha256 TEXT,
+    conversation_id TEXT,
+    mutation_sha256 TEXT NOT NULL CHECK (
+        length(mutation_sha256) = 64
+        AND mutation_sha256 NOT GLOB '*[^0-9a-f]*'
+    ),
+    committed_at TEXT NOT NULL,
+    CHECK (
+        (operation = 'save' AND alias_sha256 IS NOT NULL AND conversation_id IS NOT NULL)
+        OR
+        (operation IN ('clear_scope', 'clear_all')
+            AND alias_sha256 IS NULL AND conversation_id IS NULL)
+    ),
+    FOREIGN KEY (alias_sha256)
+        REFERENCES conversation_identity_aliases(alias_sha256) ON DELETE RESTRICT,
+    FOREIGN KEY (conversation_id)
+        REFERENCES conversations(id) ON DELETE RESTRICT
+);
+
+INSERT INTO conversation_identity_commit(
+    singleton, revision, operation, edition_sha256, scope_sha256, scope_set_sha256,
+    alias_sha256, conversation_id, mutation_sha256, committed_at
+)
+SELECT singleton, revision, operation, edition_sha256, scope_sha256, scope_set_sha256,
+       alias_sha256, conversation_id, mutation_sha256, committed_at
+FROM conversation_identity_commit_v3;
+
+DROP TABLE conversation_identity_commit_v3;
+
+CREATE TABLE conversation_identity_tombstones (
+    edition_sha256 TEXT NOT NULL CHECK (
+        length(edition_sha256) = 64
+        AND edition_sha256 NOT GLOB '*[^0-9a-f]*'
+    ),
+    scope_sha256 TEXT NOT NULL CHECK (
+        length(scope_sha256) = 64
+        AND scope_sha256 NOT GLOB '*[^0-9a-f]*'
+    ),
+    revision INTEGER NOT NULL CHECK (revision > 0),
+    cleared_at TEXT NOT NULL,
+    PRIMARY KEY (edition_sha256, scope_sha256)
+);
+
+CREATE TABLE conversation_identity_clear_all (
+    edition_sha256 TEXT PRIMARY KEY CHECK (
+        length(edition_sha256) = 64
+        AND edition_sha256 NOT GLOB '*[^0-9a-f]*'
+    ),
+    revision INTEGER NOT NULL CHECK (revision > 0),
+    cleared_at TEXT NOT NULL
+);
+
+CREATE TABLE conversation_identity_mutations (
+    mutation_sha256 TEXT PRIMARY KEY CHECK (
+        length(mutation_sha256) = 64
+        AND mutation_sha256 NOT GLOB '*[^0-9a-f]*'
+    ),
+    revision INTEGER NOT NULL UNIQUE CHECK (revision > 0),
+    operation TEXT NOT NULL CHECK (
+        operation IN ('save', 'clear_scope', 'clear_all')
+    ),
+    edition_sha256 TEXT NOT NULL,
+    scope_sha256 TEXT NOT NULL,
+    scope_set_sha256 TEXT NOT NULL,
+    alias_sha256 TEXT,
+    conversation_id TEXT,
+    committed_at TEXT NOT NULL,
+    CHECK (
+        (operation = 'save' AND alias_sha256 IS NOT NULL AND conversation_id IS NOT NULL)
+        OR
+        (operation IN ('clear_scope', 'clear_all')
+            AND alias_sha256 IS NULL AND conversation_id IS NULL)
+    )
+);
+
+INSERT INTO conversation_identity_mutations(
+    mutation_sha256, revision, operation, edition_sha256, scope_sha256,
+    scope_set_sha256, alias_sha256, conversation_id, committed_at
+)
+SELECT mutation_sha256, revision, operation, edition_sha256, scope_sha256,
+       scope_set_sha256, alias_sha256, conversation_id, committed_at
+FROM conversation_identity_commit;
+
+CREATE TABLE conversation_identity_mutation_scopes (
+    mutation_sha256 TEXT NOT NULL,
+    scope_sha256 TEXT NOT NULL CHECK (
+        length(scope_sha256) = 64
+        AND scope_sha256 NOT GLOB '*[^0-9a-f]*'
+    ),
+    PRIMARY KEY (mutation_sha256, scope_sha256),
+    FOREIGN KEY (mutation_sha256)
+        REFERENCES conversation_identity_mutations(mutation_sha256) ON DELETE RESTRICT
+);
+
+INSERT INTO conversation_identity_mutation_scopes(mutation_sha256, scope_sha256)
+SELECT c.mutation_sha256, s.scope_sha256
+FROM conversation_identity_commit c
+JOIN conversation_identity_scopes s
+  ON s.edition_sha256 = c.edition_sha256 AND s.revision = c.revision
+WHERE c.operation = 'save';
+
+CREATE TABLE conversation_identity_migrated_scopes (
+    edition_sha256 TEXT NOT NULL,
+    scope_sha256 TEXT NOT NULL,
+    alias_sha256 TEXT NOT NULL,
+    conversation_id TEXT NOT NULL,
+    revision INTEGER NOT NULL CHECK (revision > 0),
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (edition_sha256, scope_sha256)
+);
+
+INSERT INTO conversation_identity_migrated_scopes(
+    edition_sha256, scope_sha256, alias_sha256, conversation_id, revision, updated_at
+)
+SELECT edition_sha256, scope_sha256, alias_sha256, conversation_id, revision, updated_at
+FROM conversation_identity_scopes;
+"#;
+
+const MIGRATIONS: &[(i64, &str)] = &[
+    (1, MIGRATION_1),
+    (2, MIGRATION_2),
+    (3, MIGRATION_3),
+    (4, MIGRATION_4),
+];
 
 #[derive(Debug, Error)]
 pub enum MigrationError {
@@ -213,6 +357,11 @@ pub enum MigrationError {
 
 pub(super) fn apply(conn: &mut Connection, now: &str) -> Result<(), MigrationError> {
     apply_set(conn, now, MIGRATIONS, CURRENT_SCHEMA_VERSION)
+}
+
+#[cfg(test)]
+pub(crate) fn apply_through_v3(conn: &mut Connection, now: &str) -> Result<(), MigrationError> {
+    apply_set(conn, now, &MIGRATIONS[..3], 3)
 }
 
 pub(super) fn import_legacy(
@@ -473,7 +622,7 @@ mod tests {
             conn.query_row("SELECT COUNT(*) FROM schema_migrations", [], |row| row
                 .get::<_, i64>(0))
                 .unwrap(),
-            3
+            4
         );
     }
 
@@ -517,6 +666,66 @@ mod tests {
             .unwrap();
         assert_eq!(copied.0, identity.conversation_id.as_str());
         assert_eq!(copied.1, "legacy_v2");
+    }
+
+    #[test]
+    fn schema_v4_preserves_v3_save_marker_and_adds_clear_tables() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        apply_set(&mut conn, "2026-08-08T00:00:00Z", &MIGRATIONS[..3], 3).unwrap();
+        let identity = crate::runtime::identity::external_identity("private-v3-id").unwrap();
+        let digest = "a".repeat(64);
+        conn.execute(
+            "INSERT INTO conversations(id, created_at, updated_at) VALUES (?1, 't', 't')",
+            [identity.conversation_id.as_str()],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO conversation_identity_aliases(
+                alias_sha256, conversation_id, origin, created_at
+             ) VALUES (?1, ?2, 'runtime_v3', 't')",
+            params![identity.alias_sha256, identity.conversation_id.as_str()],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO conversation_identity_commit(
+                singleton, revision, operation, edition_sha256, scope_sha256,
+                scope_set_sha256, alias_sha256, conversation_id, mutation_sha256, committed_at
+             ) VALUES (1, 7, 'save', ?1, ?1, ?1, ?2, ?3, ?1, 't')",
+            params![
+                digest,
+                identity.alias_sha256,
+                identity.conversation_id.as_str()
+            ],
+        )
+        .unwrap();
+        apply(&mut conn, "2026-08-08T00:00:01Z").unwrap();
+        assert_eq!(
+            conn.query_row(
+                "SELECT revision, operation, alias_sha256 FROM conversation_identity_commit",
+                [],
+                |row| Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?
+                ))
+            )
+            .unwrap(),
+            (7, "save".to_owned(), identity.alias_sha256)
+        );
+        for table in [
+            "conversation_identity_tombstones",
+            "conversation_identity_clear_all",
+        ] {
+            assert_eq!(
+                conn.query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
+                    [table],
+                    |row| row.get::<_, i64>(0)
+                )
+                .unwrap(),
+                1
+            );
+        }
     }
 
     #[test]

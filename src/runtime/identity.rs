@@ -20,6 +20,7 @@ const GLOBAL_SCOPE_DOMAIN: &[u8] = b"abbey:conversation-identity-scope:global:v1
 const CWD_SCOPE_DOMAIN: &[u8] = b"abbey:conversation-identity-scope:cwd:v1\0";
 const MUTATION_DOMAIN: &[u8] = b"abbey:conversation-identity-mutation:v1\0";
 const SCOPE_SET_DOMAIN: &[u8] = b"abbey:conversation-identity-scope-set:v1\0";
+const CLEAR_ALL_DOMAIN: &[u8] = b"abbey:conversation-identity-clear-all:v1\0";
 const MAX_IDENTITY_SCOPES: usize = 16;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
@@ -89,12 +90,29 @@ impl ConversationIdentityScope {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum IdentityOperation {
     Save,
+    ClearScope,
+    ClearAll,
+}
+
+/// Canonical authority for one compatibility mirror candidate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum IdentityScopeState {
+    /// No post-cutover selection or tombstone exists; the legacy mirror may be used.
+    Untracked,
+    /// The supplied mirror candidate matches the current canonical selection.
+    Current,
+    /// A canonical clear supersedes any compatibility mirror bytes.
+    Tombstoned,
+    /// Canonical selection exists but the compatibility mirror is absent or mismatched.
+    Diverged,
 }
 
 impl IdentityOperation {
     pub(crate) fn parse(value: &str) -> Option<Self> {
         match value {
             "save" => Some(Self::Save),
+            "clear_scope" => Some(Self::ClearScope),
+            "clear_all" => Some(Self::ClearAll),
             _ => None,
         }
     }
@@ -108,8 +126,8 @@ pub(crate) struct IdentityCommit {
     pub(crate) edition_sha256: String,
     pub(crate) scope_sha256: String,
     pub(crate) scope_set_sha256: String,
-    pub(crate) alias_sha256: String,
-    pub(crate) conversation_id: ConversationId,
+    pub(crate) alias_sha256: Option<String>,
+    pub(crate) conversation_id: Option<ConversationId>,
     pub(crate) mutation_sha256: String,
     pub(crate) committed_at: String,
 }
@@ -141,10 +159,58 @@ impl IdentityCommit {
             && self.edition_sha256 == edition_sha256
             && self.scope_sha256 == scopes[0].as_sha256()
             && self.scope_set_sha256 == scope_set_sha256
-            && self.alias_sha256 == external.alias_sha256
-            && self.conversation_id == external.conversation_id
+            && self.alias_sha256.as_deref() == Some(external.alias_sha256.as_str())
+            && self.conversation_id.as_ref() == Some(&external.conversation_id)
             && self.mutation_sha256 == mutation_sha256
     }
+
+    #[must_use]
+    pub(crate) fn matches_clear_scopes(
+        &self,
+        edition_slug: &str,
+        scopes: &[ConversationIdentityScope],
+        mutation_token: &str,
+    ) -> bool {
+        let Ok(edition_sha256) = edition_sha256(edition_slug) else {
+            return false;
+        };
+        let Ok(mutation_sha256) = mutation_sha256(mutation_token) else {
+            return false;
+        };
+        let Ok(scope_set_sha256) = scope_set_sha256(scopes) else {
+            return false;
+        };
+        self.operation == IdentityOperation::ClearScope
+            && self.edition_sha256 == edition_sha256
+            && self.scope_sha256 == scopes[0].as_sha256()
+            && self.scope_set_sha256 == scope_set_sha256
+            && self.alias_sha256.is_none()
+            && self.conversation_id.is_none()
+            && self.mutation_sha256 == mutation_sha256
+    }
+
+    #[must_use]
+    pub(crate) fn matches_clear_all(&self, edition_slug: &str, mutation_token: &str) -> bool {
+        let Ok(edition_sha256) = edition_sha256(edition_slug) else {
+            return false;
+        };
+        let Ok(mutation_sha256) = mutation_sha256(mutation_token) else {
+            return false;
+        };
+        let clear_all = clear_all_sha256();
+        self.operation == IdentityOperation::ClearAll
+            && self.edition_sha256 == edition_sha256
+            && self.scope_sha256 == clear_all
+            && self.scope_set_sha256 == clear_all
+            && self.alias_sha256.is_none()
+            && self.conversation_id.is_none()
+            && self.mutation_sha256 == mutation_sha256
+    }
+}
+
+#[must_use]
+pub(crate) fn clear_all_sha256() -> String {
+    digest_parts(CLEAR_ALL_DOMAIN, &[])
 }
 
 pub(crate) fn external_identity(value: &str) -> Result<ExternalIdentity, IdentityError> {

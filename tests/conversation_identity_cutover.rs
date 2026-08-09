@@ -40,7 +40,15 @@ fn real_cli_recovers_committed_conversation_mirrors_after_failpoint() {
     fs::create_dir(&cwd).unwrap();
     let agent = fake_agent(&scratch.0);
 
-    let crashed = run(&state, &cwd, &agent, &["create-chat"], true, None, None);
+    let crashed = run(
+        &state,
+        &cwd,
+        &agent,
+        &["create-chat"],
+        Some("after_canonical_commit"),
+        None,
+        None,
+    );
     assert_eq!(crashed.status.code(), Some(86));
     assert!(!String::from_utf8_lossy(&crashed.stderr).contains(RAW_ID));
     assert_eq!(invocation_count(&agent), 1);
@@ -54,25 +62,25 @@ fn real_cli_recovers_committed_conversation_mirrors_after_failpoint() {
     // effect. Restore the snapshotted before-image, then let the history reader
     // prove that it participates in recovery too.
     fs::write(state.join("chat-id"), b"out-of-band-divergence\n").unwrap();
-    let refused = run(&state, &cwd, &agent, &["create-chat"], false, None, None);
+    let refused = run(&state, &cwd, &agent, &["create-chat"], None, None, None);
     assert!(!refused.status.success());
     assert_eq!(invocation_count(&agent), 1);
     assert!(!String::from_utf8_lossy(&refused.stderr).contains(RAW_ID));
     fs::remove_file(state.join("chat-id")).unwrap();
 
-    let recovered_history = run(&state, &cwd, &agent, &["history", "10"], false, None, None);
+    let recovered_history = run(&state, &cwd, &agent, &["history", "10"], None, None, None);
     assert!(
         recovered_history.status.success(),
         "{:?}",
         recovered_history.stderr
     );
     assert!(String::from_utf8_lossy(&recovered_history.stdout).contains(RAW_ID));
-    let recovered = run(&state, &cwd, &agent, &["chat-id"], false, None, None);
+    let recovered = run(&state, &cwd, &agent, &["chat-id"], None, None, None);
     assert!(recovered.status.success(), "{:?}", recovered.stderr);
     assert_eq!(String::from_utf8_lossy(&recovered.stdout).trim(), RAW_ID);
     assert!(!journal.join("pending.json").exists());
 
-    let reread = run(&state, &cwd, &agent, &["chat-id"], false, None, None);
+    let reread = run(&state, &cwd, &agent, &["chat-id"], None, None, None);
     assert!(reread.status.success());
     assert_eq!(String::from_utf8_lossy(&reread.stdout).trim(), RAW_ID);
     assert_eq!(
@@ -118,6 +126,105 @@ fn real_cli_recovers_committed_conversation_mirrors_after_failpoint() {
     prove_external_override_recovery_and_unsafe_parent_rejection();
 }
 
+#[test]
+fn real_cli_clear_tombstones_recover_across_each_failpoint() {
+    prove_clear_failpoint("after_clear_journal_prepare", false);
+    prove_clear_failpoint("after_clear_canonical_commit", false);
+    prove_clear_failpoint("after_clear_first_removal", true);
+}
+
+fn prove_clear_failpoint(failpoint: &str, all: bool) {
+    let scratch = Scratch::new();
+    let state = scratch.0.join("state");
+    let cwd = scratch.0.join(format!("clear-{failpoint}-cwd"));
+    fs::create_dir(&state).unwrap();
+    fs::create_dir(&cwd).unwrap();
+    let agent = fake_agent(&scratch.0);
+    let seeded = run(&state, &cwd, &agent, &["create-chat"], None, None, None);
+    assert!(seeded.status.success(), "{:?}", seeded.stderr);
+    let history = fs::read(state.join("history.log")).unwrap();
+    let by_cwd = fs::read_dir(state.join("by-cwd"))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .collect::<Vec<_>>();
+    assert_eq!(by_cwd.len(), 1);
+    if all {
+        fs::write(state.join("by-cwd/other-project"), b"other-private-id\n").unwrap();
+    }
+
+    let args = if all {
+        vec!["clear", "--all"]
+    } else {
+        vec!["clear"]
+    };
+    let crashed = run(&state, &cwd, &agent, &args, Some(failpoint), None, None);
+    assert_eq!(crashed.status.code(), Some(86));
+    assert!(!String::from_utf8_lossy(&crashed.stderr).contains(RAW_ID));
+    let pending = state.join("daemon/conversation-mirror-journal/pending.json");
+    assert!(pending.exists());
+
+    let recovered = run(&state, &cwd, &agent, &["chat-id"], None, None, None);
+    if all {
+        assert_eq!(recovered.status.code(), Some(1));
+        assert!(!String::from_utf8_lossy(&recovered.stderr).contains(RAW_ID));
+        assert!(!state.join("chat-id").exists());
+        assert!(!state.join("chat-id.export").exists());
+        assert!(fs::read_dir(state.join("by-cwd")).unwrap().next().is_none());
+    } else {
+        assert!(recovered.status.success(), "{:?}", recovered.stderr);
+        assert_eq!(String::from_utf8_lossy(&recovered.stdout).trim(), RAW_ID);
+        if failpoint == "after_clear_journal_prepare" {
+            assert!(by_cwd[0].exists());
+        } else {
+            assert!(!by_cwd[0].exists());
+        }
+        assert_eq!(
+            fs::read_to_string(state.join("chat-id")).unwrap(),
+            format!("{RAW_ID}\n")
+        );
+    }
+    assert_eq!(fs::read(state.join("history.log")).unwrap(), history);
+    assert!(!pending.exists());
+
+    let connection = Connection::open(state.join("daemon/runtime.sqlite")).unwrap();
+    let operation = connection
+        .query_row(
+            "SELECT operation FROM conversation_identity_commit WHERE singleton=1",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .unwrap();
+    let expected = match failpoint {
+        "after_clear_journal_prepare" => "save",
+        _ if all => "clear_all",
+        _ => "clear_scope",
+    };
+    assert_eq!(operation, expected);
+    assert_eq!(
+        connection
+            .query_row("SELECT COUNT(*) FROM conversations", [], |row| row
+                .get::<_, i64>(0))
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT COUNT(*) FROM conversation_identity_aliases",
+                [],
+                |row| { row.get::<_, i64>(0) }
+            )
+            .unwrap(),
+        1
+    );
+    drop(connection);
+    assert_tree_excludes(&state.join("daemon"), RAW_ID.as_bytes());
+    assert_tree_excludes(
+        &state.join("daemon"),
+        format!("clear-{failpoint}-cwd").as_bytes(),
+    );
+}
+
 fn prove_external_override_recovery_and_unsafe_parent_rejection() {
     let scratch = Scratch::new();
     let state = scratch.0.join("state");
@@ -135,7 +242,7 @@ fn prove_external_override_recovery_and_unsafe_parent_rejection() {
         &cwd,
         &agent,
         &["create-chat"],
-        true,
+        Some("after_canonical_commit"),
         Some(&chat),
         Some(&history),
     );
@@ -143,7 +250,7 @@ fn prove_external_override_recovery_and_unsafe_parent_rejection() {
 
     // Reopen without either override: the committed plan owns its exact
     // validated targets and must not be reinterpreted through current env.
-    let recovered = run(&state, &cwd, &agent, &["history", "10"], false, None, None);
+    let recovered = run(&state, &cwd, &agent, &["history", "10"], None, None, None);
     assert!(recovered.status.success(), "{:?}", recovered.stderr);
     assert_eq!(fs::read_to_string(chat).unwrap(), format!("{RAW_ID}\n"));
     assert!(fs::read_to_string(history).unwrap().contains(RAW_ID));
@@ -159,7 +266,7 @@ fn prove_external_override_recovery_and_unsafe_parent_rejection() {
         &cwd,
         &agent,
         &["create-chat"],
-        false,
+        None,
         Some(&unsafe_parent.join("chat-id")),
         None,
     );
@@ -172,7 +279,7 @@ fn run(
     cwd: &Path,
     agent: &Path,
     args: &[&str],
-    failpoint: bool,
+    failpoint: Option<&str>,
     chat_override: Option<&Path>,
     history_override: Option<&Path>,
 ) -> Output {
@@ -186,11 +293,8 @@ fn run(
         .env("ABBEY_PER_CWD", "1")
         .env_remove("CURSOR_AGENT_CHAT_ID")
         .env_remove(abbey::edition::ACTIVE.scoped_env("MODEL_FILE"));
-    if failpoint {
-        command.env(
-            "ABBEY_TEST_CONVERSATION_FAILPOINT",
-            "after_canonical_commit",
-        );
+    if let Some(failpoint) = failpoint {
+        command.env("ABBEY_TEST_CONVERSATION_FAILPOINT", failpoint);
     } else {
         command.env_remove("ABBEY_TEST_CONVERSATION_FAILPOINT");
     }
