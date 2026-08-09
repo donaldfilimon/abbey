@@ -115,11 +115,28 @@ class ForkSafety(unittest.TestCase):
         # for that job rather than intersecting with it, so a single job block
         # can silently widen the token beyond `contents: read`.
         for name, body in self.jobs.items():
-            for match in re.finditer(r"^\s*permissions:\s*$", body, re.MULTILINE):
-                tail = body[match.end():]
-                self.assertRegex(
-                    tail.lstrip("\n"),
-                    r"\A\s*contents: read\b",
-                    f"job {name!r} overrides permissions with something other "
-                    f"than `contents: read`",
+            for match in re.finditer(r"^(\s*)permissions:\s*$", body, re.MULTILINE):
+                parent_indent = len(match.group(1))
+                # Collect all permission lines that follow, stopping at dedent
+                permissions_dict = {}
+                tail = body[match.end():].lstrip("\n")
+                for line in tail.split("\n"):
+                    if not line.strip():
+                        continue
+                    current_indent = len(line) - len(line.lstrip())
+                    if current_indent <= parent_indent:
+                        # We've exited the permissions block
+                        break
+                    # This line is part of the permissions block
+                    if ":" in line:
+                        key, val = line.split(":", 1)
+                        key = key.strip()
+                        val = val.strip()
+                        permissions_dict[key] = val
+                # Assert it's exactly {"contents": "read"}
+                self.assertEqual(
+                    permissions_dict,
+                    {"contents": "read"},
+                    f"job {name!r} has permissions {permissions_dict!r} instead of "
+                    f"exactly {{'contents': 'read'}}",
                 )
