@@ -1,0 +1,25 @@
+[package]
+name = "abbey-desktop-codegen"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+publish = false
+description = "Generates the desktop client's TypeScript IPC contracts from Abbey's Rust source"
+
+[[bin]]
+name = "abbey-desktop-codegen"
+path = "src/main.rs"
+
+[lints.rust]
+unsafe_code = "deny"
+
+[dependencies]
+anyhow = "1"
+proc-macro2 = { version = "1", features = ["span-locations"] }
+serde = "1"
+serde_json = { version = "1", features = ["preserve_order"] }
+syn = { version = "2", features = ["full", "parsing", "extra-traits", "printing"] }
+
+# The single source of truth for edition identity and for the *actual* serde
+# wire shapes the generated TypeScript is cross-checked against.
+abbey = { path = "../.." }

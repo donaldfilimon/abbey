@@ -271,18 +271,65 @@ design subtask never promotes the parent capability to Current.
     supplied and labeled estimates otherwise
     — STILL PROPOSED; unchanged by this slice.
 - [ ] **Phase 7 — Tauri 2 React/TypeScript desktop product:**
+  - **Slice 1 built 2026-08-08 (`desktop/`, ledger row stays Proposed):** a Tauri 2 +
+    React 19 + TypeScript client on bun/Vite, in its own cargo workspace so the root
+    gate is untouched. It is a client of the *app core*, reaching `abbeyd` over the
+    authenticated socket when a bearer is configured and the linked core otherwise —
+    never silently falling back after a daemon failure. `desktop/codegen` parses
+    `src/app_core/{ids,contracts}.rs` and the desktop's own `src-tauri/src/ipc.rs` with
+    `syn` and emits the TypeScript; `--check` fails on drift. Rejected `ts-rs`/
+    `schemars`/`specta` because each needs a derive added to `src/app_core/`.
   - Tauri 2 + React + TypeScript + Bun/Vite as a client of `abbeyd`; no duplicated
     business logic; frontend IPC types generated from the Rust command/event schema
+    — REAL: generated, and cross-checked rather than merely pinned — the generator also
+    emits the actual `serde_json` output of real `app_core` values as
+    `as const satisfies`, so a wrong field name, `rename_all`, or tag fails `tsc`
+    (verified negatively: a deliberately wrong `CapabilitySet`/tag produced five `tsc`
+    errors plus a `codegen --check` failure).
+    — STILL PROPOSED: "client of `abbeyd`" is unproven at runtime. The daemon route is
+    implemented and unit-tested, but every read observed on this machine came from the
+    in-process core because no bearer is configured. No windowed run against a live
+    `abbeyd` exists.
   - First-release views: Chat, Runs/trace, Tools/approvals, Memory/semantic spaces,
     Models/downloads, Training/adapters, Cluster/workers, Routes/bindings,
     Doctor/settings
+    — REAL: Doctor/settings and a Claims/capability browser. Those are exactly what
+    `CapabilitySet::standard()` grants (`ReadStatus` + `ReadClaims`), and view
+    availability is computed from the live capability set, not a hardcoded boolean.
+    — STILL PROPOSED: the other eight render **no data at all**. `AppCommand` has two
+    variants, so there is nothing to fetch. Each states the contract-level reason and
+    then shows the *live* ledger rows for a filter, so the UI never asserts a status it
+    invented — memory, routes, role bindings, and the local mesh proof are Current in
+    Abbey and the placeholders say so instead of mislabelling them Proposed. Only
+    Training is marked capability-not-implemented. No mock data exists anywhere in the
+    window.
   - Security: strict CSP, no remote JS/eval, no generic execute-shell invoke, narrow
     Rust commands, secrets never echoed to frontend logs/state; safe vs personal
     editions get different bundle identities and capability manifests
+    — REAL and each independently checked: strict CSP (no `unsafe-inline`,
+    `unsafe-eval`, or wildcard) asserted by a Rust test and by
+    `desktop/scripts/verify-bundle.mjs`, which also scans the built `dist/` for remote
+    `src`/`href`, remote dynamic `import()`, `eval(`, and `new Function(`; exactly four
+    enumerated read-only commands (`app_status`, `app_claims`, `app_connection`,
+    `app_bundle_identity`) with no shell/fs/http/process/opener/dialog plugin in the
+    crate manifest and `core:default` as the only granted permission; no `invoke` call
+    outside `src/ipc/client.ts`; the bearer is reported as a boolean plus a source
+    *kind* and no IPC type has a field that can hold one. Bundle identities are
+    **written** into both tauri configs from `abbey::edition`, tests pin them to the
+    edition table and to each other's difference, and startup refuses a packaged
+    identifier that disagrees with the compiled edition.
+    — STILL PROPOSED: the per-edition **capability manifest** split. Both editions ship
+    the same `capabilities/default.json`, because `CapabilitySet` is identical in both
+    editions today and there is nothing yet to differentiate.
   - Platform/signing: macOS ARM64 host, Ubuntu ARM64 VM, Win11 ARM (WebView2); Windows
     x64 unverified until separately built/run; Apple Developer ID + notarization,
     Windows/Linux signing keys are owner-controlled release blockers — never
     manufacture/embed credentials
+    — STILL PROPOSED, and unchanged by this slice. `cargo check`/`cargo test` pass on
+    macOS ARM64 and `tauri-build` accepted the config, but **no bundle was produced**:
+    no `tauri build`, no signing, no notarization, no Ubuntu ARM64 or Win11 ARM run. No
+    credential was manufactured or embedded. Icons are placeholder marks with no
+    `.icns`.
 - [ ] **Phase 8 — Local model and media roadmap:**
   - Primary inference: `google/gemma-4-12B-it-qat-w4a16-ct` (24 GB Mac fit); start
     bounded at 4K context + 64-token acceptance smoke; require peak RSS ≤ 20 GB, no

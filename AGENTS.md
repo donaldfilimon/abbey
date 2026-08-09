@@ -109,6 +109,9 @@ src/tui/              7-tab ratatui
 src/init/ gitops.rs agent/ models.rs state.rs config.rs
 docs/                 identity · architecture · production
 tasks/                goals + todo
+desktop/              Tauri 2 + React/TS client of the app core — separate cargo
+                      workspace, NOT built by ./check.sh (see desktop/README.md);
+                      its TS IPC types are generated from src/app_core/
 ```
 
 ## Conventions

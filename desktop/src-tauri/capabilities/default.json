@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Core webview permissions only. Abbey's desktop client reaches the application core exclusively through the four enumerated `app_*` commands in src/commands.rs. No shell, filesystem, HTTP, process, dialog, or opener plugin is declared in Cargo.toml, so no permission for one can be granted here even by mistake.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}
