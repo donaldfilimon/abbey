@@ -80,6 +80,25 @@ the parent capability to Current.
 - [ ] **5. Accelerator runtime:** add GPU/NPU/TPU capability negotiation and execution
       behind the same compute abstraction; test numerical correctness and fallbacks before
       advertising compilation/training/inference support.
+    — *partially real as of 2026-08-09 — the item stays open.* **Now Current (narrow):**
+      `abbey accel verify` behind off-by-default `--features accel` runs three numerical
+      kernels (`dot`, `cosine`, `top_k`; 1024-element f32) through ABI's `MetalAccelerator`
+      and checks each natively produced value against the `abi-compute` `CpuBackend` oracle
+      in the same run — floats at relative tolerance `1e-3` vs `max(|native|,|oracle|,1.0)`,
+      `top_k` indices exactly. Execution is read from the adapter's `CapabilityState` ladder
+      (fresh adapter per kernel), never from the return value, because the adapter returns
+      the oracle itself on fallback. Live-verified on Apple Silicon: `backend used gpu-metal`,
+      all three `match`, exit 0. Claim: `accelerator-kernel-execution-metal`.
+      **Still Proposed and untouched** (`accelerator-execution-runtime`): capability
+      *negotiation* (there is no selection policy — the kernel set is fixed and Metal-only);
+      GPU/NPU/TPU **compilation, training, and model inference**; ANE/NPU residency or
+      placement (a Metal or CoreML output-oracle success proves execution under a requested
+      compute-unit policy, **not** placement — see the recorded lesson); CUDA/Vulkan/TPU,
+      whose ABI adapters stay build-detection only; and any speedup or performance figure —
+      nothing on this path is timed, and none was measured.
+    — *known gap:* the Metal dylib resolves via `@loader_path` and `install.sh` does not
+      relocate it, so `ABBEY_CARGO_FEATURES=accel ./install.sh` yields a binary that aborts
+      in dyld (observed exit 134). The capability is verified only from a cargo build tree.
 - [ ] **6. LoRA/fine-tuning:** promote curated `train_candidate` data through explicit
       consent/redaction/splits, reproducible adapter training, evaluation, rollback, and
       signed artifact provenance; no automatic weight mutation.
@@ -707,7 +726,7 @@ next slice, which would have sent Max to build a capability `claims refuse` exit
 | ABI authenticated local multi-process proof | **Current (Unix single host)** | `abbey mesh local-demo --nodes 3..9`; typed quorum/failover/conflict/repair/process-group teardown proof from the real ABI binary. Non-Unix fails before spawn. |
 | Local three-VM shared-compute proof on one Mac | **Proposed** | Loopback independent processes do not establish VM networking or shared compute. |
 | Production separate-host / geographic-HA / multi-GPU mesh | **Proposed after VM proof** | The local three-VM proof will not establish production operations evidence. |
-| GPU/NPU/TPU compilation · training · inference *in Abbey* | **Proposed** | Abbey currently detects accelerators but runs no kernels; approval does not create runtime proof. |
+| GPU/NPU/TPU compilation · training · inference *in Abbey* | **Proposed** | Abbey detects accelerators, and behind `--features accel` runs a fixed set of numerical kernels on Metal with verified CPU-oracle parity (`accelerator-kernel-execution-metal`). Running arithmetic is not compiling, training, or serving a model, and it is not placement or speedup evidence; approval does not create runtime proof for the rest. |
 | Personal-unrestricted separate edition | **Proposed** | Must remain separately packaged and locally controlled; unrestricted bypass in shipped Abbey remains Out of scope. |
 | Local production weights · LoRA | **Proposed** | `abi-nn` capabilities are reuse candidates, not evidence Abbey integrates them; `train_candidate` remains curation only. |
 | CouchDB-Python second stack | **Out of scope / unapproved** | No need established alongside the backend-neutral memory interface. |
