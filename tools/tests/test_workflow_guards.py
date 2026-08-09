@@ -109,3 +109,17 @@ class ForkSafety(unittest.TestCase):
         # checkout layout this repo needs.
         self.assertNotIn("ubuntu-latest", self.text)
         self.assertNotIn("macos-latest", self.text)
+
+    def test_no_job_widens_token_permissions(self) -> None:
+        # Job-level `permissions:` fully overrides the workflow-level default
+        # for that job rather than intersecting with it, so a single job block
+        # can silently widen the token beyond `contents: read`.
+        for name, body in self.jobs.items():
+            for match in re.finditer(r"^\s*permissions:\s*$", body, re.MULTILINE):
+                tail = body[match.end():]
+                self.assertRegex(
+                    tail.lstrip("\n"),
+                    r"\A\s*contents: read\b",
+                    f"job {name!r} overrides permissions with something other "
+                    f"than `contents: read`",
+                )
