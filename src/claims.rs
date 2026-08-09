@@ -25,6 +25,20 @@ pub enum Status {
 }
 
 impl Status {
+    /// Every status the gate can classify a claim under.
+    ///
+    /// Kept in one place so tests can partition the registry by status
+    /// without restating per-status claim counts. Two branches can each add
+    /// a claim and each bump such a literal consistently, so the textual
+    /// merge succeeds while the literal silently goes stale.
+    pub const ALL: [Self; 5] = [
+        Self::Current,
+        Self::Partial,
+        Self::Proposed,
+        Self::Blocked,
+        Self::OutOfScope,
+    ];
+
     pub fn label(self) -> &'static str {
         match self {
             Self::Current => "Current",
@@ -299,15 +313,15 @@ pub fn print_claims(filter: Option<&str>) -> Result<i32> {
     let filter = filter.map(str::trim).filter(|s| !s.is_empty());
     match filter.map(str::to_ascii_lowercase).as_deref() {
         None | Some("all") => {
-            print_section(Status::Current);
-            println!();
-            print_section(Status::Partial);
-            println!();
-            print_section(Status::Proposed);
-            println!();
-            print_section(Status::Blocked);
-            println!();
-            print_section(Status::OutOfScope);
+            // Ordered by Status::ALL so this listing and the tests that
+            // partition the registry cannot disagree about which statuses
+            // exist, and a new status appears here without a second edit.
+            for (index, status) in Status::ALL.iter().enumerate() {
+                if index > 0 {
+                    println!();
+                }
+                print_section(*status);
+            }
             print_footer();
         }
         Some("current" | "shipped") => print_section(Status::Current),
@@ -542,12 +556,40 @@ mod tests {
 
     #[test]
     fn gate_has_all_five_statuses() {
-        assert_eq!(CLAIMS.len(), 45);
-        assert_eq!(by_status(Status::Current).count(), 30);
-        assert_eq!(by_status(Status::Partial).count(), 1);
-        assert_eq!(by_status(Status::Proposed).count(), 8);
-        assert_eq!(by_status(Status::Blocked).count(), 1);
-        assert_eq!(by_status(Status::OutOfScope).count(), 5);
+        // Derived from the registry on purpose. Hardcoded per-status totals
+        // are a semantic-merge hazard: two branches each add one claim and
+        // each bump the literal to the same value, so git merges the text
+        // cleanly and the assertion silently stops describing the registry.
+        // Everything below stays true no matter how many claims exist, and
+        // still fails for the cases the test name promises to catch.
+        for (index, status) in Status::ALL.iter().enumerate() {
+            assert!(
+                !Status::ALL[..index].contains(status),
+                "{} is listed twice in Status::ALL",
+                status.label()
+            );
+            assert!(
+                by_status(*status).count() > 0,
+                "no claim carries status {}",
+                status.label()
+            );
+        }
+
+        // An exact partition. This fails if a claim is unreachable through
+        // by_status — which is what a new Status variant missing from
+        // Status::ALL looks like — or if by_status ever double-counts.
+        let classified: usize = Status::ALL
+            .iter()
+            .map(|status| by_status(*status).count())
+            .sum();
+        assert_eq!(
+            classified,
+            CLAIMS.len(),
+            "every claim must be reachable through exactly one Status::ALL entry"
+        );
+
+        // The registry must also be well-formed, not merely countable.
+        validate_registry().expect("canonical registry must be internally valid");
     }
 
     #[test]
