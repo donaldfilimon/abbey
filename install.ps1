@@ -33,11 +33,15 @@ if (-not (Test-Path $bin)) {
 # completion, so the names come from the binary itself (src/edition.rs) rather
 # than from a literal repeated here. There is deliberately no fallback literal:
 # guessing "abbey" when the probe fails is precisely the clobber this prevents.
-$editionBin = (& $bin edition --name | Out-String).Trim()
+# `2>$null` mirrors install.sh's `2>/dev/null`: the probe is a query, and a
+# native command's stderr inside a pipeline can surface as a terminating error
+# under `$ErrorActionPreference = "Stop"`. Failure is detected by exit code and
+# reported by the throw below, so nothing diagnostic is lost.
+$editionBin = (& $bin edition --name 2>$null | Out-String).Trim()
 if ($LASTEXITCODE -ne 0 -or -not $editionBin) {
     throw "could not read the compiled edition binary name from $bin"
 }
-$editionDaemon = (& $bin edition --daemon-name | Out-String).Trim()
+$editionDaemon = (& $bin edition --daemon-name 2>$null | Out-String).Trim()
 if ($LASTEXITCODE -ne 0 -or -not $editionDaemon) {
     throw "could not read the compiled edition daemon name from $bin"
 }

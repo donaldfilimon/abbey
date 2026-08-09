@@ -28,6 +28,9 @@ cd ~/abbey
 cargo build --release
 ./install.sh          # Unix/macOS → ~/.local/bin/abbey + abbeyd
 # Windows:  powershell -File .\install.ps1  → %LOCALAPPDATA%\abbey\bin\abbey.exe
+# Both installers name what they install after the compiled edition
+# (src/edition.rs), so the two editions never overwrite each other:
+#   ABBEY_CARGO_FEATURES=personal-edition → abbey-personal / abbey-personal.exe
 ```
 
 Requires **Rust nightly** (`rust-toolchain.toml`). Generation commands require a

@@ -23,6 +23,16 @@ abbey doctor        # build stamp + persona/role/memory/os honesty
 abbey platform paths
 ```
 
+Both installers read `ABBEY_CARGO_FEATURES` and then take the installed binary,
+daemon, and completion names from the built binary (`abbey edition --name` /
+`--daemon-name`, backed by `src/edition.rs`) rather than from literals, so a
+`personal-edition` build installs `abbey-personal`/`abbey-personal.exe` beside —
+never over — the safe edition. `install.ps1` installs no daemon: the
+authenticated transport is Unix-socket-only. Its edition derivation is currently
+proved by `tools/tests/test_install_ps1_editions.py` parsing the script, not by
+running it — no PowerShell runtime exists on the development machine, so Windows
+packaging is unproven (ledger row `edition-windows-install-naming`, Partial).
+
 `check.sh` runs clippy/test twice: default features, then `--features wdbx`. A bare
 `cargo test` never compiles `src/memory/wdbx.rs`, so it can pass while that code is broken.
 

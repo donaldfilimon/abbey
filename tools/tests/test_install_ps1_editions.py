@@ -109,11 +109,11 @@ class InstallPs1Source(unittest.TestCase):
         # installers can never grow a second naming scheme.
         self.assertRegex(
             self.text,
-            r"(?m)^\$editionBin\s*=\s*\(& \$bin edition --name \|.*\)\.Trim\(\)\s*$",
+            r"(?m)^\$editionBin\s*=\s*\(& \$bin edition --name\b.*\|.*\)\.Trim\(\)\s*$",
         )
         self.assertRegex(
             self.text,
-            r"(?m)^\$editionDaemon\s*=\s*\(& \$bin edition --daemon-name \|.*\)\.Trim\(\)\s*$",
+            r"(?m)^\$editionDaemon\s*=\s*\(& \$bin edition --daemon-name\b.*\|.*\)\.Trim\(\)\s*$",
         )
         sh = INSTALL_SH.read_text(encoding="utf-8")
         self.assertIn("edition --name", sh)
