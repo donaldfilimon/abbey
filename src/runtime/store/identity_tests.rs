@@ -261,6 +261,222 @@ fn identity_commit_rejects_tampered_digests_and_timestamps() {
 }
 
 #[test]
+fn canonical_scope_selection_is_candidate_independent_ordered_and_edition_scoped() {
+    let dir = tempfile_dir("canonical-selection-states");
+    let store = RuntimeStore::open_metadata(&RuntimeStore::path_for_state_dir(&dir)).unwrap();
+    let global = ConversationIdentityScope::global();
+    let cwd = ConversationIdentityScope::working_directory(Path::new("/private/canonical-cwd"));
+
+    assert_eq!(
+        store.identity_scope_selection("abbey", &global).unwrap(),
+        IdentityScopeSelection::Untracked
+    );
+    store
+        .save_conversation_identity(
+            "abbey",
+            std::slice::from_ref(&global),
+            "canonical-secret",
+            "canonical-save",
+        )
+        .unwrap();
+    let external = external_identity("canonical-secret").unwrap();
+    let selected = store.identity_scope_selection("abbey", &global).unwrap();
+    assert_eq!(
+        selected,
+        IdentityScopeSelection::Selected {
+            alias_sha256: external.alias_sha256,
+            conversation_id: external.conversation_id,
+        }
+    );
+    assert!(selected.matches_external_id(" canonical-secret ").unwrap());
+    assert!(!selected.matches_external_id("different-secret").unwrap());
+    assert!(selected.matches_external_id("bad\nid").is_err());
+    assert_eq!(
+        store
+            .identity_scope_selection("abbey-personal", &global)
+            .unwrap(),
+        IdentityScopeSelection::Untracked
+    );
+    assert_eq!(
+        store.identity_scope_selection("abbey", &cwd).unwrap(),
+        IdentityScopeSelection::Untracked
+    );
+
+    store
+        .clear_conversation_identity(
+            "abbey",
+            Some(std::slice::from_ref(&global)),
+            "canonical-clear",
+        )
+        .unwrap();
+    assert_eq!(
+        store.identity_scope_selection("abbey", &global).unwrap(),
+        IdentityScopeSelection::Tombstoned
+    );
+    store
+        .save_conversation_identity(
+            "abbey",
+            std::slice::from_ref(&global),
+            "resaved-secret",
+            "canonical-resave",
+        )
+        .unwrap();
+    assert!(matches!(
+        store.identity_scope_selection("abbey", &global).unwrap(),
+        IdentityScopeSelection::Selected { .. }
+    ));
+
+    drop(store);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn canonical_scope_selection_rejects_missing_save_receipt() {
+    let dir = tempfile_dir("canonical-missing-save-receipt");
+    let store = RuntimeStore::open_metadata(&RuntimeStore::path_for_state_dir(&dir)).unwrap();
+    let global = ConversationIdentityScope::global();
+    store
+        .save_conversation_identity(
+            "abbey",
+            std::slice::from_ref(&global),
+            "receipt-secret",
+            "receipt-save",
+        )
+        .unwrap();
+    {
+        let conn = store.conn.lock().unwrap();
+        conn.execute("DELETE FROM conversation_identity_mutation_scopes", [])
+            .unwrap();
+    }
+    assert!(matches!(
+        store.identity_scope_selection("abbey", &global),
+        Err(StoreError::CorruptData(_))
+    ));
+    drop(store);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn canonical_scope_selection_rejects_forged_save_receipt_digest() {
+    let dir = tempfile_dir("canonical-forged-save-digest");
+    let store = RuntimeStore::open_metadata(&RuntimeStore::path_for_state_dir(&dir)).unwrap();
+    let global = ConversationIdentityScope::global();
+    store
+        .save_conversation_identity(
+            "abbey",
+            std::slice::from_ref(&global),
+            "digest-secret",
+            "digest-save",
+        )
+        .unwrap();
+    {
+        let conn = store.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE conversation_identity_mutations SET scope_set_sha256=?1",
+            ["b".repeat(64)],
+        )
+        .unwrap();
+    }
+    assert!(matches!(
+        store.identity_scope_selection("abbey", &global),
+        Err(StoreError::CorruptData(_))
+    ));
+    drop(store);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn canonical_scope_selection_rejects_missing_and_forged_clear_effects() {
+    let dir = tempfile_dir("canonical-clear-effects");
+    let store = RuntimeStore::open_metadata(&RuntimeStore::path_for_state_dir(&dir)).unwrap();
+    let global = ConversationIdentityScope::global();
+    store
+        .clear_conversation_identity("abbey", Some(std::slice::from_ref(&global)), "effect-clear")
+        .unwrap();
+    {
+        let conn = store.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE conversation_identity_tombstones
+             SET cleared_at='2026-08-09T00:00:00.000Z'",
+            [],
+        )
+        .unwrap();
+    }
+    assert!(matches!(
+        store.identity_scope_selection("abbey", &global),
+        Err(StoreError::CorruptData(_))
+    ));
+    {
+        let conn = store.conn.lock().unwrap();
+        conn.execute("DELETE FROM conversation_identity_tombstones", [])
+            .unwrap();
+    }
+    assert!(matches!(
+        store.identity_scope_selection("abbey", &global),
+        Err(StoreError::CorruptData(_))
+    ));
+    drop(store);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn canonical_scope_selection_keeps_stale_selection_tombstoned() {
+    let dir = tempfile_dir("canonical-stale-selection");
+    let store = RuntimeStore::open_metadata(&RuntimeStore::path_for_state_dir(&dir)).unwrap();
+    let global = ConversationIdentityScope::global();
+    store
+        .save_conversation_identity(
+            "abbey",
+            std::slice::from_ref(&global),
+            "stale-canonical-secret",
+            "stale-save",
+        )
+        .unwrap();
+    let (alias, conversation, updated_at) = {
+        let conn = store.conn.lock().unwrap();
+        conn.query_row(
+            "SELECT alias_sha256, conversation_id, updated_at
+             FROM conversation_identity_scopes",
+            [],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            },
+        )
+        .unwrap()
+    };
+    store
+        .clear_conversation_identity("abbey", None, "stale-clear-all")
+        .unwrap();
+    {
+        let conn = store.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO conversation_identity_scopes(
+                edition_sha256, scope_sha256, alias_sha256, conversation_id,
+                revision, updated_at
+             ) VALUES (?1, ?2, ?3, ?4, 1, ?5)",
+            params![
+                edition_sha256("abbey").unwrap(),
+                global.as_sha256(),
+                alias,
+                conversation,
+                updated_at
+            ],
+        )
+        .unwrap();
+    }
+    assert_eq!(
+        store.identity_scope_selection("abbey", &global).unwrap(),
+        IdentityScopeSelection::Tombstoned
+    );
+    drop(store);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
 fn scope_clear_is_idempotent_tombstoned_and_superseded_by_save() {
     let dir = tempfile_dir("scope-clear");
     let store = RuntimeStore::open_metadata(&RuntimeStore::path_for_state_dir(&dir)).unwrap();
