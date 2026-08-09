@@ -47,6 +47,11 @@ uuid = { version = "1", features = ["v4"] }
 url = "2"
 abi-ai = { path = "../abi/crates/abi-ai" }
 abi-wdbx = { path = "../abi/crates/abi-wdbx", optional = true }
+# Accelerator execution bridge (see `--features accel`). Two crates, because
+# abi-gpu re-exports its adapters but NOT the `Accelerator` trait or the
+# `CpuBackend` oracle they are written against — those live in abi-compute.
+abi-gpu = { path = "../abi/crates/abi-gpu", optional = true }
+abi-compute = { path = "../abi/crates/abi-compute", optional = true }
 # Cross-platform advisory lock for WDBX and canonical identity writes
 # (Unix flock / Windows LockFileEx).
 fs4 = "0.13"
@@ -70,6 +75,16 @@ wdbx = ["dep:abi-wdbx"]
 # no always-on unrestricted mode exists in either edition. check.sh gates this
 # feature explicitly, or the cfg'd paths rot behind the default gate.
 personal-edition = []
+# Real accelerator *execution* for one numerical kernel set, via ABI's
+# MetalAccelerator, each result checked against the deterministic CPU oracle in
+# the same run. OFF by default: abi-gpu's build script shells out to
+# `xcrun swiftc` to build a Metal/CoreML dylib, which is a macOS-toolchain
+# dependency the default build must not acquire. This feature does NOT add
+# GPU/NPU/TPU compilation, training, or model inference, and it makes no
+# placement or performance claim — see `accelerator-kernel-execution-metal` in
+# src/claims/registry.rs. check.sh gates it explicitly, or `src/accel.rs` rots
+# behind the default gate.
+accel = ["dep:abi-gpu", "dep:abi-compute"]
 
 [profile.release]
 lto = true

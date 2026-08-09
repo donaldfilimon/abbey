@@ -4,6 +4,7 @@
 //! crate. Only the presentation-neutral application contract is public; the
 //! mature CLI modules remain implementation details.
 
+mod accel;
 mod actions;
 mod agent;
 pub mod app_core;

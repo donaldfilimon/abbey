@@ -67,6 +67,18 @@ cargo clippy --features personal-edition --all-targets -- -D warnings
 echo "== test (--features personal-edition) =="
 cargo test --features personal-edition
 
+# The accelerator bridge (src/accel/bridge.rs) sits behind an off-by-default
+# feature, so every run above compiles only its refusal path. Gate it here or
+# the kernel/oracle code rots unnoticed. On a host with no Metal device the
+# parity tests still pass — they assert the report says `cpu` and claims
+# nothing — so this is safe on non-Apple CI. It does need abi-gpu's build
+# script to succeed, which on macOS means an Xcode toolchain for `xcrun swiftc`.
+echo "== clippy (--features accel) =="
+cargo clippy --features accel --all-targets -- -D warnings
+
+echo "== test (--features accel) =="
+cargo test --features accel
+
 echo "== claims/docs synchronization =="
 python3 -m unittest discover -s tools/tests -p 'test_*.py'
 python3 tools/check_claims_sync.py

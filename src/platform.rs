@@ -312,15 +312,18 @@ pub fn print_platform() -> Result<i32> {
         );
     }
     println!();
-    println!("accelerators (host detect — Abbey does NOT run on these):");
+    println!("accelerators (host detect — presence inventory, not a runtime):");
     for h in detect_accelerators() {
         println!("  [{:<3}] {:<4} {}", h.status, h.kind, h.detail);
     }
     println!();
     println!(
         "honesty: GPU/NPU/TPU compilation, training, and inference inside Abbey \
-         are Proposed and unavailable (`abbey claims proposed`). Multi-threading = subagent jobs, \
-         not accelerator kernels. Voice/fm remain macOS-only.\n\
+         are Proposed and unavailable (`abbey claims proposed`), and device placement is not \
+         observable here. The rows above are presence detection only. Numerical kernel \
+         execution on Metal, checked against a CPU oracle, ships behind `--features accel` \
+         (`abbey accel verify`) — that is arithmetic, not models. Multi-threading = subagent \
+         jobs, not accelerator kernels. Voice/fm remain macOS-only.\n\
          paths:   abbey platform paths"
     );
     Ok(0)
@@ -357,7 +360,9 @@ pub fn print_compute() -> Result<i32> {
     }
     println!();
     let _ = output::println(
-        "Abbey does not schedule GPU/NPU/TPU work. For local second opinions use \
+        "Abbey schedules no model work on GPU/NPU/TPU. The one exception is arithmetic: \
+         `abbey accel verify` (behind `--features accel`) runs numerical kernels on Metal \
+         and checks them against a CPU oracle. For local second opinions use \
          `abbey subagents --peers`. For claims: `abbey claims refuse npu`.",
     );
     Ok(0)
