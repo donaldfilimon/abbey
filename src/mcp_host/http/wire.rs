@@ -138,7 +138,7 @@ pub fn read_request(reader: &mut impl BufRead, deadline: Instant) -> ReadOutcome
         if text.is_empty() {
             break;
         }
-        if lines.len() >= MAX_HTTP_HEADERS + 1 {
+        if lines.len() > MAX_HTTP_HEADERS {
             return ReadOutcome::Rejected(HttpError::new(
                 431,
                 format!("more than {MAX_HTTP_HEADERS} header lines"),
@@ -310,5 +310,77 @@ pub fn write_all_deadline(
     match writer.flush() {
         Err(error) if is_timeout(&error) => Ok(()),
         other => other,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A peer that accepts the first `accepts` bytes and then never drains.
+    ///
+    /// A real socket would need its send buffer filled to reach this state,
+    /// which is neither portable nor deterministic. The behaviour under test is
+    /// the retry loop's deadline, not the kernel's buffering.
+    struct StalledWriter {
+        accepts: usize,
+    }
+
+    impl Write for StalledWriter {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            if self.accepts == 0 {
+                return Err(std::io::Error::new(ErrorKind::WouldBlock, "buffer full"));
+            }
+            let taken = self.accepts.min(buf.len());
+            self.accepts -= taken;
+            Ok(taken)
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn a_writer_that_never_drains_is_abandoned_at_the_deadline() {
+        let mut writer = StalledWriter { accepts: 4 };
+        let timeout = Duration::from_millis(200);
+        let started = Instant::now();
+        let error = write_all_deadline(&mut writer, b"0123456789", timeout)
+            .expect_err("a peer that stops draining must not be waited on forever");
+        let elapsed = started.elapsed();
+
+        assert_eq!(error.kind(), ErrorKind::TimedOut);
+        assert!(
+            elapsed >= timeout,
+            "gave up early after {elapsed:?}, before the {timeout:?} deadline"
+        );
+        assert!(
+            elapsed < timeout * 10,
+            "took {elapsed:?} — the deadline is not bounding the retry loop"
+        );
+    }
+
+    #[test]
+    fn a_draining_peer_receives_every_byte() {
+        let mut sink = Vec::new();
+        write_all_deadline(&mut sink, b"hello", Duration::from_secs(1))
+            .expect("a sink never fills");
+        assert_eq!(sink, b"hello");
+    }
+
+    #[test]
+    fn every_response_closes_the_connection_and_refuses_sniffing() {
+        let bytes = response_bytes(200, &[("Mcp-Session-Id", "abc".to_owned())], b"{}");
+        let text = String::from_utf8(bytes).expect("responses are ASCII headers plus a JSON body");
+        assert!(text.starts_with("HTTP/1.1 200 OK\r\n"));
+        assert!(text.contains("Content-Length: 2\r\n"));
+        assert!(text.contains("Connection: close\r\n"));
+        assert!(text.contains("X-Content-Type-Options: nosniff\r\n"));
+        assert!(text.contains("Cache-Control: no-store\r\n"));
+        assert!(text.contains("Mcp-Session-Id: abc\r\n"));
+        // No CORS: a web page must never be told it may read this.
+        assert!(!text.to_ascii_lowercase().contains("access-control-allow"));
+        assert!(text.ends_with("\r\n\r\n{}"));
     }
 }

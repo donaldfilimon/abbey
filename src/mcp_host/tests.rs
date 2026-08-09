@@ -19,7 +19,11 @@ use super::tools::{EffectClass, SAFE_TOOLS, SafeTool, ToolError, tool_names};
 
 /// Substrings that would mark a tool *name* as execution-capable. A name is
 /// the client-visible handle, so the bar here is deliberately blunt.
-const EXECUTION_NAME_MARKERS: &[&str] = &[
+///
+/// Shared with [`super::http::tests`] rather than duplicated: the HTTP
+/// transport's requirement is that it advertises *the same* registry under the
+/// *same* bar, and two copies of this list would eventually disagree.
+pub(super) const EXECUTION_NAME_MARKERS: &[&str] = &[
     "shell",
     "exec",
     "command",
@@ -41,7 +45,7 @@ const EXECUTION_NAME_MARKERS: &[&str] = &[
 /// Kept separate from the name markers on purpose: a description that
 /// *disclaims* execution ("excluded because it spawns vendor binaries") is the
 /// behaviour we want, and a blunt substring scan over prose would punish it.
-const EXECUTION_CAPABILITY_PHRASES: &[&str] = &[
+pub(super) const EXECUTION_CAPABILITY_PHRASES: &[&str] = &[
     "run a command",
     "run any command",
     "execute a",
