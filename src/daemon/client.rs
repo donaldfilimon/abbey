@@ -76,8 +76,11 @@ pub enum ClientError {
     ConnectTimeout { path: PathBuf },
     #[error("cannot connect to abbeyd at {path}: {source}")]
     Connect { path: PathBuf, source: io::Error },
-    #[error("cannot configure abbeyd socket: {0}")]
-    Configure(io::Error),
+    #[error("cannot configure abbeyd socket {operation}: {source}")]
+    Configure {
+        operation: &'static str,
+        source: io::Error,
+    },
     #[error("cannot serialize abbeyd request: {0}")]
     Serialize(serde_json::Error),
     #[error("abbeyd request exceeds the configured frame limit")]
@@ -144,10 +147,16 @@ mod unix {
         let mut stream = connect(config)?;
         stream
             .set_read_timeout(Some(config.read_timeout))
-            .map_err(ClientError::Configure)?;
+            .map_err(|source| ClientError::Configure {
+                operation: "read timeout",
+                source,
+            })?;
         stream
             .set_write_timeout(Some(config.write_timeout))
-            .map_err(ClientError::Configure)?;
+            .map_err(|source| ClientError::Configure {
+                operation: "write timeout",
+                source,
+            })?;
 
         let length = u32::try_from(bytes.len()).map_err(|_| ClientError::RequestTooLarge)?;
         stream
@@ -414,7 +423,7 @@ mod unix {
 #[cfg(all(test, unix))]
 mod tests {
     use std::io::{Read as _, Write as _};
-    use std::os::unix::fs::PermissionsExt as _;
+    use std::os::unix::fs::{FileTypeExt as _, PermissionsExt as _};
     use std::os::unix::net::{UnixListener, UnixStream};
     use std::path::{Path, PathBuf};
     use std::thread;
@@ -884,7 +893,9 @@ mod tests {
     impl RealServer {
         fn start() -> Self {
             let root = scratch_dir("real");
-            let config = test_config(root.join("abbeyd.sock"));
+            let mut config = test_config(root.join("abbeyd.sock"));
+            config.read_timeout = Duration::from_secs(2);
+            config.write_timeout = Duration::from_secs(2);
             let shutdown = Shutdown::default();
             let server_shutdown = shutdown.clone();
             let server_config = config.clone();
@@ -947,8 +958,17 @@ mod tests {
 
     fn wait_for_socket(path: &Path) {
         let deadline = Instant::now() + Duration::from_secs(2);
-        while !path.exists() {
-            assert!(Instant::now() < deadline, "daemon socket was not created");
+        loop {
+            if let Ok(metadata) = std::fs::metadata(path) {
+                let mode = metadata.permissions().mode();
+                if metadata.file_type().is_socket() && mode & 0o077 == 0 {
+                    return;
+                }
+            }
+            assert!(
+                Instant::now() < deadline,
+                "daemon socket was not created with owner-only permissions"
+            );
             thread::sleep(Duration::from_millis(5));
         }
     }
