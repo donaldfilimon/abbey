@@ -32,6 +32,10 @@ const SOURCES: &[(&str, &str)] = &[
         "src/app_core/run.rs — bounded run lifecycle contracts",
     ),
     (
+        "src/app_core/routes.rs",
+        "src/app_core/routes.rs — sanitized routing audit contracts",
+    ),
+    (
         "src/app_core/contracts.rs",
         "src/app_core/contracts.rs — application command and event contracts",
     ),

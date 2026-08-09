@@ -18,9 +18,9 @@
 use abbey::app_core::{
     APP_PROTOCOL_V1, APP_PROTOCOL_VERSION, APP_SCHEMA_V1, APP_SCHEMA_VERSION, AppCapability,
     AppCommand, AppEvent, ApprovalKind, ApprovalRequest, BackendSelection, CapabilitySet,
-    ClaimRecord, ClaimStatus, ClaimsQuery, ClaimsSnapshot, Edition, IdempotencyKey, RunEventPage,
-    RunEventRecord, RunId, RunLifecycleEvent, RunMode, RunRequest, RunRouteCapability, RuntimeState,
-    RuntimeStatus,
+    ClaimRecord, ClaimStatus, ClaimsQuery, ClaimsSnapshot, Edition, IdempotencyKey, RouteAuditEntry,
+    RouteAuditPage, RouteAuditQuery, RunEventPage, RunEventRecord, RunId, RunLifecycleEvent,
+    RunMode, RunRequest, RunRouteCapability, RuntimeState, RuntimeStatus,
 };
 use anyhow::{Context, Result};
 use std::fmt::Write as _;
@@ -160,6 +160,39 @@ import type {
             has_more: false,
         }),
     )?;
+    emit(
+        &mut out,
+        "readRoutesCommandFixture",
+        "AppCommand",
+        &AppCommand::ReadRoutes(RouteAuditQuery { limit: 3 }),
+    )?;
+    // The redaction canary. The Rust value this is serialized from carries an
+    // opaque `ws-` digest and a `[path]`-redacted reason, because `app_core`
+    // never lets a raw `cwd` reach a client. If a future change made the wire
+    // shape carry a path, this literal would change and `--check` would fail.
+    emit(
+        &mut out,
+        "routeAuditEventFixture",
+        "AppEvent",
+        &AppEvent::RouteAudit(RouteAuditPage {
+            entries: vec![RouteAuditEntry {
+                recorded_at: "2026-08-08T00:00:00Z".to_owned(),
+                workspace: Some("ws-000000000000".to_owned()),
+                persona: "Abbey".to_owned(),
+                role: "max".to_owned(),
+                model: "fixture-model".to_owned(),
+                confidence_percent: 82,
+                reason: "persona=Abbey role=max class=Code log=[path]".to_owned(),
+                stage: Some("implement".to_owned()),
+                correlation: Some("fixture-correlation".to_owned()),
+                alternate: Some("gemma".to_owned()),
+                fallback: None,
+                tools: vec!["mcp".to_owned()],
+            }],
+            returned: 1,
+            limit: 3,
+        }),
+    )?;
     emit(&mut out, "claimRecordFixture", "ClaimRecord", &claim)?;
     // The canary: `CapabilitySet`'s only field is private, so a projection that
     // reads visibility instead of serde would emit a bare array here.
@@ -173,8 +206,12 @@ import type {
     writeln!(
         out,
         "\n/** Capabilities consumed by the desktop's read-only Tauri bridge. */\nexport const DESKTOP_READ_CAPABILITIES = {} as const;\n\n/** Every capability protocol v2 can advertise when a run route is bound. */\nexport const ALL_APP_CAPABILITIES = {} as const;",
-        serde_json::to_string(&[AppCapability::ReadStatus, AppCapability::ReadClaims])
-            .context("cannot serialize the desktop capability list")?,
+        serde_json::to_string(&[
+            AppCapability::ReadStatus,
+            AppCapability::ReadClaims,
+            AppCapability::ReadRoutes,
+        ])
+        .context("cannot serialize the desktop capability list")?,
         serde_json::to_string(CapabilitySet::runtime_v2().as_slice())
             .context("cannot serialize the protocol-v2 capability list")?
     )?;

@@ -7,6 +7,7 @@ mod context;
 mod contracts;
 mod ids;
 mod policy;
+mod routes;
 mod run;
 mod service;
 
@@ -18,6 +19,7 @@ pub use contracts::{
 };
 pub use ids::{ConversationId, IdError, RunId};
 pub use policy::StandardPolicy;
+pub use routes::{MAX_ROUTE_AUDIT_PAGE, RouteAuditEntry, RouteAuditPage, RouteAuditQuery};
 pub use run::{
     BackendSelection, ConversationMetadata, IdempotencyKey, MAX_RUN_EVENT_PAGE,
     RunCancellationReason, RunEventPage, RunEventRecord, RunEventsQuery, RunFailure,

@@ -37,7 +37,8 @@ export const statusV1EventFixture = {
     "capabilities": {
       "capabilities": [
         "read_status",
-        "read_claims"
+        "read_claims",
+        "read_routes"
       ]
     }
   }
@@ -60,7 +61,8 @@ export const statusV2EventFixture = {
         "read_run",
         "read_run_events",
         "submit_run",
-        "cancel_run"
+        "cancel_run",
+        "read_routes"
       ]
     },
     "run_routes": [
@@ -134,6 +136,38 @@ export const runEventsEventFixture = {
   }
 } as const satisfies AppEvent;
 
+export const readRoutesCommandFixture = {
+  "type": "read_routes",
+  "payload": {
+    "limit": 3
+  }
+} as const satisfies AppCommand;
+
+export const routeAuditEventFixture = {
+  "type": "route_audit",
+  "payload": {
+    "entries": [
+      {
+        "recorded_at": "2026-08-08T00:00:00Z",
+        "workspace": "ws-000000000000",
+        "persona": "Abbey",
+        "role": "max",
+        "model": "fixture-model",
+        "confidence_percent": 82,
+        "reason": "persona=Abbey role=max class=Code log=[path]",
+        "stage": "implement",
+        "correlation": "fixture-correlation",
+        "alternate": "gemma",
+        "tools": [
+          "mcp"
+        ]
+      }
+    ],
+    "returned": 1,
+    "limit": 3
+  }
+} as const satisfies AppEvent;
+
 export const claimRecordFixture = {
   "name": "fixture claim",
   "status": "out_of_scope",
@@ -144,12 +178,13 @@ export const claimRecordFixture = {
 export const capabilitySetFixture = {
   "capabilities": [
     "read_status",
-    "read_claims"
+    "read_claims",
+    "read_routes"
   ]
 } as const satisfies CapabilitySet;
 
 /** Capabilities consumed by the desktop's read-only Tauri bridge. */
-export const DESKTOP_READ_CAPABILITIES = ["read_status","read_claims"] as const;
+export const DESKTOP_READ_CAPABILITIES = ["read_status","read_claims","read_routes"] as const;
 
 /** Every capability protocol v2 can advertise when a run route is bound. */
-export const ALL_APP_CAPABILITIES = ["read_status","read_claims","read_run","read_run_events","submit_run","cancel_run"] as const;
+export const ALL_APP_CAPABILITIES = ["read_status","read_claims","read_run","read_run_events","submit_run","cancel_run","read_routes"] as const;

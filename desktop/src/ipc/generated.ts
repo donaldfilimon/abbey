@@ -199,6 +199,72 @@ export interface ConversationMetadata {
 }
 
 // ---------------------------------------------------------------------------
+// src/app_core/routes.rs — sanitized routing audit contracts
+// ---------------------------------------------------------------------------
+
+/**
+ * Bounded tail query over the append-only routing audit log.
+ * 
+ * This is deliberately *not* a cursor. The route log is append-only JSONL with
+ * no stable sequence column, so the honest contract is "the most recent N
+ * decisions", the same thing `abbey routes -n` has always shown.
+ */
+export interface RouteAuditQuery {
+  /**
+   * Maximum entries to return, from 1 through [`MAX_ROUTE_AUDIT_PAGE`].
+   */
+  limit?: number;
+}
+
+/**
+ * One sanitized routing decision. Contains no path, prompt, or provider output.
+ */
+export interface RouteAuditEntry {
+  /**
+   * RFC 3339 instant the decision was appended.
+   */
+  recorded_at: string;
+  /**
+   * Opaque `ws-<12 hex>` digest of the working directory. Never a path.
+   */
+  workspace?: string | null;
+  persona: string;
+  role: string;
+  model: string;
+  /**
+   * Routing confidence, quantized to whole percent (0 through 100).
+   */
+  confidence_percent: number;
+  /**
+   * Bounded, control-stripped, path-redacted routing rationale.
+   */
+  reason: string;
+  stage?: string | null;
+  correlation?: string | null;
+  alternate?: string | null;
+  fallback?: string | null;
+  /**
+   * Closed tool markers the router attached (`media`, `mcp`, `subagents`, …).
+   */
+  tools?: Array<string>;
+}
+
+/**
+ * One bounded tail of the routing audit log, oldest entry first.
+ */
+export interface RouteAuditPage {
+  entries: Array<RouteAuditEntry>;
+  /**
+   * `entries.len()`, carried explicitly so a truncated frame fails validation.
+   */
+  returned: number;
+  /**
+   * The limit the request asked for, echoed back.
+   */
+  limit: number;
+}
+
+// ---------------------------------------------------------------------------
 // src/app_core/contracts.rs — application command and event contracts
 // ---------------------------------------------------------------------------
 
@@ -219,6 +285,7 @@ export type Edition =
 export type AppCommand =
   | { type: "status" }
   | { type: "claims"; payload: ClaimsQuery }
+  | { type: "read_routes"; payload: RouteAuditQuery }
   | { type: "submit_run"; payload: RunRequest }
   | { type: "get_run"; payload: RunQuery }
   | { type: "cancel_run"; payload: RunQuery }
@@ -230,6 +297,7 @@ export type AppCommand =
 export type AppEvent =
   | { type: "status"; payload: RuntimeStatus }
   | { type: "claims"; payload: ClaimsSnapshot }
+  | { type: "route_audit"; payload: RouteAuditPage }
   | { type: "approval_requested"; payload: ApprovalRequest }
   | { type: "run_submitted"; payload: RunSubmission }
   | { type: "run_status"; payload: RunSnapshot }
@@ -269,7 +337,8 @@ export type AppCapability =
   | "read_run"
   | "read_run_events"
   | "submit_run"
-  | "cancel_run";
+  | "cancel_run"
+  | "read_routes";
 
 /**
  * Ordered, duplicate-free capability declaration.
