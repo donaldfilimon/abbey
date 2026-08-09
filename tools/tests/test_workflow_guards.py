@@ -76,3 +76,36 @@ class WorkflowGuards(unittest.TestCase):
                 r"vars\.[A-Z0-9_]+ == 'enabled'",
                 f"self-hosted job {name!r} needs a vars.<RUNNER> == 'enabled' guard",
             )
+
+
+class ForkSafety(unittest.TestCase):
+    def setUp(self) -> None:
+        self.text = WORKFLOW.read_text(encoding="utf-8")
+        self.jobs = job_blocks(self.text)
+
+    def test_no_pull_request_target_trigger(self) -> None:
+        # pull_request_target runs with repository secrets against fork code.
+        self.assertNotIn("pull_request_target", self.text)
+
+    def test_token_permissions_are_read_only(self) -> None:
+        self.assertIsNotNone(
+            re.search(r"^permissions:\n  contents: read\s*$", self.text, re.MULTILINE),
+            "workflow must declare exactly `permissions:\\n  contents: read`",
+        )
+
+    def test_pull_request_jobs_require_a_same_repo_head(self) -> None:
+        for name, body in self.jobs.items():
+            if "pull_request" not in body:
+                continue
+            self.assertIn(
+                "github.event.pull_request.head.repo.full_name == github.repository",
+                body,
+                f"job {name!r} accepts pull_request without pinning the head repo",
+            )
+
+    def test_no_hosted_runner_reintroduced(self) -> None:
+        # Hosted runners are the assumption Phase 2 replaces; a silent
+        # `ubuntu-latest` would re-add a runner that cannot see the pinned ABI
+        # checkout layout this repo needs.
+        self.assertNotIn("ubuntu-latest", self.text)
+        self.assertNotIn("macos-latest", self.text)
