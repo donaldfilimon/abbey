@@ -3,7 +3,8 @@
 use crate::actions::{RunSpec, fork_prompt, run_agent, run_commit, run_pr, run_review};
 use crate::agent::{AgentConfig, run_resilient};
 use crate::app_core::{
-    AppCapability, AppCommand, AppEvent, ClaimStatus, ClaimsQuery, Edition, RuntimeState,
+    AppCapability, AppCommand, AppEvent, ClaimStatus, ClaimsQuery, Edition, RouteAuditQuery,
+    RuntimeState,
 };
 use crate::build_info;
 use crate::claims;
@@ -478,6 +479,9 @@ fn run_daemon_command(command: DaemonCmd) -> Result<i32> {
             }),
             json,
         ),
+        DaemonCmd::Routes { limit, json } => {
+            (AppCommand::ReadRoutes(RouteAuditQuery { limit }), json)
+        }
         DaemonCmd::Run { .. } => unreachable!("run commands return above"),
     };
     let event = request_daemon(command)?;
@@ -532,6 +536,7 @@ fn format_daemon_event(event: &AppEvent) -> Result<String> {
                     AppCapability::ReadRunEvents => "read_run_events",
                     AppCapability::SubmitRun => "submit_run",
                     AppCapability::CancelRun => "cancel_run",
+                    AppCapability::ReadRoutes => "read_routes",
                 })
                 .collect::<Vec<_>>()
                 .join(", ");
@@ -559,6 +564,28 @@ fn format_daemon_event(event: &AppEvent) -> Result<String> {
                 if let Some(instead) = &claim.instead {
                     rendered.push_str(&format!("      instead: {instead}\n"));
                 }
+            }
+            Ok(rendered)
+        }
+        AppEvent::RouteAudit(page) => {
+            let mut rendered = format!(
+                "abbeyd routes: {} of at most {} decision(s)\n",
+                page.returned, page.limit
+            );
+            for entry in &page.entries {
+                rendered.push_str(&format!(
+                    "  {} {}/{} {} {}% {} [{}]\n      alt={} fb={} {}\n",
+                    entry.recorded_at,
+                    entry.persona,
+                    entry.role,
+                    entry.model,
+                    entry.confidence_percent,
+                    entry.stage.as_deref().unwrap_or("-"),
+                    entry.workspace.as_deref().unwrap_or("-"),
+                    entry.alternate.as_deref().unwrap_or("-"),
+                    entry.fallback.as_deref().unwrap_or("-"),
+                    entry.reason,
+                ));
             }
             Ok(rendered)
         }

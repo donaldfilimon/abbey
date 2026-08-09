@@ -171,16 +171,9 @@ export const SURFACES: readonly Surface[] = [
   {
     id: "routes",
     label: "Routes",
-    blurb: "Persona/role routing audit.",
-    requires: null,
-    unavailable: {
-      reason: "not_on_contract",
-      detail:
-        "Routing decisions are appended to Abbey's JSONL route log by `hybrid_run`. " +
-        "The app core exposes no reader for it, and the desktop deliberately does not " +
-        "have filesystem access to go read it behind the contract's back.",
-      ledgerFilter: "route audit",
-    },
+    blurb:
+      "Persona/role routing audit — sanitized, with workspaces shown as opaque digests.",
+    requires: "read_routes",
   },
 ] as const;
 

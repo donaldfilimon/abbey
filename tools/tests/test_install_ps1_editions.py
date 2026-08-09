@@ -132,7 +132,7 @@ class InstallPs1Source(unittest.TestCase):
     def test_install_sh_also_refuses_to_fall_back_to_a_literal(self) -> None:
         # Symmetric to the ps1 guard above, and the reason it exists: install.sh
         # used to do `$(... || printf 'abbey')`, so a personal-edition build
-        # whose probe failed installed *over* the safe edition under its name —
+        # whose probe failed installed *over* the safe edition under its name --
         # the exact collision this derivation prevents. Pinned on both platforms
         # so the fallback cannot quietly return to either one.
         sh = INSTALL_SH.read_text(encoding="utf-8")

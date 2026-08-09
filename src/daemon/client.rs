@@ -108,6 +108,8 @@ pub enum ClientError {
     InvalidRuntimeStatus(&'static str),
     #[error("abbeyd returned an inconsistent claims snapshot")]
     InvalidClaimsSnapshot,
+    #[error("abbeyd returned an unsanitized or mismatched route audit page")]
+    InvalidRouteAudit,
     #[error("abbeyd returned an invalid or mismatched run response")]
     InvalidRunResponse,
     #[error("abbeyd rejected the request ({code}): {message}")]
@@ -204,6 +206,9 @@ mod unix {
     enum ExpectedEvent {
         Status,
         Claims,
+        RouteAudit {
+            limit: u16,
+        },
         RunSubmitted {
             idempotency_key: crate::app_core::IdempotencyKey,
             conversation_id: Option<crate::app_core::ConversationId>,
@@ -223,6 +228,7 @@ mod unix {
             match command {
                 AppCommand::Status => Self::Status,
                 AppCommand::Claims(_) => Self::Claims,
+                AppCommand::ReadRoutes(query) => Self::RouteAudit { limit: query.limit },
                 AppCommand::SubmitRun(request) => Self::RunSubmitted {
                     idempotency_key: request.idempotency_key.clone(),
                     conversation_id: request.conversation_id.clone(),
@@ -242,6 +248,7 @@ mod unix {
             match self {
                 Self::Status => "status event",
                 Self::Claims => "claims event",
+                Self::RouteAudit { .. } => "route audit page",
                 Self::RunSubmitted { .. } => "run submitted event",
                 Self::RunStatus(_) => "run status event",
                 Self::Cancellation(_) => "cancellation acknowledgement",
@@ -258,6 +265,17 @@ mod unix {
         match (&expected, &event) {
             (ExpectedEvent::Status, AppEvent::Status(status)) => validate_status(status, version)?,
             (ExpectedEvent::Claims, AppEvent::Claims(snapshot)) => validate_claims(snapshot)?,
+            (ExpectedEvent::RouteAudit { limit }, AppEvent::RouteAudit(page)) => {
+                // `page.validate()` is where the sanitization guarantees become
+                // wire invariants: it rejects an absolute path, a control
+                // character, or a non-digest workspace in any field. A daemon
+                // built from a different revision cannot push a raw `cwd` here.
+                page.validate()
+                    .map_err(|_| ClientError::InvalidRouteAudit)?;
+                if page.limit != *limit || page.returned > *limit {
+                    return Err(ClientError::InvalidRouteAudit);
+                }
+            }
             (
                 ExpectedEvent::RunSubmitted {
                     idempotency_key,
@@ -370,6 +388,7 @@ mod unix {
         match event {
             AppEvent::Status(_) => "status event",
             AppEvent::Claims(_) => "claims event",
+            AppEvent::RouteAudit(_) => "route audit page",
             AppEvent::ApprovalRequested(_) => "approval request",
             AppEvent::RunSubmitted(_) => "run submitted event",
             AppEvent::RunStatus(_) => "run status event",

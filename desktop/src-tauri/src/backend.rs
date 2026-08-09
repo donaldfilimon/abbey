@@ -12,7 +12,8 @@
 //!   linked against. `ConnectionInfo::source` always says which one answered.
 
 use abbey::app_core::{
-    AppCommand, AppEvent, AppService, AppServiceError, ClaimsQuery, ClaimsSnapshot, RuntimeStatus,
+    AppCommand, AppEvent, AppService, AppServiceError, ClaimsQuery, ClaimsSnapshot, RouteAuditPage,
+    RouteAuditQuery, RuntimeStatus,
 };
 use abbey::daemon::{ClientError, DaemonClient, DaemonConfig};
 use abbey::edition::ACTIVE;
@@ -111,6 +112,17 @@ pub fn claims(query: ClaimsQuery) -> Result<ClaimsSnapshot, IpcError> {
     }
 }
 
+pub fn routes(query: RouteAuditQuery) -> Result<RouteAuditPage, IpcError> {
+    // As with `claims`, the bounds are validated by `AppService::handle` and by
+    // the daemon; a third copy here would be a third thing to drift. The page
+    // that comes back has already been sanitized by `app_core` — this process
+    // has no filesystem route to the route log to go around it.
+    match dispatch(AppCommand::ReadRoutes(query))? {
+        AppEvent::RouteAudit(page) => Ok(page),
+        other => Err(unexpected("route_audit", &other)),
+    }
+}
+
 fn dispatch(command: AppCommand) -> Result<AppEvent, IpcError> {
     match route()? {
         Route::Daemon(client) => client.request(command).map_err(from_client_error),
@@ -122,6 +134,7 @@ fn unexpected(expected: &str, event: &AppEvent) -> IpcError {
     let received = match event {
         AppEvent::Status(_) => "status",
         AppEvent::Claims(_) => "claims",
+        AppEvent::RouteAudit(_) => "route_audit",
         AppEvent::ApprovalRequested(_) => "approval_requested",
         AppEvent::RunSubmitted(_) => "run_submitted",
         AppEvent::RunStatus(_) => "run_status",
@@ -157,6 +170,7 @@ fn from_client_error(error: ClientError) -> IpcError {
         | ClientError::UnexpectedEvent { .. }
         | ClientError::InvalidRuntimeStatus(_)
         | ClientError::InvalidClaimsSnapshot
+        | ClientError::InvalidRouteAudit
         | ClientError::InvalidRunResponse => (
             IpcErrorKind::Protocol,
             Some(format!(
@@ -199,6 +213,33 @@ mod tests {
         assert_eq!(status.schema_version, abbey::app_core::APP_SCHEMA_V1);
         assert_eq!(status.capabilities, abbey::app_core::CapabilitySet::standard());
         assert!(status.run_routes.is_empty());
+    }
+
+    #[test]
+    fn the_route_audit_is_reachable_and_never_carries_a_path() {
+        if bearer_source().is_some() {
+            return; // covered against a real daemon by tests/daemon_cli.rs
+        }
+        let page = routes(RouteAuditQuery { limit: 5 }).expect("in-process route audit");
+        // Reachable and permitted: `CapabilitySet::standard()` grants
+        // `ReadRoutes`, so the surfaces.ts `requires` entry is honest.
+        assert_eq!(page.limit, 5);
+        page.validate().expect("the page the view renders is valid");
+
+        // Whatever this developer machine's log contains, no rendered field may
+        // be an absolute path — that is what makes the desktop view safe to
+        // show without giving the webview filesystem access.
+        let rendered = serde_json::to_string(&page).expect("serialize page");
+        assert!(!rendered.contains("\"cwd\""), "{rendered}");
+        for entry in &page.entries {
+            assert!(entry.workspace.as_deref().is_none_or(|w| w.starts_with("ws-")));
+            for field in [&entry.persona, &entry.role, &entry.model, &entry.reason] {
+                assert!(
+                    !field.split_whitespace().any(|token| token.starts_with('/')),
+                    "route audit exposed a path to the desktop: {field}"
+                );
+            }
+        }
     }
 
     /// The discriminating test for "no silent fallback".

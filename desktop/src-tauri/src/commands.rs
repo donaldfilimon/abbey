@@ -1,16 +1,18 @@
 //! The complete set of Tauri commands the Abbey desktop client exposes.
 //!
-//! Four, all read-only, all enumerated in `main.rs`'s `generate_handler!`. The
+//! Five, all read-only, all enumerated in `main.rs`'s `generate_handler!`. The
 //! webview can invoke nothing else: there is no `exec`, no `run`, no
 //! command-name parameter that resolves to a subprocess, and no plugin in
 //! `Cargo.toml` that would provide one.
 //!
-//! Two of them (`app_status`, `app_claims`) are exactly the two capabilities
-//! `abbey::app_core::CapabilitySet::standard()` grants — `ReadStatus` and
-//! `ReadClaims`. The other two describe the client itself and touch no Abbey
-//! state.
+//! Three of them (`app_status`, `app_claims`, `app_routes`) are exactly the
+//! three capabilities `abbey::app_core::CapabilitySet::standard()` grants —
+//! `ReadStatus`, `ReadClaims`, and `ReadRoutes`. The other two describe the
+//! client itself and touch no Abbey state.
 
-use abbey::app_core::{ClaimsQuery, ClaimsSnapshot, RuntimeStatus};
+use abbey::app_core::{
+    ClaimsQuery, ClaimsSnapshot, RouteAuditPage, RouteAuditQuery, RuntimeStatus,
+};
 use abbey::edition::ACTIVE;
 
 use crate::backend;
@@ -27,6 +29,15 @@ pub fn app_status() -> Result<RuntimeStatus, IpcError> {
 #[tauri::command]
 pub fn app_claims(query: ClaimsQuery) -> Result<ClaimsSnapshot, IpcError> {
     backend::claims(query)
+}
+
+/// `ReadRoutes` — a bounded, sanitized tail of the persona/role routing audit
+/// log. The page carries an opaque `ws-<digest>` workspace label, never a
+/// filesystem path: this process has no filesystem plugin with which it could
+/// read the log directly, so the sanitized contract is the only route to it.
+#[tauri::command]
+pub fn app_routes(query: RouteAuditQuery) -> Result<RouteAuditPage, IpcError> {
+    backend::routes(query)
 }
 
 /// How this client reaches Abbey. No secret material; see `ipc::ConnectionInfo`.
