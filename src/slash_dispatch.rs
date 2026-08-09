@@ -82,6 +82,15 @@ pub fn dispatch_slash(input: &str, state: &AbbeyState, cfg: &mut AgentConfig) ->
             let args = slash::split_args(rest);
             crate::surfaces::dispatch_runtime(&args)
         }
+        "daemon" => {
+            let mut args = slash::split_args(rest);
+            if args.first().map(String::as_str) != Some("run") {
+                bail!("usage: /daemon run submit|status|cancel|events ...");
+            }
+            args.remove(0);
+            let command = crate::run_control::parse_slash_run_args(&args)?;
+            crate::run_control::dispatch(command)
+        }
         "oos" | "deferred" => {
             let args = slash::split_args(rest);
             crate::deferred::dispatch_oos(&args)

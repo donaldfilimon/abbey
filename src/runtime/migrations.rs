@@ -1,9 +1,9 @@
 //! Numbered, transactional migrations for `runtime.sqlite`.
 
-use rusqlite::{Connection, OptionalExtension, Transaction};
+use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 use thiserror::Error;
 
-pub(super) const CURRENT_SCHEMA_VERSION: i64 = 1;
+pub(super) const CURRENT_SCHEMA_VERSION: i64 = 2;
 
 const CREATE_LEDGER: &str = r#"
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -71,7 +71,57 @@ CREATE INDEX idx_run_events_created ON run_events(created_at);
 CREATE INDEX idx_audit_events_run ON audit_events(run_id, created_at);
 "#;
 
-const MIGRATIONS: &[(i64, &str)] = &[(1, MIGRATION_1)];
+const MIGRATION_2: &str = r#"
+CREATE TABLE legacy_conversation_imports (
+    snapshot_sha256 TEXT PRIMARY KEY CHECK (
+        length(snapshot_sha256) = 64
+        AND snapshot_sha256 NOT GLOB '*[^0-9a-f]*'
+    ),
+    backup_sha256 TEXT NOT NULL CHECK (backup_sha256 = snapshot_sha256),
+    source_count INTEGER NOT NULL CHECK (source_count > 0),
+    entry_count INTEGER NOT NULL CHECK (entry_count >= 0),
+    skipped_count INTEGER NOT NULL CHECK (skipped_count >= 0),
+    captured_at TEXT NOT NULL,
+    imported_at TEXT NOT NULL
+);
+
+CREATE TABLE legacy_conversation_aliases (
+    alias_sha256 TEXT PRIMARY KEY CHECK (
+        length(alias_sha256) = 64
+        AND alias_sha256 NOT GLOB '*[^0-9a-f]*'
+    ),
+    conversation_id TEXT NOT NULL UNIQUE,
+    first_import_sha256 TEXT NOT NULL,
+    imported_at TEXT NOT NULL,
+    FOREIGN KEY (conversation_id)
+        REFERENCES conversations(id) ON DELETE RESTRICT,
+    FOREIGN KEY (first_import_sha256)
+        REFERENCES legacy_conversation_imports(snapshot_sha256) ON DELETE RESTRICT
+);
+
+CREATE TABLE legacy_conversation_entries (
+    snapshot_sha256 TEXT NOT NULL,
+    ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
+    alias_sha256 TEXT NOT NULL,
+    conversation_id TEXT NOT NULL,
+    source_kind TEXT NOT NULL CHECK (
+        source_kind IN ('history', 'chat_id', 'by_cwd')
+    ),
+    observed_at TEXT,
+    PRIMARY KEY (snapshot_sha256, ordinal),
+    FOREIGN KEY (snapshot_sha256)
+        REFERENCES legacy_conversation_imports(snapshot_sha256) ON DELETE RESTRICT,
+    FOREIGN KEY (alias_sha256)
+        REFERENCES legacy_conversation_aliases(alias_sha256) ON DELETE RESTRICT,
+    FOREIGN KEY (conversation_id)
+        REFERENCES conversations(id) ON DELETE RESTRICT
+);
+
+CREATE INDEX idx_legacy_entries_conversation
+    ON legacy_conversation_entries(conversation_id, snapshot_sha256, ordinal);
+"#;
+
+const MIGRATIONS: &[(i64, &str)] = &[(1, MIGRATION_1), (2, MIGRATION_2)];
 
 #[derive(Debug, Error)]
 pub enum MigrationError {
@@ -83,12 +133,191 @@ pub enum MigrationError {
         #[source]
         source: rusqlite::Error,
     },
+    #[error("legacy conversation metadata import violates its stable schema")]
+    LegacyInvariant,
     #[error(transparent)]
     Database(#[from] rusqlite::Error),
 }
 
 pub(super) fn apply(conn: &mut Connection, now: &str) -> Result<(), MigrationError> {
     apply_set(conn, now, MIGRATIONS, CURRENT_SCHEMA_VERSION)
+}
+
+pub(super) fn import_legacy(
+    conn: &mut Connection,
+    import: &super::legacy::PreparedLegacyImport,
+    now: &str,
+) -> Result<bool, MigrationError> {
+    let source_count =
+        i64::try_from(import.source_count).map_err(|_| MigrationError::LegacyInvariant)?;
+    let entry_count =
+        i64::try_from(import.entries.len()).map_err(|_| MigrationError::LegacyInvariant)?;
+    let skipped_count =
+        i64::try_from(import.skipped_count).map_err(|_| MigrationError::LegacyInvariant)?;
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let inserted = tx.execute(
+        "INSERT OR IGNORE INTO legacy_conversation_imports(
+            snapshot_sha256, backup_sha256, source_count, entry_count, skipped_count,
+            captured_at, imported_at
+         ) VALUES (?1, ?1, ?2, ?3, ?4, ?5, ?6)",
+        params![
+            import.snapshot_sha256.as_str(),
+            source_count,
+            entry_count,
+            skipped_count,
+            import.captured_at.as_str(),
+            now
+        ],
+    )?;
+    if inserted == 0 {
+        let existing = tx.query_row(
+            "SELECT backup_sha256, source_count, entry_count, skipped_count, captured_at
+             FROM legacy_conversation_imports WHERE snapshot_sha256=?1",
+            [&import.snapshot_sha256],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, i64>(2)?,
+                    row.get::<_, i64>(3)?,
+                    row.get::<_, String>(4)?,
+                ))
+            },
+        )?;
+        if existing
+            != (
+                import.snapshot_sha256.clone(),
+                source_count,
+                entry_count,
+                skipped_count,
+                import.captured_at.clone(),
+            )
+        {
+            return Err(MigrationError::LegacyInvariant);
+        }
+        tx.commit()?;
+        return Ok(false);
+    }
+
+    for (ordinal, entry) in import.entries.iter().enumerate() {
+        let ordinal = i64::try_from(ordinal).map_err(|_| MigrationError::LegacyInvariant)?;
+        let initial_timestamp = entry.observed_at.as_deref().unwrap_or(&import.captured_at);
+        let alias_mapping = tx
+            .query_row(
+                "SELECT conversation_id FROM legacy_conversation_aliases
+                 WHERE alias_sha256=?1",
+                [&entry.alias_sha256],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?;
+        if alias_mapping
+            .as_deref()
+            .is_some_and(|mapped| mapped != entry.conversation_id.as_str())
+        {
+            return Err(MigrationError::LegacyInvariant);
+        }
+        let conversation_alias = tx
+            .query_row(
+                "SELECT alias_sha256 FROM legacy_conversation_aliases
+                 WHERE conversation_id=?1",
+                [entry.conversation_id.as_str()],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?;
+        if conversation_alias
+            .as_deref()
+            .is_some_and(|mapped| mapped != entry.alias_sha256)
+        {
+            return Err(MigrationError::LegacyInvariant);
+        }
+        let conversation_exists = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM conversations WHERE id=?1)",
+            [entry.conversation_id.as_str()],
+            |row| row.get::<_, bool>(0),
+        )?;
+        if conversation_exists && alias_mapping.is_none() {
+            return Err(MigrationError::LegacyInvariant);
+        }
+        tx.execute(
+            "INSERT OR IGNORE INTO conversations(id, created_at, updated_at)
+             VALUES (?1, ?2, ?2)",
+            params![entry.conversation_id.as_str(), initial_timestamp],
+        )?;
+        tx.execute(
+            "INSERT OR IGNORE INTO legacy_conversation_aliases(
+                alias_sha256, conversation_id, first_import_sha256, imported_at
+             ) VALUES (?1, ?2, ?3, ?4)",
+            params![
+                entry.alias_sha256.as_str(),
+                entry.conversation_id.as_str(),
+                import.snapshot_sha256.as_str(),
+                now
+            ],
+        )?;
+        let mapped = tx.query_row(
+            "SELECT conversation_id FROM legacy_conversation_aliases WHERE alias_sha256=?1",
+            [&entry.alias_sha256],
+            |row| row.get::<_, String>(0),
+        )?;
+        if mapped != entry.conversation_id.as_str() {
+            return Err(MigrationError::LegacyInvariant);
+        }
+        tx.execute(
+            "INSERT INTO legacy_conversation_entries(
+                snapshot_sha256, ordinal, alias_sha256, conversation_id, source_kind,
+                observed_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                import.snapshot_sha256.as_str(),
+                ordinal,
+                entry.alias_sha256.as_str(),
+                entry.conversation_id.as_str(),
+                entry.source_kind.as_str(),
+                entry.observed_at.as_deref()
+            ],
+        )?;
+    }
+
+    let mut aliases = import
+        .entries
+        .iter()
+        .map(|entry| (entry.alias_sha256.as_str(), entry.conversation_id.as_str()))
+        .collect::<Vec<_>>();
+    aliases.sort_unstable();
+    aliases.dedup();
+    for (alias_sha256, conversation_id) in aliases {
+        let envelope = tx.query_row(
+            "SELECT MIN(e.observed_at), MAX(e.observed_at),
+                    MIN(i.captured_at), MAX(i.captured_at)
+             FROM legacy_conversation_entries e
+             JOIN legacy_conversation_imports i
+               ON i.snapshot_sha256=e.snapshot_sha256
+             WHERE e.alias_sha256=?1",
+            [alias_sha256],
+            |row| {
+                Ok((
+                    row.get::<_, Option<String>>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                ))
+            },
+        )?;
+        let created_at = envelope
+            .0
+            .or(envelope.2)
+            .ok_or(MigrationError::LegacyInvariant)?;
+        let updated_at = envelope
+            .1
+            .or(envelope.3)
+            .ok_or(MigrationError::LegacyInvariant)?;
+        tx.execute(
+            "UPDATE conversations SET created_at=?2, updated_at=?3 WHERE id=?1",
+            params![conversation_id, created_at, updated_at],
+        )?;
+    }
+    tx.commit()?;
+    Ok(true)
 }
 
 fn apply_set(
@@ -153,7 +382,7 @@ mod tests {
             conn.query_row("SELECT COUNT(*) FROM schema_migrations", [], |row| row
                 .get::<_, i64>(0))
                 .unwrap(),
-            1
+            2
         );
     }
 

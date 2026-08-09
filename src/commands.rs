@@ -461,6 +461,9 @@ pub fn run_cli(cli: Cli, state: AbbeyState, mut cfg: AgentConfig) -> Result<i32>
 }
 
 fn run_daemon_command(command: DaemonCmd) -> Result<i32> {
+    if let DaemonCmd::Run { cmd } = command {
+        return crate::run_control::dispatch(cmd);
+    }
     let (command, json) = match command {
         DaemonCmd::Status { json } => (AppCommand::Status, json),
         DaemonCmd::Claims {
@@ -474,6 +477,7 @@ fn run_daemon_command(command: DaemonCmd) -> Result<i32> {
             }),
             json,
         ),
+        DaemonCmd::Run { .. } => unreachable!("run commands return above"),
     };
     let event = request_daemon(command)?;
 

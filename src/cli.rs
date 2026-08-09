@@ -706,6 +706,11 @@ pub enum DaemonCmd {
         #[arg(long)]
         json: bool,
     },
+    /// Submit, inspect, cancel, or page events for bounded protocol-v2 runs
+    Run {
+        #[command(subcommand)]
+        cmd: crate::run_control::RunControlCliCommand,
+    },
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]

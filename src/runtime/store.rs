@@ -99,6 +99,7 @@ pub struct ConversationBackend {
 pub struct RuntimeStore {
     conn: Mutex<Connection>,
     recovered_runs: usize,
+    legacy_imported: bool,
 }
 
 impl RuntimeStore {
@@ -108,22 +109,48 @@ impl RuntimeStore {
     }
 
     pub fn open(path: &Path) -> Result<Self, StoreError> {
+        Self::open_internal(path, None)
+    }
+
+    pub(crate) fn open_with_legacy(
+        path: &Path,
+        legacy: Option<&super::legacy::PreparedLegacyImport>,
+    ) -> Result<Self, StoreError> {
+        Self::open_internal(path, legacy)
+    }
+
+    fn open_internal(
+        path: &Path,
+        legacy: Option<&super::legacy::PreparedLegacyImport>,
+    ) -> Result<Self, StoreError> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
         let mut conn = Connection::open(path)?;
         configure(&conn)?;
-        migrations::apply(&mut conn, &now())?;
+        let timestamp = now();
+        migrations::apply(&mut conn, &timestamp)?;
+        let legacy_imported = legacy
+            .map(|import| migrations::import_legacy(&mut conn, import, &timestamp))
+            .transpose()?
+            .unwrap_or(false);
         let recovered_runs = recover_interrupted_on(&mut conn)?;
         Ok(Self {
             conn: Mutex::new(conn),
             recovered_runs,
+            legacy_imported,
         })
     }
 
     #[must_use]
     pub const fn recovered_runs(&self) -> usize {
         self.recovered_runs
+    }
+
+    /// Whether this open committed a new legacy metadata snapshot.
+    #[must_use]
+    pub const fn legacy_imported(&self) -> bool {
+        self.legacy_imported
     }
 
     pub fn create_conversation(&self, id: &ConversationId) -> Result<(), StoreError> {
