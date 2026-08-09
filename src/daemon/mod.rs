@@ -1,6 +1,7 @@
 //! Authenticated, bounded local control-plane transport for `abbeyd`.
 //!
-//! Protocol v1 preserves its read-only Status/Claims contract. Protocol v2 adds
+//! Protocol v1 preserves its read-only contract — Status, Claims, and the
+//! sanitized ReadRoutes audit tail. Protocol v2 adds
 //! durable run submission, status, cancellation, and sanitized paged lifecycle
 //! events for startup-bound fixed local providers. Requests never choose a
 //! program, argument recipe, environment, or workspace; tools, shell, memory,

@@ -103,7 +103,14 @@ fn status_and_filtered_claims_round_trip_through_real_binaries() {
         human.contains(&format!("abbeyd: ready ({expected_edition_word} edition)")),
         "{human}"
     );
-    assert!(human.contains("capabilities: read_status, read_claims"));
+    // A prefix match: `abbeyd` runs the protocol-v2 handler, so the advertised
+    // set continues past these two. `read_routes` is asserted separately
+    // because it is declared last and a prefix check would never see it.
+    assert!(
+        human.contains("capabilities: read_status, read_claims"),
+        "{human}"
+    );
+    assert!(human.contains("read_routes"), "{human}");
 
     let status = harness.abbey(BEARER, &["daemon", "status", "--json"]);
     assert_success(&status, "daemon status");
@@ -153,6 +160,110 @@ fn status_and_filtered_claims_round_trip_through_real_binaries() {
     };
     assert_eq!(snapshot.matched, 1);
     assert_eq!(snapshot.claims[0].status, ClaimStatus::Proposed);
+}
+
+/// Real-binary proof for the route audit, including that the human and JSON
+/// surfaces describe the *same* daemon answer and that neither carries the raw
+/// working directory the log stores on disk.
+#[test]
+fn route_audit_reads_the_scratch_log_with_cli_and_json_parity() {
+    let harness = Harness::start();
+
+    // A workspace path that must never appear on either surface. It is under
+    // the scratch root, so it is a genuine absolute path on this machine.
+    let workspace = harness.root.join("secret-workspace");
+    let workspace_text = path_text(&workspace).to_owned();
+    let records = [
+        format!(
+            r#"{{"ts":"2026-08-08T12:00:00Z","cwd":{workspace},"persona":"Abbey","role":"max","model":"fable","reason":"persona=Abbey role=max class=Code","confidence":0.82,"tools":["mcp"]}}"#,
+            workspace = serde_json::to_string(&workspace_text).unwrap()
+        ),
+        // A malformed line between two good ones must not poison the read.
+        "{ not json at all".to_owned(),
+        format!(
+            r#"{{"ts":"2026-08-08T12:01:00Z","cwd":{workspace},"persona":"Abbey","role":"gemma","model":"gemma-3","reason":"hybrid-loop stage=interpret log={workspace_text}/route.jsonl","confidence":0.85,"stage":"interpret","correlation":"corr-1"}}"#,
+            workspace = serde_json::to_string(&workspace_text).unwrap()
+        ),
+    ];
+    std::fs::write(
+        harness.root.join("route.jsonl"),
+        format!("{}\n", records.join("\n")),
+    )
+    .expect("seed the scratch route log");
+
+    let json = harness.abbey(BEARER, &["daemon", "routes", "--json"]);
+    assert_success(&json, "daemon routes --json");
+    let json_text = String::from_utf8(json.stdout).expect("routes JSON is UTF-8");
+    let AppEvent::RouteAudit(page) =
+        serde_json::from_str::<AppEvent>(&json_text).expect("routes returns a typed event")
+    else {
+        panic!("daemon routes returned the wrong event");
+    };
+    assert_eq!(page.returned, 2, "the malformed line must be isolated");
+    assert_eq!(page.entries.len(), 2);
+    assert_eq!(page.entries[0].persona, "Abbey");
+    assert_eq!(page.entries[0].confidence_percent, 82);
+    assert_eq!(page.entries[1].stage.as_deref(), Some("interpret"));
+    assert_eq!(page.entries[1].correlation.as_deref(), Some("corr-1"));
+
+    let human = harness.abbey(BEARER, &["daemon", "routes"]);
+    assert_success(&human, "daemon routes");
+    let human_text = String::from_utf8(human.stdout).expect("routes text is UTF-8");
+
+    // Parity: every fact the human surface prints comes from the same page the
+    // JSON surface returned, and the counts agree.
+    assert!(
+        human_text.contains(&format!("abbeyd routes: {} of at most", page.returned)),
+        "{human_text}"
+    );
+    for entry in &page.entries {
+        let workspace_label = entry.workspace.as_deref().expect("a workspace digest");
+        assert!(workspace_label.starts_with("ws-"), "{workspace_label}");
+        for fragment in [
+            entry.recorded_at.as_str(),
+            entry.model.as_str(),
+            workspace_label,
+        ] {
+            assert!(
+                human_text.contains(fragment),
+                "human surface omitted {fragment}: {human_text}"
+            );
+        }
+        assert!(human_text.contains(&format!("{}%", entry.confidence_percent)));
+    }
+
+    // Redaction holds across the socket on both surfaces.
+    for surface in [&json_text, &human_text] {
+        assert!(
+            !surface.contains(&workspace_text),
+            "route audit leaked the raw workspace path: {surface}"
+        );
+        assert!(
+            !surface.contains(path_text(&harness.root)),
+            "route audit leaked the state root: {surface}"
+        );
+    }
+    assert!(json_text.contains("[path]"), "{json_text}");
+
+    // The limit is honoured end to end and its bound is enforced by Clap.
+    let narrow = harness.abbey(BEARER, &["daemon", "routes", "--limit", "1", "--json"]);
+    assert_success(&narrow, "daemon routes --limit 1");
+    let AppEvent::RouteAudit(page) = serde_json::from_slice::<AppEvent>(&narrow.stdout).unwrap()
+    else {
+        panic!("daemon routes returned the wrong event");
+    };
+    assert_eq!(page.returned, 1);
+    assert_eq!(page.limit, 1);
+    // The tail keeps the newest decision.
+    assert_eq!(page.entries[0].role, "gemma");
+
+    for rejected in ["0", "51"] {
+        let output = harness.abbey(BEARER, &["daemon", "routes", "--limit", rejected]);
+        assert!(
+            !output.status.success(),
+            "--limit {rejected} must be rejected"
+        );
+    }
 }
 
 #[test]

@@ -636,7 +636,11 @@ mod tests {
         );
         assert_eq!(
             CapabilitySet::standard().as_slice(),
-            &[AppCapability::ReadStatus, AppCapability::ReadClaims]
+            &[
+                AppCapability::ReadStatus,
+                AppCapability::ReadClaims,
+                AppCapability::ReadRoutes,
+            ]
         );
     }
 

@@ -37,6 +37,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             commands::app_status,
             commands::app_claims,
+            commands::app_routes,
             commands::app_connection,
             commands::app_bundle_identity,
         ])

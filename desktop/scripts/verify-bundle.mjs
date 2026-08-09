@@ -100,8 +100,43 @@ for (const plugin of [
 }
 
 // 5. Only the enumerated commands may be invoked, and only by literal name.
-const commandNames = new Set(["app_status", "app_claims", "app_connection", "app_bundle_identity"]);
+//
+// The allowlist is *derived* from `generate_handler!` rather than restated
+// here. A hardcoded copy quietly became a second place every new command had to
+// be registered, which is the drift this script exists to catch.
+const mainSource = readFileSync(join(root, "src-tauri", "src", "main.rs"), "utf8");
+const handlerBlock = /generate_handler!\s*\[([^\]]*)\]/.exec(mainSource);
+if (handlerBlock === null) fail("src-tauri/src/main.rs declares no generate_handler! block");
+const commandNames = new Set(
+  (handlerBlock?.[1] ?? "")
+    .split(",")
+    .map((entry) => entry.split("//")[0].trim())
+    .filter((entry) => entry.length > 0)
+    .map((entry) => entry.replace(/^commands::/, "")),
+);
+if (commandNames.size === 0) fail("generate_handler! enumerates no commands");
+for (const name of commandNames) {
+  if (!/^app_[a-z_]+$/.test(name)) {
+    fail(`generate_handler! entry \`${name}\` is not an app_ command`);
+  }
+}
 const clientSource = readFileSync(join(root, "src", "ipc", "client.ts"), "utf8");
+// The frontend's COMMANDS list must match the Rust handler in both directions:
+// an unreachable wrapper is as much a lie as a missing one.
+const declared = new Set(
+  Array.from(
+    /export const COMMANDS = \[([^\]]*)\]/.exec(clientSource)?.[1].matchAll(/"([^"]+)"/g) ?? [],
+    (match) => match[1],
+  ),
+);
+for (const name of commandNames) {
+  if (!declared.has(name)) fail(`src/ipc/client.ts COMMANDS omits ${name}`);
+}
+for (const name of declared) {
+  if (!commandNames.has(name)) {
+    fail(`src/ipc/client.ts COMMANDS declares unknown command ${name}`);
+  }
+}
 for (const match of clientSource.matchAll(/invoke<[^>]*>\(\s*"([^"]+)"/g)) {
   if (!commandNames.has(match[1])) fail(`src/ipc/client.ts invokes unknown command ${match[1]}`);
 }
