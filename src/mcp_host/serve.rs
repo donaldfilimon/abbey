@@ -311,8 +311,13 @@ impl Server {
         })
     }
 
-    /// Serialize, redact, size-check, and write exactly one line.
-    fn write_frame(&self, writer: &mut impl Write, response: &Value) -> std::io::Result<()> {
+    /// Serialize, redact, and size-check exactly one response body.
+    ///
+    /// This is the **only** place a response becomes bytes. Both transports go
+    /// through it, so the outbound secret pass and [`MAX_RESPONSE_BYTES`] cannot
+    /// be lost by a transport that serializes on its own — a real hazard, since
+    /// the HTTP transport builds its body here rather than writing a line.
+    pub(super) fn encode_frame(&self, response: &Value) -> String {
         let mut line = serde_json::to_string(response)
             .unwrap_or_else(|_| r#"{"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":"response is not serializable"}}"#.to_owned());
         line = redact::redact_with(&line, &self.secrets);
@@ -325,7 +330,12 @@ impl Server {
             ))
             .expect("static error envelope serializes");
         }
-        writer.write_all(line.as_bytes())?;
+        line
+    }
+
+    /// Write exactly one newline-delimited frame (stdio transport).
+    fn write_frame(&self, writer: &mut impl Write, response: &Value) -> std::io::Result<()> {
+        writer.write_all(self.encode_frame(response).as_bytes())?;
         writer.write_all(b"\n")?;
         writer.flush()
     }
