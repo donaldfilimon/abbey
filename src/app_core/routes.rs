@@ -329,12 +329,18 @@ fn is_redactable_path(token: &str) -> bool {
 /// receiving desktop has a different `HOME` than the daemon that produced the
 /// page, so a `HOME`-relative rule would be a machine-dependent wire invariant.
 ///
-/// Every `key=value` segment of the token is tested, not just its start. Abbey's
+/// Every delimited segment of the token is tested, not just its start. Abbey's
 /// own reasons are `key=value` shaped (`persona=`, `class=`, `stage=`, `exit=`),
 /// so a prefix-only test let `log=/var/log/abbey.jsonl` through — caught by the
-/// redaction test before this shipped.
+/// redaction test before this shipped. `:` is covered too: no Abbey producer
+/// emits `cwd:/path`, but this function is the consumer-side invariant against
+/// a peer this build did not produce, so it may not assume Abbey's shapes.
+///
+/// The whole token is tested **before** splitting, which is load-bearing:
+/// splitting `C:\Windows` on `:` yields `C` and `\Windows`, and neither trips
+/// [`segment_is_path`] on its own (only a `\\` UNC prefix is matched).
 fn is_structural_path(token: &str) -> bool {
-    token.split('=').any(segment_is_path)
+    segment_is_path(token) || token.split(['=', ':']).any(segment_is_path)
 }
 
 fn segment_is_path(segment: &str) -> bool {
@@ -427,6 +433,14 @@ mod tests {
     #[test]
     fn wire_shapes_are_tagged_and_reject_unknown_fields() {
         let command = super::super::AppCommand::ReadRoutes(RouteAuditQuery { limit: 7 });
+        // Load-bearing: `RuntimeHandler` routes v1 frames to `readonly_v1`, and
+        // `DaemonClient` only allows a downgrade retry for v1 commands. The
+        // real-binary test cannot catch a flip here, because `abbeyd` supports
+        // both versions and the client tries v2 first.
+        assert_eq!(
+            command.minimum_protocol_version(),
+            super::super::APP_PROTOCOL_V1
+        );
         assert_eq!(
             serde_json::to_value(&command).unwrap(),
             serde_json::json!({"type": "read_routes", "payload": {"limit": 7}})
@@ -556,6 +570,12 @@ mod tests {
             },
             RouteAuditEntry {
                 model: "C:\\models\\local".into(),
+                ..good.clone()
+            },
+            // No Abbey producer emits this, but a peer this build did not
+            // produce might, and validate is the wire invariant.
+            RouteAuditEntry {
+                reason: "cwd:/Users/someone/secret".into(),
                 ..good.clone()
             },
             RouteAuditEntry {
