@@ -123,6 +123,10 @@ fn unexpected(expected: &str, event: &AppEvent) -> IpcError {
         AppEvent::Status(_) => "status",
         AppEvent::Claims(_) => "claims",
         AppEvent::ApprovalRequested(_) => "approval_requested",
+        AppEvent::RunSubmitted(_) => "run_submitted",
+        AppEvent::RunStatus(_) => "run_status",
+        AppEvent::CancellationAcknowledged(_) => "cancellation_acknowledged",
+        AppEvent::RunEvents(_) => "run_events",
     };
     IpcError::new(
         IpcErrorKind::Protocol,

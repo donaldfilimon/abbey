@@ -54,6 +54,7 @@ import type {
         build_git: "fixture".to_owned(),
         build_target: "fixture".to_owned(),
         capabilities: CapabilitySet::standard(),
+        run_routes: Vec::new(),
     };
 
     let claim = ClaimRecord {

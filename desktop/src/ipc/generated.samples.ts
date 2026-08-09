@@ -27,8 +27,8 @@ export const claimsCommandFixture = {
 export const statusEventFixture = {
   "type": "status",
   "payload": {
-    "protocol_version": 1,
-    "schema_version": 1,
+    "protocol_version": 2,
+    "schema_version": 2,
     "edition": "standard",
     "state": "ready",
     "version": "0.0.0-fixture",

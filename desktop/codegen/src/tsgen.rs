@@ -112,6 +112,7 @@ struct SerdeAttrs {
     untagged: bool,
     default: bool,
     skip: bool,
+    skip_serializing_if: bool,
     transparent: bool,
     flatten: bool,
 }
@@ -139,6 +140,10 @@ fn serde_attrs(attrs: &[syn::Attribute]) -> Result<SerdeAttrs> {
                     let _ = meta.value().and_then(|value| value.parse::<syn::LitStr>());
                 }
                 "skip" | "skip_serializing" => parsed.skip = true,
+                "skip_serializing_if" => {
+                    parsed.skip_serializing_if = true;
+                    let _ = meta.value().and_then(|value| value.parse::<syn::LitStr>());
+                }
                 "transparent" => parsed.transparent = true,
                 "flatten" => parsed.flatten = true,
                 "deny_unknown_fields" | "borrow" => {}
@@ -271,7 +276,14 @@ fn ts_type(ty: &syn::Type, known: &BTreeSet<String>) -> Result<String> {
             let name = segment.ident.to_string();
             let args = generic_args(segment);
             match (name.as_str(), args.len()) {
-                ("String" | "str" | "PathBuf" | "char", 0) => Ok("string".into()),
+                // `IdempotencyKey` has a hand-written validated string serde
+                // implementation, so there is no derive for `is_serde` to
+                // discover. Keep this mapping explicit and fail closed for
+                // every other unknown application type.
+                (
+                    "String" | "str" | "PathBuf" | "char" | "IdempotencyKey",
+                    0,
+                ) => Ok("string".into()),
                 (
                     "u8" | "u16" | "u32" | "u64" | "usize" | "i8" | "i16" | "i32" | "i64"
                     | "isize" | "f32" | "f64" | "NonZeroU32" | "NonZeroUsize",
@@ -381,7 +393,7 @@ fn render_named_fields(
             Some(rename) => rename,
             None => apply_case(&ident, container.rename_all.as_deref())?,
         };
-        let optional = attrs.default || container.default;
+        let optional = attrs.default || attrs.skip_serializing_if || container.default;
         out.push_str(&tsdoc(&field.attrs, indent));
         write!(
             out,

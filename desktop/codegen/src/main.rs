@@ -28,8 +28,12 @@ const SOURCES: &[(&str, &str)] = &[
         "src/app_core/ids.rs — opaque identifiers",
     ),
     (
+        "src/app_core/run.rs",
+        "src/app_core/run.rs — bounded run lifecycle contracts",
+    ),
+    (
         "src/app_core/contracts.rs",
-        "src/app_core/contracts.rs — read-only application contracts",
+        "src/app_core/contracts.rs — application command and event contracts",
     ),
     (
         "desktop/src-tauri/src/ipc.rs",

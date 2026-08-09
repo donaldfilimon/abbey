@@ -19,7 +19,187 @@ export type RunId = string;
 export type ConversationId = string;
 
 // ---------------------------------------------------------------------------
-// src/app_core/contracts.rs — read-only application contracts
+// src/app_core/run.rs — bounded run lifecycle contracts
+// ---------------------------------------------------------------------------
+
+/**
+ * Durable lifecycle state for one run.
+ */
+export type RunState =
+  | "queued"
+  | "starting"
+  | "running"
+  | "cancel_requested"
+  | "succeeded"
+  | "failed"
+  | "cancelled"
+  | "interrupted";
+
+/**
+ * User-visible scheduling mode. It carries no executable configuration.
+ */
+export type RunMode =
+  | "interactive"
+  | "one_shot"
+  | "background"
+  | "automation";
+
+/**
+ * Closed backend selection; arbitrary executable paths are intentionally absent.
+ */
+export type BackendSelection =
+  | "cursor"
+  | "abi"
+  | "foundation_models"
+  | "grok";
+
+/**
+ * Bounded model request description. This type does not grant execution authority.
+ */
+export interface RunRequest {
+  idempotency_key: string;
+  conversation_id: ConversationId | null;
+  mode: RunMode;
+  backend: BackendSelection;
+  input: string;
+  labels: Array<string>;
+}
+
+/**
+ * Identity-only query for one durable run.
+ */
+export interface RunQuery {
+  run_id: RunId;
+}
+
+/**
+ * Bounded, snapshot-consistent query over one run's append-only event ledger.
+ */
+export interface RunEventsQuery {
+  run_id: RunId;
+  /**
+   * Exclusive cursor. Zero begins with the one-based first event.
+   */
+  after_sequence?: number;
+  /**
+   * Optional fixed high-water mark returned by an earlier page.
+   */
+  through_sequence?: number | null;
+  limit?: number;
+}
+
+/**
+ * One startup-bound backend and its explicitly supported run modes.
+ */
+export interface RunRouteCapability {
+  backend: BackendSelection;
+  modes: Array<RunMode>;
+}
+
+/**
+ * Stable failure data suitable for persistence and presentation.
+ */
+export interface RunFailure {
+  code: string;
+  message: string;
+  retryable: boolean;
+}
+
+/**
+ * Persistable summary of a run. User input and provider output are not echoed here.
+ */
+export interface RunSnapshot {
+  run_id: RunId;
+  conversation_id: ConversationId | null;
+  idempotency_key: string;
+  state: RunState;
+  created_at: string;
+  updated_at: string;
+  failure: RunFailure | null;
+  event_count: number;
+}
+
+/**
+ * One append-only lifecycle fact.
+ */
+export type RunLifecycleEvent =
+  | { type: "queued" }
+  | { type: "starting" }
+  | { type: "running" }
+  | { type: "cancel_requested" }
+  | { type: "succeeded" }
+  | { type: "failed"; payload: {
+      failure: RunFailure;
+    } }
+  | { type: "cancelled"; payload: {
+      reason: RunCancellationReason;
+    } }
+  | { type: "interrupted"; payload: {
+      reason: RunInterruptionReason;
+    } };
+
+/**
+ * Closed cancellation reason; arbitrary manager text never crosses app-core.
+ */
+export type RunCancellationReason =
+  | "requested"
+  | "manager_shutdown";
+
+/**
+ * Closed interruption reason; arbitrary process/provider details stay internal.
+ */
+export type RunInterruptionReason =
+  | "daemon_restart"
+  | "manager_shutdown";
+
+/**
+ * Sequenced event persisted for one run.
+ */
+export interface RunEventRecord {
+  run_id: RunId;
+  sequence: number;
+  recorded_at: string;
+  event: RunLifecycleEvent;
+}
+
+/**
+ * Whether submission admitted new work or returned an existing durable run.
+ */
+export type RunSubmissionDisposition =
+  | "enqueued"
+  | "existing"
+  | "queue_full";
+
+export interface RunSubmission {
+  disposition: RunSubmissionDisposition;
+  run: RunSnapshot;
+}
+
+/**
+ * One bounded, immutable page through a fixed lifecycle high-water mark.
+ */
+export interface RunEventPage {
+  run_id: RunId;
+  events: Array<RunEventRecord>;
+  after_sequence: number;
+  next_after_sequence: number;
+  through_sequence: number;
+  has_more: boolean;
+}
+
+/**
+ * Minimal durable conversation metadata shared by all presentations.
+ */
+export interface ConversationMetadata {
+  conversation_id: ConversationId;
+  title: string | null;
+  created_at: string;
+  updated_at: string;
+  run_count: number;
+}
+
+// ---------------------------------------------------------------------------
+// src/app_core/contracts.rs — application command and event contracts
 // ---------------------------------------------------------------------------
 
 /**
@@ -38,7 +218,11 @@ export type Edition =
  */
 export type AppCommand =
   | { type: "status" }
-  | { type: "claims"; payload: ClaimsQuery };
+  | { type: "claims"; payload: ClaimsQuery }
+  | { type: "submit_run"; payload: RunRequest }
+  | { type: "get_run"; payload: RunQuery }
+  | { type: "cancel_run"; payload: RunQuery }
+  | { type: "run_events"; payload: RunEventsQuery };
 
 /**
  * Events emitted by the presentation-neutral application service.
@@ -46,7 +230,11 @@ export type AppCommand =
 export type AppEvent =
   | { type: "status"; payload: RuntimeStatus }
   | { type: "claims"; payload: ClaimsSnapshot }
-  | { type: "approval_requested"; payload: ApprovalRequest };
+  | { type: "approval_requested"; payload: ApprovalRequest }
+  | { type: "run_submitted"; payload: RunSubmission }
+  | { type: "run_status"; payload: RunSnapshot }
+  | { type: "cancellation_acknowledged"; payload: RunSnapshot }
+  | { type: "run_events"; payload: RunEventPage };
 
 /**
  * Runtime state exposed without process or user-state details.
@@ -66,6 +254,10 @@ export interface RuntimeStatus {
   build_git: string;
   build_target: string;
   capabilities: CapabilitySet;
+  /**
+   * Startup-bound execution routes. Empty and omitted for protocol v1.
+   */
+  run_routes?: Array<RunRouteCapability>;
 }
 
 /**
@@ -73,7 +265,11 @@ export interface RuntimeStatus {
  */
 export type AppCapability =
   | "read_status"
-  | "read_claims";
+  | "read_claims"
+  | "read_run"
+  | "read_run_events"
+  | "submit_run"
+  | "cancel_run";
 
 /**
  * Ordered, duplicate-free capability declaration.
