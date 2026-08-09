@@ -117,7 +117,7 @@ pub fn print_runtime_matrix() -> Result<i32> {
         (
             "Abbey MCP server",
             "Abbey",
-            "Current: abbey mcp serve — read-only stdio tools",
+            "Current: read-only stdio + unauthenticated loopback HTTP",
         ),
         (
             "Abbey MCP client-host",
@@ -132,7 +132,7 @@ pub fn print_runtime_matrix() -> Result<i32> {
     println!(
         "rule: tools during a turn run inside cursor-agent. Abbey does not connect out\n\
          to other providers' MCP/ACP servers or dispatch arbitrary tool schemas; it does\n\
-         serve its own read-only tools (`abbey mcp serve`).\n\
+         serve its own read-only tools over stdio or loopback-only HTTP (`abbey mcp serve`).\n\
          refuse: abbey runtime host · abbey claims refuse mcp-host"
     );
     Ok(0)
@@ -243,7 +243,7 @@ pub fn status_lines() -> Vec<String> {
         "vision:     path attach + agent gen — local neural models Proposed (`abbey vision`)"
             .into(),
         "cot:        transcript viewer for reason — Abbey CoT engine OOS (`abbey cot`)".into(),
-        "runtime:    responsibility matrix — Abbey is not a tool host (`abbey runtime`)".into(),
+        "runtime:    read-only stdio + loopback HTTP server; no external-server client-host (`abbey runtime`)".into(),
     ]
 }
 

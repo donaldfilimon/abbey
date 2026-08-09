@@ -73,7 +73,7 @@ const TOPICS: &[Topic] = &[
         key: "host",
         title: "MCP / ACP host / tool runtime",
         current: &[
-            "abbey mcp serve — Abbey's own read-only stdio MCP server (no HTTP/TLS/OAuth)",
+            "abbey mcp serve — Abbey's own read-only MCP server over stdio and unauthenticated loopback-only HTTP",
             "abbey mcp|acp — inventory + peer launch (stdio for real hosts)",
             "abbey runtime — who executes what during a turn",
             "--approve-mcps — cursor-agent auto-approves MCP tools (not Abbey)",
@@ -228,7 +228,7 @@ pub fn status_lines() -> Vec<String> {
         "weights:    Max/Gemma bindings · fm — local weights Proposed (`abbey weights`)".into(),
         "accel:      host detect only — accelerator runtime Proposed (`abbey accel`)".into(),
         "shell:      allowlist + --confirm — unrestricted OS OOS (`abbey shell`)".into(),
-        "host:       inventory + approve-mcps — owned host Proposed (`abbey host`)".into(),
+        "host:       read-only stdio + loopback HTTP — external-server client-host Proposed (`abbey host`)".into(),
     ]
 }
 

@@ -78,7 +78,7 @@ pub const SLASH_CATALOG: &[SlashCmd] = &[
     },
     SlashCmd {
         name: "runtime",
-        help: "Tool responsibility matrix (Abbey is not a tool host)",
+        help: "Tool responsibility matrix (no arbitrary execution or external-server client-host)",
         kind: SlashKind::Local,
     },
     SlashCmd {

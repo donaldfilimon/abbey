@@ -392,6 +392,12 @@ fn refusal_claims(claim_key: &str) -> Vec<&'static Claim> {
 }
 
 /// Map an unavailable user verb to a non-Current claim and refuse with exit 2.
+const MCP_HOST_REFUSAL_DETAIL: &str = "An Abbey-owned provider-neutral tool runtime that \
+    *consumes* external MCP/ACP servers is Proposed but not implemented. Current: config \
+    inventory, peer launch, and `abbey mcp serve` — Abbey's own read-only MCP server over \
+    stdio and unauthenticated loopback-only HTTP. Non-loopback HTTP, HTTPS/TLS, OAuth, and \
+    consuming external servers remain unavailable.";
+
 pub fn refuse(verb: &str) -> Result<i32> {
     let key = verb.trim().to_ascii_lowercase();
     let (claim_key, detail) = match key.as_str() {
@@ -430,10 +436,9 @@ pub fn refuse(verb: &str) -> Result<i32> {
             "cost",
             "Fake cost/token accounting is Out of scope. /cost is N/A.",
         ),
-        "mcp-host" | "acp-host" | "host" | "tool-runtime" | "tool-host" => (
-            "tool runtime",
-            "An Abbey-owned provider-neutral tool runtime that *consumes* external MCP/ACP servers is Proposed but not implemented. Current: config inventory, peer launch, and `abbey mcp serve` — Abbey's own read-only stdio MCP server (stdio only; no HTTP/TLS/OAuth).",
-        ),
+        "mcp-host" | "acp-host" | "host" | "tool-runtime" | "tool-host" => {
+            ("tool runtime", MCP_HOST_REFUSAL_DETAIL)
+        }
         "shell" | "unrestricted" | "os-unrestricted" | "allowlist-bypass" | "yolo-shell" => (
             SHELL_BYPASS_CLAIM_KEY,
             "A personal-unrestricted separate edition is Proposed but not implemented, and allowlist bypass in the shipped edition is Out of scope. Shipped Abbey keeps allowlist + --confirm and refuses bypass.",
@@ -727,7 +732,7 @@ mod tests {
     }
 
     #[test]
-    fn conversation_identity_write_claim_stays_save_only_and_unix_local() {
+    fn conversation_identity_mutation_claim_stays_tombstone_bounded_and_unix_local() {
         let claim = CLAIMS
             .iter()
             .find(|claim| claim.id == "runtime-conversation-identity-write-cutover")
@@ -735,11 +740,15 @@ mod tests {
         assert_eq!(claim.status, Status::Current);
         for boundary in [
             "identity saves",
-            "edition/scope/alias digests",
+            "scope/all clears",
+            "explicit tombstones",
             "owner-only fs4-locked recovery journal",
-            "Raw mirror-plan data is transiently retained only",
-            "Reads and clear semantics remain legacy-mirror behavior",
-            "transcripts, semantic memory, backend/title/run inference",
+            "prepared-but-uncommitted",
+            "prevents stale identity resurrection",
+            "global fallback",
+            "Aliases and conversation provenance, history, transcripts, semantic memory",
+            "Reads still resolve through compatibility mirrors",
+            "backend/title/run inference",
             "protocol/UI/MCP surfaces",
             "Windows runtime authority",
         ] {
@@ -748,11 +757,11 @@ mod tests {
                 "missing boundary: {boundary}"
             );
         }
-        assert!(claim.next_action.contains("runtime.sqlite tombstones"));
+        assert!(claim.next_action.contains("`read_chat_for`"));
         assert!(
             claim
                 .next_action
-                .contains("do not delete transcripts or memory")
+                .contains("digest-verified compatibility-mirror resolution")
         );
     }
 
@@ -839,6 +848,14 @@ mod tests {
         assert_eq!(refuse("npu").unwrap(), 2);
         assert_eq!(refuse("weights").unwrap(), 2);
         assert_eq!(refuse("gui").unwrap(), 2);
+    }
+
+    #[test]
+    fn host_refusal_preserves_the_current_loopback_http_boundary() {
+        assert!(MCP_HOST_REFUSAL_DETAIL.contains("loopback-only HTTP"));
+        assert!(MCP_HOST_REFUSAL_DETAIL.contains("Non-loopback HTTP"));
+        assert!(MCP_HOST_REFUSAL_DETAIL.contains("OAuth"));
+        assert!(!MCP_HOST_REFUSAL_DETAIL.contains("stdio only"));
     }
 
     #[test]

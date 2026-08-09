@@ -34,7 +34,7 @@ again by the transactional store.
 `RuntimeStore` uses `<state>/daemon/runtime.sqlite`. It is independent from
 `memory.sqlite` and from the optional WDBX semantic-memory backend.
 
-The version-3 schema contains:
+The version-4 schema contains:
 
 - `schema_migrations`
 - `conversations`
@@ -48,6 +48,11 @@ The version-3 schema contains:
 - `conversation_identity_aliases`
 - `conversation_identity_scopes`
 - `conversation_identity_commit`
+- `conversation_identity_tombstones`
+- `conversation_identity_clear_all`
+- `conversation_identity_mutations`
+- `conversation_identity_mutation_scopes`
+- `conversation_identity_migrated_scopes`
 
 SQLite runs with foreign keys enabled, WAL journaling, `synchronous=FULL`, and a bounded
 busy timeout. Migrations and run transitions use immediate transactions. A state change
@@ -88,38 +93,52 @@ marker; a changed snapshot creates another retained backup and may widen only th
 trustworthy timestamp envelope. This startup-only migration adds no `AppCommand`,
 `AppEvent`, CLI/TUI/desktop invoke, MCP tool, process, model, or network authority.
 
-## Canonical conversation identity saves and compatibility mirrors
+## Canonical conversation identity mutations and compatibility mirrors
 
-On Unix, a new conversation-identity save first validates and domain-separates its
-external identity, active edition, and global/per-working-directory scopes. One immediate
-schema-v3 transaction stores only the alias, edition, scope, scope-set, and mutation-token
-digests; the deterministic UUIDv8 conversation identity; one monotonic revision; and the
-commit timestamp. The raw external identity, working directory, and mutation token never
-enter `runtime.sqlite`. Opening this metadata path also does not perform unrelated run
-recovery.
+On Unix, conversation-identity saves and clears first validate and domain-separate the
+active edition and affected global/per-working-directory scopes. A save stores only
+opaque alias, edition, scope, scope-set, and mutation-token digests; the deterministic
+UUIDv8 conversation identity; a monotonic revision; and the commit timestamp. Schema v4
+extends the operation-specific commit marker with `clear_scope` and `clear_all`, durable
+opaque mutation receipts plus their exact scope mapping, per-scope tombstones, an
+edition-wide clear-all marker, and immutable provenance for selections migrated from v3.
+Clear markers contain no alias or conversation identity. Raw external identities,
+working directories, and mutation tokens never enter `runtime.sqlite`, and metadata-only
+access does not perform unrelated run recovery.
 
-After that canonical commit, Abbey projects the configured `chat-id`, `chat-id.export`,
-direct `by-cwd`, and `history.log` compatibility files through the sole coordinator at
-`<state>/daemon/conversation-mirror-journal/`. The directory is `0700`; its stable `lock`
-and transient atomic `pending.json` are `0600`. An `fs4` advisory lock serializes writers
-and history observation. The pending plan may transiently contain the exact raw mirror
-material required for recovery, so it remains private and its `Debug` and error surfaces
-are redacted.
+Only after the canonical transaction commits does Abbey project a save or clear through
+the sole coordinator at `<state>/daemon/conversation-mirror-journal/`. The directory is
+`0700`; its stable `lock` and transient atomic `pending.json` are `0600`. The same `fs4`
+advisory lock serializes saves, clears, legacy capture, history observation, and
+compaction. A pending plan may transiently contain the exact raw mirror material required
+for recovery, so it remains private and its `Debug` and error surfaces are redacted.
 
-Recovery compares the journal's opaque mutation marker with the canonical SQLite commit.
-A prepared plan that never committed is discarded without touching mirrors. A committed
-plan is completed idempotently. Each mirror uses before/after digests and atomic
-same-parent replacement; divergent existing data fails closed instead of being
-overwritten, and full-file history replacement prevents replay from duplicating an entry.
-Symlinks, reserved journal aliases, unsafe ancestors, controls, and unsafe permissions
-fail before canonical commit or mirror mutation.
+Save recovery compares the journal's opaque marker with the canonical SQLite commit,
+discards prepared-but-uncommitted plans, and completes exactly marked saves once without
+duplicating history. Clear recovery follows the same commit-first rule: an uncommitted
+plan removes nothing, while an authenticated committed or partially applied plan removes
+each exact mirror idempotently. Current per-working-directory clear removes only the
+uniquely authorized active mirror and preserves the global fallback. In non-per-cwd mode,
+current clear removes the global and matching export mirrors. Clear-all commits one
+active-edition marker and removes global/export plus a sorted, exact, bounded inventory
+of direct regular files under `by-cwd`; it neither walks recursively nor affects another
+edition.
 
-This slice changes only save/new-identity coordination. Reads still consult the legacy
-compatibility mirrors, and `clear_chat` retains its existing mirror-only semantics under
-the shared lock; canonical tombstones are the next separately evidenced slice. It adds no
-transcript or semantic-memory ownership, backend/title/run inference, `AppCommand`,
-`AppEvent`, CLI/TUI/desktop invoke, MCP capability, model/tool execution authority, or
-Windows runtime claim.
+Every planned destination is absolute, pairwise distinct, outside the runtime database
+and reserved journal subtree, and bound to its expected role and before-state. Divergent,
+shared, omitted, duplicated, symlinked, non-regular, unsafe-parent, malformed, or
+permission-unsafe targets fail closed. Durable mutation receipts authenticate the clear
+effect even after a later mutation advances the singleton marker, so deleting or forging
+a tombstone/effect row cannot authorize a recreated stale mirror. A later authenticated
+save may supersede a tombstone through a higher revision.
+
+Identity clear retains opaque aliases and conversation provenance. It does not remove
+`history.log`, backend transcripts, SQLite/WDBX semantic memory, models, route/audit or
+run data, or finalized legacy-migration backups. Reads still obtain the external identity
+through compatibility mirrors; canonical tombstone-aware, digest-verified selection is
+the next separately evidenced slice. This coordinator adds no backend/title/run
+inference, `AppCommand`, `AppEvent`, CLI/TUI/desktop invoke, MCP capability, model/tool
+execution authority, network surface, or Windows runtime claim.
 
 ## Recovery
 
