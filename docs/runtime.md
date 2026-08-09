@@ -4,9 +4,10 @@ Abbey has two deliberately separate runtime layers:
 
 1. The shipped protocol-v1 `abbeyd` control plane, which is authenticated and read-only.
    It accepts only `Status` and `Claims`.
-2. The `abbey::runtime` lifecycle foundation, which can persist and coordinate typed test
-   runs but is not connected to a real model, tool, shell, daemon command, or network
-   protocol.
+2. The `abbey::runtime` lifecycle foundation, which can persist and coordinate typed runs
+   and now includes a crate-private Unix supervisor plus fixed ABI-local/Foundation Models
+   adapters. Those adapters are not reachable through the protocol-v1 daemon, CLI, TUI,
+   MCP, or any network protocol.
 
 The second layer exists so durability and cancellation semantics can be proven before
 any execution authority is added.
@@ -78,10 +79,22 @@ The manager:
 - stores stable failure codes without persisting arbitrary executor error text; and
 - returns from a successful shutdown only after admitted work has a terminal state.
 
-Cancellation is cooperative in this foundation. No real provider is permitted until a
-process supervisor adds bounded stdout/stderr, deadlines, Unix process groups, graceful
-termination followed by forced termination, descendant teardown, reaping, and daemon
-credential scrubbing. Windows execution additionally requires Job Object runtime proof.
+Cancellation is cooperative at the `Executor` trait, while the delegated adapter makes it
+enforceable for its owned Unix children. The crate-private supervisor provides bounded
+stdout/stderr, deadlines, a fresh Unix process group, graceful `SIGTERM` followed by
+`SIGKILL`, descendant teardown, direct-child reaping, and a drop guard. It keeps monitoring
+the process group after the leader exits so an inherited pipe cannot hang the manager.
+
+`DelegatedExecutor` exposes exactly two startup-bound recipes: ABI local completion and
+Apple Foundation Models response. A request supplies only one literal input argument; it
+cannot select the executable, argv prefix, model, workspace, environment, or trust policy.
+Cursor/Grok and interactive/automation modes fail before spawn. The child environment is
+cleared and rebuilt from a fixed benign allowlist, excluding daemon and provider secrets.
+Captured bytes and configured paths are redacted from `Debug` and durable errors.
+
+This is a library-level Phase 4B.1 proof. Protocol v1 still cannot submit a run. Windows
+delegated execution remains fail-closed until named-pipe and Job Object implementation plus
+runtime evidence exist.
 
 ## Audit boundary
 
@@ -94,8 +107,9 @@ run state; audit events record bounded operational facts. Neither is a transcrip
 
 ## Claim boundary
 
-The current product claim remains the authenticated read-only daemon. Phase 4A proves a
-durable lifecycle library foundation, not background model execution, tool dispatch,
-automations, live event streaming, daemon-owned memory, Windows named pipes, or a desktop
-client. Those surfaces remain Proposed or incomplete until their own source, automated
-tests, and required live evidence exist.
+The current product claim remains the authenticated read-only daemon. Phase 4A proves the
+durable lifecycle foundation and Phase 4B.1 proves bounded fixed-recipe Unix delegation as
+an internal library seam. Neither adds daemon submission authority, tool dispatch,
+automations, live event streaming, daemon-owned memory, Windows named pipes/Job Objects,
+or a desktop client. Those surfaces remain Proposed or incomplete until their own source,
+automated tests, and required live evidence exist.

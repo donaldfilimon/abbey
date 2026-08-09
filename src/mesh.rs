@@ -6,22 +6,19 @@
 //! it is not production multi-host deployment or shared compute.
 
 use crate::config::{self, AbbeyConfig};
+#[cfg(unix)]
+use crate::runtime::CancellationToken;
+#[cfg(unix)]
+use crate::runtime::supervisor::{
+    ProcessSpec, SupervisorLimits, SupervisorOutcome, run as run_supervised,
+};
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
+#[cfg(unix)]
+use std::ffi::OsString;
 use std::ops::RangeInclusive;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
-
-#[cfg(unix)]
-use std::io::{self, Read};
-#[cfg(unix)]
-use std::process::{Child, Command, ExitStatus, Stdio};
-#[cfg(unix)]
-use std::sync::mpsc;
-#[cfg(unix)]
-use std::thread;
-#[cfg(unix)]
-use std::time::Instant;
 
 pub const MIN_NODES: usize = 3;
 pub const MAX_NODES: usize = 9;
@@ -37,37 +34,8 @@ const MAX_PROOF_STDERR_BYTES: usize = 1024 * 1024;
 const LOCAL_DEMO_TIMEOUT: Duration = Duration::from_secs(60);
 #[cfg(unix)]
 const CHILD_POLL_INTERVAL: Duration = Duration::from_millis(10);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg(unix)]
-enum StreamName {
-    Stdout,
-    Stderr,
-}
-
-#[cfg(unix)]
-impl std::fmt::Display for StreamName {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Stdout => f.write_str("stdout"),
-            Self::Stderr => f.write_str("stderr"),
-        }
-    }
-}
-
-#[cfg(unix)]
-struct CapturedStream {
-    name: StreamName,
-    bytes: Vec<u8>,
-    overflowed: bool,
-}
-
-#[cfg(unix)]
-struct BoundedOutput {
-    status: ExitStatus,
-    stdout: Vec<u8>,
-    stderr: Vec<u8>,
-}
+const CHILD_TERMINATE_GRACE: Duration = Duration::from_millis(250);
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct MeshStatus {
@@ -257,16 +225,50 @@ fn run_local_demo_with_bin_timeout(
     timeout: Duration,
 ) -> Result<MeshProof> {
     let argv = build_local_demo_argv(node_count)?;
-    let output = run_bounded_child(bin, &argv, timeout)?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!(
-            "ABI local mesh proof failed (exit {}): {}",
-            output.status.code().unwrap_or(1),
-            stderr.trim()
-        );
+    let spec = ProcessSpec::inherited(bin.to_path_buf(), argv.iter().map(OsString::from).collect());
+    let limits = SupervisorLimits {
+        timeout,
+        terminate_grace: CHILD_TERMINATE_GRACE,
+        stdout_bytes: MAX_PROOF_JSON_BYTES,
+        stderr_bytes: MAX_PROOF_STDERR_BYTES,
+        poll_interval: CHILD_POLL_INTERVAL,
+    };
+    let outcome =
+        run_supervised(&spec, &limits, &CancellationToken::default()).map_err(|error| {
+            if error.is_teardown() {
+                anyhow::anyhow!("ABI local mesh proof teardown failed: {error}")
+            } else {
+                anyhow::anyhow!("run {} {}: {error}", bin.display(), argv.join(" "))
+            }
+        })?;
+    match outcome {
+        SupervisorOutcome::Exited {
+            status,
+            stdout,
+            stderr,
+        } => {
+            if !status.success() {
+                let stderr = String::from_utf8_lossy(&stderr);
+                bail!(
+                    "ABI local mesh proof failed (exit {}): {}",
+                    status.code().unwrap_or(1),
+                    stderr.trim()
+                );
+            }
+            parse_proof(&stdout, node_count)
+        }
+        SupervisorOutcome::Cancelled => bail!("ABI local mesh proof was cancelled"),
+        SupervisorOutcome::TimedOut => bail!(
+            "ABI local mesh proof timed out after {} ms",
+            timeout.as_millis()
+        ),
+        SupervisorOutcome::StdoutLimit => {
+            bail!("ABI local mesh proof stdout exceeds {MAX_PROOF_JSON_BYTES} bytes")
+        }
+        SupervisorOutcome::StderrLimit => {
+            bail!("ABI local mesh proof stderr exceeds {MAX_PROOF_STDERR_BYTES} bytes")
+        }
     }
-    parse_proof(&output.stdout, node_count)
 }
 
 #[cfg(not(unix))]
@@ -277,156 +279,6 @@ fn run_local_demo_with_bin_timeout(
 ) -> Result<MeshProof> {
     ensure_local_demo_platform()?;
     unreachable!("unsupported platforms return an error")
-}
-
-#[cfg(unix)]
-fn run_bounded_child(bin: &Path, argv: &[String], timeout: Duration) -> Result<BoundedOutput> {
-    let mut command = Command::new(bin);
-    command
-        .args(argv)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt as _;
-        command.process_group(0);
-    }
-    let mut child = command
-        .spawn()
-        .with_context(|| format!("run {} {}", bin.display(), argv.join(" ")))?;
-    let stdout = child.stdout.take().context("capture ABI mesh stdout")?;
-    let stderr = child.stderr.take().context("capture ABI mesh stderr")?;
-    let (overflow_tx, overflow_rx) = mpsc::channel();
-    let stdout_handle = spawn_bounded_reader(
-        stdout,
-        StreamName::Stdout,
-        MAX_PROOF_JSON_BYTES,
-        overflow_tx.clone(),
-    );
-    let stderr_handle = spawn_bounded_reader(
-        stderr,
-        StreamName::Stderr,
-        MAX_PROOF_STDERR_BYTES,
-        overflow_tx,
-    );
-
-    let deadline = Instant::now() + timeout;
-    let mut timed_out = false;
-    let mut observed_overflow = None;
-    let status = loop {
-        if let Ok(stream) = overflow_rx.try_recv() {
-            observed_overflow = Some(stream);
-            break None;
-        }
-        if let Some(status) = child.try_wait().context("poll ABI local mesh proof")? {
-            break Some(status);
-        }
-        let now = Instant::now();
-        if now >= deadline {
-            timed_out = true;
-            break None;
-        }
-        thread::sleep(CHILD_POLL_INTERVAL.min(deadline.saturating_duration_since(now)));
-    };
-
-    if timed_out || observed_overflow.is_some() {
-        kill_and_wait(&mut child);
-    }
-    let stdout = join_reader(stdout_handle, StreamName::Stdout)?;
-    let stderr = join_reader(stderr_handle, StreamName::Stderr)?;
-
-    if timed_out {
-        bail!(
-            "ABI local mesh proof timed out after {} ms",
-            timeout.as_millis()
-        );
-    }
-    let overflow = observed_overflow
-        .or_else(|| stdout.overflowed.then_some(stdout.name))
-        .or_else(|| stderr.overflowed.then_some(stderr.name));
-    if let Some(stream) = overflow {
-        let cap = match stream {
-            StreamName::Stdout => MAX_PROOF_JSON_BYTES,
-            StreamName::Stderr => MAX_PROOF_STDERR_BYTES,
-        };
-        bail!("ABI local mesh proof {stream} exceeds {cap} bytes");
-    }
-    let status = status.context("ABI local mesh proof ended without an exit status")?;
-    Ok(BoundedOutput {
-        status,
-        stdout: stdout.bytes,
-        stderr: stderr.bytes,
-    })
-}
-
-#[cfg(unix)]
-fn spawn_bounded_reader<R>(
-    reader: R,
-    name: StreamName,
-    cap: usize,
-    overflow_tx: mpsc::Sender<StreamName>,
-) -> thread::JoinHandle<io::Result<CapturedStream>>
-where
-    R: Read + Send + 'static,
-{
-    thread::spawn(move || read_bounded(reader, name, cap, &overflow_tx))
-}
-
-#[cfg(unix)]
-fn read_bounded<R: Read>(
-    mut reader: R,
-    name: StreamName,
-    cap: usize,
-    overflow_tx: &mpsc::Sender<StreamName>,
-) -> io::Result<CapturedStream> {
-    // Reserve the exact detection budget up front so Vec growth cannot
-    // transiently double well beyond the advertised stream cap.
-    let mut bytes = Vec::with_capacity(cap.saturating_add(1));
-    let mut buffer = [0_u8; 8192];
-    while bytes.len() <= cap {
-        let remaining = cap.saturating_add(1).saturating_sub(bytes.len());
-        if remaining == 0 {
-            break;
-        }
-        let chunk = remaining.min(buffer.len());
-        let read = reader.read(&mut buffer[..chunk])?;
-        if read == 0 {
-            break;
-        }
-        bytes.extend_from_slice(&buffer[..read]);
-    }
-    let overflowed = bytes.len() > cap;
-    if overflowed {
-        let _ = overflow_tx.send(name);
-        bytes.truncate(cap);
-    }
-    Ok(CapturedStream {
-        name,
-        bytes,
-        overflowed,
-    })
-}
-
-#[cfg(unix)]
-fn join_reader(
-    handle: thread::JoinHandle<io::Result<CapturedStream>>,
-    name: StreamName,
-) -> Result<CapturedStream> {
-    handle
-        .join()
-        .map_err(|_| anyhow::anyhow!("ABI local mesh proof {name} reader panicked"))?
-        .with_context(|| format!("read ABI local mesh proof {name}"))
-}
-
-#[cfg(unix)]
-fn kill_and_wait(child: &mut Child) {
-    use nix::sys::signal::{Signal, killpg};
-    use nix::unistd::Pid;
-
-    let process_group = i32::try_from(child.id()).expect("child process id fits pid_t");
-    let _ = killpg(Pid::from_raw(process_group), Signal::SIGKILL);
-    let _ = child.kill();
-    let _ = child.wait();
 }
 
 #[cfg(unix)]
@@ -509,6 +361,10 @@ fn parse_proof(json: &[u8], requested_nodes: usize) -> Result<MeshProof> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
+    use std::thread;
+    #[cfg(unix)]
+    use std::time::Instant;
 
     #[cfg(unix)]
     fn write_fake_abi(tag: &str, script: &str) -> (PathBuf, PathBuf) {
