@@ -107,6 +107,36 @@ pub(crate) enum IdentityScopeState {
     Diverged,
 }
 
+/// Candidate-independent canonical authority for one edition-local scope.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum IdentityScopeSelection {
+    /// No authenticated post-cutover selection or clear exists for the scope.
+    Untracked,
+    /// The authenticated canonical selection, containing only opaque material.
+    Selected {
+        alias_sha256: String,
+        conversation_id: ConversationId,
+    },
+    /// An authenticated clear supersedes any compatibility mirror bytes.
+    Tombstoned,
+}
+
+impl IdentityScopeSelection {
+    /// Hash and compare one caller-retained raw compatibility candidate without
+    /// exposing raw external identity material outside this module.
+    pub(crate) fn matches_external_id(&self, raw_candidate: &str) -> Result<bool, IdentityError> {
+        let candidate = external_identity(raw_candidate)?;
+        Ok(matches!(
+            self,
+            Self::Selected {
+                alias_sha256,
+                conversation_id,
+            } if candidate.alias_sha256 == *alias_sha256
+                && candidate.conversation_id == *conversation_id
+        ))
+    }
+}
+
 impl IdentityOperation {
     pub(crate) fn parse(value: &str) -> Option<Self> {
         match value {
@@ -251,11 +281,19 @@ pub(crate) fn mutation_sha256(token: &str) -> Result<String, IdentityError> {
 pub(crate) fn scope_set_sha256(
     scopes: &[ConversationIdentityScope],
 ) -> Result<String, IdentityError> {
+    let scope_sha256 = scopes
+        .iter()
+        .map(ConversationIdentityScope::as_sha256)
+        .collect::<Vec<_>>();
+    scope_set_sha256_from_hashes(&scope_sha256)
+}
+
+pub(crate) fn scope_set_sha256_from_hashes(scopes: &[&str]) -> Result<String, IdentityError> {
     if scopes.is_empty() || scopes.len() > MAX_IDENTITY_SCOPES {
         return Err(IdentityError::ScopeSet);
     }
     for (index, scope) in scopes.iter().enumerate() {
-        if scopes[..index].iter().any(|prior| prior == scope) {
+        if !is_lower_hex_sha256(scope) || scopes[..index].contains(scope) {
             return Err(IdentityError::ScopeSet);
         }
     }
@@ -263,7 +301,7 @@ pub(crate) fn scope_set_sha256(
     digest.update(SCOPE_SET_DOMAIN);
     digest.update((scopes.len() as u64).to_be_bytes());
     for scope in scopes {
-        digest.update(scope.as_sha256().as_bytes());
+        digest.update(scope.as_bytes());
     }
     Ok(lower_hex(&digest.finalize()))
 }

@@ -2,6 +2,7 @@
 
 use super::{RuntimeStore, StoreError, now, parse_conversation_id};
 use crate::app_core::ConversationId;
+use crate::runtime::IdentityScopeSelection;
 use crate::runtime::identity::{
     ConversationIdentityScope, IdentityCommit, IdentityOperation, IdentityScopeState,
     clear_all_sha256, edition_sha256, external_identity, is_lower_hex_sha256, mutation_sha256,
@@ -9,6 +10,14 @@ use crate::runtime::identity::{
 };
 use chrono::{DateTime, SecondsFormat, Utc};
 use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, params};
+
+#[path = "identity_validation.rs"]
+mod identity_validation;
+
+use identity_validation::{
+    effect_on, mutation_receipt_on, validate_effect_receipt, validate_mutation_receipt,
+    validate_selection_receipt,
+};
 
 impl RuntimeStore {
     /// Canonically commit an opaque external identity for one edition scope.
@@ -266,17 +275,12 @@ impl RuntimeStore {
         validate_clear_effect(&conn, &edition_sha256, scopes, commit)
     }
 
-    pub(crate) fn identity_scope_state(
+    pub(crate) fn identity_scope_selection(
         &self,
         edition_slug: &str,
         scope: &ConversationIdentityScope,
-        mirror_candidate: Option<&str>,
-    ) -> Result<IdentityScopeState, StoreError> {
+    ) -> Result<IdentityScopeSelection, StoreError> {
         let edition_sha256 = edition_sha256(edition_slug).map_err(identity_input)?;
-        let candidate = mirror_candidate
-            .map(external_identity)
-            .transpose()
-            .map_err(identity_input)?;
         let conn = self.conn.lock().expect("runtime sqlite lock poisoned");
         let selection = conn
             .query_row(
@@ -294,62 +298,108 @@ impl RuntimeStore {
                 },
             )
             .optional()?;
-        let scope_clear = revision_on(
+        let scope_clear = effect_on(
             &conn,
-            "SELECT revision FROM conversation_identity_tombstones
+            "SELECT revision, cleared_at FROM conversation_identity_tombstones
              WHERE edition_sha256=?1 AND scope_sha256=?2",
             params![edition_sha256.as_str(), scope.as_sha256()],
         )?;
         let all_clear = conn
             .query_row(
-                "SELECT revision FROM conversation_identity_clear_all WHERE edition_sha256=?1",
+                "SELECT revision, cleared_at FROM conversation_identity_clear_all
+                 WHERE edition_sha256=?1",
                 [edition_sha256.as_str()],
-                |row| row.get::<_, i64>(0),
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
             )
             .optional()?;
-        let latest_scope_receipt = revision_on(
+        let latest_scope_receipt = mutation_receipt_on(
             &conn,
-            "SELECT revision FROM conversation_identity_mutations
-             WHERE operation='clear_scope' AND edition_sha256=?1 AND scope_sha256=?2
-             ORDER BY revision DESC LIMIT 1",
+            "SELECT m.mutation_sha256, m.revision, m.operation, m.edition_sha256,
+                    m.scope_sha256, m.scope_set_sha256, m.alias_sha256,
+                    m.conversation_id, m.committed_at
+             FROM conversation_identity_mutations m
+             LEFT JOIN conversation_identity_mutation_scopes s
+               ON s.mutation_sha256=m.mutation_sha256
+             WHERE m.operation='clear_scope' AND m.edition_sha256=?1
+               AND (m.scope_sha256=?2 OR s.scope_sha256=?2)
+             ORDER BY m.revision DESC LIMIT 1",
             params![edition_sha256.as_str(), scope.as_sha256()],
         )?;
-        let latest_all_receipt = revision_on(
+        let latest_all_receipt = mutation_receipt_on(
             &conn,
-            "SELECT revision FROM conversation_identity_mutations
+            "SELECT mutation_sha256, revision, operation, edition_sha256, scope_sha256,
+                    scope_set_sha256, alias_sha256, conversation_id, committed_at
+             FROM conversation_identity_mutations
              WHERE operation='clear_all' AND edition_sha256=?1
              ORDER BY revision DESC LIMIT 1",
             [edition_sha256.as_str()],
         )?;
-        let latest_save_receipt = revision_on(
+        let latest_save_receipt = mutation_receipt_on(
             &conn,
-            "SELECT m.revision FROM conversation_identity_mutations m
-             JOIN conversation_identity_mutation_scopes s
+            "SELECT m.mutation_sha256, m.revision, m.operation, m.edition_sha256,
+                    m.scope_sha256, m.scope_set_sha256, m.alias_sha256,
+                    m.conversation_id, m.committed_at
+             FROM conversation_identity_mutations m
+             LEFT JOIN conversation_identity_mutation_scopes s
                ON s.mutation_sha256=m.mutation_sha256
-             WHERE m.operation='save' AND m.edition_sha256=?1 AND s.scope_sha256=?2
+             WHERE m.operation='save' AND m.edition_sha256=?1
+               AND (
+                    s.scope_sha256=?2
+                    OR EXISTS(
+                        SELECT 1 FROM conversation_identity_migrated_scopes v3
+                        WHERE v3.edition_sha256=m.edition_sha256
+                          AND v3.scope_sha256=?2
+                          AND v3.alias_sha256=m.alias_sha256
+                          AND v3.conversation_id=m.conversation_id
+                          AND v3.revision=m.revision
+                          AND v3.updated_at=m.committed_at
+                    )
+               )
              ORDER BY m.revision DESC LIMIT 1",
             params![edition_sha256.as_str(), scope.as_sha256()],
         )?;
+        for receipt in [
+            latest_scope_receipt.as_ref(),
+            latest_all_receipt.as_ref(),
+            latest_save_receipt.as_ref(),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            validate_mutation_receipt(&conn, receipt, &edition_sha256)?;
+        }
         let migrated_save = revision_on(
             &conn,
             "SELECT revision FROM conversation_identity_migrated_scopes
              WHERE edition_sha256=?1 AND scope_sha256=?2",
             params![edition_sha256.as_str(), scope.as_sha256()],
         )?;
-        for revision in scope_clear
+        let scope_clear_revision = scope_clear.as_ref().map(|effect| effect.0);
+        let all_clear_revision = all_clear.as_ref().map(|effect| effect.0);
+        let latest_scope_receipt_revision = latest_scope_receipt
+            .as_ref()
+            .map(|receipt| receipt.revision);
+        let latest_all_receipt_revision =
+            latest_all_receipt.as_ref().map(|receipt| receipt.revision);
+        let latest_save_receipt_revision =
+            latest_save_receipt.as_ref().map(|receipt| receipt.revision);
+        for revision in scope_clear_revision
             .into_iter()
-            .chain(all_clear)
-            .chain(latest_scope_receipt)
-            .chain(latest_all_receipt)
-            .chain(latest_save_receipt)
+            .chain(all_clear_revision)
+            .chain(latest_scope_receipt_revision)
+            .chain(latest_all_receipt_revision)
+            .chain(latest_save_receipt_revision)
             .chain(migrated_save)
         {
             validate_revision(revision)?;
         }
-        let cleared_after = scope_clear.into_iter().chain(all_clear).max();
-        let receipt_clear = latest_scope_receipt
+        let cleared_after = scope_clear_revision
             .into_iter()
-            .chain(latest_all_receipt)
+            .chain(all_clear_revision)
+            .max();
+        let receipt_clear = latest_scope_receipt_revision
+            .into_iter()
+            .chain(latest_all_receipt_revision)
             .max();
         let selection_revision = selection.as_ref().map(|row| row.2);
         if receipt_clear.is_some_and(|receipt| {
@@ -361,7 +411,10 @@ impl RuntimeStore {
             ));
         }
         let latest_clear_receipt = receipt_clear;
-        let latest_save_authority = latest_save_receipt.into_iter().chain(migrated_save).max();
+        let latest_save_authority = latest_save_receipt_revision
+            .into_iter()
+            .chain(migrated_save)
+            .max();
         if latest_save_authority.is_some_and(|saved| {
             latest_clear_receipt.is_none_or(|cleared| saved > cleared)
                 && selection_revision.is_none_or(|selected| selected < saved)
@@ -370,20 +423,27 @@ impl RuntimeStore {
                 "identity save receipt is missing its canonical selection",
             ));
         }
-        validate_effect_receipt(&conn, &edition_sha256, scope, scope_clear, all_clear)?;
+        validate_effect_receipt(
+            &conn,
+            &edition_sha256,
+            scope,
+            scope_clear.as_ref(),
+            all_clear.as_ref(),
+        )?;
         let Some((alias, conversation, revision, updated_at)) = selection else {
             return Ok(if cleared_after.is_some() {
-                IdentityScopeState::Tombstoned
+                IdentityScopeSelection::Tombstoned
             } else {
-                IdentityScopeState::Untracked
+                IdentityScopeSelection::Untracked
             });
         };
         validate_revision(revision)?;
-        if !is_lower_hex_sha256(&alias) || parse_conversation_id(&conversation).is_err() {
+        if !is_lower_hex_sha256(&alias) {
             return Err(StoreError::CorruptData(
                 "identity scope selection contains invalid opaque material",
             ));
         }
+        let conversation_id = parse_conversation_id(&conversation)?;
         validate_selection_receipt(
             &conn,
             &edition_sha256,
@@ -394,16 +454,32 @@ impl RuntimeStore {
             &updated_at,
         )?;
         if cleared_after.is_some_and(|cleared| cleared >= revision) {
-            return Ok(IdentityScopeState::Tombstoned);
+            return Ok(IdentityScopeSelection::Tombstoned);
         }
-        Ok(match candidate {
-            Some(candidate)
-                if candidate.alias_sha256 == alias
-                    && candidate.conversation_id.as_str() == conversation =>
-            {
+        Ok(IdentityScopeSelection::Selected {
+            alias_sha256: alias,
+            conversation_id,
+        })
+    }
+
+    pub(crate) fn identity_scope_state(
+        &self,
+        edition_slug: &str,
+        scope: &ConversationIdentityScope,
+        mirror_candidate: Option<&str>,
+    ) -> Result<IdentityScopeState, StoreError> {
+        let selection = self.identity_scope_selection(edition_slug, scope)?;
+        let candidate_matches = mirror_candidate
+            .map(|candidate| selection.matches_external_id(candidate))
+            .transpose()
+            .map_err(identity_input)?;
+        Ok(match selection {
+            IdentityScopeSelection::Untracked => IdentityScopeState::Untracked,
+            IdentityScopeSelection::Tombstoned => IdentityScopeState::Tombstoned,
+            IdentityScopeSelection::Selected { .. } if candidate_matches == Some(true) => {
                 IdentityScopeState::Current
             }
-            _ => IdentityScopeState::Diverged,
+            IdentityScopeSelection::Selected { .. } => IdentityScopeState::Diverged,
         })
     }
 
@@ -729,85 +805,6 @@ fn validate_revision(revision: i64) -> Result<(), StoreError> {
     Ok(())
 }
 
-fn validate_effect_receipt(
-    conn: &rusqlite::Connection,
-    edition_sha256: &str,
-    scope: &ConversationIdentityScope,
-    scope_clear: Option<i64>,
-    all_clear: Option<i64>,
-) -> Result<(), StoreError> {
-    for (operation, revision, scope_sha256) in [
-        ("clear_scope", scope_clear, Some(scope.as_sha256())),
-        ("clear_all", all_clear, None),
-    ] {
-        let Some(revision) = revision else {
-            continue;
-        };
-        let exists = match scope_sha256 {
-            Some(scope_sha256) => conn.query_row(
-                "SELECT EXISTS(SELECT 1 FROM conversation_identity_mutations
-                 WHERE operation=?1 AND edition_sha256=?2 AND scope_sha256=?3
-                   AND revision=?4)",
-                params![operation, edition_sha256, scope_sha256, revision],
-                |row| row.get::<_, bool>(0),
-            )?,
-            None => conn.query_row(
-                "SELECT EXISTS(SELECT 1 FROM conversation_identity_mutations
-                 WHERE operation=?1 AND edition_sha256=?2 AND revision=?3)",
-                params![operation, edition_sha256, revision],
-                |row| row.get::<_, bool>(0),
-            )?,
-        };
-        if !exists {
-            return Err(StoreError::CorruptData(
-                "identity clear effect has no mutation receipt",
-            ));
-        }
-    }
-    Ok(())
-}
-
-fn validate_selection_receipt(
-    conn: &rusqlite::Connection,
-    edition_sha256: &str,
-    scope: &ConversationIdentityScope,
-    alias_sha256: &str,
-    conversation_id: &str,
-    revision: i64,
-    updated_at: &str,
-) -> Result<(), StoreError> {
-    let authenticated = conn.query_row(
-        "SELECT EXISTS(
-            SELECT 1 FROM conversation_identity_mutations m
-            JOIN conversation_identity_mutation_scopes s
-              ON s.mutation_sha256=m.mutation_sha256
-            WHERE m.operation='save' AND m.edition_sha256=?1 AND s.scope_sha256=?2
-              AND m.alias_sha256=?3 AND m.conversation_id=?4 AND m.revision=?5
-              AND m.committed_at=?6
-            UNION ALL
-            SELECT 1 FROM conversation_identity_migrated_scopes v3
-            WHERE v3.edition_sha256=?1 AND v3.scope_sha256=?2
-              AND v3.alias_sha256=?3 AND v3.conversation_id=?4
-              AND v3.revision=?5 AND v3.updated_at=?6
-         )",
-        params![
-            edition_sha256,
-            scope.as_sha256(),
-            alias_sha256,
-            conversation_id,
-            revision,
-            updated_at
-        ],
-        |row| row.get::<_, bool>(0),
-    )?;
-    if !authenticated {
-        return Err(StoreError::CorruptData(
-            "identity scope selection has no exact save receipt",
-        ));
-    }
-    Ok(())
-}
-
 fn reject_replayed_mutation(
     conn: &rusqlite::Connection,
     mutation_sha256: &str,
@@ -927,3 +924,7 @@ fn identity_conflict() -> StoreError {
 #[cfg(test)]
 #[path = "identity_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "identity_migration_tests.rs"]
+mod migration_tests;
