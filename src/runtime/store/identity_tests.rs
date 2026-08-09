@@ -420,6 +420,48 @@ fn canonical_scope_selection_rejects_missing_and_forged_clear_effects() {
 }
 
 #[test]
+fn canonical_scope_selection_rejects_clear_receipt_with_forged_primary_scope() {
+    let dir = tempfile_dir("canonical-forged-clear-primary-scope");
+    let store = RuntimeStore::open_metadata(&RuntimeStore::path_for_state_dir(&dir)).unwrap();
+    let global = ConversationIdentityScope::global();
+    let forged_scope =
+        ConversationIdentityScope::working_directory(Path::new("/private/forged-scope"));
+    store
+        .clear_conversation_identity(
+            "abbey",
+            Some(std::slice::from_ref(&global)),
+            "forged-primary-clear",
+        )
+        .unwrap();
+    {
+        let conn = store.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE conversation_identity_mutations SET scope_sha256=?1",
+            [forged_scope.as_sha256()],
+        )
+        .unwrap();
+        conn.execute("DELETE FROM conversation_identity_tombstones", [])
+            .unwrap();
+        assert_eq!(
+            conn.query_row(
+                "SELECT COUNT(*) FROM conversation_identity_mutation_scopes
+                 WHERE scope_sha256=?1",
+                [global.as_sha256()],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap(),
+            1
+        );
+    }
+    assert!(matches!(
+        store.identity_scope_selection("abbey", &global),
+        Err(StoreError::CorruptData(_))
+    ));
+    drop(store);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
 fn canonical_scope_selection_keeps_stale_selection_tombstoned() {
     let dir = tempfile_dir("canonical-stale-selection");
     let store = RuntimeStore::open_metadata(&RuntimeStore::path_for_state_dir(&dir)).unwrap();

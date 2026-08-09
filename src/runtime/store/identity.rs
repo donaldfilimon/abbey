@@ -314,11 +314,15 @@ impl RuntimeStore {
             .optional()?;
         let latest_scope_receipt = mutation_receipt_on(
             &conn,
-            "SELECT mutation_sha256, revision, operation, edition_sha256, scope_sha256,
-                    scope_set_sha256, alias_sha256, conversation_id, committed_at
-             FROM conversation_identity_mutations
-             WHERE operation='clear_scope' AND edition_sha256=?1 AND scope_sha256=?2
-             ORDER BY revision DESC LIMIT 1",
+            "SELECT m.mutation_sha256, m.revision, m.operation, m.edition_sha256,
+                    m.scope_sha256, m.scope_set_sha256, m.alias_sha256,
+                    m.conversation_id, m.committed_at
+             FROM conversation_identity_mutations m
+             LEFT JOIN conversation_identity_mutation_scopes s
+               ON s.mutation_sha256=m.mutation_sha256
+             WHERE m.operation='clear_scope' AND m.edition_sha256=?1
+               AND (m.scope_sha256=?2 OR s.scope_sha256=?2)
+             ORDER BY m.revision DESC LIMIT 1",
             params![edition_sha256.as_str(), scope.as_sha256()],
         )?;
         let latest_all_receipt = mutation_receipt_on(
@@ -336,9 +340,21 @@ impl RuntimeStore {
                     m.scope_sha256, m.scope_set_sha256, m.alias_sha256,
                     m.conversation_id, m.committed_at
              FROM conversation_identity_mutations m
-             JOIN conversation_identity_mutation_scopes s
+             LEFT JOIN conversation_identity_mutation_scopes s
                ON s.mutation_sha256=m.mutation_sha256
-             WHERE m.operation='save' AND m.edition_sha256=?1 AND s.scope_sha256=?2
+             WHERE m.operation='save' AND m.edition_sha256=?1
+               AND (
+                    s.scope_sha256=?2
+                    OR EXISTS(
+                        SELECT 1 FROM conversation_identity_migrated_scopes v3
+                        WHERE v3.edition_sha256=m.edition_sha256
+                          AND v3.scope_sha256=?2
+                          AND v3.alias_sha256=m.alias_sha256
+                          AND v3.conversation_id=m.conversation_id
+                          AND v3.revision=m.revision
+                          AND v3.updated_at=m.committed_at
+                    )
+               )
              ORDER BY m.revision DESC LIMIT 1",
             params![edition_sha256.as_str(), scope.as_sha256()],
         )?;
@@ -908,3 +924,7 @@ fn identity_conflict() -> StoreError {
 #[cfg(test)]
 #[path = "identity_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "identity_migration_tests.rs"]
+mod migration_tests;

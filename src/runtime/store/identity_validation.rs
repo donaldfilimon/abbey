@@ -116,18 +116,31 @@ pub(super) fn validate_mutation_receipt(
                     "identity mutation receipt payload is inconsistent",
                 ));
             };
-            if !is_lower_hex_sha256(alias_sha256)
-                || parse_conversation_id(conversation_id).is_err()
-                || scope_refs.first().copied() != Some(receipt.scope_sha256.as_str())
+            if !is_lower_hex_sha256(alias_sha256) || parse_conversation_id(conversation_id).is_err()
+            {
+                return Err(StoreError::CorruptData(
+                    "identity save receipt payload is inconsistent",
+                ));
+            }
+            validate_alias_mapping(conn, alias_sha256, conversation_id)?;
+            if validate_migrated_v3_save_receipt(
+                conn,
+                receipt,
+                alias_sha256,
+                conversation_id,
+                &scope_refs,
+            )? {
+                return Ok(());
+            }
+            if scope_refs.first().copied() != Some(receipt.scope_sha256.as_str())
                 || scope_set_sha256_from_hashes(&scope_refs).map_err(|_| {
                     StoreError::CorruptData("identity save receipt scope set is invalid")
                 })? != receipt.scope_set_sha256
             {
                 return Err(StoreError::CorruptData(
-                    "identity save receipt scope or payload digest is inconsistent",
+                    "identity native-v4 save receipt scope digest is inconsistent",
                 ));
             }
-            validate_alias_mapping(conn, alias_sha256, conversation_id)?;
         }
         IdentityOperation::ClearScope => {
             if receipt.alias_sha256.is_some()
@@ -157,6 +170,68 @@ pub(super) fn validate_mutation_receipt(
         }
     }
     Ok(())
+}
+
+fn validate_migrated_v3_save_receipt(
+    conn: &rusqlite::Connection,
+    receipt: &MutationReceipt,
+    alias_sha256: &str,
+    conversation_id: &str,
+    scope_refs: &[&str],
+) -> Result<bool, StoreError> {
+    let migrated_count = conn.query_row(
+        "SELECT COUNT(*) FROM conversation_identity_migrated_scopes
+         WHERE edition_sha256=?1 AND revision=?2 AND alias_sha256=?3
+           AND conversation_id=?4 AND updated_at=?5",
+        params![
+            receipt.edition_sha256,
+            receipt.revision,
+            alias_sha256,
+            conversation_id,
+            receipt.committed_at
+        ],
+        |row| row.get::<_, i64>(0),
+    )?;
+    if migrated_count == 0 {
+        return Ok(false);
+    }
+    // Migration 4 retained the exact v3 authority rows but did not retain the
+    // original scope-vector order. Authenticate the complete set relationally;
+    // only native-v4 receipts may claim ordered scope-set reconstruction.
+    let _ = scope_set_sha256_from_hashes(scope_refs).map_err(|_| {
+        StoreError::CorruptData("identity migrated-v3 receipt scope membership is invalid")
+    })?;
+    if usize::try_from(migrated_count).ok() != Some(scope_refs.len())
+        || !scope_refs.contains(&receipt.scope_sha256.as_str())
+    {
+        return Err(StoreError::CorruptData(
+            "identity migrated-v3 receipt scope membership is inconsistent",
+        ));
+    }
+    for scope_sha256 in scope_refs {
+        let authenticated = conn.query_row(
+            "SELECT EXISTS(
+                SELECT 1 FROM conversation_identity_migrated_scopes
+                WHERE edition_sha256=?1 AND scope_sha256=?2 AND revision=?3
+                  AND alias_sha256=?4 AND conversation_id=?5 AND updated_at=?6
+             )",
+            params![
+                receipt.edition_sha256,
+                scope_sha256,
+                receipt.revision,
+                alias_sha256,
+                conversation_id,
+                receipt.committed_at
+            ],
+            |row| row.get::<_, bool>(0),
+        )?;
+        if !authenticated {
+            return Err(StoreError::CorruptData(
+                "identity migrated-v3 receipt scope authority is inconsistent",
+            ));
+        }
+    }
+    Ok(true)
 }
 
 pub(super) fn validate_alias_mapping(
