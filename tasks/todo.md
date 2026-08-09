@@ -7,11 +7,23 @@ Executable workflow ledger: **26 goals (23 done, 1 in_progress, 1 proposed, 1 bl
 <!-- END abbey-generated:claims-summary -->
 
 
-Ledger snapshot after the 2026-08-09 flaky-test record: **120 checked,
+Ledger snapshot after the 2026-08-09 supervisor-teardown fix: **120 checked,
 21 open**. The 21 open items are two externally blocked CI proofs, eight
 approved Proposed implementation slices, ten remaining Abbey Completion
-Program phases, and one undiagnosed Phase 4B.5 test flake; recount when
-changing checkboxes.
+Program phases, and one unreproduced test flake; recount when changing
+checkboxes.
+
+**Flake status is no longer uniform — do not restate it as "one undiagnosed
+flake".** The two supervisor-teardown flakes are root-caused and fixed
+(25% → 0%, measured; see the Phase 4B.5 entry). What remains open is
+`daemon::client::tests::real_scratch_server_round_trip` (`EINVAL`), which did
+**not** reproduce in 27 full-suite runs or 150 oversubscribed `daemon::`
+iterations — two hypotheses disproven, no fix attempted without a reproduction.
+`conversation_identity_cutover.rs::real_cli_recovers_committed_conversation_mirrors_after_failpoint`
+also did not reproduce. Separately recorded and **not** a test defect:
+`ChildGuard::terminate` reads an unreaped zombie as "the group survived
+SIGKILL", which is a product false-failure a caller with a tight
+`terminate_grace` can hit.
 
 ## Working CI on GitHub (blocked — see goals.md)
 
