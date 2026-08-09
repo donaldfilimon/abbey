@@ -240,7 +240,10 @@ impl Server {
                 "title": "Abbey read-only tools",
                 "version": crate::build_info::VERSION
             },
-            "instructions": "Read-only Abbey introspection over stdio. Every tool is \
+            // Transport-neutral on purpose: this same handshake is served over
+            // stdio and over the loopback HTTP transport, and naming one of them
+            // here made the HTTP response say "over stdio".
+            "instructions": "Read-only Abbey introspection. Every tool is \
                              non-mutating: there is no shell, filesystem, or command-execution \
                              tool in this registry, and none can be added without changing the \
                              registry's effect type."
