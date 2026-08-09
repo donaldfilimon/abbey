@@ -79,12 +79,47 @@ jobs:
           cargo build --release --locked
           ./target/release/abbey --version
 
+      - name: Release install and provider inventory smoke
+        working-directory: abbey
+        env:
+          ABBEY_ABI_BIN: ${{ github.workspace }}/abi/target/debug/abi
+        run: |
+          smoke_root="${RUNNER_TEMP}/abbey-install-smoke"
+          mkdir -p "$smoke_root/bin" "$smoke_root/home"
+          ABBEY_INSTALL_DIR="$smoke_root/bin" \
+            ABBEY_COMPLETION_HOME="$smoke_root/home" ./install.sh
+          export HOME="$smoke_root/home"
+          export XDG_CONFIG_HOME="$smoke_root/home/.config"
+          export XDG_STATE_HOME="$smoke_root/home/.local/state"
+          export ABBEY_CONFIG="$smoke_root/home/.config/abbey/config.toml"
+          export ABBEY_STATE_DIR="$smoke_root/state"
+          mkdir -p "$XDG_CONFIG_HOME" "$XDG_STATE_HOME" "$ABBEY_STATE_DIR"
+          "$smoke_root/bin/abbey" --version
+          "$smoke_root/bin/abbey" plugins abi list >/dev/null
+          ABBEY_BACKEND=abi "$smoke_root/bin/abbey" mcp status >/dev/null
+          ABBEY_BACKEND=fm "$smoke_root/bin/abbey" mcp paths >/dev/null
+          "$smoke_root/bin/abbey" skills >/dev/null
+
       - name: ABI-backed local mesh proof
         working-directory: abbey
         env:
           ABBEY_ABI_BIN: ${{ github.workspace }}/abi/target/debug/abi
           ABBEY_STATE_DIR: ${{ runner.temp }}/abbey-mesh-state
         run: cargo run --release --bin abbey -- mesh local-demo --nodes 3 --json
+
+      - name: Clean runner workspace
+        if: always()
+        run: |
+          for path in \
+            "$GITHUB_WORKSPACE/abbey" \
+            "$GITHUB_WORKSPACE/abi" \
+            "$RUNNER_TEMP/abbey-mesh-state" \
+            "$RUNNER_TEMP/abbey-install-smoke"
+          do
+            if [ -e "$path" ]; then
+              find "$path" -depth -delete
+            fi
+          done
 
   gate-macos:
     name: gate (macOS ARM64 adjunct)
@@ -144,9 +179,44 @@ jobs:
           cargo build --release --locked
           ./target/release/abbey --version
 
+      - name: Release install and provider inventory smoke
+        working-directory: abbey
+        env:
+          ABBEY_ABI_BIN: ${{ github.workspace }}/abi/target/debug/abi
+        run: |
+          smoke_root="${RUNNER_TEMP}/abbey-install-smoke"
+          mkdir -p "$smoke_root/bin" "$smoke_root/home"
+          ABBEY_INSTALL_DIR="$smoke_root/bin" \
+            ABBEY_COMPLETION_HOME="$smoke_root/home" ./install.sh
+          export HOME="$smoke_root/home"
+          export XDG_CONFIG_HOME="$smoke_root/home/.config"
+          export XDG_STATE_HOME="$smoke_root/home/.local/state"
+          export ABBEY_CONFIG="$smoke_root/home/.config/abbey/config.toml"
+          export ABBEY_STATE_DIR="$smoke_root/state"
+          mkdir -p "$XDG_CONFIG_HOME" "$XDG_STATE_HOME" "$ABBEY_STATE_DIR"
+          "$smoke_root/bin/abbey" --version
+          "$smoke_root/bin/abbey" plugins abi list >/dev/null
+          ABBEY_BACKEND=abi "$smoke_root/bin/abbey" mcp status >/dev/null
+          ABBEY_BACKEND=fm "$smoke_root/bin/abbey" mcp paths >/dev/null
+          "$smoke_root/bin/abbey" skills >/dev/null
+
       - name: ABI-backed local mesh proof
         working-directory: abbey
         env:
           ABBEY_ABI_BIN: ${{ github.workspace }}/abi/target/debug/abi
           ABBEY_STATE_DIR: ${{ runner.temp }}/abbey-mesh-state
         run: cargo run --release --bin abbey -- mesh local-demo --nodes 3 --json
+
+      - name: Clean runner workspace
+        if: always()
+        run: |
+          for path in \
+            "$GITHUB_WORKSPACE/abbey" \
+            "$GITHUB_WORKSPACE/abi" \
+            "$RUNNER_TEMP/abbey-mesh-state" \
+            "$RUNNER_TEMP/abbey-install-smoke"
+          do
+            if [ -e "$path" ]; then
+              find "$path" -depth -delete
+            fi
+          done

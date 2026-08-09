@@ -12,17 +12,37 @@ SPEC.loader.exec_module(module)
 
 
 class RunEvidence(unittest.TestCase):
+    expected_sha = "a" * 40
+
+    def evidence(self, run: dict, jobs: list[dict]) -> tuple[bool, str]:
+        complete_run = {
+            "path": module.RUST_WORKFLOW_PATH,
+            "head_sha": self.expected_sha,
+            **run,
+        }
+        return module.run_is_real_evidence(complete_run, jobs, self.expected_sha)
+
+    def primary_job(self, *, conclusion: str = "success") -> dict:
+        return {
+            "name": module.PRIMARY_JOB,
+            "conclusion": conclusion,
+            "steps": [
+                {"name": name, "conclusion": "success"}
+                for name in sorted(module.REQUIRED_PRIMARY_STEPS)
+            ],
+        }
+
     def test_zero_job_startup_failure_is_not_evidence(self) -> None:
         # The exact shape this repository produced repeatedly on 2026-08-08.
         run = {"conclusion": "startup_failure", "status": "completed"}
-        ok, reason = module.run_is_real_evidence(run, [])
+        ok, reason = self.evidence(run, [])
         self.assertFalse(ok)
         self.assertIn("zero jobs", reason)
 
     def test_success_with_no_jobs_is_still_not_evidence(self) -> None:
         # Defensive: a green-looking conclusion with nothing executed must not
         # be able to close the phase.
-        ok, reason = module.run_is_real_evidence(
+        ok, reason = self.evidence(
             {"status": "completed", "conclusion": "success"}, []
         )
         self.assertFalse(ok)
@@ -30,19 +50,17 @@ class RunEvidence(unittest.TestCase):
 
     def test_failed_steps_are_execution_evidence_but_not_a_pass(self) -> None:
         run = {"status": "completed", "conclusion": "failure"}
-        jobs = [{"name": "gate (Linux ARM64)", "conclusion": "failure", "steps": [
+        jobs = [{"name": module.PRIMARY_JOB, "conclusion": "failure", "steps": [
             {"name": "Gate both Abbey feature sets", "conclusion": "failure"}
         ]}]
-        ok, reason = module.run_is_real_evidence(run, jobs)
+        ok, reason = self.evidence(run, jobs)
         self.assertFalse(ok)
         self.assertIn("executed", reason)
 
     def test_executed_and_successful_run_is_evidence(self) -> None:
         run = {"status": "completed", "conclusion": "success"}
-        jobs = [{"name": "gate (Linux ARM64)", "conclusion": "success", "steps": [
-            {"name": "Gate both Abbey feature sets", "conclusion": "success"}
-        ]}]
-        ok, reason = module.run_is_real_evidence(run, jobs)
+        jobs = [self.primary_job()]
+        ok, reason = self.evidence(run, jobs)
         self.assertTrue(ok, reason)
         self.assertIn("1 job", reason)
 
@@ -51,7 +69,7 @@ class RunEvidence(unittest.TestCase):
         # run but proves nothing about the gate.
         run = {"status": "completed", "conclusion": "success"}
         jobs = [{"name": "gate (macOS ARM64 adjunct)", "conclusion": "skipped", "steps": []}]
-        ok, reason = module.run_is_real_evidence(run, jobs)
+        ok, reason = self.evidence(run, jobs)
         self.assertFalse(ok)
         self.assertIn("skipped", reason)
 
@@ -63,7 +81,7 @@ class RunEvidence(unittest.TestCase):
             {"name": "gate (Linux ARM64)", "conclusion": "success"},
             {"name": "gate (macOS ARM64)", "conclusion": None}
         ]
-        ok, reason = module.run_is_real_evidence(run, jobs)
+        ok, reason = self.evidence(run, jobs)
         self.assertFalse(ok)
         self.assertIn("in progress", reason)
 
@@ -72,7 +90,7 @@ class RunEvidence(unittest.TestCase):
         # conclusion=None means "hasn't finished", not "skipped by workflow logic".
         run = {"conclusion": None}
         jobs = [{"name": "gate (Linux ARM64)", "conclusion": None}]
-        ok, reason = module.run_is_real_evidence(run, jobs)
+        ok, reason = self.evidence(run, jobs)
         self.assertFalse(ok)
         self.assertNotIn("skipped", reason)
         self.assertIn("in progress", reason)
@@ -85,25 +103,21 @@ class RunEvidence(unittest.TestCase):
             {"name": "gate (Linux ARM64)", "conclusion": "success"},
             {"name": "gate (macOS ARM64)", "conclusion": "success"}
         ]
-        ok, reason = module.run_is_real_evidence(run, jobs)
+        ok, reason = self.evidence(run, jobs)
         self.assertFalse(ok)
         self.assertIn("in_progress", reason)
 
     def test_missing_run_status_fails_closed(self) -> None:
         run = {"conclusion": "success"}
         jobs = [{"name": "gate", "conclusion": "success", "steps": []}]
-        ok, reason = module.run_is_real_evidence(run, jobs)
+        ok, reason = self.evidence(run, jobs)
         self.assertFalse(ok)
         self.assertIn("status", reason)
 
     def test_failed_or_cancelled_run_cannot_pass_with_successful_jobs(self) -> None:
-        jobs = [{
-            "name": "gate",
-            "conclusion": "success",
-            "steps": [{"name": "check", "conclusion": "success"}],
-        }]
+        jobs = [self.primary_job()]
         for conclusion in ("failure", "cancelled"):
-            ok, reason = module.run_is_real_evidence(
+            ok, reason = self.evidence(
                 {"status": "completed", "conclusion": conclusion}, jobs
             )
             self.assertFalse(ok)
@@ -119,21 +133,48 @@ class RunEvidence(unittest.TestCase):
             [{"name": "check", "conclusion": None}],
         )
         for steps in invalid_steps:
-            ok, _ = module.run_is_real_evidence(
-                run, [{"name": "gate", "conclusion": "success", "steps": steps}]
+            ok, _ = self.evidence(
+                run, [{"name": module.PRIMARY_JOB, "conclusion": "success", "steps": steps}]
             )
             self.assertFalse(ok)
 
     def test_skipped_setup_plus_successful_step_is_evidence(self) -> None:
         run = {"status": "completed", "conclusion": "success"}
-        jobs = [{
-            "name": "gate",
-            "conclusion": "success",
-            "steps": [
-                {"name": "optional setup", "conclusion": "skipped"},
-                {"name": "check", "conclusion": "success"},
-            ],
-        }]
-        ok, reason = module.run_is_real_evidence(run, jobs)
+        job = self.primary_job()
+        job["steps"].insert(0, {"name": "optional setup", "conclusion": "skipped"})
+        ok, reason = self.evidence(run, [job])
         self.assertTrue(ok, reason)
-        self.assertIn("1 successful step", reason)
+        self.assertIn("successful step", reason)
+
+    def test_unrelated_workflow_and_stale_revision_fail_closed(self) -> None:
+        run = {
+            "status": "completed",
+            "conclusion": "success",
+            "path": ".github/workflows/other.yml",
+        }
+        ok, reason = self.evidence(run, [self.primary_job()])
+        self.assertFalse(ok)
+        self.assertIn("workflow path", reason)
+
+        run = {
+            "status": "completed",
+            "conclusion": "success",
+            "head_sha": "b" * 40,
+        }
+        ok, reason = self.evidence(run, [self.primary_job()])
+        self.assertFalse(ok)
+        self.assertIn("head SHA", reason)
+
+    def test_primary_gate_and_every_required_step_are_mandatory(self) -> None:
+        run = {"status": "completed", "conclusion": "success"}
+        unrelated = self.primary_job()
+        unrelated["name"] = "unrelated-success"
+        ok, reason = self.evidence(run, [unrelated])
+        self.assertFalse(ok)
+        self.assertIn("exactly one", reason)
+
+        incomplete = self.primary_job()
+        incomplete["steps"].pop()
+        ok, reason = self.evidence(run, [incomplete])
+        self.assertFalse(ok)
+        self.assertIn("missing successful required steps", reason)

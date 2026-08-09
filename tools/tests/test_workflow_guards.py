@@ -40,6 +40,27 @@ def job_blocks(text: str) -> dict[str, str]:
     return {name: "\n".join(body) for name, body in jobs.items()}
 
 
+def job_field(body: str, field: str) -> str:
+    """Return one actual job-level field, including folded scalar content."""
+    lines = body.splitlines()
+    pattern = re.compile(rf"^ {{4}}{re.escape(field)}:\s*(.*)$")
+    for index, line in enumerate(lines):
+        match = pattern.match(line)
+        if match is None:
+            continue
+        value = match.group(1).strip()
+        if value not in (">", "|", ">-", "|-"):
+            return value
+        continuation = []
+        for nested in lines[index + 1 :]:
+            if nested.strip() and len(nested) - len(nested.lstrip()) <= 4:
+                break
+            if nested.strip() and not nested.lstrip().startswith("#"):
+                continuation.append(nested.strip())
+        return " ".join(continuation)
+    raise AssertionError(f"job is missing field {field!r}")
+
+
 class WorkflowGuards(unittest.TestCase):
     def setUp(self) -> None:
         self.text = WORKFLOW.read_text(encoding="utf-8")
@@ -48,21 +69,19 @@ class WorkflowGuards(unittest.TestCase):
     def test_workflow_declares_jobs(self) -> None:
         self.assertTrue(self.jobs, "no jobs parsed out of rust.yml")
 
-    def self_hosted_jobs(self) -> dict[str, str]:
-        return {n: b for n, b in self.jobs.items() if "self-hosted" in b}
-
-    def test_self_hosted_jobs_exist(self) -> None:
-        self.assertTrue(
-            self.self_hosted_jobs(),
-            "expected at least one self-hosted job; hosted runners are the "
-            "broken assumption Phase 2 replaces",
-        )
+    def test_every_job_runs_only_on_self_hosted_runners(self) -> None:
+        for name, body in self.jobs.items():
+            self.assertIn(
+                "self-hosted",
+                job_field(body, "runs-on"),
+                f"job {name!r} must use the owned self-hosted runner pool",
+            )
 
     def test_every_self_hosted_job_requires_same_repository(self) -> None:
-        for name, body in self.self_hosted_jobs().items():
+        for name, body in self.jobs.items():
             self.assertIn(
                 "github.repository == 'donaldfilimon/abbey'",
-                body,
+                job_field(body, "if"),
                 f"self-hosted job {name!r} must refuse foreign repositories",
             )
 
@@ -70,11 +89,41 @@ class WorkflowGuards(unittest.TestCase):
         # A self-hosted job whose runner label is not registered cannot be
         # scheduled. Each such job must be skippable via a repository variable
         # so the workflow degrades to "skipped", never to an unschedulable job.
-        for name, body in self.self_hosted_jobs().items():
+        expected = {
+            "gate-linux": "vars.ABBEY_LINUX_ARM64_RUNNER == 'enabled'",
+            "gate-macos": "vars.ABBEY_MACOS_ARM64_RUNNER == 'enabled'",
+        }
+        self.assertEqual(set(self.jobs), set(expected))
+        for name, body in self.jobs.items():
+            self.assertIn(
+                expected[name],
+                job_field(body, "if"),
+                f"self-hosted job {name!r} needs its exact availability guard",
+            )
+
+    def test_every_job_contains_required_release_inventory_and_cleanup_steps(self) -> None:
+        required = {
+            "Gate both Abbey feature sets",
+            "RustSec dependency scan",
+            "Warning-denied API docs and release binary",
+            "Release install and provider inventory smoke",
+            "ABI-backed local mesh proof",
+            "Clean runner workspace",
+        }
+        for name, body in self.jobs.items():
+            steps = set(re.findall(r"^ {6}- name: (.+)$", body, re.MULTILINE))
+            self.assertFalse(required - steps, f"job {name!r} is missing required steps")
+            for isolated in (
+                'export HOME="$smoke_root/home"',
+                'export XDG_CONFIG_HOME="$smoke_root/home/.config"',
+                'export XDG_STATE_HOME="$smoke_root/home/.local/state"',
+                'export ABBEY_CONFIG="$smoke_root/home/.config/abbey/config.toml"',
+                'export ABBEY_STATE_DIR="$smoke_root/state"',
+            ):
+                self.assertIn(isolated, body, f"job {name!r} lacks isolated smoke state")
             self.assertRegex(
                 body,
-                r"vars\.[A-Z0-9_]+ == 'enabled'",
-                f"self-hosted job {name!r} needs a vars.<RUNNER> == 'enabled' guard",
+                r"(?m)^ {6}- name: Clean runner workspace\n {8}if: always\(\)$",
             )
 
 
@@ -95,48 +144,32 @@ class ForkSafety(unittest.TestCase):
 
     def test_pull_request_jobs_require_a_same_repo_head(self) -> None:
         for name, body in self.jobs.items():
-            if "pull_request" not in body:
+            condition = job_field(body, "if")
+            if "pull_request" not in condition:
                 continue
             self.assertIn(
                 "github.event.pull_request.head.repo.full_name == github.repository",
-                body,
+                condition,
                 f"job {name!r} accepts pull_request without pinning the head repo",
             )
-
-    def test_no_hosted_runner_reintroduced(self) -> None:
-        # Hosted runners are the assumption Phase 2 replaces; a silent
-        # `ubuntu-latest` would re-add a runner that cannot see the pinned ABI
-        # checkout layout this repo needs.
-        self.assertNotIn("ubuntu-latest", self.text)
-        self.assertNotIn("macos-latest", self.text)
 
     def test_no_job_widens_token_permissions(self) -> None:
         # Job-level `permissions:` fully overrides the workflow-level default
         # for that job rather than intersecting with it, so a single job block
         # can silently widen the token beyond `contents: read`.
         for name, body in self.jobs.items():
-            for match in re.finditer(r"^(\s*)permissions:\s*$", body, re.MULTILINE):
-                parent_indent = len(match.group(1))
-                # Collect all permission lines that follow, stopping at dedent
-                permissions_dict = {}
-                tail = body[match.end():].lstrip("\n")
-                for line in tail.split("\n"):
-                    if not line.strip():
-                        continue
-                    current_indent = len(line) - len(line.lstrip())
-                    if current_indent <= parent_indent:
-                        # We've exited the permissions block
-                        break
-                    # This line is part of the permissions block
-                    if ":" in line:
-                        key, val = line.split(":", 1)
-                        key = key.strip()
-                        val = val.strip()
-                        permissions_dict[key] = val
-                # Assert it's exactly {"contents": "read"}
-                self.assertEqual(
-                    permissions_dict,
-                    {"contents": "read"},
-                    f"job {name!r} has permissions {permissions_dict!r} instead of "
-                    f"exactly {{'contents': 'read'}}",
-                )
+            self.assertNotRegex(
+                body,
+                r"(?m)^ {4}permissions\s*:",
+                f"job {name!r} must not override the workflow token permissions",
+            )
+
+    def test_every_job_level_permissions_syntax_is_detected(self) -> None:
+        forbidden = (
+            "    permissions: write-all",
+            "    permissions: read-all",
+            "    permissions: {contents: read, pull-requests: write}",
+            "    permissions:\n      contents: write",
+        )
+        for body in forbidden:
+            self.assertRegex(body, r"(?m)^ {4}permissions\s*:")

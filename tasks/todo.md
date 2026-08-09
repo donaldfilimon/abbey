@@ -130,33 +130,26 @@ design subtask never promotes the parent capability to Current.
   - Evidence bar: close the CI TODOs only after a run with actual jobs + successful
     steps; a zero-job `startup_failure` is infrastructure evidence, never source-test
     evidence; missing runners/VM images/admin permission = explicit external blockers
-  - Enforced 2026-08-08 (repo-side, no runner yet): `tools/tests/test_workflow_guards.py`
-    asserts every self-hosted job carries both a same-repository guard and a
-    `vars.<RUNNER> == 'enabled'` availability guard — `gate-macos` was missing the
-    latter and always requested an unregistered `[self-hosted, macOS, ARM64, abbey]`
-    label; plus no `pull_request_target`, read-only token permissions, no job-level
-    permission escalation beyond `contents: read`, same-repo head for pull_request jobs,
-    and no hosted-runner reintroduction (4 WorkflowGuards + 5 ForkSafety tests).
-    `tools/ci/require_executed_run.py` makes the evidence bar executable: zero-job,
-    all-skipped, failed-but-executed, and in-progress runs each return a distinct
-    non-evidence reason. Both run under `check.sh`'s existing `tools/tests` discovery
-    (21 tests across these two files added in Phase 2; 28 total in the directory).
-  - Known gap in the above, not yet closed: the job-level permissions guard only
-    triggers on block-mapping syntax (`permissions:` alone on its line). A job using
-    `permissions: write-all`, `permissions: read-all`, or an inline flow mapping
-    (`permissions: {contents: read, pull-requests: write}`) escapes it entirely —
-    including `write-all`, a strictly worse escalation than the case the guard was
-    written for. Verified by probe, not theory.
-  - Still externally blocked, unchanged by the above: no self-hosted runner is
-    registered, and every run to date ends `startup_failure` at 0s with zero jobs
-    (including GitHub's own default template and a Dependabot run), so no workflow
-    content has ever executed. Owner action: register an Ubuntu ARM64 runner with
-    labels `self-hosted,Linux,ARM64,abbey`, set repository variable
-    `ABBEY_LINUX_ARM64_RUNNER=enabled` (and `ABBEY_MACOS_ARM64_RUNNER=enabled` for the
-    adjunct), then confirm Actions can schedule at all — a private repository with no
-    Actions minutes cannot start a run regardless of runner state.
+  - Enforced 2026-08-09 (repo-side): `tools/tests/test_workflow_guards.py` parses the
+    actual job-level `if:` and `runs-on:` fields, requires each job's exact runner
+    availability + same-repository/fork-head guards, requires only self-hosted labels,
+    forbids every scalar/flow/block job-level `permissions:` override beneath the exact
+    global `contents: read`, and pins release install, ABI resolution, plugin/MCP/skills
+    inventory, RustSec, mesh, and `always()` cleanup steps. `require_executed_run.py`
+    binds closure evidence to this Rust workflow, the checked-out head SHA, the primary
+    Linux job, and all named successful steps; failed/cancelled/stale/unrelated,
+    zero-job, skipped-only, unfinished, or incomplete runs fail closed. Both run under
+    `check.sh` discovery (24 Phase 2 tests; 31 total Python tool tests).
+  - Still externally blocked, unchanged by the repository enforcement: the macOS ARM64
+    runner is registered, but its enabling variable and a successful job execution are
+    unproved; the Linux ARM64 runner is not provisioned; Windows runtime evidence stays
+    open. Every observed hosted run still ends `startup_failure` at 0s with zero jobs.
+    Owner action: register the Ubuntu ARM64 runner with labels
+    `self-hosted,Linux,ARM64,abbey`, enable `ABBEY_LINUX_ARM64_RUNNER`, verify the macOS
+    variable/runner, and obtain an actually executed successful Rust workflow run.
   - Closure test for this phase: `python3 tools/ci/require_executed_run.py <run-id>`
-    prints `EVIDENCE: N job(s) executed and succeeded` and exits 0. Until that
+    prints `EVIDENCE: N job(s) executed and succeeded with M successful step(s)` and
+    exits 0. Until that
     command succeeds against a real run id, Phase 2 stays unchecked.
 - [x] **Phase 3 — Claims and ledgers as executable specifications:**
   - `src/claims.rs` = canonical machine-readable ledger; checked generator/validator

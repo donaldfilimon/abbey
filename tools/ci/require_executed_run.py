@@ -13,8 +13,25 @@ import json
 import subprocess
 import sys
 
+RUST_WORKFLOW_PATH = ".github/workflows/rust.yml"
+PRIMARY_JOB = "gate (Linux ARM64)"
+REQUIRED_PRIMARY_STEPS = {
+    "Check out Abbey",
+    "Check out the verified ABI dependency",
+    "Install pinned toolchain",
+    "Build the real ABI binary",
+    "Gate both Abbey feature sets",
+    "Install cargo-audit if absent",
+    "RustSec dependency scan",
+    "Warning-denied API docs and release binary",
+    "Release install and provider inventory smoke",
+    "ABI-backed local mesh proof",
+    "Clean runner workspace",
+}
 
-def run_is_real_evidence(run: dict, jobs: list[dict]) -> tuple[bool, str]:
+def run_is_real_evidence(
+    run: dict, jobs: list[dict], expected_head_sha: str
+) -> tuple[bool, str]:
     """Return (is_evidence, reason) for one workflow run.
 
     Evidence requires jobs that actually ran and succeeded. A run with no jobs,
@@ -24,6 +41,11 @@ def run_is_real_evidence(run: dict, jobs: list[dict]) -> tuple[bool, str]:
     status = run.get("status")
     if status != "completed":
         return False, f"run still in progress: status is {status!r}"
+    workflow_path = str(run.get("path", "")).split("@", 1)[0]
+    if workflow_path != RUST_WORKFLOW_PATH:
+        return False, f"run is for unexpected workflow path {workflow_path!r}"
+    if run.get("head_sha") != expected_head_sha:
+        return False, "run head SHA does not match the checked-out revision"
     # Check if no jobs were scheduled
     if not jobs:
         return False, (
@@ -55,6 +77,10 @@ def run_is_real_evidence(run: dict, jobs: list[dict]) -> tuple[bool, str]:
             "real execution evidence, not a passing gate"
         )
 
+    primary = [job for job in executed if job.get("name") == PRIMARY_JOB]
+    if len(primary) != 1:
+        return False, f"expected exactly one executed {PRIMARY_JOB!r} job"
+
     successful_steps = 0
     for job in executed:
         steps = job.get("steps")
@@ -71,6 +97,15 @@ def run_is_real_evidence(run: dict, jobs: list[dict]) -> tuple[bool, str]:
             return False, f"successful job {job.get('name')!r} contains failed steps"
         successful_steps += len(ran)
 
+    primary_step_names = {
+        str(step.get("name"))
+        for step in primary[0].get("steps", [])
+        if step.get("conclusion") == "success"
+    }
+    missing = sorted(REQUIRED_PRIMARY_STEPS - primary_step_names)
+    if missing:
+        return False, f"primary gate is missing successful required steps: {', '.join(missing)}"
+
     if run.get("conclusion") != "success":
         return False, f"completed run did not succeed: conclusion is {run.get('conclusion')!r}"
 
@@ -86,6 +121,9 @@ def main(argv: list[str]) -> int:
         return 2
     run_id = argv[1]
     repo = "donaldfilimon/abbey"
+    expected_head_sha = subprocess.run(
+        ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True
+    ).stdout.strip()
     run = json.loads(
         subprocess.run(
             ["gh", "api", f"repos/{repo}/actions/runs/{run_id}"],
@@ -98,7 +136,7 @@ def main(argv: list[str]) -> int:
             capture_output=True, text=True, check=True,
         ).stdout
     ).get("jobs", [])
-    ok, reason = run_is_real_evidence(run, jobs)
+    ok, reason = run_is_real_evidence(run, jobs, expected_head_sha)
     print(f"{'EVIDENCE' if ok else 'NOT EVIDENCE'}: {reason}")
     return 0 if ok else 1
 
