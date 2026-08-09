@@ -79,6 +79,15 @@ fn command_needs_executor(cli: &Cli) -> bool {
                 | Commands::Plugins { .. }
                 | Commands::Mcp { .. }
                 | Commands::Acp { .. }
+                // Both are installer probes. `edition` reports compile-time
+                // identity and `completion` renders a clap-generated script;
+                // neither runs a model. They must work on a machine that has
+                // no backend yet, because that is exactly when an install
+                // happens — install.sh/install.ps1 derive the installed names
+                // from `edition --name`, and requiring an executor there made
+                // a backend-less install abort before writing anything.
+                | Commands::Edition { .. }
+                | Commands::Completion { .. }
         )
     )
 }
@@ -101,6 +110,16 @@ mod tests {
             &["abbey", "daemon", "claims", "--status", "blocked"][..],
             &["abbey", "daemon", "claims", "--status", "oos"][..],
             &["abbey", "daemon", "claims", "--status", "out-of-scope"][..],
+            // Installer probes. Both installers derive the names they install
+            // from `edition --name`/`--daemon-name` and then render a shell
+            // completion. An install happens precisely when no backend exists
+            // yet, so requiring an executor here aborted the whole install on
+            // a fresh machine before anything was written.
+            &["abbey", "edition"][..],
+            &["abbey", "edition", "--name"][..],
+            &["abbey", "edition", "--daemon-name"][..],
+            &["abbey", "completion", "powershell"][..],
+            &["abbey", "completion", "bash"][..],
         ] {
             let cli = Cli::try_parse_from(args).unwrap();
             assert!(!command_needs_executor(&cli), "args={args:?}");
