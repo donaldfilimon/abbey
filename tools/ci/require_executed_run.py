@@ -22,9 +22,8 @@ def run_is_real_evidence(run: dict, jobs: list[dict]) -> tuple[bool, str]:
     """
     # Check if run is still in progress based on status field
     status = run.get("status")
-    if status is not None and status != "completed":
+    if status != "completed":
         return False, f"run still in progress: status is {status!r}"
-
     # Check if no jobs were scheduled
     if not jobs:
         return False, (
@@ -56,8 +55,29 @@ def run_is_real_evidence(run: dict, jobs: list[dict]) -> tuple[bool, str]:
             "real execution evidence, not a passing gate"
         )
 
-    # All executed jobs succeeded
-    return True, f"{len(executed)} job(s) executed and succeeded"
+    successful_steps = 0
+    for job in executed:
+        steps = job.get("steps")
+        if not isinstance(steps, list) or not steps:
+            return False, f"successful job {job.get('name')!r} reported no steps"
+        unfinished = [step for step in steps if step.get("conclusion") is None]
+        if unfinished:
+            return False, f"successful job {job.get('name')!r} has unfinished steps"
+        ran = [step for step in steps if step.get("conclusion") != "skipped"]
+        if not ran:
+            return False, f"successful job {job.get('name')!r} executed no steps"
+        failed_steps = [step for step in ran if step.get("conclusion") != "success"]
+        if failed_steps:
+            return False, f"successful job {job.get('name')!r} contains failed steps"
+        successful_steps += len(ran)
+
+    if run.get("conclusion") != "success":
+        return False, f"completed run did not succeed: conclusion is {run.get('conclusion')!r}"
+
+    return True, (
+        f"{len(executed)} job(s) executed and succeeded with "
+        f"{successful_steps} successful step(s)"
+    )
 
 
 def main(argv: list[str]) -> int:

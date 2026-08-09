@@ -140,7 +140,7 @@ design subtask never promotes the parent capability to Current.
     `tools/ci/require_executed_run.py` makes the evidence bar executable: zero-job,
     all-skipped, failed-but-executed, and in-progress runs each return a distinct
     non-evidence reason. Both run under `check.sh`'s existing `tools/tests` discovery
-    (18 tests across these two files added in Phase 2; 25 total in the directory).
+    (21 tests across these two files added in Phase 2; 28 total in the directory).
   - Known gap in the above, not yet closed: the job-level permissions guard only
     triggers on block-mapping syntax (`permissions:` alone on its line). A job using
     `permissions: write-all`, `permissions: read-all`, or an inline flow mapping

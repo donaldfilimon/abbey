@@ -22,12 +22,14 @@ class RunEvidence(unittest.TestCase):
     def test_success_with_no_jobs_is_still_not_evidence(self) -> None:
         # Defensive: a green-looking conclusion with nothing executed must not
         # be able to close the phase.
-        ok, reason = module.run_is_real_evidence({"conclusion": "success"}, [])
+        ok, reason = module.run_is_real_evidence(
+            {"status": "completed", "conclusion": "success"}, []
+        )
         self.assertFalse(ok)
         self.assertIn("zero jobs", reason)
 
     def test_failed_steps_are_execution_evidence_but_not_a_pass(self) -> None:
-        run = {"conclusion": "failure"}
+        run = {"status": "completed", "conclusion": "failure"}
         jobs = [{"name": "gate (Linux ARM64)", "conclusion": "failure", "steps": [
             {"name": "Gate both Abbey feature sets", "conclusion": "failure"}
         ]}]
@@ -36,7 +38,7 @@ class RunEvidence(unittest.TestCase):
         self.assertIn("executed", reason)
 
     def test_executed_and_successful_run_is_evidence(self) -> None:
-        run = {"conclusion": "success"}
+        run = {"status": "completed", "conclusion": "success"}
         jobs = [{"name": "gate (Linux ARM64)", "conclusion": "success", "steps": [
             {"name": "Gate both Abbey feature sets", "conclusion": "success"}
         ]}]
@@ -47,7 +49,7 @@ class RunEvidence(unittest.TestCase):
     def test_skipped_jobs_do_not_count_as_execution(self) -> None:
         # A runner-availability guard that skips every job looks like a green
         # run but proves nothing about the gate.
-        run = {"conclusion": "success"}
+        run = {"status": "completed", "conclusion": "success"}
         jobs = [{"name": "gate (macOS ARM64 adjunct)", "conclusion": "skipped", "steps": []}]
         ok, reason = module.run_is_real_evidence(run, jobs)
         self.assertFalse(ok)
@@ -87,11 +89,51 @@ class RunEvidence(unittest.TestCase):
         self.assertFalse(ok)
         self.assertIn("in_progress", reason)
 
-    def test_run_with_no_status_key_and_all_jobs_succeeded_is_evidence(self) -> None:
-        # Regression guard: when run dict omits "status" key entirely (some API
-        # responses), the .get() must return None and not block evidence.
-        run = {"conclusion": "success"}  # no "status" key
-        jobs = [{"name": "gate (Linux ARM64)", "conclusion": "success"}]
+    def test_missing_run_status_fails_closed(self) -> None:
+        run = {"conclusion": "success"}
+        jobs = [{"name": "gate", "conclusion": "success", "steps": []}]
+        ok, reason = module.run_is_real_evidence(run, jobs)
+        self.assertFalse(ok)
+        self.assertIn("status", reason)
+
+    def test_failed_or_cancelled_run_cannot_pass_with_successful_jobs(self) -> None:
+        jobs = [{
+            "name": "gate",
+            "conclusion": "success",
+            "steps": [{"name": "check", "conclusion": "success"}],
+        }]
+        for conclusion in ("failure", "cancelled"):
+            ok, reason = module.run_is_real_evidence(
+                {"status": "completed", "conclusion": conclusion}, jobs
+            )
+            self.assertFalse(ok)
+            self.assertIn("did not succeed", reason)
+
+    def test_successful_job_requires_successful_executed_steps(self) -> None:
+        run = {"status": "completed", "conclusion": "success"}
+        invalid_steps = (
+            [],
+            [{"name": "check", "conclusion": "skipped"}],
+            [{"name": "check", "conclusion": "failure"}],
+            [{"name": "check", "conclusion": "cancelled"}],
+            [{"name": "check", "conclusion": None}],
+        )
+        for steps in invalid_steps:
+            ok, _ = module.run_is_real_evidence(
+                run, [{"name": "gate", "conclusion": "success", "steps": steps}]
+            )
+            self.assertFalse(ok)
+
+    def test_skipped_setup_plus_successful_step_is_evidence(self) -> None:
+        run = {"status": "completed", "conclusion": "success"}
+        jobs = [{
+            "name": "gate",
+            "conclusion": "success",
+            "steps": [
+                {"name": "optional setup", "conclusion": "skipped"},
+                {"name": "check", "conclusion": "success"},
+            ],
+        }]
         ok, reason = module.run_is_real_evidence(run, jobs)
         self.assertTrue(ok, reason)
-        self.assertIn("1 job", reason)
+        self.assertIn("1 successful step", reason)
