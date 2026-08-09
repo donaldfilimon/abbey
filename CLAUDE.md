@@ -18,12 +18,14 @@ Full agent guidance lives in [AGENTS.md](AGENTS.md) — read it too; this file d
 ## Commands
 
 ```bash
-cargo build --release              # build
+cargo build --release              # build (the SAFE public edition)
 cargo build --features wdbx        # + in-process WDBX memory backend (off by default)
+cargo build --features personal-edition  # separately identified personal edition (src/edition.rs)
 ./install.sh                       # Unix: install abbey + read-only abbeyd (Windows: install.ps1 installs abbey)
 ./check.sh                         # production gate — see below
 cargo test                         # default-feature tests only
 cargo test --features wdbx         # includes src/memory/wdbx.rs
+cargo test --features personal-edition   # edition-gated tests
 cargo test <test_name>             # single test
 cargo test --test cli_surface      # binary-level integration tests only
 cargo clippy --all-targets -- -D warnings
@@ -31,7 +33,7 @@ cargo fmt --all
 abbey doctor                       # build stamp + persona/role/memory/os honesty check
 ```
 
-`./check.sh` is the merge bar — always run it before considering work done. In order: a toolchain probe (a cheap `cargo check` that trips the `rust-version` gate during unit-graph construction, so a shadowed Homebrew cargo fails fast with the remedy printed), fmt-check, clippy `-D warnings`, tests — the last two **for both feature sets** — the file-size guard, then *soft* cross-compile checks for `x86_64-pc-windows-gnu` / `x86_64-unknown-linux-gnu` (skipped when the target isn't installed, and never a hard failure). A bare `cargo test` never compiles `src/memory/wdbx.rs`, so it can pass while the gated backend is broken; that is exactly why the gate runs twice.
+`./check.sh` is the merge bar — always run it before considering work done. In order: a toolchain probe (a cheap `cargo check` that trips the `rust-version` gate during unit-graph construction, so a shadowed Homebrew cargo fails fast with the remedy printed), fmt-check, clippy `-D warnings`, tests — the last two for **all three feature sets** (default · `wdbx` · `personal-edition`) — the file-size guard, then *soft* cross-compile checks for `x86_64-pc-windows-gnu` / `x86_64-unknown-linux-gnu` (skipped when the target isn't installed, and never a hard failure). A bare `cargo test` never compiles `src/memory/wdbx.rs` or the edition-gated code, so it can pass while a gated feature is broken; that is exactly why the gate runs per feature set.
 
 `tests/` includes process-level CLI suites plus `app_core_contract.rs`, which imports Abbey as an external library client. Process tests drive `CARGO_BIN_EXE_abbey` because some guarantees only exist once the process runs — real exit codes, real stdout/stderr, and the SIGPIPE reset before `main`. `daemon_cli.rs` starts real `abbeyd` and `abbey` binaries against owner-only scratch state; it must never use a user's socket or bearer. `cli_surface.rs` uses a throwaway `ABBEY_STATE_DIR`; keep that property for state-mutating cases. `slash_parse.rs` is read-only/current-dir scoped. The app-core contract test must stay presentation-neutral and must not gain crate-private access.
 
@@ -43,13 +45,16 @@ Rust **nightly**, edition **2024**, pinned via `rust-toolchain.toml` (`rustfmt` 
 
 Abbey has one canonical execution path shared by the CLI, slash commands, and the TUI — do not add a second way to invoke the agent.
 
-Two headless capture commands are the standing exceptions: `print`
-(`commands.rs`) and `commit` (`actions::run_commit`) call
-`AgentConfig::run_capture` directly and never reach `run_agent`. They therefore
-skip `hybrid_run` entirely — no persona/role wrap, no prefs injection, and **no
-`route.jsonl` entry** (verified: `abbey print …` leaves the route log unchanged
-where `abbey ask …` appends a row). That is deliberate for single-shot piping,
-but it means the routing audit does not see them. Keep the list at two.
+Three headless capture surfaces are the standing exceptions, all routed through
+the shared `capture.rs` (`run_print` / `capture_chat`) rather than calling the
+executor ad hoc: `print` (`commands.rs`), `commit` (`actions::run_commit`), and
+`voice ask` (`voice.rs`). None reach `run_agent`, so they skip `hybrid_run`
+entirely — no persona/role wrap, no prefs injection, and **no `route.jsonl`
+entry** (verified: `abbey print …` leaves the route log unchanged where
+`abbey ask …` appends a row). That is deliberate for single-shot piping and
+spoken replies, but it means the routing audit does not see them. New bypasses
+must go through `capture.rs` and be added to this list — its caller set *is*
+the bypass inventory.
 
 ```
 CLI (clap) · TUI (ratatui) · slash catalog
@@ -77,6 +82,10 @@ Key modules (`src/`):
 | `lib.rs` / `entry.rs` | private implementation graph + library-owned CLI/TUI routing |
 | `app_core/` | public versioned Status/Claims contracts and standard read-only policy |
 | `daemon/` / `bin/abbeyd.rs` | authenticated bounded Unix Status/Claims client/server transport; no tools, models, memory, or jobs |
+| `runtime/` (`manager.rs`, `store.rs`, `supervisor.rs`, `executor.rs`, `delegated.rs`, `migrations.rs`) | durable runtime kernel — **lifecycle persistence only**; model execution, tool dispatch, presentation, and daemon transport stay outside the database layer. See [docs/runtime.md](docs/runtime.md) |
+| `edition.rs` | compile-time editions: Safe (default build) vs `--features personal-edition` — a *separately identified* product (binary name, bundle id, config root, credential namespace, audit log path), so the two installs can never read each other's state or secrets |
+| `mesh.rs` | claim-bounded bridge to ABI's authenticated local multi-process WDBX proof — exact local-process evidence on one Unix host, **not** multi-host deployment; never invokes a shell (an `abi` shell alias cannot be mistaken for an executable) |
+| `capture.rs` | backend-aware headless capture shared by the three bypass surfaces (print · commit · voice ask) — the caller set is the bypass inventory |
 | `cli.rs` | clap `Cli`/`Subcommand` definitions (Grok Build/Codex/Claude Code parity surface) |
 | `actions.rs` | `RunSpec` + `run_agent` — the one path every surface calls |
 | `commands.rs` | clap subcommand match → actions |
@@ -91,11 +100,11 @@ Key modules (`src/`):
 | `media.rs` | image/video path attach → `--add-dir` + prompt note (no local vision) |
 | `generate.rs` | `imagine` / `generate video` / `reason` via cursor-agent tools (no local models) |
 | `voice.rs` | macOS Premium/Enhanced TTS + on-device STT (`scripts/abbey-stt.swift`) |
-| `protocols.rs` | MCP config inventory + ACP peer discovery/launch (Abbey is not a *client/host* of other providers' servers) |
+| `protocols.rs` / `protocols/mcp.rs` | MCP config inventory + ACP peer discovery/launch (Abbey is not a *client/host* of other providers' servers) |
 | `mcp_host/` (`mod.rs`, `serve.rs`, `tools.rs`, `jsonrpc.rs`, `limits.rs`, `redact.rs`) | `abbey mcp serve` — Abbey's own read-only **stdio MCP server**: newline-delimited JSON-RPC 2.0, version negotiation, `tools/list`+`tools/call`, JSON Schema 2020-12, a registry whose `EffectClass` admits read-only tools only, named enforced limits, outbound secret redaction. No HTTP/OAuth in this slice |
 | `highlight.rs` | syntect ANSI for fenced code on `-p`/print + `abbey highlight` |
-| `subagents.rs` | multi-subagent lanes + local PATH peer fan-out + synthesize |
-| `claims.rs` | Current/Partial/Proposed/Blocked/OOS gate + refuse paths and machine manifest |
+| `subagents.rs` / `subagents/` (`catalog.rs`, `execute.rs`, `parsing.rs`) | multi-subagent lanes + local PATH peer fan-out + synthesize |
+| `claims.rs` / `claims/registry.rs` | Current/Partial/Proposed/Blocked/OOS gate + refuse paths and machine manifest |
 | `platform.rs` | host OS matrix + threads + GPU/NPU/TPU detect (not accelerator runtime) |
 | `surfaces.rs` | vision/cot/runtime honesty (neural media/owned host Proposed; hidden CoT OOS) |
 | `deferred.rs` | deferred-capability index — lora/weights/accel/host Proposed; shipped-edition shell bypass OOS |
@@ -106,7 +115,7 @@ Key modules (`src/`):
 | `learn.rs` | self-learn capture/digest/review/stats into `train_candidate` |
 | `os_control.rs` | cross-platform OS allowlist policy |
 | `parallel.rs` | multi-lane fan-out (Max/Gemma/Aviva) |
-| `inventory.rs` | skills/plugins/peer-agent-tool discovery |
+| `inventory.rs` / `inventory/` (`skills.rs`, `plugins.rs`) | skills/plugins/peer-agent-tool discovery |
 | `init/` (`mod.rs`, `detect.rs`, `probe.rs`) | `abbey init` — scans a project and writes `AGENTS.md` |
 | `tui/` (`app.rs`, `keys.rs`, `ui.rs`, `tabs.rs`, `overlay.rs`, `refresh.rs`, `theme.rs`, `widgets.rs`, `mod.rs`) | 7-tab ratatui app; `keys.rs` holds key/palette/editor/mouse input handling split out of `app.rs` |
 | `doctor.rs` | doctor/debug/persona/role/memory checks |
@@ -136,4 +145,6 @@ Personas (Abbey/Aviva/Abi) and Max/Gemma worker roles are defined in the sibling
 - [docs/identity.md](docs/identity.md) — persona/role spec, Current vs. Proposed
 - [docs/architecture.md](docs/architecture.md) — layered module map, production rules, feature matrix
 - [docs/production.md](docs/production.md) — release gate, runtime deps, config/env vars, versioning, release checklist
+- [docs/runtime.md](docs/runtime.md) — durable runtime architecture: protocol-v1 `abbeyd` control plane vs the runtime kernel
+- [docs/claims.md](docs/claims.md) — generated claims evidence (source `src/claims.rs`; regenerate via `tools/check_claims_sync.py --write`)
 - [tasks/goals.md](tasks/goals.md) / [tasks/todo.md](tasks/todo.md) / [tasks/lessons.md](tasks/lessons.md) — active goals and backlog
