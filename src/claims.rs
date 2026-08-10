@@ -778,7 +778,7 @@ mod tests {
     }
 
     #[test]
-    fn conversation_identity_mutation_claim_stays_tombstone_bounded_and_unix_local() {
+    fn conversation_identity_claim_includes_canonical_reads_and_stays_unix_local() {
         let claim = CLAIMS
             .iter()
             .find(|claim| claim.id == "runtime-conversation-identity-write-cutover")
@@ -792,9 +792,14 @@ mod tests {
             "prepared-but-uncommitted",
             "prevents stale identity resurrection",
             "global fallback",
+            "select cwd before global",
+            "continue past cwd tombstones",
+            "matches the canonical digest",
+            "corrupt selected cwd mirror never falls back",
+            "Provider create, resume, retry, and capture paths use the fallible resolver",
+            "lossy wrapper is presentation-only",
             "Aliases and conversation provenance, history, transcripts, semantic memory",
-            "Reads still resolve through compatibility mirrors",
-            "backend/title/run inference",
+            "Backend/title/run inference",
             "protocol/UI/MCP surfaces",
             "Windows runtime authority",
         ] {
@@ -803,12 +808,7 @@ mod tests {
                 "missing boundary: {boundary}"
             );
         }
-        assert!(claim.next_action.contains("`read_chat_for`"));
-        assert!(
-            claim
-                .next_action
-                .contains("digest-verified compatibility-mirror resolution")
-        );
+        assert!(claim.next_action.contains("warning-denied rustdoc"));
     }
 
     #[test]

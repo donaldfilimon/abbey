@@ -67,6 +67,143 @@ impl ScratchState {
 }
 
 #[test]
+fn canonical_resolution_is_exact_cwd_first_and_never_falls_back_on_divergence() {
+    let scratch = ScratchState::new("canonical-read-order", true);
+    save_chat(&scratch.state, "canonical-private-id").unwrap();
+
+    fs::write(&scratch.state.chat_file, b"divergent-global-id\n").unwrap();
+    assert_eq!(
+        read_chat(&scratch.state).unwrap().as_deref(),
+        Some("canonical-private-id"),
+        "an authenticated cwd selection must not consult the global mirror"
+    );
+
+    fs::write(&scratch.state.chat_file, b"canonical-private-id\n").unwrap();
+    fs::write(scratch.state.active_chat_file(), b"divergent-cwd-id\n").unwrap();
+    let error = read_chat(&scratch.state).unwrap_err();
+    assert!(error.to_string().contains("diverged"));
+    assert_eq!(
+        fs::read_to_string(&scratch.state.chat_file).unwrap(),
+        "canonical-private-id\n",
+        "a valid global mirror must not rescue a corrupt selected cwd mirror"
+    );
+}
+
+#[test]
+fn cwd_tombstone_continues_to_global_and_global_tombstone_resolves_none() {
+    let scratch = ScratchState::new("canonical-tombstones", true);
+    save_chat(&scratch.state, "global-fallback-private-id").unwrap();
+
+    clear_chat(&scratch.state, false).unwrap();
+    fs::write(
+        scratch.state.active_chat_file(),
+        vec![b'x'; MAX_ID_FILE_BYTES + 1],
+    )
+    .unwrap();
+    assert_eq!(
+        read_chat(&scratch.state).unwrap().as_deref(),
+        Some("global-fallback-private-id")
+    );
+
+    fs::remove_file(scratch.state.active_chat_file()).unwrap();
+    clear_chat(&scratch.state, true).unwrap();
+    fs::write(&scratch.state.chat_file, vec![b'x'; MAX_ID_FILE_BYTES + 1]).unwrap();
+    assert_eq!(read_chat(&scratch.state).unwrap(), None);
+}
+
+#[test]
+fn untracked_scopes_keep_bounded_legacy_cwd_then_global_compatibility() {
+    let scratch = ScratchState::new("legacy-read-order", true);
+    fs::write(scratch.state.active_chat_file(), b"legacy-cwd-id\n").unwrap();
+    fs::write(&scratch.state.chat_file, b"legacy-global-id\n").unwrap();
+    assert_eq!(
+        read_chat(&scratch.state).unwrap().as_deref(),
+        Some("legacy-cwd-id")
+    );
+
+    fs::remove_file(scratch.state.active_chat_file()).unwrap();
+    assert_eq!(
+        read_chat(&scratch.state).unwrap().as_deref(),
+        Some("legacy-global-id")
+    );
+
+    let global_only = ScratchState::new("legacy-global-only", false);
+    fs::write(&global_only.state.chat_file, b"legacy-global-only-id\n").unwrap();
+    fs::write(
+        global_only
+            .state
+            .cwd_dir
+            .join(AbbeyState::cwd_key(&global_only.state.cwd)),
+        b"must-not-be-read\n",
+    )
+    .unwrap();
+    assert_eq!(
+        read_chat(&global_only.state).unwrap().as_deref(),
+        Some("legacy-global-only-id")
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn selected_mirror_corruption_is_fatal_without_global_fallback() {
+    use std::os::unix::fs::symlink;
+
+    for (tag, corrupt) in [
+        ("missing", 0_u8),
+        ("empty", 1),
+        ("invalid-utf8", 2),
+        ("invalid-id", 3),
+        ("oversize", 4),
+        ("symlink", 5),
+        ("identity-mismatch", 6),
+    ] {
+        let scratch = ScratchState::new(tag, true);
+        save_chat(&scratch.state, "selected-private-id").unwrap();
+        let active = scratch.state.active_chat_file();
+        match corrupt {
+            0 => fs::remove_file(&active).unwrap(),
+            1 => fs::write(&active, b"").unwrap(),
+            2 => fs::write(&active, [0xff, 0xfe]).unwrap(),
+            3 => fs::write(&active, b"bad\0id\n").unwrap(),
+            4 => fs::write(&active, vec![b'x'; MAX_ID_FILE_BYTES + 1]).unwrap(),
+            5 => {
+                fs::remove_file(&active).unwrap();
+                symlink(&scratch.state.chat_file, &active).unwrap();
+            }
+            6 => fs::write(&active, b"different-valid-id\n").unwrap(),
+            _ => unreachable!(),
+        }
+
+        assert!(
+            read_chat(&scratch.state).is_err(),
+            "{tag} selected mirror corruption must fail closed"
+        );
+        assert_eq!(
+            fs::read_to_string(&scratch.state.chat_file).unwrap(),
+            "selected-private-id\n",
+            "{tag} must not fall back to the valid global mirror"
+        );
+    }
+}
+
+#[test]
+fn changed_chat_override_cannot_reinterpret_a_canonical_global_selection() {
+    let mut scratch = ScratchState::new("changed-override", false);
+    scratch.state.chat_file = scratch.state.state_dir.join("saved-chat-override");
+    save_chat(&scratch.state, "override-private-id").unwrap();
+
+    let mut reopened = scratch.state.clone();
+    reopened.chat_file = reopened.state_dir.join("changed-chat-override");
+    fs::write(&reopened.chat_file, b"reinterpreted-private-id\n").unwrap();
+    let error = read_chat(&reopened).unwrap_err();
+    assert!(error.to_string().contains("diverged"));
+    assert_eq!(
+        fs::read_to_string(&scratch.state.chat_file).unwrap(),
+        "override-private-id\n"
+    );
+}
+
+#[test]
 fn uncommitted_journal_is_discarded_without_mirror_writes() {
     let scratch = ScratchState::new("uncommitted", true);
     validate_layout(&scratch.state).unwrap();
@@ -380,6 +517,13 @@ fn recovery_failure_refuses_inherited_cursor_identity() {
 
     let original = std::env::var_os("CURSOR_AGENT_CHAT_ID");
     unsafe { std::env::set_var("CURSOR_AGENT_CHAT_ID", "inherited-private-id") };
+    assert!(
+        scratch
+            .state
+            .resolve_chat_for(crate::agent::AgentBackend::Cursor)
+            .is_err(),
+        "canonical recovery corruption must remain visible to provider callers"
+    );
     assert_eq!(
         scratch
             .state
@@ -518,7 +662,7 @@ fn ancestor_symlink_cannot_alias_the_reserved_journal_subtree() {
     use std::os::unix::fs::symlink;
 
     let mut scratch = ScratchState::new("ancestor-symlink", true);
-    ensure_ready(&scratch.state).unwrap();
+    read_chat(&scratch.state).unwrap();
     let alias = scratch.state.state_dir.join("daemon-alias");
     symlink(scratch.state.state_dir.join("daemon"), &alias).unwrap();
     scratch.state.chat_file = alias.join(JOURNAL_DIR).join(JOURNAL_PENDING);

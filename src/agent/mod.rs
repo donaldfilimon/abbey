@@ -510,8 +510,8 @@ pub fn run_resilient(
         && (cfg.force_capture || crate::highlight::enabled() || cfg.cot_path.is_some());
 
     if fresh || cfg.no_resume {
+        state.ensure_conversation_ready(cfg.backend)?;
         if fresh {
-            state.ensure_conversation_ready()?;
             let id = cfg.create_chat()?;
             state.save_chat(&id)?;
             eprintln!("abbey: new chat {id}");
@@ -520,10 +520,10 @@ pub fn run_resilient(
         return run_once(cfg, None, prompt_and_rest, capture_print);
     }
 
-    let chat = if let Some(id) = state.read_chat_for(cfg.backend) {
+    let chat = if let Some(id) = state.resolve_chat_for(cfg.backend)? {
         id
     } else {
-        state.ensure_conversation_ready()?;
+        state.ensure_conversation_ready(cfg.backend)?;
         let id = cfg.create_chat()?;
         state.save_chat(&id)?;
         eprintln!("abbey: created chat {id}");
@@ -544,7 +544,7 @@ pub fn run_resilient(
         return Ok(code);
     }
     eprintln!("abbey: resume of {chat} failed (exit {code}); creating a new chat…");
-    state.ensure_conversation_ready()?;
+    state.ensure_conversation_ready(cfg.backend)?;
     let id = cfg.create_chat()?;
     eprintln!("abbey: new chat {id}");
     let retry_code = run_once(cfg, Some(&id), prompt_and_rest, capture_print)?;

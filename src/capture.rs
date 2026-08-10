@@ -19,7 +19,7 @@ pub fn capture_chat(
     prompt: &[String],
 ) -> Result<CapturedRun> {
     cfg.print = true;
-    let chat = state.read_chat_for(cfg.backend);
+    let chat = state.resolve_chat_for(cfg.backend)?;
     let (status, stdout, stderr) = cfg.run_capture(chat.as_deref(), prompt)?;
     Ok(CapturedRun {
         status,

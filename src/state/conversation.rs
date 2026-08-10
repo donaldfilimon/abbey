@@ -1,7 +1,12 @@
 //! Canonical identity commit plus crash-safe legacy-mirror projection.
 
 use super::{AbbeyState, HistoryEntry};
-use crate::runtime::{ConversationIdentityScope, IdentityCommit, IdentityScopeState, RuntimeStore};
+use crate::runtime::{
+    ConversationIdentityScope, IdentityCommit, IdentityScopeSelection, RuntimeStore,
+};
+// Retained for the nested clear module's focused legacy-classifier tests.
+#[allow(unused_imports)]
+use crate::runtime::IdentityScopeState;
 use anyhow::{Context, Result, bail, ensure};
 use fs4::fs_std::FileExt as _;
 use serde::{Deserialize, Serialize};
@@ -110,12 +115,6 @@ pub(super) fn read_chat(state: &AbbeyState) -> Result<Option<String>> {
     read_authoritative_mirror(&store, &ConversationIdentityScope::global(), &global)
 }
 
-pub(super) fn ensure_ready(state: &AbbeyState) -> Result<()> {
-    validate_layout(state)?;
-    let journal = lock_journal(state)?;
-    recover_pending(state, &journal)
-}
-
 pub(super) fn history(state: &AbbeyState, count: usize) -> Result<Vec<HistoryEntry>> {
     validate_layout(state)?;
     let journal = lock_journal(state)?;
@@ -219,15 +218,22 @@ fn read_authoritative_mirror(
     scope: &ConversationIdentityScope,
     path: &Path,
 ) -> Result<Option<String>> {
-    let candidate = read_first_line_bounded(path)?;
-    match store
-        .identity_scope_state(crate::edition::ACTIVE.slug(), scope, candidate.as_deref())
-        .context("canonical conversation identity selection could not be read")?
-    {
-        IdentityScopeState::Current | IdentityScopeState::Untracked => Ok(candidate),
-        IdentityScopeState::Tombstoned => Ok(None),
-        IdentityScopeState::Diverged => {
-            bail!("conversation mirror diverged from canonical identity selection")
+    let selection = store
+        .identity_scope_selection(crate::edition::ACTIVE.slug(), scope)
+        .context("canonical conversation identity selection could not be read")?;
+    match selection {
+        IdentityScopeSelection::Untracked => read_first_line_bounded(path),
+        IdentityScopeSelection::Tombstoned => Ok(None),
+        IdentityScopeSelection::Selected { .. } => {
+            let candidate = read_first_line_bounded(path)?
+                .context("selected canonical conversation mirror is missing or malformed")?;
+            ensure!(
+                selection
+                    .matches_external_id(&candidate)
+                    .context("selected conversation mirror identity is invalid")?,
+                "conversation mirror diverged from canonical identity selection"
+            );
+            Ok(Some(candidate))
         }
     }
 }
