@@ -16,7 +16,7 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  ABI_REVISION: 32e372d7f522f5a6c9c0ef92c5b9612b52cfea05
+  ABI_REVISION: b8d6241eb7f398da266e450b78763492ab7836c1
 
 # Self-hosted jobs are restricted to trusted same-repository events. Fork code
 # must never run on machines that can reach local developer state or credentials.
