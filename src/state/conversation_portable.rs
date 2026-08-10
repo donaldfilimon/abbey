@@ -11,10 +11,6 @@ use chrono::Utc;
 use std::fs;
 use std::io::Write as _;
 
-pub(super) fn ensure_ready(_state: &AbbeyState) -> Result<()> {
-    Ok(())
-}
-
 pub(super) fn read_chat(state: &AbbeyState) -> Result<Option<String>> {
     if let Some(id) = read_first_line(&state.active_chat_file()) {
         return Ok(Some(id));

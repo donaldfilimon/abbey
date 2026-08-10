@@ -537,8 +537,8 @@ mod tests {
             .unwrap();
         drop(journal);
 
-        ensure_ready(&scratch.state).unwrap();
-        ensure_ready(&scratch.state).unwrap();
+        read_chat(&scratch.state).unwrap();
+        read_chat(&scratch.state).unwrap();
         assert!(!scratch.state.active_chat_file().exists());
         assert_eq!(
             fs::read_to_string(&scratch.state.chat_file).unwrap(),
@@ -569,7 +569,7 @@ mod tests {
         }
         drop(journal);
 
-        ensure_ready(&scratch.state).unwrap();
+        read_chat(&scratch.state).unwrap();
         assert!(!scratch.state.chat_file.exists());
         assert!(!scratch.state.chat_file.with_extension("export").exists());
         assert!(

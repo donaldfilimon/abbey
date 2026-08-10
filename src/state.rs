@@ -98,7 +98,7 @@ impl AbbeyState {
         }
     }
 
-    /// Active chat id as seen by `backend`.
+    /// Fallibly resolve the active chat id as seen by `backend`.
     ///
     /// The backend is passed in rather than read from
     /// `AgentBackend::from_env()`, which resolves once per process: the TUI's
@@ -106,14 +106,11 @@ impl AbbeyState {
     /// the cached value here would let a session that *started* on cursor keep
     /// adopting `CURSOR_AGENT_CHAT_ID` after switching to `abi`/`fm`, which is
     /// exactly the hijack described below.
-    pub fn read_chat_for(&self, backend: crate::agent::AgentBackend) -> Option<String> {
+    pub fn resolve_chat_for(&self, backend: crate::agent::AgentBackend) -> Result<Option<String>> {
         // Recover the canonical commit's compatibility mirrors before backend
         // selection. An inherited Cursor id may win below, but it must not
         // indefinitely strand a committed journal from an earlier process.
-        let mirrored = match conversation::read_chat(self) {
-            Ok(mirrored) => mirrored,
-            Err(_) => return None,
-        };
+        let mirrored = conversation::read_chat(self)?;
         // `CURSOR_AGENT_CHAT_ID` lets Abbey join the cursor session it was
         // launched from — but it is a *cursor* chat id. Under a backend with
         // no server sessions (`fm`, `abi`) it names nothing real, and adopting
@@ -126,10 +123,19 @@ impl AbbeyState {
         {
             let id = id.trim().to_string();
             if !id.is_empty() {
-                return Some(id);
+                return Ok(Some(id));
             }
         }
-        mirrored
+        Ok(mirrored)
+    }
+
+    /// Lossy active-chat presentation wrapper.
+    ///
+    /// Provider execution must call [`Self::resolve_chat_for`] so canonical
+    /// corruption cannot be presented as an absent conversation and trigger a
+    /// provider-side create, resume, or retry side effect.
+    pub fn read_chat_for(&self, backend: crate::agent::AgentBackend) -> Option<String> {
+        self.resolve_chat_for(backend).ok().flatten()
     }
 
     pub fn save_chat(&self, id: &str) -> Result<()> {
@@ -195,8 +201,11 @@ impl AbbeyState {
         conversation::compact_history(self, keep)
     }
 
-    pub(crate) fn ensure_conversation_ready(&self) -> Result<()> {
-        conversation::ensure_ready(self)
+    pub(crate) fn ensure_conversation_ready(
+        &self,
+        backend: crate::agent::AgentBackend,
+    ) -> Result<()> {
+        self.resolve_chat_for(backend).map(|_| ())
     }
 }
 
