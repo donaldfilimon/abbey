@@ -45,7 +45,14 @@ thiserror = "2"
 unicode-width = "0.2"
 uuid = { version = "1", features = ["v4"] }
 url = "2"
+# CI checks the sibling ABI checkout out at the immutable revision declared in
+# .github/workflows/rust.yml. Local path dependencies preserve the same layout.
 abi-ai = { path = "../abi/crates/abi-ai" }
+abi-agent-host = { path = "../abi/crates/abi-agent-host" }
+abi-agent-runtime = { path = "../abi/crates/abi-agent-runtime" }
+abi-model-runtime = { path = "../abi/crates/abi-model-runtime" }
+abi-models = { path = "../abi/crates/abi-models" }
+abi-worker = { path = "../abi/crates/abi-worker" }
 abi-wdbx = { path = "../abi/crates/abi-wdbx", optional = true }
 # Accelerator execution bridge (see `--features accel`). Two crates, because
 # abi-gpu re-exports its adapters but NOT the `Accelerator` trait or the

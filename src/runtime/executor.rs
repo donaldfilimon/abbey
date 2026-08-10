@@ -5,35 +5,13 @@
 //! [`RunRequest`]
 //! and report only completion or a bounded failure to the manager.
 
+pub use abi_agent_runtime::CancellationToken;
 use std::fmt;
 use std::panic::{AssertUnwindSafe, catch_unwind};
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
-};
 
 use crate::app_core::{RunId, RunRequest};
 
 const MAX_FAILURE_BYTES: usize = 4_096;
-
-/// Monotonic cooperative-cancellation signal shared with one running executor.
-#[derive(Clone, Debug, Default)]
-pub struct CancellationToken {
-    cancelled: Arc<AtomicBool>,
-}
-
-impl CancellationToken {
-    /// Request cancellation. Repeated calls are harmless.
-    pub fn cancel(&self) {
-        self.cancelled.store(true, Ordering::Release);
-    }
-
-    /// Return whether cancellation has been requested.
-    #[must_use]
-    pub fn is_cancelled(&self) -> bool {
-        self.cancelled.load(Ordering::Acquire)
-    }
-}
 
 /// Bounded, display-safe execution failure retained by the run manager.
 #[derive(Clone, Debug, PartialEq, Eq)]

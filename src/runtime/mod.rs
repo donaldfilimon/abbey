@@ -9,6 +9,7 @@ mod identity;
 mod legacy;
 mod manager;
 mod migrations;
+mod provider;
 mod store;
 pub(crate) mod supervisor;
 
@@ -19,6 +20,7 @@ pub use executor::{CancellationToken, ExecutionError, ExecutionErrorKind, Execut
 pub use manager::{
     Clock, ManagerError, RunManager, RunManagerConfig, SubmitDisposition, SubmitResult, SystemClock,
 };
+pub use provider::{ModelProviderExecutor, ProviderConfigError, ProviderRoute};
 
 pub(crate) use identity::{
     ConversationIdentityScope, IdentityCommit, IdentityScopeSelection, IdentityScopeState,
