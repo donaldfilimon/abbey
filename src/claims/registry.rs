@@ -625,7 +625,7 @@ pub const CLAIMS: &[Claim] = &[
         "ci-self-hosted-linux-proof",
         "self-hosted Linux CI execution proof",
         Status::Blocked,
-        "ABI dependency blocker resolved and Abbey now pins merged ABI b8d6241eb7f398da266e450b78763492ab7836c1; macOS ARM64 self-hosted is registered, but Linux ARM64 is not provisioned and its job stays gated by an explicit repository variable; Linux/Windows runtime proof remains open",
+        "ABI dependency blocker resolved and Abbey now pins merged ABI 88c02fb550169e4cdb5e1df2bf6d1d13532e0e49; macOS ARM64 self-hosted is registered, but Linux ARM64 is not provisioned and its job stays gated by an explicit repository variable; Linux/Windows runtime proof remains open",
         Some("run ./check.sh locally; provision/register Linux ARM64 and obtain successful Linux/Windows jobs before claiming cross-platform CI green"),
         impl: [".github/workflows/rust.yml", "check.sh"],
         tests: ["./check.sh", "workflow job steps in .github/workflows/rust.yml"],

@@ -20,7 +20,10 @@ pub use executor::{CancellationToken, ExecutionError, ExecutionErrorKind, Execut
 pub use manager::{
     Clock, ManagerError, RunManager, RunManagerConfig, SubmitDisposition, SubmitResult, SystemClock,
 };
-pub use provider::{ModelProviderExecutor, ProviderConfigError, ProviderRoute};
+pub use provider::{
+    FixedProviderKind, FixedRecipeProvider, FixedRecipeProviderError, ModelProviderExecutor,
+    ProviderConfigError, ProviderRoute,
+};
 
 pub(crate) use identity::{
     ConversationIdentityScope, IdentityCommit, IdentityScopeSelection, IdentityScopeState,
