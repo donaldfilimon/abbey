@@ -3,13 +3,17 @@
 #![cfg(unix)]
 
 use rusqlite::Connection;
+use std::ffi::OsString;
 use std::fs;
 use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
+use std::thread;
+use std::time::{Duration, Instant};
 
 const ABBEY_BIN: &str = env!("CARGO_BIN_EXE_abbey");
 const RAW_ID: &str = "private-provider-identity-canary";
+const BARRIER_TIMEOUT: Duration = Duration::from_secs(2);
 
 struct Scratch(PathBuf);
 
@@ -31,67 +35,168 @@ impl Drop for Scratch {
     }
 }
 
+struct ProcessFixture {
+    _scratch: Scratch,
+    root: PathBuf,
+    state: PathBuf,
+    journal: PathBuf,
+    cwd: PathBuf,
+    config: PathBuf,
+    agent: PathBuf,
+    inherited_path: Option<OsString>,
+}
+
+impl ProcessFixture {
+    fn new(cwd_label: &str) -> Self {
+        let scratch = Scratch::new();
+        let root = scratch.0.join(format!(
+            "edition-{}-{}",
+            abbey::edition::ACTIVE.slug(),
+            uuid::Uuid::new_v4()
+        ));
+        let state = root.join("state");
+        let journal = state.join("daemon/conversation-mirror-journal");
+        let cwd = root.join("workspace").join(cwd_label);
+        let config = root.join("config").join("config.toml");
+        fs::create_dir_all(&state).unwrap();
+        fs::create_dir_all(&cwd).unwrap();
+        fs::create_dir_all(config.parent().unwrap()).unwrap();
+        let agent = fake_agent(&root);
+        Self {
+            _scratch: scratch,
+            root,
+            state,
+            journal,
+            cwd,
+            config,
+            agent,
+            inherited_path: std::env::var_os("PATH"),
+        }
+    }
+
+    fn run(
+        &self,
+        args: &[&str],
+        failpoint: Option<&str>,
+        chat_override: Option<&Path>,
+        history_override: Option<&Path>,
+    ) -> Output {
+        let mut command = Command::new(ABBEY_BIN);
+        command
+            .env_clear()
+            .args(args)
+            .current_dir(&self.cwd)
+            .env(abbey::edition::ACTIVE.state_dir_env(), &self.state)
+            .env(abbey::edition::ACTIVE.config_path_env(), &self.config)
+            .env("ABBEY_AGENT", &self.agent)
+            .env("ABBEY_TEST_AGENT_COUNT", self.agent.with_extension("count"))
+            .env("ABBEY_PER_CWD", "1");
+        if let Some(path) = &self.inherited_path {
+            command.env("PATH", path);
+        }
+        if let Some(failpoint) = failpoint {
+            command.env("ABBEY_TEST_CONVERSATION_FAILPOINT", failpoint);
+        }
+        if let Some(path) = chat_override {
+            command.env(abbey::edition::ACTIVE.scoped_env("CHAT_FILE"), path);
+        }
+        if let Some(path) = history_override {
+            command.env(abbey::edition::ACTIVE.scoped_env("HISTORY_FILE"), path);
+        }
+        // `output` is the first barrier: the failpoint process has terminated
+        // and all inherited descriptors are closed before the caller observes
+        // canonical or mirror state.
+        command.output().expect("spawn real abbey binary")
+    }
+
+    fn invocation_count(&self) -> usize {
+        invocation_count(&self.agent)
+    }
+
+    fn wait_for_committed_operation(&self, expected: &str) {
+        wait_until("canonical conversation commit marker", || {
+            let database = self.state.join("daemon/runtime.sqlite");
+            if !database.is_file() {
+                return false;
+            }
+            let Ok(connection) = Connection::open(database) else {
+                return false;
+            };
+            connection
+                .query_row(
+                    "SELECT operation FROM conversation_identity_commit WHERE singleton=1",
+                    [],
+                    |row| row.get::<_, String>(0),
+                )
+                .is_ok_and(|operation| operation == expected)
+        });
+    }
+
+    fn wait_for_pending(&self, expected: bool) {
+        wait_until("conversation pending marker state", || {
+            self.journal.join("pending.json").is_file() == expected
+        });
+    }
+}
+
+fn wait_until(label: &str, mut condition: impl FnMut() -> bool) {
+    let deadline = Instant::now() + BARRIER_TIMEOUT;
+    while !condition() {
+        assert!(Instant::now() < deadline, "timed out waiting for {label}");
+        thread::sleep(Duration::from_millis(2));
+    }
+}
+
 #[test]
 fn real_cli_recovers_committed_conversation_mirrors_after_failpoint() {
-    let scratch = Scratch::new();
-    let state = scratch.0.join("state");
-    let cwd = scratch.0.join("private-cwd-canary");
-    fs::create_dir(&state).unwrap();
-    fs::create_dir(&cwd).unwrap();
-    let agent = fake_agent(&scratch.0);
+    let fixture = ProcessFixture::new("private-cwd-canary");
 
-    let crashed = run(
-        &state,
-        &cwd,
-        &agent,
-        &["create-chat"],
-        Some("after_canonical_commit"),
-        None,
-        None,
-    );
+    let crashed = fixture.run(&["create-chat"], Some("after_canonical_commit"), None, None);
     assert_eq!(crashed.status.code(), Some(86));
     assert!(!String::from_utf8_lossy(&crashed.stderr).contains(RAW_ID));
-    assert_eq!(invocation_count(&agent), 1);
+    assert_eq!(fixture.invocation_count(), 1);
 
-    let journal = state.join("daemon/conversation-mirror-journal");
-    assert!(journal.join("pending.json").is_file());
-    assert!(!state.join("chat-id").exists());
-    assert!(!state.join("history.log").exists());
+    fixture.wait_for_committed_operation("save");
+    fixture.wait_for_pending(true);
+    assert!(!fixture.state.join("chat-id").exists());
+    assert!(!fixture.state.join("history.log").exists());
 
     // A recovery failure must stop before a second provider create-chat side
     // effect. Restore the snapshotted before-image, then let the history reader
     // prove that it participates in recovery too.
-    fs::write(state.join("chat-id"), b"out-of-band-divergence\n").unwrap();
-    let refused = run(&state, &cwd, &agent, &["create-chat"], None, None, None);
+    fs::write(fixture.state.join("chat-id"), b"out-of-band-divergence\n").unwrap();
+    let refused = fixture.run(&["create-chat"], None, None, None);
     assert!(!refused.status.success());
-    assert_eq!(invocation_count(&agent), 1);
+    assert_eq!(fixture.invocation_count(), 1);
     assert!(!String::from_utf8_lossy(&refused.stderr).contains(RAW_ID));
-    fs::remove_file(state.join("chat-id")).unwrap();
+    fixture.wait_for_pending(true);
+    fs::remove_file(fixture.state.join("chat-id")).unwrap();
 
-    let recovered_history = run(&state, &cwd, &agent, &["history", "10"], None, None, None);
+    let recovered_history = fixture.run(&["history", "10"], None, None, None);
     assert!(
         recovered_history.status.success(),
         "{:?}",
         recovered_history.stderr
     );
     assert!(String::from_utf8_lossy(&recovered_history.stdout).contains(RAW_ID));
-    let recovered = run(&state, &cwd, &agent, &["chat-id"], None, None, None);
+    fixture.wait_for_pending(false);
+    let recovered = fixture.run(&["chat-id"], None, None, None);
     assert!(recovered.status.success(), "{:?}", recovered.stderr);
     assert_eq!(String::from_utf8_lossy(&recovered.stdout).trim(), RAW_ID);
-    assert!(!journal.join("pending.json").exists());
+    fixture.wait_for_pending(false);
 
-    let reread = run(&state, &cwd, &agent, &["chat-id"], None, None, None);
+    let reread = fixture.run(&["chat-id"], None, None, None);
     assert!(reread.status.success());
     assert_eq!(String::from_utf8_lossy(&reread.stdout).trim(), RAW_ID);
     assert_eq!(
-        fs::read_to_string(state.join("chat-id")).unwrap(),
+        fs::read_to_string(fixture.state.join("chat-id")).unwrap(),
         format!("{RAW_ID}\n")
     );
     assert_eq!(
-        fs::read_to_string(state.join("chat-id.export")).unwrap(),
+        fs::read_to_string(fixture.state.join("chat-id.export")).unwrap(),
         format!("ABBEY_CHAT_ID='{RAW_ID}'\n")
     );
-    let per_cwd = fs::read_dir(state.join("by-cwd"))
+    let per_cwd = fs::read_dir(fixture.state.join("by-cwd"))
         .unwrap()
         .map(|entry| entry.unwrap().path())
         .collect::<Vec<_>>();
@@ -100,12 +205,12 @@ fn real_cli_recovers_committed_conversation_mirrors_after_failpoint() {
         fs::read_to_string(&per_cwd[0]).unwrap(),
         format!("{RAW_ID}\n")
     );
-    let history = fs::read_to_string(state.join("history.log")).unwrap();
+    let history = fs::read_to_string(fixture.state.join("history.log")).unwrap();
     assert_eq!(history.matches(RAW_ID).count(), 1);
     assert_eq!(history.matches("private-cwd-canary").count(), 1);
     assert_eq!(history.lines().count(), 1);
 
-    let database = state.join("daemon/runtime.sqlite");
+    let database = fixture.state.join("daemon/runtime.sqlite");
     let connection = Connection::open(&database).unwrap();
     assert_eq!(
         connection
@@ -119,9 +224,9 @@ fn real_cli_recovers_committed_conversation_mirrors_after_failpoint() {
         "per-cwd save must atomically bind cwd and global fallback scopes"
     );
     drop(connection);
-    assert_tree_excludes(&state.join("daemon"), RAW_ID.as_bytes());
-    assert_tree_excludes(&state.join("daemon"), b"private-cwd-canary");
-    assert_owner_only(&state, &per_cwd[0], &journal);
+    assert_tree_excludes(&fixture.state.join("daemon"), RAW_ID.as_bytes());
+    assert_tree_excludes(&fixture.state.join("daemon"), b"private-cwd-canary");
+    assert_owner_only(&fixture.state, &per_cwd[0], &fixture.journal);
 
     prove_external_override_recovery_and_unsafe_parent_rejection();
 }
@@ -133,23 +238,39 @@ fn real_cli_clear_tombstones_recover_across_each_failpoint() {
     prove_clear_failpoint("after_clear_first_removal", true);
 }
 
+#[test]
+fn shared_state_control_reproduces_the_missing_pending_marker_symptom() {
+    let fixture = ProcessFixture::new("shared-state-cwd");
+
+    let crashed = fixture.run(&["create-chat"], Some("after_canonical_commit"), None, None);
+    assert_eq!(crashed.status.code(), Some(86));
+    fixture.wait_for_committed_operation("save");
+    fixture.wait_for_pending(true);
+
+    // This is the negative control: deliberately reuse the *same* fixture.
+    // The sibling is allowed to recover the committed journal and therefore
+    // consumes the marker that the historical assertion expected to observe.
+    let sibling = fixture.run(&["history", "10"], None, None, None);
+    assert!(sibling.status.success(), "{:?}", sibling.stderr);
+    fixture.wait_for_pending(false);
+}
+
 fn prove_clear_failpoint(failpoint: &str, all: bool) {
-    let scratch = Scratch::new();
-    let state = scratch.0.join("state");
-    let cwd = scratch.0.join(format!("clear-{failpoint}-cwd"));
-    fs::create_dir(&state).unwrap();
-    fs::create_dir(&cwd).unwrap();
-    let agent = fake_agent(&scratch.0);
-    let seeded = run(&state, &cwd, &agent, &["create-chat"], None, None, None);
+    let fixture = ProcessFixture::new(&format!("clear-{failpoint}-cwd"));
+    let seeded = fixture.run(&["create-chat"], None, None, None);
     assert!(seeded.status.success(), "{:?}", seeded.stderr);
-    let history = fs::read(state.join("history.log")).unwrap();
-    let by_cwd = fs::read_dir(state.join("by-cwd"))
+    let history = fs::read(fixture.state.join("history.log")).unwrap();
+    let by_cwd = fs::read_dir(fixture.state.join("by-cwd"))
         .unwrap()
         .map(|entry| entry.unwrap().path())
         .collect::<Vec<_>>();
     assert_eq!(by_cwd.len(), 1);
     if all {
-        fs::write(state.join("by-cwd/other-project"), b"other-private-id\n").unwrap();
+        fs::write(
+            fixture.state.join("by-cwd/other-project"),
+            b"other-private-id\n",
+        )
+        .unwrap();
     }
 
     let args = if all {
@@ -157,19 +278,29 @@ fn prove_clear_failpoint(failpoint: &str, all: bool) {
     } else {
         vec!["clear"]
     };
-    let crashed = run(&state, &cwd, &agent, &args, Some(failpoint), None, None);
+    let crashed = fixture.run(&args, Some(failpoint), None, None);
     assert_eq!(crashed.status.code(), Some(86));
     assert!(!String::from_utf8_lossy(&crashed.stderr).contains(RAW_ID));
-    let pending = state.join("daemon/conversation-mirror-journal/pending.json");
-    assert!(pending.exists());
+    let expected = match failpoint {
+        "after_clear_journal_prepare" => "save",
+        _ if all => "clear_all",
+        _ => "clear_scope",
+    };
+    fixture.wait_for_committed_operation(expected);
+    fixture.wait_for_pending(true);
 
-    let recovered = run(&state, &cwd, &agent, &["chat-id"], None, None, None);
+    let recovered = fixture.run(&["chat-id"], None, None, None);
     if all {
         assert_eq!(recovered.status.code(), Some(1));
         assert!(!String::from_utf8_lossy(&recovered.stderr).contains(RAW_ID));
-        assert!(!state.join("chat-id").exists());
-        assert!(!state.join("chat-id.export").exists());
-        assert!(fs::read_dir(state.join("by-cwd")).unwrap().next().is_none());
+        assert!(!fixture.state.join("chat-id").exists());
+        assert!(!fixture.state.join("chat-id.export").exists());
+        assert!(
+            fs::read_dir(fixture.state.join("by-cwd"))
+                .unwrap()
+                .next()
+                .is_none()
+        );
     } else {
         assert!(recovered.status.success(), "{:?}", recovered.stderr);
         assert_eq!(String::from_utf8_lossy(&recovered.stdout).trim(), RAW_ID);
@@ -179,14 +310,17 @@ fn prove_clear_failpoint(failpoint: &str, all: bool) {
             assert!(!by_cwd[0].exists());
         }
         assert_eq!(
-            fs::read_to_string(state.join("chat-id")).unwrap(),
+            fs::read_to_string(fixture.state.join("chat-id")).unwrap(),
             format!("{RAW_ID}\n")
         );
     }
-    assert_eq!(fs::read(state.join("history.log")).unwrap(), history);
-    assert!(!pending.exists());
+    assert_eq!(
+        fs::read(fixture.state.join("history.log")).unwrap(),
+        history
+    );
+    fixture.wait_for_pending(false);
 
-    let connection = Connection::open(state.join("daemon/runtime.sqlite")).unwrap();
+    let connection = Connection::open(fixture.state.join("daemon/runtime.sqlite")).unwrap();
     let operation = connection
         .query_row(
             "SELECT operation FROM conversation_identity_commit WHERE singleton=1",
@@ -194,11 +328,6 @@ fn prove_clear_failpoint(failpoint: &str, all: bool) {
             |row| row.get::<_, String>(0),
         )
         .unwrap();
-    let expected = match failpoint {
-        "after_clear_journal_prepare" => "save",
-        _ if all => "clear_all",
-        _ => "clear_scope",
-    };
     assert_eq!(operation, expected);
     assert_eq!(
         connection
@@ -218,97 +347,52 @@ fn prove_clear_failpoint(failpoint: &str, all: bool) {
         1
     );
     drop(connection);
-    assert_tree_excludes(&state.join("daemon"), RAW_ID.as_bytes());
+    assert_tree_excludes(&fixture.state.join("daemon"), RAW_ID.as_bytes());
     assert_tree_excludes(
-        &state.join("daemon"),
+        &fixture.state.join("daemon"),
         format!("clear-{failpoint}-cwd").as_bytes(),
     );
 }
 
 fn prove_external_override_recovery_and_unsafe_parent_rejection() {
-    let scratch = Scratch::new();
-    let state = scratch.0.join("state");
-    let cwd = scratch.0.join("override-cwd");
-    let external = scratch.0.join("external");
-    fs::create_dir(&state).unwrap();
-    fs::create_dir(&cwd).unwrap();
+    let fixture = ProcessFixture::new("override-cwd");
+    let external = fixture.root.join("external");
     fs::create_dir(&external).unwrap();
     fs::set_permissions(&external, fs::Permissions::from_mode(0o755)).unwrap();
-    let agent = fake_agent(&scratch.0);
     let chat = external.join("custom-chat");
     let history = external.join("custom-history");
-    let crashed = run(
-        &state,
-        &cwd,
-        &agent,
+    let crashed = fixture.run(
         &["create-chat"],
         Some("after_canonical_commit"),
         Some(&chat),
         Some(&history),
     );
     assert_eq!(crashed.status.code(), Some(86));
+    fixture.wait_for_committed_operation("save");
+    fixture.wait_for_pending(true);
 
     // Reopen without either override: the committed plan owns its exact
     // validated targets and must not be reinterpreted through current env.
-    let recovered = run(&state, &cwd, &agent, &["history", "10"], None, None, None);
+    let recovered = fixture.run(&["history", "10"], None, None, None);
     assert!(recovered.status.success(), "{:?}", recovered.stderr);
+    fixture.wait_for_pending(false);
     assert_eq!(fs::read_to_string(chat).unwrap(), format!("{RAW_ID}\n"));
     assert!(fs::read_to_string(history).unwrap().contains(RAW_ID));
-    assert!(!state.join("chat-id").exists());
-    assert!(!state.join("history.log").exists());
+    assert!(!fixture.state.join("chat-id").exists());
+    assert!(!fixture.state.join("history.log").exists());
 
-    let unsafe_parent = scratch.0.join("unsafe-parent");
+    let unsafe_parent = fixture.root.join("unsafe-parent");
     fs::create_dir(&unsafe_parent).unwrap();
     fs::set_permissions(&unsafe_parent, fs::Permissions::from_mode(0o777)).unwrap();
-    let before = invocation_count(&agent);
-    let rejected = run(
-        &state,
-        &cwd,
-        &agent,
+    let before = fixture.invocation_count();
+    let rejected = fixture.run(
         &["create-chat"],
         None,
         Some(&unsafe_parent.join("chat-id")),
         None,
     );
     assert!(!rejected.status.success());
-    assert_eq!(invocation_count(&agent), before);
-}
-
-fn run(
-    state: &Path,
-    cwd: &Path,
-    agent: &Path,
-    args: &[&str],
-    failpoint: Option<&str>,
-    chat_override: Option<&Path>,
-    history_override: Option<&Path>,
-) -> Output {
-    let mut command = Command::new(ABBEY_BIN);
-    command
-        .args(args)
-        .current_dir(cwd)
-        .env(abbey::edition::ACTIVE.state_dir_env(), state)
-        .env("ABBEY_AGENT", agent)
-        .env("ABBEY_TEST_AGENT_COUNT", agent.with_extension("count"))
-        .env("ABBEY_PER_CWD", "1")
-        .env_remove("CURSOR_AGENT_CHAT_ID")
-        .env_remove(abbey::edition::ACTIVE.scoped_env("MODEL_FILE"));
-    if let Some(failpoint) = failpoint {
-        command.env("ABBEY_TEST_CONVERSATION_FAILPOINT", failpoint);
-    } else {
-        command.env_remove("ABBEY_TEST_CONVERSATION_FAILPOINT");
-    }
-    if let Some(path) = chat_override {
-        command.env(abbey::edition::ACTIVE.scoped_env("CHAT_FILE"), path);
-    } else {
-        command.env_remove(abbey::edition::ACTIVE.scoped_env("CHAT_FILE"));
-    }
-    if let Some(path) = history_override {
-        command.env(abbey::edition::ACTIVE.scoped_env("HISTORY_FILE"), path);
-    } else {
-        command.env_remove(abbey::edition::ACTIVE.scoped_env("HISTORY_FILE"));
-    }
-    command.output().expect("spawn real abbey binary")
+    assert_eq!(fixture.invocation_count(), before);
 }
 
 fn fake_agent(root: &Path) -> PathBuf {
