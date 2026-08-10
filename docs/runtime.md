@@ -134,11 +134,16 @@ save may supersede a tombstone through a higher revision.
 
 Identity clear retains opaque aliases and conversation provenance. It does not remove
 `history.log`, backend transcripts, SQLite/WDBX semantic memory, models, route/audit or
-run data, or finalized legacy-migration backups. Reads still obtain the external identity
-through compatibility mirrors; canonical tombstone-aware, digest-verified selection is
-the next separately evidenced slice. This coordinator adds no backend/title/run
-inference, `AppCommand`, `AppEvent`, CLI/TUI/desktop invoke, MCP capability, model/tool
-execution authority, network surface, or Windows runtime claim.
+run data, or finalized legacy-migration backups. Reads recover the pending projection,
+select the working-directory scope before global from canonical edition-scoped evidence,
+continue past a cwd tombstone, stop at a global tombstone, and accept a selected mirror
+only when its external identity matches the canonical digest. A corrupt selected cwd
+mirror never falls back to a valid global mirror. Scopes with no post-cutover evidence
+retain the bounded legacy cwd-then-global behavior. Provider create, resume, retry, and
+capture paths use the fallible resolver; presentation-only status surfaces may use the
+lossy wrapper. This coordinator adds no backend/title/run inference, `AppCommand`,
+`AppEvent`, CLI/TUI/desktop invoke, MCP capability, model/tool execution authority,
+network surface, or Windows runtime claim.
 
 ## Recovery
 
