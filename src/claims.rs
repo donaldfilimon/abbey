@@ -811,7 +811,7 @@ mod tests {
         assert!(
             claim
                 .next_action
-                .contains("desktop capability documentation")
+                .contains("shared-state conversation recovery failure")
         );
     }
 

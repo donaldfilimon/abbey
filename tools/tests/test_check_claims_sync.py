@@ -39,6 +39,72 @@ def fixture_manifest() -> dict[str, object]:
 
 
 class ClaimsSyncTests(unittest.TestCase):
+    def desktop_sources(self) -> tuple[str, str, str, str]:
+        rust = """tauri::generate_handler![
+            commands::app_status,
+            commands::app_claims,
+            commands::app_routes,
+        ]"""
+        client = 'export const COMMANDS = ["app_status", "app_claims", "app_routes"] as const;'
+        surfaces = """export const SURFACES: readonly Surface[] = [
+          { id: "doctor", requires: "read_status" },
+          { id: "claims", requires: "read_claims" },
+          { id: "routes", requires: "read_routes" },
+          { id: "chat", requires: null },
+        ] as const;"""
+        samples = (
+            'export const DESKTOP_READ_CAPABILITIES = '
+            '["read_status", "read_claims", "read_routes"] as const;'
+        )
+        return rust, client, surfaces, samples
+
+    def test_desktop_inventory_derives_counts_and_stable_ids(self) -> None:
+        inventory = claims_sync.desktop_inventory(*self.desktop_sources())
+        self.assertEqual(
+            inventory["commands"], ("app_status", "app_claims", "app_routes")
+        )
+        self.assertEqual(
+            inventory["available"],
+            (
+                ("doctor", "read_status"),
+                ("claims", "read_claims"),
+                ("routes", "read_routes"),
+            ),
+        )
+        self.assertEqual(inventory["unavailable"], ("chat",))
+        rendered = claims_sync.render_desktop_summary(inventory)
+        self.assertIn("3 enumerated commands", rendered)
+        self.assertIn("3 available views", rendered)
+        self.assertIn("1 unavailable views", rendered)
+        self.assertIn("`routes` → `read_routes`", rendered)
+
+    def test_desktop_inventory_rejects_cross_language_or_id_drift(self) -> None:
+        rust, client, surfaces, samples = self.desktop_sources()
+        with self.assertRaisesRegex(ValueError, "command inventory drift"):
+            claims_sync.desktop_inventory(
+                rust, client.replace(', "app_routes"', ""), surfaces, samples
+            )
+        with self.assertRaisesRegex(ValueError, "duplicate desktop surface id"):
+            claims_sync.desktop_inventory(
+                rust, client, surfaces.replace('id: "chat"', 'id: "routes"'), samples
+            )
+        with self.assertRaisesRegex(ValueError, "undeclared capability"):
+            claims_sync.desktop_inventory(
+                rust, client, surfaces.replace('"read_routes"', '"read_memory"'), samples
+            )
+
+    def test_desktop_summary_region_is_idempotent_and_strict(self) -> None:
+        inventory = claims_sync.desktop_inventory(*self.desktop_sources())
+        summary = claims_sync.render_desktop_summary(inventory)
+        source = "# Desktop\n\n## The complete Tauri command surface\n"
+        once = claims_sync.replace_desktop_summary(source, summary)
+        twice = claims_sync.replace_desktop_summary(once, summary)
+        self.assertEqual(once, twice)
+        with self.assertRaisesRegex(ValueError, "incomplete"):
+            claims_sync.replace_desktop_summary(
+                f"# Desktop\n{claims_sync.DESKTOP_BEGIN}\n", summary
+            )
+
     def test_manifest_requires_object_schema_and_unique_ids(self) -> None:
         manifest = fixture_manifest()
         self.assertEqual(claims_sync.normalize_manifest(manifest), manifest)

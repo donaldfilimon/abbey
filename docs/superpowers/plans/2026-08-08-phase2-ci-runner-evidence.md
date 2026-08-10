@@ -1,6 +1,13 @@
 # Phase 2: Self-Hosted CI That Actually Executes — Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Historical status (2026-08-10): repo-side implementation complete.** The
+> twenty implementation steps below are checked as a record of work already
+> landed; they are not active backlog. Hosted execution itself remains an
+> external evidence prerequisite and is tracked only by the unchecked Phase 2
+> item in `tasks/todo.md` plus `tools/ci/require_executed_run.py`.
+>
+> **Historical execution note:** this plan originally required an agentic
+> execution skill. It is retained for provenance; do not execute it again.
 
 **Goal:** Make Abbey's CI workflow structurally incapable of the two failure
 modes it currently has — a self-hosted job that targets a runner label nobody
@@ -78,7 +85,7 @@ requested. A job requesting a `[self-hosted, macOS, ARM64, abbey]` label that
 no registered runner carries cannot be scheduled. The fix is symmetry, not
 deletion — the macOS adjunct is wanted, just gated.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tools/tests/test_workflow_guards.py`:
 
@@ -163,7 +170,7 @@ class WorkflowGuards(unittest.TestCase):
             )
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `python3 -m unittest tools.tests.test_workflow_guards -v`
 (from the repository root)
@@ -175,7 +182,7 @@ The other three tests pass — they describe guards that already exist.
 If `gate-macos` unexpectedly passes, stop and re-read the workflow: someone
 else has changed it, and this plan's premise needs re-verification.
 
-- [ ] **Step 3: Make the minimal workflow change**
+- [x] **Step 3: Make the minimal workflow change**
 
 In `.github/workflows/rust.yml`, inside the `gate-macos` job, change:
 
@@ -194,19 +201,19 @@ to:
 
 Leave the rest of the expression exactly as it is. Do not touch `gate-linux`.
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `python3 -m unittest tools.tests.test_workflow_guards -v`
 Expected: 4 tests, all PASS.
 
-- [ ] **Step 5: Run the full gate**
+- [x] **Step 5: Run the full gate**
 
 Run: `./check.sh`
 Expected: ends with `check.sh: OK`. The new file is picked up automatically by
 the existing `python3 -m unittest discover -s tools/tests -p 'test_*.py'` step —
 confirm that step's output count went up by 4.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add tools/tests/test_workflow_guards.py .github/workflows/rust.yml
@@ -237,7 +244,7 @@ The known-and-deliberate gap — no CI gate at all for fork PRs, since
 `ubuntu-latest` was removed — is asserted *as documented*, not silently
 tolerated.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `tools/tests/test_workflow_guards.py`:
 
@@ -285,7 +292,7 @@ Write it as:
 
 Use that second form; delete the first.
 
-- [ ] **Step 2: Run the tests**
+- [x] **Step 2: Run the tests**
 
 Run: `python3 -m unittest tools.tests.test_workflow_guards -v`
 Expected: 8 tests, all PASS — these assert invariants the workflow already
@@ -293,12 +300,12 @@ satisfies. This task is a ratchet, not a repair. If any fails, the workflow has
 drifted from the Phase 2 spec and that is the actual finding: stop and report
 it rather than loosening the test.
 
-- [ ] **Step 3: Run the full gate**
+- [x] **Step 3: Run the full gate**
 
 Run: `./check.sh`
 Expected: `check.sh: OK`.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add tools/tests/test_workflow_guards.py
@@ -329,7 +336,7 @@ template and a Dependabot run. The Phase 2 spec is explicit that this is
 infrastructure evidence, never source-test evidence. That distinction is
 currently a sentence in a Markdown file; this task makes it executable.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tools/tests/test_require_executed_run.py`:
 
@@ -390,13 +397,13 @@ class RunEvidence(unittest.TestCase):
         self.assertIn("skipped", reason)
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `python3 -m unittest tools.tests.test_require_executed_run -v`
 Expected: collection error — `FileNotFoundError` / module load failure, because
 `tools/ci/require_executed_run.py` does not exist yet.
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 Create `tools/ci/require_executed_run.py`:
 
@@ -469,18 +476,18 @@ if __name__ == "__main__":
     raise SystemExit(main(sys.argv))
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `python3 -m unittest tools.tests.test_require_executed_run -v`
 Expected: 5 tests, all PASS.
 
-- [ ] **Step 5: Run the full gate**
+- [x] **Step 5: Run the full gate**
 
 Run: `./check.sh`
 Expected: `check.sh: OK`, with the unittest step now discovering both new test
 modules.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add tools/ci/require_executed_run.py tools/tests/test_require_executed_run.py
@@ -508,7 +515,7 @@ phase."
 Tasks 1–3 add enforcement, not evidence of a working runner. This task records
 that distinction so the next reader does not mistake passing tests for CI.
 
-- [ ] **Step 1: Update the Phase 2 checklist**
+- [x] **Step 1: Update the Phase 2 checklist**
 
 In `tasks/todo.md`, inside the `- [ ] **Phase 2 …**` block, append these
 sub-bullets (keep the parent checkbox **unchecked**):
@@ -536,7 +543,7 @@ sub-bullets (keep the parent checkbox **unchecked**):
     command succeeds against a real run id, Phase 2 stays unchecked.
 ```
 
-- [ ] **Step 2: Verify the ledger still parses**
+- [x] **Step 2: Verify the ledger still parses**
 
 Run: `python3 tools/check_claims_sync.py`
 Expected: `claims/docs: OK (41 claims, schema 1, sha256 …)` — the generator must
@@ -545,12 +552,12 @@ digest should be unchanged. If it reports drift, run
 `python3 tools/check_claims_sync.py --write` and inspect the diff before
 committing.
 
-- [ ] **Step 3: Run the full gate**
+- [x] **Step 3: Run the full gate**
 
 Run: `./check.sh`
 Expected: `check.sh: OK`.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add tasks/todo.md

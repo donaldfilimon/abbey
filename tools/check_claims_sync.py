@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import stat
 import subprocess
 import tempfile
@@ -16,6 +17,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 GENERATED_LEDGER = ROOT / "docs/claims.md"
+DESKTOP_SUMMARY = ROOT / "desktop/README.md"
 DOCUMENT_MODES = {
     ROOT / "AGENTS.md": "table",
     ROOT / "CLAUDE.md": "summary",
@@ -30,6 +32,8 @@ DOCUMENT_MODES = {
 LEGACY_PREFIX = "<!-- abbey-claims-sha256: "
 BEGIN_PREFIX = "<!-- BEGIN abbey-generated:claims-"
 END_PREFIX = "<!-- END abbey-generated:claims-"
+DESKTOP_BEGIN = "<!-- BEGIN abbey-generated:desktop-capability-summary -->"
+DESKTOP_END = "<!-- END abbey-generated:desktop-capability-summary -->"
 GOAL_OPEN = "<!-- abbey-goal"
 GOAL_CLOSE = "-->"
 GOAL_KEYS = {
@@ -95,6 +99,163 @@ def is_stable_kebab_id(value: object) -> bool:
         )
         for part in parts
     )
+
+
+def is_stable_snake_id(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    parts = value.split("_")
+    return bool(parts) and all(
+        bool(part)
+        and all(
+            character.isascii() and (character.islower() or character.isdigit())
+            for character in part
+        )
+        for part in parts
+    )
+
+
+def _quoted_ids(source: str, declaration: str) -> tuple[str, ...]:
+    match = re.search(
+        rf"export\s+const\s+{re.escape(declaration)}\s*=\s*\[(.*?)\]\s*as\s+const\s*;",
+        source,
+        re.DOTALL,
+    )
+    if match is None:
+        raise ValueError(f"desktop TypeScript lacks {declaration}")
+    return tuple(re.findall(r'"([^"]+)"', match.group(1)))
+
+
+def desktop_inventory(
+    rust_main: str,
+    typescript_client: str,
+    typescript_surfaces: str,
+    generated_samples: str,
+) -> dict[str, tuple[str, ...] | tuple[tuple[str, str], ...]]:
+    """Derive the desktop capability summary from its enumerated source surfaces."""
+
+    handler = re.search(r"generate_handler!\s*\[(.*?)\]", rust_main, re.DOTALL)
+    if handler is None:
+        raise ValueError("desktop Rust entrypoint lacks generate_handler!")
+    rust_commands = tuple(
+        re.findall(r"\bcommands::(app_[a-z0-9_]+)\b", handler.group(1))
+    )
+    typescript_commands = _quoted_ids(typescript_client, "COMMANDS")
+    capabilities = _quoted_ids(generated_samples, "DESKTOP_READ_CAPABILITIES")
+    surfaces_block = re.search(
+        r"export\s+const\s+SURFACES\s*:[^=]+?=\s*\[(.*?)\]\s*as\s+const\s*;",
+        typescript_surfaces,
+        re.DOTALL,
+    )
+    if surfaces_block is None:
+        raise ValueError("desktop TypeScript lacks SURFACES")
+    surface_matches = tuple(
+        re.finditer(
+            r'\{\s*id:\s*"([a-z0-9_]+)".*?\brequires:\s*(null|"([a-z0-9_]+)")',
+            surfaces_block.group(1),
+            re.DOTALL,
+        )
+    )
+    surfaces = tuple(
+        (match.group(1), match.group(3) or "") for match in surface_matches
+    )
+
+    if not rust_commands:
+        raise ValueError("desktop Rust invoke registry is empty")
+    if rust_commands != typescript_commands:
+        raise ValueError(
+            "desktop command inventory drift: Rust generate_handler! and "
+            "TypeScript COMMANDS differ"
+        )
+    if not capabilities:
+        raise ValueError("desktop read capability inventory is empty")
+    if not surfaces:
+        raise ValueError("desktop surface inventory is empty")
+
+    id_groups = {
+        "command": rust_commands,
+        "capability": capabilities,
+        "surface": tuple(surface_id for surface_id, _ in surfaces),
+    }
+    for kind, identifiers in id_groups.items():
+        if len(set(identifiers)) != len(identifiers):
+            raise ValueError(f"duplicate desktop {kind} id")
+        for identifier in identifiers:
+            if not is_stable_snake_id(identifier):
+                raise ValueError(f"invalid desktop {kind} id: {identifier}")
+    for command in rust_commands:
+        if not command.startswith("app_"):
+            raise ValueError(f"desktop command lacks app_ prefix: {command}")
+
+    capability_set = set(capabilities)
+    available = tuple((surface, required) for surface, required in surfaces if required)
+    unavailable = tuple(surface for surface, required in surfaces if not required)
+    for surface, required in available:
+        if required not in capability_set:
+            raise ValueError(
+                f"desktop surface {surface} requires undeclared capability {required}"
+            )
+    return {
+        "commands": rust_commands,
+        "capabilities": capabilities,
+        "available": available,
+        "unavailable": unavailable,
+    }
+
+
+def canonical_desktop_inventory() -> dict[
+    str, tuple[str, ...] | tuple[tuple[str, str], ...]
+]:
+    return desktop_inventory(
+        (ROOT / "desktop/src-tauri/src/main.rs").read_text(encoding="utf-8"),
+        (ROOT / "desktop/src/ipc/client.ts").read_text(encoding="utf-8"),
+        (ROOT / "desktop/src/surfaces.ts").read_text(encoding="utf-8"),
+        (ROOT / "desktop/src/ipc/generated.samples.ts").read_text(encoding="utf-8"),
+    )
+
+
+def render_desktop_summary(
+    inventory: dict[str, tuple[str, ...] | tuple[tuple[str, str], ...]],
+) -> str:
+    commands = inventory["commands"]
+    capabilities = inventory["capabilities"]
+    available = inventory["available"]
+    unavailable = inventory["unavailable"]
+    return "\n".join(
+        [
+            DESKTOP_BEGIN,
+            "<!-- Generated by tools/check_claims_sync.py; do not edit. -->",
+            (
+                f"Desktop source inventory: **{len(commands)} enumerated commands · "
+                f"{len(capabilities)} read capabilities · {len(available)} available views · "
+                f"{len(unavailable)} unavailable views**."
+            ),
+            "",
+            "- Invoke IDs: " + ", ".join(f"`{item}`" for item in commands),
+            "- Read capability IDs: "
+            + ", ".join(f"`{item}`" for item in capabilities),
+            "- Available view IDs: "
+            + ", ".join(f"`{view}` → `{required}`" for view, required in available),
+            "- Unavailable view IDs: "
+            + ", ".join(f"`{item}`" for item in unavailable),
+            DESKTOP_END,
+        ]
+    )
+
+
+def replace_desktop_summary(text: str, replacement: str) -> str:
+    if text.count(DESKTOP_BEGIN) > 1 or text.count(DESKTOP_END) > 1:
+        raise ValueError("duplicate generated desktop capability summary")
+    if (DESKTOP_BEGIN in text) != (DESKTOP_END in text):
+        raise ValueError("incomplete generated desktop capability summary")
+    if DESKTOP_BEGIN in text:
+        prefix, rest = text.split(DESKTOP_BEGIN, 1)
+        _, suffix = rest.split(DESKTOP_END, 1)
+        return prefix + replacement + suffix
+    anchor = "\n## The complete Tauri command surface"
+    if anchor not in text:
+        raise ValueError("desktop README lacks command-surface insertion point")
+    return text.replace(anchor, f"\n\n{replacement}\n{anchor}", 1)
 
 
 def canonical_manifest() -> tuple[dict[str, Any], str]:
@@ -482,6 +643,10 @@ def synchronized_documents(
         region = render_region(mode, manifest, digest, path, workflow)
         rendered[path] = replace_generated_region(text, mode, region)
     rendered[GENERATED_LEDGER] = render_evidence_document(manifest, digest, workflow)
+    desktop_text = DESKTOP_SUMMARY.read_text(encoding="utf-8")
+    rendered[DESKTOP_SUMMARY] = replace_desktop_summary(
+        desktop_text, render_desktop_summary(canonical_desktop_inventory())
+    )
     return rendered
 
 
