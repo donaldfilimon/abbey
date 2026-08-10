@@ -79,6 +79,22 @@ cargo clippy --features accel --all-targets -- -D warnings
 echo "== test (--features accel) =="
 cargo test --features accel
 
+# Private-item documentation is part of the source contract, and feature-gated
+# links can rot independently. Keep each supported product mode explicit so a
+# default-only documentation build cannot conceal a broken WDBX, personal, or
+# accelerator surface.
+echo "== rustdoc (default, warning denied, private items) =="
+RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --document-private-items
+
+echo "== rustdoc (--features wdbx, warning denied, private items) =="
+RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --document-private-items --features wdbx
+
+echo "== rustdoc (--features personal-edition, warning denied, private items) =="
+RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --document-private-items --features personal-edition
+
+echo "== rustdoc (--features accel, warning denied, private items) =="
+RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --document-private-items --features accel
+
 echo "== claims/docs synchronization =="
 python3 -m unittest discover -s tools/tests -p 'test_*.py'
 python3 tools/check_claims_sync.py

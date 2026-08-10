@@ -1,7 +1,8 @@
 //! Provider-neutral execution seam for the durable run manager.
 //!
 //! This module deliberately owns no model, tool, shell, network, or memory
-//! behavior. Concrete providers adapt their request into [`Executor::Request`]
+//! behavior. Concrete providers adapt their request into
+//! [`RunRequest`]
 //! and report only completion or a bounded failure to the manager.
 
 use std::fmt;
