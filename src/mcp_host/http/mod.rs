@@ -16,7 +16,7 @@
 //! built by [`HttpResponse::rpc_error`] *before* dispatch, from static text plus
 //! at most an echo of the client's own request line. They never reach
 //! `encode_frame`, and so carry neither the redaction pass nor
-//! [`MAX_RESPONSE_BYTES`] — which is sound only because no tool output, no
+//! [`super::limits::MAX_RESPONSE_BYTES`] — which is sound only because no tool output, no
 //! environment value, and no server state can appear in them.
 //!
 //! ## Loopback is a bind restriction, not an authentication story

@@ -808,7 +808,11 @@ mod tests {
                 "missing boundary: {boundary}"
             );
         }
-        assert!(claim.next_action.contains("warning-denied rustdoc"));
+        assert!(
+            claim
+                .next_action
+                .contains("desktop capability documentation")
+        );
     }
 
     #[test]

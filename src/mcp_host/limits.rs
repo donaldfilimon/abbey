@@ -8,7 +8,8 @@
 //!
 //! Applied identically to stdio frames and HTTP request bodies — the loopback
 //! HTTP transport deliberately reuses these rather than defining parallel
-//! ceilings. Tests live in [`super::tests`] and `tests/mcp_server.rs`.
+//! ceilings. Tests live in the parent module's test module and
+//! `tests/mcp_server.rs`.
 //!
 //! | constant | boundary test |
 //! |---|---|
