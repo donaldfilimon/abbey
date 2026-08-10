@@ -19,6 +19,10 @@ use abi_agent_runtime::{
 use super::{CancellationToken, ExecutionError, ExecutionErrorKind, Executor};
 use crate::app_core::{BackendSelection, RunId, RunMode, RunRequest};
 
+mod process;
+
+pub use process::{FixedProviderKind, FixedRecipeProvider, FixedRecipeProviderError};
+
 const MAX_MODEL_ID_BYTES: usize = 256;
 const MAX_PROVIDER_ID_BYTES: usize = 128;
 

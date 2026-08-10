@@ -151,6 +151,17 @@ fn timeout_and_precancelled_execution_teardown_the_group() {
         run(&shell("sleep 30"), &short, &cancellation).unwrap(),
         SupervisorOutcome::Cancelled
     ));
+
+    let mut polls = 0_u8;
+    assert!(matches!(
+        run_with_checkpoint(&shell("sleep 30"), &short, || {
+            polls = polls.saturating_add(1);
+            polls >= 3
+        })
+        .unwrap(),
+        SupervisorOutcome::Cancelled
+    ));
+    assert_eq!(polls, 3);
 }
 
 #[cfg(unix)]

@@ -7,6 +7,7 @@ use argv::{map_exec_err, warn_if_prompt_looks_like_flags};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
 
+pub(crate) use argv::looks_like_flags;
 pub use argv::{abi_normalize_model, truncate_utf8_bytes};
 
 /// Grok `--worktree` with optional name (`-w` vs `-w mybranch`).
@@ -68,6 +69,41 @@ impl Default for AgentConfig {
             sandbox: None,
             extra_args: Vec::new(),
             backend: AgentBackend::from_env(),
+            transcript_dir: None,
+            media_note: None,
+            media_prefers_gemma: false,
+            force_capture: false,
+            cot_path: None,
+        }
+    }
+}
+
+impl AgentConfig {
+    /// Build the least-authority, one-shot configuration used by Abbey's
+    /// provider-contract adapters. The caller owns the executable, backend,
+    /// model, workspace, environment, and limits at startup; none are derived
+    /// from a model request or ambient Abbey runtime flags.
+    pub(crate) fn fixed_provider_recipe(
+        agent_path: PathBuf,
+        backend: AgentBackend,
+        model: String,
+    ) -> Self {
+        Self {
+            agent_path,
+            model,
+            auto_review: false,
+            trust: false,
+            force: false,
+            no_resume: true,
+            mode: None,
+            print: true,
+            output_format: None,
+            worktree: None,
+            workspace: None,
+            add_dirs: Vec::new(),
+            sandbox: None,
+            extra_args: Vec::new(),
+            backend,
             transcript_dir: None,
             media_note: None,
             media_prefers_gemma: false,

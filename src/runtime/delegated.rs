@@ -66,7 +66,7 @@ impl DelegatedLimits {
         Ok(())
     }
 
-    fn supervisor(self) -> SupervisorLimits {
+    pub(crate) fn supervisor(self) -> SupervisorLimits {
         SupervisorLimits {
             timeout: self.timeout,
             terminate_grace: self.terminate_grace,
@@ -300,7 +300,7 @@ fn generic_message(kind: ExecutionErrorKind) -> &'static str {
     }
 }
 
-fn canonical_directory(path: &Path) -> Result<PathBuf, DelegatedConfigError> {
+pub(crate) fn canonical_directory(path: &Path) -> Result<PathBuf, DelegatedConfigError> {
     let canonical = fs::canonicalize(path).map_err(|_| DelegatedConfigError::InvalidWorkspace)?;
     if !canonical.is_dir() {
         return Err(DelegatedConfigError::InvalidWorkspace);
@@ -308,7 +308,7 @@ fn canonical_directory(path: &Path) -> Result<PathBuf, DelegatedConfigError> {
     Ok(canonical)
 }
 
-fn canonical_executable(
+pub(crate) fn canonical_executable(
     path: &Path,
     backend: BackendSelection,
 ) -> Result<PathBuf, DelegatedConfigError> {
@@ -332,7 +332,7 @@ fn is_executable(_metadata: &fs::Metadata) -> bool {
     false
 }
 
-fn selected_environment<I>(environment: I) -> Vec<(OsString, OsString)>
+pub(crate) fn selected_environment<I>(environment: I) -> Vec<(OsString, OsString)>
 where
     I: IntoIterator<Item = (OsString, OsString)>,
 {

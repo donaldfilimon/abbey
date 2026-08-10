@@ -296,7 +296,7 @@ fn ci_proof_is_blocked_after_abi_dependency_resolution() {
     assert!(
         claim
             .note
-            .contains("b8d6241eb7f398da266e450b78763492ab7836c1")
+            .contains("88c02fb550169e4cdb5e1df2bf6d1d13532e0e49")
     );
     assert!(claim.note.contains("Linux ARM64"));
     assert!(claim.note.contains("repository variable"));

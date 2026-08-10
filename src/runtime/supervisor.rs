@@ -307,7 +307,16 @@ pub(crate) fn run(
     limits: &SupervisorLimits,
     cancellation: &CancellationToken,
 ) -> Result<SupervisorOutcome, SupervisorError> {
-    unix::run(spec, *limits, cancellation)
+    run_with_checkpoint(spec, limits, || cancellation.is_cancelled())
+}
+
+#[cfg(unix)]
+pub(crate) fn run_with_checkpoint(
+    spec: &ProcessSpec,
+    limits: &SupervisorLimits,
+    checkpoint: impl FnMut() -> bool,
+) -> Result<SupervisorOutcome, SupervisorError> {
+    unix::run_with_checkpoint(spec, *limits, checkpoint)
 }
 
 #[cfg(not(unix))]
@@ -315,6 +324,17 @@ pub(crate) fn run(
     spec: &ProcessSpec,
     limits: &SupervisorLimits,
     _cancellation: &CancellationToken,
+) -> Result<SupervisorOutcome, SupervisorError> {
+    let _ = spec.validate()?;
+    limits.validate()?;
+    Err(SupervisorError::Unsupported)
+}
+
+#[cfg(not(unix))]
+pub(crate) fn run_with_checkpoint(
+    spec: &ProcessSpec,
+    limits: &SupervisorLimits,
+    _checkpoint: impl FnMut() -> bool,
 ) -> Result<SupervisorOutcome, SupervisorError> {
     let _ = spec.validate()?;
     limits.validate()?;

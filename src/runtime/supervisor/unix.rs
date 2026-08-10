@@ -186,10 +186,10 @@ impl Drop for ChildGuard {
     }
 }
 
-pub(super) fn run(
+pub(super) fn run_with_checkpoint(
     spec: &ProcessSpec,
     limits: SupervisorLimits,
-    cancellation: &CancellationToken,
+    mut checkpoint: impl FnMut() -> bool,
 ) -> Result<SupervisorOutcome, SupervisorError> {
     let (canonical_program, canonical_current_dir) = spec.validate()?;
     limits.validate()?;
@@ -237,17 +237,20 @@ pub(super) fn run(
         &reader_rx,
         [stdout_reader, stderr_reader],
         limits,
-        cancellation,
+        &mut checkpoint,
     )
 }
 
-fn supervise(
+fn supervise<F>(
     guard: &mut ChildGuard,
     reader_rx: &Receiver<ReaderMessage>,
     readers: [JoinHandle<()>; 2],
     limits: SupervisorLimits,
-    cancellation: &CancellationToken,
-) -> Result<SupervisorOutcome, SupervisorError> {
+    checkpoint: &mut F,
+) -> Result<SupervisorOutcome, SupervisorError>
+where
+    F: FnMut() -> bool,
+{
     let deadline = Instant::now() + limits.timeout;
     let mut status = None;
     let mut captures = Captures::default();
@@ -262,7 +265,7 @@ fn supervise(
             });
             break;
         }
-        if cancellation.is_cancelled() {
+        if checkpoint() {
             control = Some(SupervisorOutcome::Cancelled);
             break;
         }
