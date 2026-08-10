@@ -159,6 +159,25 @@ class InstallPs1Source(unittest.TestCase):
         )
         self.assertRegex(self.text, r"(?m)^\s*cargo build --release --locked\s*$")
 
+    def test_unix_daemon_smoke_is_edition_neutral(self) -> None:
+        # The installed daemon has no --help parser. install.sh proves it loaded
+        # by requiring the stable missing-bearer refusal, whose environment
+        # names differ by edition. Pin both cleared namespaces and the bounded
+        # identifier grammar so a personal install cannot fail before publish
+        # or accidentally start because the caller exported a personal token.
+        sh = INSTALL_SH.read_text(encoding="utf-8")
+        for variable in (
+            "ABBEYD_BEARER_TOKEN",
+            "ABBEYD_BEARER_TOKEN_FILE",
+            "ABBEY_PERSONAL_DAEMON_BEARER_TOKEN",
+            "ABBEY_PERSONAL_DAEMON_BEARER_TOKEN_FILE",
+        ):
+            self.assertIn(variable, sh)
+        self.assertIn(
+            "[A-Z0-9_]+_BEARER_TOKEN or [A-Z0-9_]+_BEARER_TOKEN_FILE",
+            sh,
+        )
+
     def test_no_daemon_binary_is_installed_on_windows(self) -> None:
         # The authenticated daemon is Unix-socket-only; install.ps1 has never
         # installed it and must not start now. The derived name is reported,

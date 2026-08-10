@@ -99,6 +99,10 @@ echo "== claims/docs synchronization =="
 python3 -m unittest discover -s tools/tests -p 'test_*.py'
 python3 tools/check_claims_sync.py
 
+echo "== installer syntax and isolated accelerator layout =="
+sh -n install.sh tools/tests/smoke_accel_install.sh
+sh tools/tests/smoke_accel_install.sh
+
 echo "== file size guard (main < 200, others warn > 800) =="
 python3 - <<'PY'
 from pathlib import Path
