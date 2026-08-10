@@ -93,6 +93,8 @@ pub struct DaemonConfig {
     pub write_timeout: Duration,
     pub accept_poll_interval: Duration,
     pub authenticated_rate_limit: AuthenticatedRateLimit,
+    #[cfg(test)]
+    pub(crate) client_handoff_barrier: Option<std::sync::Arc<std::sync::Barrier>>,
 }
 
 impl DaemonConfig {
@@ -108,6 +110,8 @@ impl DaemonConfig {
             write_timeout: Duration::from_secs(5),
             accept_poll_interval: Duration::from_millis(25),
             authenticated_rate_limit: AuthenticatedRateLimit::default(),
+            #[cfg(test)]
+            client_handoff_barrier: None,
         }
     }
 
@@ -147,6 +151,8 @@ impl DaemonConfig {
             write_timeout: Duration::from_secs(5),
             accept_poll_interval: Duration::from_millis(25),
             authenticated_rate_limit: AuthenticatedRateLimit::default(),
+            #[cfg(test)]
+            client_handoff_barrier: None,
         })
     }
 

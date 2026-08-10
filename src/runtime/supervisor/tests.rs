@@ -155,6 +155,44 @@ fn timeout_and_precancelled_execution_teardown_the_group() {
 
 #[cfg(unix)]
 #[test]
+fn child_guard_reaps_a_dead_leader_before_post_kill_group_liveness() {
+    use nix::sys::signal::{Signal, killpg};
+    use std::io::Read as _;
+    use std::os::unix::process::CommandExt as _;
+    use std::process::{Command, Stdio};
+
+    let mut command = Command::new("/bin/sh");
+    command
+        .args(["-c", "trap '' TERM; printf ready; exec sleep 30"])
+        .stdout(Stdio::piped())
+        .process_group(0);
+    let mut child = command.spawn().unwrap();
+    let mut stdout = child.stdout.take().unwrap();
+    let mut ready = [0_u8; 5];
+    stdout.read_exact(&mut ready).unwrap();
+    assert_eq!(&ready, b"ready");
+
+    let mut guard = super::unix::ChildGuard::new(child).unwrap();
+    let (process_group, reaped, disarmed) = guard.test_state();
+    assert!(!reaped && !disarmed);
+    killpg(process_group, Signal::SIGKILL).unwrap();
+    let mut eof = Vec::new();
+    stdout.read_to_end(&mut eof).unwrap();
+
+    // EOF proves the leader is dead, but until `wait` reaps it the process
+    // group probe still reports it as present. This is the deterministic false
+    // liveness state that previously became a teardown error.
+    assert!(super::unix::group_exists(process_group).unwrap());
+    guard
+        .terminate(Duration::from_secs(1), Duration::from_millis(2))
+        .unwrap();
+    let (_, reaped, disarmed) = guard.test_state();
+    assert!(reaped && disarmed);
+    assert!(!super::unix::group_exists(process_group).unwrap());
+}
+
+#[cfg(unix)]
+#[test]
 fn leader_exit_with_descendant_holding_pipes_is_bounded_and_kills_descendant() {
     use nix::sys::signal::kill;
     use nix::unistd::Pid;

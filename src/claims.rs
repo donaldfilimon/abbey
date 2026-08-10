@@ -808,7 +808,7 @@ mod tests {
                 "missing boundary: {boundary}"
             );
         }
-        assert!(claim.next_action.contains("daemon connection handoff"));
+        assert!(claim.next_action.contains("accelerator installation"));
     }
 
     #[test]

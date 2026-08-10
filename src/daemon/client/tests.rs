@@ -5,6 +5,7 @@ use std::io::{Read as _, Write as _};
 use std::os::unix::fs::{FileTypeExt as _, PermissionsExt as _};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Barrier};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -30,6 +31,37 @@ fn real_scratch_server_round_trip() {
         AppEvent::Status(status) if status.state == RuntimeState::Ready
     ));
     harness.stop();
+}
+
+#[test]
+fn peer_close_during_connection_handoff_is_one_stable_bounded_error() {
+    let root = scratch_dir("handoff-close");
+    let mut config = test_config(root.join("abbeyd.sock"));
+    let listener = UnixListener::bind(&config.socket_path).unwrap();
+    let barrier = Arc::new(Barrier::new(2));
+    config.client_handoff_barrier = Some(barrier.clone());
+    let server = thread::spawn(move || {
+        let (stream, _) = listener.accept().unwrap();
+        drop(stream);
+        // Release the client only after the accepted peer is closed. Darwin
+        // may fail timeout configuration with EINVAL; other Unix hosts may
+        // reach the first write and report EPIPE. Neither platform detail is
+        // part of the client contract.
+        barrier.wait();
+    });
+
+    let started = Instant::now();
+    let error = DaemonClient::new(config.clone())
+        .request(AppCommand::Status)
+        .unwrap_err();
+    assert!(matches!(error, ClientError::ConnectionHandoff));
+    assert_eq!(
+        error.to_string(),
+        "abbeyd connection closed before request handoff completed"
+    );
+    assert!(started.elapsed() < config.read_timeout + Duration::from_secs(1));
+    server.join().unwrap();
+    std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]

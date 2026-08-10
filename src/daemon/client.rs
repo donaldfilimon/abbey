@@ -72,15 +72,19 @@ pub enum ClientError {
         "abbeyd client transport is not implemented on this platform; named-pipe support is required"
     )]
     UnsupportedPlatform,
-    #[error("timed out connecting to abbeyd at {path}")]
+    #[error("timed out establishing a ready abbeyd connection at {path}")]
     ConnectTimeout { path: PathBuf },
     #[error("cannot connect to abbeyd at {path}: {source}")]
     Connect { path: PathBuf, source: io::Error },
+    /// Retained for source compatibility. Connection setup now completes in
+    /// the bounded worker and reports peer-close races as `ConnectionHandoff`.
     #[error("cannot configure abbeyd socket {operation}: {source}")]
     Configure {
         operation: &'static str,
         source: io::Error,
     },
+    #[error("abbeyd connection closed before request handoff completed")]
+    ConnectionHandoff,
     #[error("cannot serialize abbeyd request: {0}")]
     Serialize(serde_json::Error),
     #[error("abbeyd request exceeds the configured frame limit")]
@@ -146,26 +150,11 @@ mod unix {
             return Err(ClientError::RequestTooLarge);
         }
 
-        let mut stream = connect(config)?;
-        stream
-            .set_read_timeout(Some(config.read_timeout))
-            .map_err(|source| ClientError::Configure {
-                operation: "read timeout",
-                source,
-            })?;
-        stream
-            .set_write_timeout(Some(config.write_timeout))
-            .map_err(|source| ClientError::Configure {
-                operation: "write timeout",
-                source,
-            })?;
-
         let length = u32::try_from(bytes.len()).map_err(|_| ClientError::RequestTooLarge)?;
-        stream
-            .write_all(&length.to_be_bytes())
-            .and_then(|()| stream.write_all(&bytes))
-            .and_then(|()| stream.flush())
-            .map_err(ClientError::Write)?;
+        let mut frame = Vec::with_capacity(4_usize.saturating_add(bytes.len()));
+        frame.extend_from_slice(&length.to_be_bytes());
+        frame.extend_from_slice(&bytes);
+        let mut stream = connect(config, frame)?;
 
         let response = read_response(&mut stream, config.max_frame_len)?;
         if response.request_id != request_id {
@@ -401,20 +390,51 @@ mod unix {
         value.replace(bearer, "[REDACTED]")
     }
 
-    fn connect(config: &DaemonConfig) -> Result<UnixStream, ClientError> {
+    enum ReadyError {
+        Connect(io::Error),
+        Handoff,
+    }
+
+    fn connect(config: &DaemonConfig, frame: Vec<u8>) -> Result<UnixStream, ClientError> {
         let path = config.socket_path.clone();
         let worker_path = path.clone();
+        let read_timeout = config.read_timeout;
+        let write_timeout = config.write_timeout;
+        #[cfg(test)]
+        let handoff_barrier = config.client_handoff_barrier.clone();
         let (sender, receiver) = mpsc::sync_channel(1);
         // `recv_timeout` strictly bounds the caller. A timed-out worker owns
-        // only the public socket path and exits when the kernel connect call
-        // returns; it holds neither the client nor its bearer. Local UDS
-        // missing-socket behavior is covered by the bounded-connect test.
+        // only the socket path, timeout values, and one bounded serialized
+        // request frame; it has no client or configuration handle, never
+        // formats the frame, and exits after connect/setup/write completes.
+        // Local UDS missing-socket behavior is covered by the bounded-connect
+        // test.
         thread::spawn(move || {
-            let _ = sender.send(UnixStream::connect(worker_path));
+            let result = UnixStream::connect(worker_path)
+                .map_err(ReadyError::Connect)
+                .and_then(|mut stream| {
+                    // The deterministic race fixture stops here: the kernel
+                    // connection exists, but no timeout or request byte has
+                    // been configured yet. A peer may close while this worker
+                    // is descheduled.
+                    #[cfg(test)]
+                    if let Some(barrier) = handoff_barrier {
+                        barrier.wait();
+                    }
+                    stream
+                        .set_read_timeout(Some(read_timeout))
+                        .and_then(|()| stream.set_write_timeout(Some(write_timeout)))
+                        .and_then(|()| stream.write_all(&frame))
+                        .and_then(|()| stream.flush())
+                        .map_err(|_| ReadyError::Handoff)?;
+                    Ok(stream)
+                });
+            let _ = sender.send(result);
         });
         match receiver.recv_timeout(config.read_timeout) {
             Ok(Ok(stream)) => Ok(stream),
-            Ok(Err(source)) => Err(ClientError::Connect { path, source }),
+            Ok(Err(ReadyError::Connect(source))) => Err(ClientError::Connect { path, source }),
+            Ok(Err(ReadyError::Handoff)) => Err(ClientError::ConnectionHandoff),
             Err(mpsc::RecvTimeoutError::Timeout) => Err(ClientError::ConnectTimeout { path }),
             Err(mpsc::RecvTimeoutError::Disconnected) => Err(ClientError::ConnectWorkerStopped),
         }
