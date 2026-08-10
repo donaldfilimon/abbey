@@ -420,7 +420,7 @@ mod unix {
         }
     }
 
-    struct ChildGuard {
+    pub(super) struct ChildGuard {
         child: Child,
         process_group: Pid,
         reaped: bool,
@@ -428,7 +428,7 @@ mod unix {
     }
 
     impl ChildGuard {
-        fn new(child: Child) -> Result<Self, SupervisorError> {
+        pub(super) fn new(child: Child) -> Result<Self, SupervisorError> {
             let raw = i32::try_from(child.id())
                 .map_err(|_| SupervisorError::Teardown("child PID does not fit pid_t".into()))?;
             Ok(Self {
@@ -450,7 +450,15 @@ mod unix {
             Ok(status)
         }
 
-        fn terminate(
+        fn reap_leader(&mut self) -> Result<(), SupervisorError> {
+            if !self.reaped {
+                self.child.wait().map_err(SupervisorError::Wait)?;
+                self.reaped = true;
+            }
+            Ok(())
+        }
+
+        pub(super) fn terminate(
             &mut self,
             grace: Duration,
             poll_interval: Duration,
@@ -467,10 +475,10 @@ mod unix {
                 let kill_deadline = Instant::now() + grace;
                 self.signal_group_until(Signal::SIGKILL, kill_deadline, poll_interval)?;
             }
-            if !self.reaped {
-                self.child.wait().map_err(SupervisorError::Wait)?;
-                self.reaped = true;
-            }
+            // `killpg(pgid, 0)` reports an unreaped leader zombie as a live
+            // group on Darwin and Linux. Reaping is therefore a prerequisite,
+            // not a cleanup after the final post-SIGKILL liveness decision.
+            self.reap_leader()?;
             let gone_deadline = Instant::now() + grace;
             while group_exists(self.process_group)? && Instant::now() < gone_deadline {
                 thread::sleep(
@@ -484,6 +492,11 @@ mod unix {
             }
             self.disarmed = true;
             Ok(())
+        }
+
+        #[cfg(test)]
+        pub(super) fn test_state(&self) -> (Pid, bool, bool) {
+            (self.process_group, self.reaped, self.disarmed)
         }
 
         fn signal_group_until(
@@ -784,7 +797,7 @@ mod unix {
         }
     }
 
-    fn group_exists(process_group: Pid) -> Result<bool, SupervisorError> {
+    pub(super) fn group_exists(process_group: Pid) -> Result<bool, SupervisorError> {
         match killpg(process_group, None) {
             Ok(()) | Err(Errno::EPERM) => Ok(true),
             Err(Errno::ESRCH) => Ok(false),
