@@ -808,11 +808,7 @@ mod tests {
                 "missing boundary: {boundary}"
             );
         }
-        assert!(
-            claim
-                .next_action
-                .contains("shared-state conversation recovery failure")
-        );
+        assert!(claim.next_action.contains("daemon connection handoff"));
     }
 
     #[test]
