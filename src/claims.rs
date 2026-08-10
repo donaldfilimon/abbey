@@ -808,7 +808,11 @@ mod tests {
                 "missing boundary: {boundary}"
             );
         }
-        assert!(claim.next_action.contains("accelerator installation"));
+        assert!(
+            claim
+                .next_action
+                .contains("Decompose every production Rust module")
+        );
     }
 
     #[test]
