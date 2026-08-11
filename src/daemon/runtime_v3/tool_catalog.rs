@@ -49,7 +49,7 @@ pub(super) fn build() -> Result<Vec<BoundTool>, ()> {
             "required": ["record_id"],
             "additionalProperties": false
         });
-        let description = "Request marking one Abbey memory record obsolete without deleting its provenance. The exact call requires a durable safe-edition approval and is not executed by this protocol slice.";
+        let description = "Mark one Abbey memory record obsolete without deleting its provenance. The exact call requires a durable safe-edition approval and an identical explicit resubmission before execution.";
         let descriptor = V3ToolDescriptor {
             tool_id: MEMORY_MARK_OBSOLETE_TOOL_ID.to_owned(),
             description: description.to_owned(),

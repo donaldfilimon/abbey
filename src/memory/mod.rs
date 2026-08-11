@@ -218,6 +218,24 @@ pub fn open_backend(state_dir: &Path, backend: &str) -> anyhow::Result<Box<dyn M
     open_backend_with_timeout(state_dir, backend, DEFAULT_LOCK_TIMEOUT)
 }
 
+/// Open exactly the configured backend for a durable daemon effect.
+///
+/// Unlike the interactive opener, this rejects unknown or unavailable backends
+/// so approved mutations can never land in a substituted store.
+pub(crate) fn open_backend_exact(
+    state_dir: &Path,
+    backend: &str,
+) -> anyhow::Result<Box<dyn MemoryStore>> {
+    match backend.trim().to_ascii_lowercase().as_str() {
+        "sqlite" => open_backend(state_dir, "sqlite"),
+        #[cfg(feature = "wdbx")]
+        "wdbx" => open_backend(state_dir, "wdbx"),
+        #[cfg(not(feature = "wdbx"))]
+        "wdbx" => anyhow::bail!("configured memory backend is unavailable"),
+        _ => anyhow::bail!("configured memory backend is invalid"),
+    }
+}
+
 /// How long a WDBX open waits for another process's lock before giving up.
 pub const DEFAULT_LOCK_TIMEOUT: Duration = Duration::from_secs(10);
 

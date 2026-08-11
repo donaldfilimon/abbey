@@ -15,7 +15,7 @@ use crate::runtime::{
 };
 
 use super::runtime_config::{RuntimeConfigError, RuntimeDaemonConfig, open_private_store};
-use super::runtime_v3::V3RuntimeAuthority;
+use super::runtime_v3::{MemoryEffectRoute, V3RuntimeAuthority};
 use super::server::{DaemonHandler, HandlerFailure};
 
 /// Authenticated v1/v2 lifecycle plus narrowly scoped v3 model authority.
@@ -27,7 +27,6 @@ pub struct RuntimeHandler {
     routes: Vec<RunRouteCapability>,
     v3: V3RuntimeAuthority,
 }
-
 impl RuntimeHandler {
     pub fn start(config: RuntimeDaemonConfig) -> Result<Self, RuntimeConfigError> {
         #[cfg(not(unix))]
@@ -89,9 +88,13 @@ impl RuntimeHandler {
                 .routes()
                 .map(|provider| route(provider.backend()))
                 .collect::<Vec<_>>();
-            let v3 =
-                V3RuntimeAuthority::from_provider_routes(executor.routes(), Arc::clone(&store))
-                    .map_err(|_| RuntimeConfigError::Routes)?;
+            let memory = MemoryEffectRoute::new(parts.state_root.clone(), parts.memory_backend);
+            let v3 = V3RuntimeAuthority::from_provider_routes(
+                executor.routes(),
+                Arc::clone(&store),
+                memory,
+            )
+            .map_err(|_| RuntimeConfigError::Routes)?;
             let context =
                 AppContext::runtime_v2(routes.clone()).map_err(|_| RuntimeConfigError::Routes)?;
             let manager = RunManager::start(
@@ -110,7 +113,6 @@ impl RuntimeHandler {
             })
         }
     }
-
     fn handle_runtime(&self, command: AppCommand) -> Result<AppEvent, HandlerFailure> {
         command.validate().map_err(|_| invalid_command_failure())?;
         match command {
@@ -165,7 +167,6 @@ impl RuntimeHandler {
             }
         }
     }
-
     fn snapshot(
         &self,
         run_id: &crate::app_core::RunId,
@@ -176,7 +177,6 @@ impl RuntimeHandler {
             .ok_or_else(not_found_failure)
     }
 }
-
 impl DaemonHandler for RuntimeHandler {
     fn supports_version(&self, version: u16) -> bool {
         matches!(version, APP_PROTOCOL_V1 | APP_PROTOCOL_VERSION)

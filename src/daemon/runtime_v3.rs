@@ -1,11 +1,12 @@
 //! Minimal daemon-owned authority for the first served protocol-v3 slice.
 //!
-//! Only bounded safe tool inventory/invocation, one default-edition pending
-//! mutation plus exact approve/deny/cancel transitions, startup-bound ABI-local
+//! Only bounded safe tool inventory/invocation, one default-edition exact-call
+//! memory mutation plus approve/deny/cancel transitions, startup-bound ABI-local
 //! model inventory, and exact stable-ID claim reads are representable here.
-//! Execution, memory, training, worker, and polling grants remain absent.
+//! Broader memory reads, training, worker, and polling grants remain absent.
 
 use std::collections::HashSet;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -25,6 +26,7 @@ use crate::app_core::{
 use crate::runtime::{
     AuditMetadata, MAX_TOOL_APPROVAL_TTL_MS, NewAuditEvent, NewToolApproval, ProviderRoute,
     RuntimeStore, StoreError, ToolApprovalDecision, ToolApprovalRecord, ToolApprovalState,
+    ToolExecutionOutcome, ToolExecutionPreparation,
 };
 
 use super::server::HandlerFailure;
@@ -33,12 +35,31 @@ mod tool_catalog;
 
 use tool_catalog::{BoundTool, ToolRoute};
 
+#[cfg(debug_assertions)]
+const TOOL_EXECUTION_FAILPOINT_ENV: &str = "ABBEY_TEST_TOOL_EXECUTION_FAILPOINT";
+
+/// Startup-owned route for the edition memory backend used by safe effects.
+pub(super) struct MemoryEffectRoute {
+    state_root: PathBuf,
+    backend: String,
+}
+
+impl MemoryEffectRoute {
+    pub(super) fn new(state_root: PathBuf, backend: String) -> Self {
+        Self {
+            state_root,
+            backend,
+        }
+    }
+}
+
 /// Frozen protocol-v3 grants plus presentation-safe tool, model, and claim authority.
 pub(super) struct V3RuntimeAuthority {
     grants: V3CapabilitySet,
     tools: Vec<BoundTool>,
     models: Vec<V3EntityRecord>,
     store: Arc<RuntimeStore>,
+    memory: MemoryEffectRoute,
     used_tool_call_ids: Mutex<HashSet<String>>,
 }
 
@@ -48,6 +69,7 @@ impl V3RuntimeAuthority {
     pub(super) fn from_provider_routes<'a>(
         routes: impl IntoIterator<Item = &'a ProviderRoute>,
         store: Arc<RuntimeStore>,
+        memory: MemoryEffectRoute,
     ) -> Result<Self, HandlerFailure> {
         let models = routes
             .into_iter()
@@ -94,6 +116,7 @@ impl V3RuntimeAuthority {
             tools,
             models,
             store,
+            memory,
             used_tool_call_ids: Mutex::new(used_tool_call_ids),
         })
     }
@@ -205,6 +228,15 @@ impl V3RuntimeAuthority {
 
         let input = serde_json::to_string(&call.input).map_err(|_| invalid_command_failure())?;
         let abi_call = ToolCall::new(&call.call_id, &call.tool_id, input);
+        let input_digest = digest(abi_call.input.as_bytes());
+        let policy = EffectScopedPolicy;
+        let decision = policy.authorize(&abi_call, Some(&tool.spec));
+        if tool.route == ToolRoute::ApprovalRequired {
+            if !matches!(decision, PolicyDecision::RequireConfirmation { .. }) {
+                return Err(capability_denied_failure());
+            }
+            return self.invoke_approved_memory_effect(call, &input_digest);
+        }
         {
             let mut used = self
                 .used_tool_call_ids
@@ -213,43 +245,6 @@ impl V3RuntimeAuthority {
             if !used.insert(call.call_id.clone()) {
                 return Err(conflict_failure());
             }
-        }
-
-        let input_digest = digest(abi_call.input.as_bytes());
-        let policy = EffectScopedPolicy;
-        let decision = policy.authorize(&abi_call, Some(&tool.spec));
-        if tool.route == ToolRoute::ApprovalRequired {
-            if !matches!(decision, PolicyDecision::RequireConfirmation { .. }) {
-                return Err(capability_denied_failure());
-            }
-            let now = now_ms()?;
-            let expires_at_ms = now
-                .checked_add(MAX_TOOL_APPROVAL_TTL_MS)
-                .ok_or_else(internal_failure)?;
-            let call_digest = call
-                .approval_digest()
-                .map_err(|_| invalid_command_failure())?;
-            let request = NewToolApproval {
-                call_id: call.call_id.clone(),
-                tool_id: call.tool_id.clone(),
-                call_digest: call_digest.clone(),
-                created_at_ms: now,
-                expires_at_ms,
-            };
-            if let Err(error) = self.store.create_tool_approval(request) {
-                if !matches!(error, StoreError::ToolApprovalConflict) {
-                    self.forget_tool_call(&call.call_id);
-                    return Err(internal_failure());
-                }
-                return Err(conflict_failure());
-            }
-            return Ok(V3Event::ToolApprovalStatus(V3ToolApprovalStatus {
-                tool_id: call.tool_id,
-                call_id: call.call_id,
-                call_digest,
-                state: V3ToolApprovalState::Pending,
-                expires_at_ms,
-            }));
         }
         if !matches!(decision, PolicyDecision::Allow) {
             return Err(capability_denied_failure());
@@ -358,6 +353,138 @@ impl V3RuntimeAuthority {
         Ok(V3Event::ToolResult(result))
     }
 
+    fn invoke_approved_memory_effect(
+        &self,
+        call: crate::app_core::V3ToolCall,
+        input_digest: &str,
+    ) -> Result<V3Event, HandlerFailure> {
+        let call_digest = call
+            .approval_digest()
+            .map_err(|_| invalid_command_failure())?;
+        let now = now_ms()?;
+        let approval = self
+            .store
+            .tool_approval(&call.call_id, now)
+            .map_err(map_approval_store_error)?;
+        let Some(approval) = approval else {
+            {
+                let mut used = self
+                    .used_tool_call_ids
+                    .lock()
+                    .map_err(|_| internal_failure())?;
+                if !used.insert(call.call_id.clone()) {
+                    return Err(conflict_failure());
+                }
+            }
+            let expires_at_ms = now
+                .checked_add(MAX_TOOL_APPROVAL_TTL_MS)
+                .ok_or_else(internal_failure)?;
+            let request = NewToolApproval {
+                call_id: call.call_id.clone(),
+                tool_id: call.tool_id.clone(),
+                call_digest: call_digest.clone(),
+                created_at_ms: now,
+                expires_at_ms,
+            };
+            if let Err(error) = self.store.create_tool_approval(request) {
+                if !matches!(error, StoreError::ToolApprovalConflict) {
+                    self.forget_tool_call(&call.call_id);
+                    return Err(internal_failure());
+                }
+                return Err(conflict_failure());
+            }
+            return Ok(V3Event::ToolApprovalStatus(V3ToolApprovalStatus {
+                tool_id: call.tool_id,
+                call_id: call.call_id,
+                call_digest,
+                state: V3ToolApprovalState::Pending,
+                expires_at_ms,
+            }));
+        };
+        if approval.tool_id != call.tool_id || approval.call_digest != call_digest {
+            return Err(approval_conflict_failure());
+        }
+        if approval.state != ToolApprovalState::Approved {
+            return Err(approval_conflict_failure());
+        }
+
+        let execution_id = format!("execution-{}", uuid::Uuid::new_v4().simple());
+        let prepared = self
+            .store
+            .prepare_tool_execution(&call.call_id, &call_digest, &execution_id, now)
+            .map_err(map_execution_store_error)?;
+        if matches!(prepared, ToolExecutionPreparation::Expired(_)) {
+            return Err(approval_conflict_failure());
+        }
+        maybe_tool_execution_failpoint("after_prepare");
+        self.record_mutating_tool_audit(
+            "v3_tool_authorization",
+            "approved",
+            &call.call_id,
+            &call.tool_id,
+            input_digest,
+            None,
+        )
+        .map_err(|_| internal_failure())?;
+
+        let record_id = call
+            .input
+            .get("record_id")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(invalid_command_failure)?;
+        let effect =
+            crate::memory::open_backend_exact(&self.memory.state_root, &self.memory.backend)
+                .and_then(|memory| memory.invalidate(record_id));
+        let (state, outcome, output) = if effect.is_ok() {
+            (
+                V3OperationState::Succeeded,
+                ToolExecutionOutcome::Succeeded,
+                json!({"obsolete": true, "record_id": record_id}),
+            )
+        } else {
+            (
+                V3OperationState::Failed,
+                ToolExecutionOutcome::Failed,
+                json!({"code": "memory_unavailable"}),
+            )
+        };
+        maybe_tool_execution_failpoint("after_effect");
+        let result = V3ToolResult {
+            tool_id: call.tool_id,
+            call_id: call.call_id,
+            state,
+            output,
+        };
+        result
+            .validate()
+            .map_err(|_| response_too_large_failure())?;
+        let result_bytes = serde_json::to_vec(&result).map_err(|_| internal_failure())?;
+        let result_digest = digest(&result_bytes);
+        self.store
+            .complete_tool_execution(
+                &result.call_id,
+                &execution_id,
+                outcome,
+                &result_digest,
+                now_ms()?,
+            )
+            .map_err(map_execution_store_error)?;
+        self.record_mutating_tool_audit(
+            "v3_tool_execution",
+            if state == V3OperationState::Succeeded {
+                "succeeded"
+            } else {
+                "failed"
+            },
+            &result.call_id,
+            &result.tool_id,
+            input_digest,
+            Some((&result_digest, result_bytes.len())),
+        )
+        .map_err(|_| internal_failure())?;
+        Ok(V3Event::ToolResult(result))
+    }
+
     fn decide_tool_approval(
         &self,
         decision: V3ToolDecision,
@@ -418,6 +545,35 @@ impl V3RuntimeAuthority {
         Ok(())
     }
 
+    fn record_mutating_tool_audit(
+        &self,
+        action: &str,
+        outcome: &str,
+        call_id: &str,
+        tool_id: &str,
+        input_digest: &str,
+        output: Option<(&str, usize)>,
+    ) -> Result<(), crate::runtime::StoreError> {
+        let mut metadata = json!({
+            "call_id": call_id,
+            "tool_id": tool_id,
+            "input_digest": input_digest,
+            "effect": "mutating",
+            "policy": "exact-call-approval"
+        });
+        if let Some((output_digest, output_bytes)) = output {
+            metadata["output_digest"] = json!(output_digest);
+            metadata["output_bytes"] = json!(output_bytes);
+        }
+        self.store.record_audit(NewAuditEvent {
+            run_id: None,
+            action: action.to_owned(),
+            outcome: outcome.to_owned(),
+            metadata: AuditMetadata::new(metadata)?,
+        })?;
+        Ok(())
+    }
+
     fn forget_tool_call(&self, call_id: &str) {
         if let Ok(mut used) = self.used_tool_call_ids.lock() {
             used.remove(call_id);
@@ -462,6 +618,28 @@ fn map_approval_store_error(error: StoreError) -> HandlerFailure {
         StoreError::InvalidInput(_) => invalid_command_failure(),
         _ => internal_failure(),
     }
+}
+
+fn map_execution_store_error(error: StoreError) -> HandlerFailure {
+    match error {
+        StoreError::ToolApprovalNotFound(_) | StoreError::ToolExecutionNotFound(_) => {
+            approval_not_found_failure()
+        }
+        StoreError::ToolApprovalConflict
+        | StoreError::ToolApprovalDigestMismatch
+        | StoreError::ToolExecutionConflict => approval_conflict_failure(),
+        StoreError::InvalidInput(_) => invalid_command_failure(),
+        _ => internal_failure(),
+    }
+}
+
+fn maybe_tool_execution_failpoint(name: &str) {
+    #[cfg(debug_assertions)]
+    if std::env::var(TOOL_EXECUTION_FAILPOINT_ENV).as_deref() == Ok(name) {
+        std::process::exit(86);
+    }
+    #[cfg(not(debug_assertions))]
+    let _ = name;
 }
 
 const fn invalid_command_failure() -> HandlerFailure {
@@ -522,3 +700,6 @@ const fn claim_status(status: crate::claims::Status) -> ClaimStatus {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod execution_tests;

@@ -43,8 +43,10 @@ impl Harness {
         fs::set_permissions(&provider, fs::Permissions::from_mode(0o700)).unwrap();
         let child = Command::new(ABBEYD_BIN)
             .env(edition::ACTIVE.state_dir_env(), &root)
+            .env(edition::ACTIVE.config_path_env(), root.join("config.toml"))
             .env(edition::ACTIVE.daemon_socket_env(), &socket)
             .env(edition::ACTIVE.daemon_bearer_env(), BEARER)
+            .env("ABBEY_MEMORY_BACKEND", "sqlite")
             .env(edition::ACTIVE.scoped_env("ABI_BIN"), &provider)
             .spawn()
             .unwrap();

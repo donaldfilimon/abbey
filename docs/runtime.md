@@ -234,12 +234,19 @@ The one-second deadline is cooperative and rejects late completion; it cannot pr
 synchronous handler mid-call. For the local mutating descriptor, schema validation and
 ABI policy must produce `RequireConfirmation`; the daemon then computes a domain-separated
 digest over call ID, tool ID, and canonical JSON input, stores one bounded pending record,
-and returns a typed approval status. It stores no raw input and performs no memory mutation.
-Runtime schema v5 provides the transactional approval ledger: one lowercase call digest, bounded expiry, single-use
-decision/cancellation identifiers, atomic consumption, durable terminal states, and
-append-only transition evidence. Only pending creation is connected to v3 dispatch:
-`decide_tool_approvals` and `cancel_tools` remain denied, and approved calls cannot execute
-or consume approval yet. Negotiation may also always grant `read_claims_by_id`; `ClaimById`
+and returns a typed approval status without performing an effect. Runtime schema v5 provides
+the transactional approval ledger: one lowercase call digest, bounded expiry, single-use
+decision/cancellation identifiers, durable terminal states, and append-only transition
+evidence. The default daemon alone negotiates exact approval decisions and cancellation.
+Only an identical explicit `InvokeTool` resubmission of a still-approved call can execute:
+schema v6 atomically consumes that approval with raw-free prepared intent before opening
+the exact startup-selected edition memory backend. Unknown or unavailable backends fail
+terminally without SQLite substitution. The effect marks one record obsolete without
+deleting provenance, and retains only a bounded result digest and ordered terminal evidence.
+Process failpoints after prepare and after effect both reopen as interrupted, reject replay
+of the consumed call, and require a fresh call and approval; no automatic mutation replay or
+legacy downgrade occurs. The personal daemon and MCP retain only the three read-only tools.
+Negotiation may also always grant `read_claims_by_id`; `ClaimById`
 projects one exact stable-ID match from Abbey's canonical claim registry and returns
 `not_found` for a missing or non-exact ID. There is no fuzzy claim search. When daemon
 startup binds an ABI-local fixed provider,

@@ -11,6 +11,7 @@ use crate::runtime::{DelegatedLimits, RunManagerConfig, RuntimeStore, prepare_le
 pub struct RuntimeDaemonConfig {
     state_root: PathBuf,
     workspace: PathBuf,
+    memory_backend: String,
     abi_binary: Option<PathBuf>,
     foundation_models_binary: Option<PathBuf>,
     manager: RunManagerConfig,
@@ -23,6 +24,7 @@ impl RuntimeDaemonConfig {
         Self {
             state_root: state_root.into(),
             workspace: workspace.into(),
+            memory_backend: "sqlite".to_owned(),
             abi_binary: None,
             foundation_models_binary: None,
             manager: RunManagerConfig::default(),
@@ -44,6 +46,9 @@ impl RuntimeDaemonConfig {
                 .ok_or(RuntimeConfigError::MissingStateRoot)?;
             let workspace = std::env::current_dir().map_err(|_| RuntimeConfigError::Workspace)?;
             let mut config = Self::new(state_root, workspace);
+            config.memory_backend = crate::config::AbbeyConfig::load()
+                .map_err(|_| RuntimeConfigError::MemoryConfiguration)?
+                .memory_backend;
             if let Some(path) = std::env::var_os(edition.scoped_env("ABI_BIN")) {
                 config.abi_binary = Some(PathBuf::from(path));
             }
@@ -64,6 +69,13 @@ impl RuntimeDaemonConfig {
     #[must_use]
     pub fn bind_foundation_models(mut self, executable: impl Into<PathBuf>) -> Self {
         self.foundation_models_binary = Some(executable.into());
+        self
+    }
+
+    /// Bind the startup-owned memory backend used by served safe effects.
+    #[must_use]
+    pub fn bind_memory_backend(mut self, backend: impl Into<String>) -> Self {
+        self.memory_backend = backend.into().trim().to_ascii_lowercase();
         self
     }
 
@@ -93,6 +105,7 @@ impl RuntimeDaemonConfig {
         RuntimeConfigParts {
             state_root: self.state_root,
             workspace: self.workspace,
+            memory_backend: self.memory_backend,
             abi_binary: self.abi_binary,
             foundation_models_binary: self.foundation_models_binary,
             manager: self.manager,
@@ -107,6 +120,7 @@ impl fmt::Debug for RuntimeDaemonConfig {
             .debug_struct("RuntimeDaemonConfig")
             .field("state_root", &"[REDACTED]")
             .field("workspace", &"[REDACTED]")
+            .field("memory_backend", &self.memory_backend)
             .field("abi_binary", &self.abi_binary.as_ref().map(|_| "[BOUND]"))
             .field(
                 "foundation_models_binary",
@@ -121,6 +135,7 @@ impl fmt::Debug for RuntimeDaemonConfig {
 pub(crate) struct RuntimeConfigParts {
     pub state_root: PathBuf,
     pub workspace: PathBuf,
+    pub memory_backend: String,
     pub abi_binary: Option<PathBuf>,
     pub foundation_models_binary: Option<PathBuf>,
     pub manager: RunManagerConfig,
@@ -135,6 +150,8 @@ pub enum RuntimeConfigError {
     MissingStateRoot,
     #[error("daemon runtime workspace is unavailable")]
     Workspace,
+    #[error("daemon memory configuration is unavailable")]
+    MemoryConfiguration,
     #[error("daemon runtime state directory is not private")]
     StateDirectory,
     #[error("daemon runtime database path is not private")]
