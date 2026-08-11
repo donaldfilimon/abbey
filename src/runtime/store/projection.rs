@@ -1,4 +1,6 @@
 use super::*;
+use serde_json::Value;
+
 pub(super) fn validate_event_snapshot(
     conn: &Connection,
     id: &RunId,

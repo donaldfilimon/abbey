@@ -2,13 +2,12 @@
 
 use super::migrations;
 use crate::app_core::{
-    BackendSelection, ConversationId, IdempotencyKey, MAX_RUN_EVENT_PAGE, RunCancellationReason,
-    RunEventPage, RunEventRecord, RunFailure, RunId, RunInterruptionReason, RunLifecycleEvent,
-    RunSnapshot, RunState,
+    BackendSelection, ConversationId, MAX_RUN_EVENT_PAGE, RunCancellationReason, RunEventPage,
+    RunEventRecord, RunFailure, RunId, RunInterruptionReason, RunLifecycleEvent, RunSnapshot,
+    RunState,
 };
 use chrono::{SecondsFormat, Utc};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
-use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::Duration;
@@ -23,10 +22,17 @@ mod identity;
 #[cfg(unix)]
 mod private;
 mod projection;
+mod records;
+mod tool_approval;
 
 pub use audit::{AuditEvent, AuditMetadata, NewAuditEvent};
 use audit::{row_to_audit, validate_audit_label};
 use projection::{project_run_event, project_run_snapshot, validate_event_snapshot};
+pub use records::{ConversationBackend, NewRun, NewRunEvent, RunEvent, RunRecord};
+pub use tool_approval::{
+    MAX_TOOL_APPROVAL_TTL_MS, NewToolApproval, ToolApprovalDecision, ToolApprovalEvent,
+    ToolApprovalRecord, ToolApprovalState,
+};
 
 #[derive(Debug, Error)]
 pub enum StoreError {
@@ -46,6 +52,12 @@ pub enum StoreError {
     InvalidTransition { from: RunState, to: RunState },
     #[error("terminal run {run_id} cannot be modified")]
     TerminalRun { run_id: String },
+    #[error("tool approval was not found: {0}")]
+    ToolApprovalNotFound(String),
+    #[error("tool approval transition conflicts with durable state")]
+    ToolApprovalConflict,
+    #[error("tool approval digest does not match the pending call")]
+    ToolApprovalDigestMismatch,
     #[error("runtime database contains invalid data: {0}")]
     CorruptData(&'static str),
     #[error(transparent)]
@@ -56,49 +68,6 @@ pub enum StoreError {
     Io(#[from] std::io::Error),
     #[error(transparent)]
     Json(#[from] serde_json::Error),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct NewRun {
-    pub conversation_id: Option<ConversationId>,
-    pub idempotency_key: IdempotencyKey,
-    /// Lower-case hexadecimal SHA-256 of the canonical request envelope.
-    pub request_digest: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RunRecord {
-    pub id: RunId,
-    pub conversation_id: Option<ConversationId>,
-    pub idempotency_key: IdempotencyKey,
-    pub request_digest: String,
-    pub status: RunState,
-    pub next_event_sequence: u64,
-    pub created_at: String,
-    pub updated_at: String,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct NewRunEvent {
-    pub kind: String,
-    pub payload: Value,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct RunEvent {
-    pub run_id: RunId,
-    pub sequence: u64,
-    pub kind: String,
-    pub payload: Value,
-    pub created_at: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ConversationBackend {
-    pub conversation_id: ConversationId,
-    pub backend: BackendSelection,
-    pub backend_conversation_id: Option<String>,
-    pub updated_at: String,
 }
 
 pub struct RuntimeStore {

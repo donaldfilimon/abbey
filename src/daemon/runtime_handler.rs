@@ -257,7 +257,10 @@ fn map_store_error(error: StoreError) -> HandlerFailure {
         | StoreError::ConversationNotFound(_)
         | StoreError::UnexpectedStatus { .. }
         | StoreError::InvalidTransition { .. }
-        | StoreError::TerminalRun { .. } => invalid_command_failure(),
+        | StoreError::TerminalRun { .. }
+        | StoreError::ToolApprovalConflict
+        | StoreError::ToolApprovalDigestMismatch => invalid_command_failure(),
+        StoreError::ToolApprovalNotFound(_) => not_found_failure(),
         StoreError::CorruptData(_)
         | StoreError::Migration(_)
         | StoreError::Database(_)
