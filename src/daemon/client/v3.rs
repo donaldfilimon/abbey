@@ -2,7 +2,8 @@
 
 use crate::app_core::{
     V3Capability, V3Command, V3EntityPage, V3Event, V3PageQuery, V3ResourceQuery, V3StableClaim,
-    V3ToolApprovalState, V3ToolCall, V3ToolInvocation, V3ToolPage, V3ToolResult,
+    V3ToolApprovalState, V3ToolApprovalStatus, V3ToolCall, V3ToolDecision, V3ToolInvocation,
+    V3ToolPage, V3ToolResult,
 };
 
 use super::{ClientError, V3DaemonSession};
@@ -135,6 +136,79 @@ impl V3DaemonSession {
                 })
             }
         }
+    }
+
+    /// Approve one exact pending tool call without consuming or executing it.
+    pub fn approve_tool(
+        &self,
+        decision: V3ToolDecision,
+    ) -> Result<V3ToolApprovalStatus, ClientError> {
+        self.decide_tool(decision, true)
+    }
+
+    /// Deny one exact pending tool call without executing it.
+    pub fn deny_tool(&self, decision: V3ToolDecision) -> Result<V3ToolApprovalStatus, ClientError> {
+        self.decide_tool(decision, false)
+    }
+
+    #[cfg(unix)]
+    fn decide_tool(
+        &self,
+        decision: V3ToolDecision,
+        approve: bool,
+    ) -> Result<V3ToolApprovalStatus, ClientError> {
+        decision
+            .validate()
+            .map_err(|_| ClientError::InvalidV3Request)?;
+        if !self
+            .negotiation
+            .granted
+            .contains(V3Capability::DecideToolApprovals)
+        {
+            return Err(ClientError::V3CapabilityNotGranted {
+                capability: V3Capability::DecideToolApprovals,
+            });
+        }
+        let command = if approve {
+            V3Command::ApproveTool(decision.clone())
+        } else {
+            V3Command::DenyTool(decision.clone())
+        };
+        let event = super::unix::request_v3(
+            &self.client.config,
+            self.negotiation.granted.clone(),
+            command,
+        )?;
+        let V3Event::ToolApprovalStatus(status) = event else {
+            return Err(ClientError::UnexpectedV3Event {
+                expected: "tool approval status",
+                received: super::v3_event_name(&event),
+            });
+        };
+        status
+            .validate()
+            .map_err(|_| ClientError::InvalidV3Response)?;
+        let expected = if approve {
+            V3ToolApprovalState::Approved
+        } else {
+            V3ToolApprovalState::Denied
+        };
+        if status.call_id != decision.call_id
+            || status.call_digest != decision.call_digest
+            || !matches!(status.state, state if state == expected || state == V3ToolApprovalState::Expired)
+        {
+            return Err(ClientError::InvalidV3Response);
+        }
+        Ok(status)
+    }
+
+    #[cfg(not(unix))]
+    fn decide_tool(
+        &self,
+        _decision: V3ToolDecision,
+        _approve: bool,
+    ) -> Result<V3ToolApprovalStatus, ClientError> {
+        Err(ClientError::UnsupportedPlatform)
     }
 
     /// Read one bounded fixed-watermark model inventory page.

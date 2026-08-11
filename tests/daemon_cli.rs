@@ -4,8 +4,8 @@
 
 use abbey::app_core::{
     AppEvent, ClaimStatus, Edition, RuntimeState, V3Capability, V3CapabilitySet, V3ErrorCode,
-    V3Event, V3OperationState, V3PageQuery, V3ResourceQuery, V3ToolCall, V3ToolEffect,
-    V3ToolInvocation,
+    V3Event, V3OperationState, V3PageQuery, V3ResourceQuery, V3ToolCall, V3ToolDecision,
+    V3ToolEffect, V3ToolInvocation,
 };
 use abbey::daemon::{BearerSecret, ClientError, DaemonClient, DaemonConfig};
 use abbey::edition;
@@ -286,16 +286,25 @@ fn protocol_v3_safe_tool_inventory_and_audited_status_invocation_round_trip() {
         harness.socket.clone(),
         BearerSecret::parse(BEARER).expect("valid bearer"),
     );
-    let requested =
-        V3CapabilitySet::from_sorted(vec![V3Capability::ListTools, V3Capability::InvokeTools])
-            .unwrap();
+    let requested = V3CapabilitySet::from_sorted(vec![
+        V3Capability::ListTools,
+        V3Capability::InvokeTools,
+        V3Capability::DecideToolApprovals,
+    ])
+    .unwrap();
     let session = DaemonClient::new(config)
         .negotiate_v3(requested)
         .expect("negotiate safe tool inventory");
-    assert_eq!(
-        session.negotiation().granted.as_slice(),
-        &[V3Capability::ListTools, V3Capability::InvokeTools]
-    );
+    let expected_grants = if EXPECTED_EDITION == Edition::Standard {
+        vec![
+            V3Capability::ListTools,
+            V3Capability::InvokeTools,
+            V3Capability::DecideToolApprovals,
+        ]
+    } else {
+        vec![V3Capability::ListTools, V3Capability::InvokeTools]
+    };
+    assert_eq!(session.negotiation().granted.as_slice(), expected_grants);
 
     let page = session
         .list_tools(V3PageQuery::default())
@@ -394,6 +403,37 @@ fn protocol_v3_safe_tool_inventory_and_audited_status_invocation_round_trip() {
             panic!("mutating safe tool must not execute before approval");
         };
         assert_eq!(status.call_digest, expected_digest);
+        let approved = session
+            .approve_tool(V3ToolDecision {
+                call_id: status.call_id,
+                call_digest: status.call_digest,
+                decision_id: "real-decision-approve-1".into(),
+            })
+            .expect("approve exact pending record without executing it");
+        assert_eq!(
+            approved.state,
+            abbey::app_core::V3ToolApprovalState::Approved
+        );
+
+        let deny_call = V3ToolCall {
+            tool_id: "abbey_memory_mark_obsolete".into(),
+            call_id: "real-pending-call-2".into(),
+            input: serde_json::json!({"record_id": record_id}),
+        };
+        let V3ToolInvocation::ApprovalRequired(deny_pending) = session
+            .request_tool(deny_call)
+            .expect("persist second exact pending approval")
+        else {
+            panic!("second mutating safe tool must await approval");
+        };
+        let denied = session
+            .deny_tool(V3ToolDecision {
+                call_id: deny_pending.call_id,
+                call_digest: deny_pending.call_digest,
+                decision_id: "real-decision-deny-1".into(),
+            })
+            .expect("deny exact pending record");
+        assert_eq!(denied.state, abbey::app_core::V3ToolApprovalState::Denied);
 
         let mut get = harness.command(&["memory", "get", &record_id]);
         let get = get.output().expect("read memory after pending request");
@@ -446,15 +486,32 @@ fn protocol_v3_safe_tool_inventory_and_audited_status_invocation_round_trip() {
             .unwrap();
         assert_eq!(approval.0, "abbey_memory_mark_obsolete");
         assert_eq!(approval.1.len(), 64);
-        assert_eq!(approval.2, "pending");
+        assert_eq!(approval.2, "approved");
         let events: i64 = connection
             .query_row(
-                "SELECT COUNT(*) FROM tool_approval_events WHERE call_id=?1 AND state='pending'",
+                "SELECT COUNT(*) FROM tool_approval_events WHERE call_id=?1",
                 ["real-pending-call-1"],
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(events, 1);
+        assert_eq!(events, 2);
+        let denied = connection
+            .query_row(
+                "SELECT state, decision_id FROM tool_approvals WHERE call_id=?1",
+                ["real-pending-call-2"],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+            )
+            .unwrap();
+        assert_eq!(denied.0, "denied");
+        assert_eq!(denied.1, "real-decision-deny-1");
+        let denied_events: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM tool_approval_events WHERE call_id=?1",
+                ["real-pending-call-2"],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(denied_events, 2);
     }
 }
 
