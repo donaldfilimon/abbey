@@ -245,11 +245,15 @@ fn protocol_v3_safe_inventory_keeps_mcp_read_only_and_approval_lifecycle_narrow(
         "same startup-owned ABI ModelProvider route used by protocol-v2 execution",
         "Missing or forged grants",
         "There is no fuzzy claim search",
+        "negotiates read_memory",
+        "summary-only search",
+        "payload, provenance, source metadata, and raw IDs never cross the socket",
+        "MCP receives no memory surface",
         "EffectScopedPolicy",
         "digest-only authorization",
         "single-use",
         "32 KiB",
-        "general memory read/search authority",
+        "general raw memory authority",
     ] {
         assert!(claim.note.contains(required), "missing `{required}`");
     }

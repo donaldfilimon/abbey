@@ -1,5 +1,6 @@
 #[cfg(not(feature = "personal-edition"))]
 mod safe {
+    use std::path::PathBuf;
     use std::sync::Arc;
 
     use super::super::*;

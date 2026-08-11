@@ -2,11 +2,11 @@
 //!
 //! Only bounded safe tool inventory/invocation, one default-edition exact-call
 //! memory mutation plus approve/deny/cancel transitions, startup-bound ABI-local
-//! model inventory, and exact stable-ID claim reads are representable here.
-//! Broader memory reads, training, worker, and polling grants remain absent.
+//! model inventory, exact stable-ID claim reads, and one sanitized summary-only
+//! memory space are representable here. Training, worker, and polling grants
+//! remain absent.
 
 use std::collections::HashSet;
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -31,27 +31,16 @@ use crate::runtime::{
 
 use super::server::HandlerFailure;
 
+mod memory_reads;
 mod tool_catalog;
 
+use memory_reads::MemoryAuthority;
 use tool_catalog::{BoundTool, ToolRoute};
 
 #[cfg(debug_assertions)]
 const TOOL_EXECUTION_FAILPOINT_ENV: &str = "ABBEY_TEST_TOOL_EXECUTION_FAILPOINT";
 
-/// Startup-owned route for the edition memory backend used by safe effects.
-pub(super) struct MemoryEffectRoute {
-    state_root: PathBuf,
-    backend: String,
-}
-
-impl MemoryEffectRoute {
-    pub(super) fn new(state_root: PathBuf, backend: String) -> Self {
-        Self {
-            state_root,
-            backend,
-        }
-    }
-}
+pub(super) use memory_reads::MemoryEffectRoute;
 
 /// Frozen protocol-v3 grants plus presentation-safe tool, model, and claim authority.
 pub(super) struct V3RuntimeAuthority {
@@ -59,7 +48,7 @@ pub(super) struct V3RuntimeAuthority {
     tools: Vec<BoundTool>,
     models: Vec<V3EntityRecord>,
     store: Arc<RuntimeStore>,
-    memory: MemoryEffectRoute,
+    memory: MemoryAuthority,
     used_tool_call_ids: Mutex<HashSet<String>>,
 }
 
@@ -94,7 +83,8 @@ impl V3RuntimeAuthority {
                     .map(str::to_owned)
             })
             .collect();
-        let mut available = Vec::with_capacity(6);
+        let memory = MemoryAuthority::new(memory);
+        let mut available = Vec::with_capacity(7);
         if !tools.is_empty() {
             available.push(V3Capability::ListTools);
             available.push(V3Capability::InvokeTools);
@@ -105,6 +95,9 @@ impl V3RuntimeAuthority {
         {
             available.push(V3Capability::DecideToolApprovals);
             available.push(V3Capability::CancelTools);
+        }
+        if memory.readable() {
+            available.push(V3Capability::ReadMemory);
         }
         if !models.is_empty() {
             available.push(V3Capability::ReadModels);
@@ -172,6 +165,9 @@ impl V3RuntimeAuthority {
                 self.decide_tool_approval(decision, ToolApprovalDecision::Deny)
             }
             V3Command::CancelTool(action) => self.cancel_tool_approval(action),
+            V3Command::ListMemorySpaces(page) => self.memory.list_spaces(page),
+            V3Command::SearchMemory(request) => self.memory.search(request),
+            V3Command::ReadMemoryMetadata(query) => self.memory.metadata(query),
             V3Command::ListModels(page) => {
                 let snapshot = u64::try_from(self.models.len()).map_err(|_| internal_failure())?;
                 let through = page.through.unwrap_or(snapshot);
@@ -432,9 +428,7 @@ impl V3RuntimeAuthority {
             .get("record_id")
             .and_then(serde_json::Value::as_str)
             .ok_or_else(invalid_command_failure)?;
-        let effect =
-            crate::memory::open_backend_exact(&self.memory.state_root, &self.memory.backend)
-                .and_then(|memory| memory.invalidate(record_id));
+        let effect = self.memory.invalidate(record_id);
         let (state, outcome, output) = if effect.is_ok() {
             (
                 V3OperationState::Succeeded,
