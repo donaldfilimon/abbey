@@ -18,7 +18,7 @@ mod runtime_handler;
 mod runtime_v3;
 mod server;
 
-pub use client::{ClientError, DaemonClient};
+pub use client::{ClientError, DaemonClient, V3DaemonSession};
 pub use config::{AuthenticatedRateLimit, BearerSecret, DaemonConfig};
 pub use protocol::{
     CURRENT_PROTOCOL_VERSION, PROTOCOL_VERSION, RequestEnvelope, ResponseEnvelope, ResponsePayload,

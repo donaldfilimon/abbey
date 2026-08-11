@@ -2,7 +2,9 @@
 
 #![cfg(unix)]
 
-use abbey::app_core::{AppEvent, ClaimStatus, Edition, RuntimeState};
+use abbey::app_core::{
+    AppEvent, ClaimStatus, Edition, RuntimeState, V3Capability, V3Event, V3OperationState,
+};
 use abbey::edition;
 use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Path, PathBuf};
@@ -29,6 +31,10 @@ struct Harness {
 
 impl Harness {
     fn start() -> Self {
+        Self::start_with_abi(false)
+    }
+
+    fn start_with_abi(bind_abi: bool) -> Self {
         let root = PathBuf::from("/tmp").join(format!(
             "abbey-dcli-{}-{}",
             std::process::id(),
@@ -38,12 +44,22 @@ impl Harness {
         std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o700))
             .expect("make daemon CLI scratch directory private");
         let socket = root.join("abbeyd.sock");
-        let child = Command::new(ABBEYD_BIN)
+        let abi_provider = root.join("abi-provider");
+        if bind_abi {
+            std::fs::write(&abi_provider, "#!/bin/sh\nexit 0\n")
+                .expect("write fixed ABI provider fixture");
+            std::fs::set_permissions(&abi_provider, std::fs::Permissions::from_mode(0o700))
+                .expect("make ABI provider fixture executable");
+        }
+        let mut daemon = Command::new(ABBEYD_BIN);
+        daemon
             .env(edition::ACTIVE.state_dir_env(), &root)
             .env(edition::ACTIVE.daemon_socket_env(), &socket)
-            .env(edition::ACTIVE.daemon_bearer_env(), BEARER)
-            .spawn()
-            .expect("start abbeyd");
+            .env(edition::ACTIVE.daemon_bearer_env(), BEARER);
+        if bind_abi {
+            daemon.env(edition::ACTIVE.scoped_env("ABI_BIN"), &abi_provider);
+        }
+        let child = daemon.spawn().expect("start abbeyd");
 
         let deadline = Instant::now() + Duration::from_secs(3);
         while !socket.exists() {
@@ -162,6 +178,63 @@ fn status_and_filtered_claims_round_trip_through_real_binaries() {
     assert_eq!(snapshot.claims[0].status, ClaimStatus::Proposed);
 }
 
+#[test]
+fn protocol_v3_negotiation_and_model_inventory_round_trip_through_real_binaries() {
+    let harness = Harness::start_with_abi(true);
+
+    let negotiation = harness.abbey(BEARER, &["daemon", "negotiate", "--json"]);
+    assert_success(&negotiation, "daemon protocol-v3 negotiation");
+    let V3Event::Negotiated(negotiated) =
+        serde_json::from_slice::<V3Event>(&negotiation.stdout).unwrap()
+    else {
+        panic!("daemon negotiate returned the wrong event");
+    };
+    assert_eq!(negotiated.granted.as_slice(), &[V3Capability::ReadModels]);
+
+    let models = harness.abbey(
+        BEARER,
+        &[
+            "daemon",
+            "models",
+            "--after",
+            "0",
+            "--through",
+            "1",
+            "--limit",
+            "1",
+            "--json",
+        ],
+    );
+    assert_success(&models, "daemon protocol-v3 model inventory");
+    let json_text = String::from_utf8(models.stdout).unwrap();
+    let V3Event::Models(page) = serde_json::from_str::<V3Event>(&json_text).unwrap() else {
+        panic!("daemon models returned the wrong event");
+    };
+    assert_eq!(page.after, 0);
+    assert_eq!(page.through, 1);
+    assert_eq!(page.records.len(), 1);
+    assert_eq!(page.records[0].id, "abi-local:local");
+    assert_eq!(page.records[0].state, V3OperationState::Available);
+
+    let human = harness.abbey(BEARER, &["daemon", "models"]);
+    assert_success(&human, "daemon protocol-v3 model inventory text");
+    let human = String::from_utf8(human.stdout).unwrap();
+    assert!(human.contains("abbeyd models: 1 record(s)"), "{human}");
+    assert!(human.contains("[available] abi-local:local"), "{human}");
+    for private in [BEARER, path_text(&harness.root), path_text(&harness.socket)] {
+        assert!(!json_text.contains(private), "model JSON leaked {private}");
+        assert!(!human.contains(private), "model text leaked {private}");
+    }
+
+    for rejected in ["0", "33"] {
+        let output = harness.abbey(BEARER, &["daemon", "models", "--limit", rejected]);
+        assert!(
+            !output.status.success(),
+            "--limit {rejected} must be rejected"
+        );
+    }
+}
+
 /// Real-binary proof for the route audit, including that the human and JSON
 /// surfaces describe the *same* daemon answer and that neither carries the raw
 /// working directory the log stores on disk.
@@ -270,19 +343,21 @@ fn route_audit_reads_the_scratch_log_with_cli_and_json_parity() {
 fn authentication_failure_does_not_disclose_local_secrets() {
     let harness = Harness::start();
     let wrong_bearer = "abbey-daemon-cli-test-bearer-wrong";
-    let output = harness.abbey(wrong_bearer, &["daemon", "status"]);
-    assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(!stderr.contains(BEARER), "correct bearer leaked: {stderr}");
-    assert!(
-        !stderr.contains(wrong_bearer),
-        "supplied bearer leaked: {stderr}"
-    );
-    assert!(
-        !stderr.contains(path_text(&harness.socket)),
-        "socket path leaked: {stderr}"
-    );
-    assert!(stderr.contains("authentication failed"), "stderr: {stderr}");
+    for args in [&["daemon", "status"][..], &["daemon", "negotiate"][..]] {
+        let output = harness.abbey(wrong_bearer, args);
+        assert!(!output.status.success());
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(!stderr.contains(BEARER), "correct bearer leaked: {stderr}");
+        assert!(
+            !stderr.contains(wrong_bearer),
+            "supplied bearer leaked: {stderr}"
+        );
+        assert!(
+            !stderr.contains(path_text(&harness.socket)),
+            "socket path leaked: {stderr}"
+        );
+        assert!(stderr.contains("authentication failed"), "stderr: {stderr}");
+    }
 
     let missing = harness
         .command(&["daemon", "status"])

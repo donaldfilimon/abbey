@@ -4,7 +4,8 @@ use crate::actions::{RunSpec, fork_prompt, run_agent, run_commit, run_pr, run_re
 use crate::agent::{AgentConfig, run_resilient};
 use crate::app_core::{
     AppCapability, AppCommand, AppEvent, ClaimStatus, ClaimsQuery, Edition, RouteAuditQuery,
-    RuntimeState,
+    RuntimeState, V3Capability, V3CapabilitySet, V3EntityPage, V3Event, V3GrantNegotiation,
+    V3OperationState, V3PageQuery,
 };
 use crate::build_info;
 use crate::claims;
@@ -15,7 +16,7 @@ use crate::config;
 #[cfg(not(unix))]
 use crate::daemon::ClientError;
 #[cfg(unix)]
-use crate::daemon::{DaemonClient, DaemonConfig};
+use crate::daemon::{DaemonClient, DaemonConfig, V3DaemonSession};
 use crate::deferred;
 use crate::doctor::{
     cmd_debug, cmd_doctor, cmd_init, cmd_memory_store, cmd_persona, cmd_role, print_config,
@@ -463,10 +464,27 @@ pub fn run_cli(cli: Cli, state: AbbeyState, mut cfg: AgentConfig) -> Result<i32>
 }
 
 fn run_daemon_command(command: DaemonCmd) -> Result<i32> {
-    if let DaemonCmd::Run { cmd } = command {
-        return crate::run_control::dispatch(cmd);
-    }
     let (command, json) = match command {
+        DaemonCmd::Run { cmd } => return crate::run_control::dispatch(cmd),
+        DaemonCmd::Negotiate { json } => {
+            let session = negotiate_model_reads()?;
+            let event = V3Event::Negotiated(session.negotiation().clone());
+            return print_daemon_v3(event, json);
+        }
+        DaemonCmd::Models {
+            after,
+            through,
+            limit,
+            json,
+        } => {
+            let session = negotiate_model_reads()?;
+            let page = session.list_models(V3PageQuery {
+                after,
+                through,
+                limit,
+            })?;
+            return print_daemon_v3(V3Event::Models(page), json);
+        }
         DaemonCmd::Status { json } => (AppCommand::Status, json),
         DaemonCmd::Claims {
             status,
@@ -482,7 +500,6 @@ fn run_daemon_command(command: DaemonCmd) -> Result<i32> {
         DaemonCmd::Routes { limit, json } => {
             (AppCommand::ReadRoutes(RouteAuditQuery { limit }), json)
         }
-        DaemonCmd::Run { .. } => unreachable!("run commands return above"),
     };
     let event = request_daemon(command)?;
 
@@ -492,6 +509,28 @@ fn run_daemon_command(command: DaemonCmd) -> Result<i32> {
         print!("{}", format_daemon_event(&event)?);
     }
     Ok(0)
+}
+
+fn print_daemon_v3(event: V3Event, json: bool) -> Result<i32> {
+    if json {
+        println!("{}", serde_json::to_string_pretty(&event)?);
+    } else {
+        print!("{}", format_daemon_v3_event(&event)?);
+    }
+    Ok(0)
+}
+
+#[cfg(unix)]
+fn negotiate_model_reads() -> Result<V3DaemonSession> {
+    let requested = V3CapabilitySet::from_sorted(vec![V3Capability::ReadModels])
+        .map_err(|_| anyhow!("protocol-v3 model capability declaration is invalid"))?;
+    let config = DaemonConfig::from_env()?;
+    Ok(DaemonClient::new(config).negotiate_v3(requested)?)
+}
+
+#[cfg(not(unix))]
+fn negotiate_model_reads() -> Result<crate::daemon::V3DaemonSession> {
+    Err(ClientError::UnsupportedPlatform.into())
 }
 
 #[cfg(unix)]
@@ -596,6 +635,87 @@ fn format_daemon_event(event: &AppEvent) -> Result<String> {
         | AppEvent::RunEvents(_) => Err(anyhow!(
             "daemon returned an event outside the read-only CLI contract"
         )),
+    }
+}
+
+fn format_daemon_v3_event(event: &V3Event) -> Result<String> {
+    match event {
+        V3Event::Negotiated(V3GrantNegotiation {
+            protocol_version,
+            schema_version,
+            granted,
+        }) => {
+            let capabilities = granted
+                .as_slice()
+                .iter()
+                .map(v3_capability_label)
+                .collect::<Vec<_>>()
+                .join(", ");
+            let capabilities = if capabilities.is_empty() {
+                "none"
+            } else {
+                &capabilities
+            };
+            Ok(format!(
+                "abbeyd protocol-v3 negotiation\n\
+                 protocol: {protocol_version} · schema: {schema_version}\n\
+                 granted: {capabilities}\n"
+            ))
+        }
+        V3Event::Models(V3EntityPage {
+            after,
+            through,
+            records,
+        }) => {
+            let mut rendered = format!(
+                "abbeyd models: {} record(s) after {after} through {through}\n",
+                records.len()
+            );
+            for record in records {
+                rendered.push_str(&format!(
+                    "  [{}] {} — {}\n",
+                    v3_state_label(record.state),
+                    record.id,
+                    record.label,
+                ));
+            }
+            Ok(rendered)
+        }
+        _ => Err(anyhow!(
+            "daemon returned an event outside the protocol-v3 CLI contract"
+        )),
+    }
+}
+
+const fn v3_capability_label(capability: &V3Capability) -> &'static str {
+    match capability {
+        V3Capability::ListTools => "list_tools",
+        V3Capability::InvokeTools => "invoke_tools",
+        V3Capability::DecideToolApprovals => "decide_tool_approvals",
+        V3Capability::CancelTools => "cancel_tools",
+        V3Capability::ReadMemory => "read_memory",
+        V3Capability::ReadModels => "read_models",
+        V3Capability::DownloadModels => "download_models",
+        V3Capability::ManageModels => "manage_models",
+        V3Capability::ReadTraining => "read_training",
+        V3Capability::ManageTraining => "manage_training",
+        V3Capability::ReadWorkers => "read_workers",
+        V3Capability::CancelJobs => "cancel_jobs",
+        V3Capability::ReadClaimsById => "read_claims_by_id",
+        V3Capability::PollEvents => "poll_events",
+    }
+}
+
+const fn v3_state_label(state: V3OperationState) -> &'static str {
+    match state {
+        V3OperationState::Available => "available",
+        V3OperationState::Queued => "queued",
+        V3OperationState::Running => "running",
+        V3OperationState::InputRequired => "input_required",
+        V3OperationState::Succeeded => "succeeded",
+        V3OperationState::Failed => "failed",
+        V3OperationState::Denied => "denied",
+        V3OperationState::Cancelled => "cancelled",
     }
 }
 

@@ -718,6 +718,27 @@ pub enum DaemonCmd {
         #[arg(long)]
         json: bool,
     },
+    /// Explicitly negotiate the protocol-v3 model-read capability
+    Negotiate {
+        /// Emit the typed protocol-v3 event as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Read the bounded startup-owned protocol-v3 model inventory
+    Models {
+        /// Return records after this zero-based fixed-watermark cursor
+        #[arg(long, default_value_t = 0)]
+        after: u64,
+        /// Keep paging against this previously returned watermark
+        #[arg(long)]
+        through: Option<u64>,
+        /// Maximum records to return (1 through 32)
+        #[arg(long, default_value_t = crate::app_core::MAX_V3_PAGE, value_parser = clap::value_parser!(u16).range(1..=i64::from(crate::app_core::MAX_V3_PAGE)))]
+        limit: u16,
+        /// Emit the typed protocol-v3 event as JSON
+        #[arg(long)]
+        json: bool,
+    },
     /// Submit, inspect, cancel, or page events for bounded protocol-v2 runs
     Run {
         #[command(subcommand)]
