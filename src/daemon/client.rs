@@ -8,12 +8,14 @@ use thiserror::Error;
 
 use crate::app_core::{
     APP_PROTOCOL_V1, APP_PROTOCOL_VERSION, APP_SCHEMA_V1, APP_SCHEMA_VERSION, AppCommand, AppEvent,
-    CapabilitySet, ClaimsSnapshot, RuntimeStatus,
+    CapabilitySet, ClaimsSnapshot, RuntimeStatus, V3Capability, V3CapabilitySet, V3Command,
+    V3EntityPage, V3Event, V3GrantNegotiation, V3GrantRequest, V3PageQuery,
 };
 
 use super::{
     CURRENT_PROTOCOL_VERSION, DaemonConfig, PROTOCOL_VERSION, RequestEnvelope, ResponseEnvelope,
-    ResponsePayload,
+    ResponsePayload, SUPPORTED_PROTOCOL_VERSIONS, V3RequestEnvelope, V3ResponseEnvelope,
+    V3ResponsePayload,
 };
 
 /// Object-oriented client for one configured Abbey daemon installation.
@@ -50,6 +52,122 @@ impl DaemonClient {
     #[cfg(not(unix))]
     pub fn request(&self, _command: AppCommand) -> Result<AppEvent, ClientError> {
         Err(ClientError::UnsupportedPlatform)
+    }
+
+    /// Negotiate a separate protocol-v3 session without changing the legacy
+    /// v1/v2 request path.
+    ///
+    /// This sends exactly one request and never downgrades or retries. The
+    /// returned session owns the daemon's canonical grant set so later typed
+    /// calls echo that exact set instead of accepting caller-constructed
+    /// authority.
+    #[cfg(unix)]
+    pub fn negotiate_v3(&self, requested: V3CapabilitySet) -> Result<V3DaemonSession, ClientError> {
+        let grant_request = V3GrantRequest {
+            supported_versions: SUPPORTED_PROTOCOL_VERSIONS.to_vec(),
+            requested,
+        };
+        grant_request
+            .validate()
+            .map_err(|_| ClientError::InvalidV3Request)?;
+        let event = unix::request_v3(
+            &self.config,
+            V3CapabilitySet::deny_all(),
+            V3Command::Negotiate(grant_request.clone()),
+        )?;
+        let V3Event::Negotiated(negotiation) = event else {
+            return Err(ClientError::UnexpectedV3Event {
+                expected: "capability negotiation",
+                received: v3_event_name(&event),
+            });
+        };
+        negotiation
+            .validate_for(&grant_request)
+            .map_err(|_| ClientError::InvalidV3Response)?;
+        Ok(V3DaemonSession {
+            client: self.clone(),
+            negotiation,
+        })
+    }
+
+    /// Windows remains fail-closed until the named-pipe transport lands.
+    #[cfg(not(unix))]
+    pub fn negotiate_v3(
+        &self,
+        _requested: V3CapabilitySet,
+    ) -> Result<V3DaemonSession, ClientError> {
+        Err(ClientError::UnsupportedPlatform)
+    }
+}
+
+/// One explicitly negotiated protocol-v3 client session.
+///
+/// The grant set is private and can only originate in a validated daemon
+/// negotiation response. That makes grant echo an invariant of this type.
+#[derive(Clone)]
+pub struct V3DaemonSession {
+    client: DaemonClient,
+    negotiation: V3GrantNegotiation,
+}
+
+impl V3DaemonSession {
+    /// Return the validated negotiation result for presentation or inspection.
+    #[must_use]
+    pub const fn negotiation(&self) -> &V3GrantNegotiation {
+        &self.negotiation
+    }
+
+    /// Read one bounded fixed-watermark model inventory page.
+    ///
+    /// The request echoes the exact negotiated grant set and is sent once. It
+    /// is never retried or replayed, even though this first command is a read,
+    /// so future v3 mutations cannot accidentally inherit retry behavior.
+    #[cfg(unix)]
+    pub fn list_models(&self, query: V3PageQuery) -> Result<V3EntityPage, ClientError> {
+        query
+            .validate()
+            .map_err(|_| ClientError::InvalidV3Request)?;
+        if !self.negotiation.granted.contains(V3Capability::ReadModels) {
+            return Err(ClientError::V3CapabilityNotGranted {
+                capability: V3Capability::ReadModels,
+            });
+        }
+        let event = unix::request_v3(
+            &self.client.config,
+            self.negotiation.granted.clone(),
+            V3Command::ListModels(query),
+        )?;
+        let V3Event::Models(page) = event else {
+            return Err(ClientError::UnexpectedV3Event {
+                expected: "model inventory",
+                received: v3_event_name(&event),
+            });
+        };
+        page.validate()
+            .map_err(|_| ClientError::InvalidV3Response)?;
+        if page.after != query.after
+            || query.through.is_some_and(|through| page.through != through)
+            || page.records.len() > usize::from(query.limit)
+        {
+            return Err(ClientError::InvalidV3Response);
+        }
+        Ok(page)
+    }
+
+    /// Windows remains fail-closed until the named-pipe transport lands.
+    #[cfg(not(unix))]
+    pub fn list_models(&self, _query: V3PageQuery) -> Result<V3EntityPage, ClientError> {
+        Err(ClientError::UnsupportedPlatform)
+    }
+}
+
+impl fmt::Debug for V3DaemonSession {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("V3DaemonSession")
+            .field("client", &self.client)
+            .field("negotiation", &self.negotiation)
+            .finish()
     }
 }
 
@@ -116,6 +234,22 @@ pub enum ClientError {
     InvalidRouteAudit,
     #[error("abbeyd returned an invalid or mismatched run response")]
     InvalidRunResponse,
+    #[error("protocol-v3 request is invalid")]
+    InvalidV3Request,
+    #[error("abbeyd returned an invalid protocol-v3 response")]
+    InvalidV3Response,
+    #[error("abbeyd did not grant required protocol-v3 capability {capability:?}")]
+    V3CapabilityNotGranted { capability: V3Capability },
+    #[error("abbeyd returned {received} for expected protocol-v3 {expected}")]
+    UnexpectedV3Event {
+        expected: &'static str,
+        received: &'static str,
+    },
+    #[error("abbeyd rejected the protocol-v3 request ({code:?}): {message}")]
+    DaemonV3 {
+        code: crate::app_core::V3ErrorCode,
+        message: String,
+    },
     #[error("abbeyd rejected the request ({code}): {message}")]
     Daemon { code: String, message: String },
     #[error("abbeyd connection worker stopped unexpectedly")]
@@ -145,18 +279,9 @@ mod unix {
             bearer,
             command,
         };
-        let bytes = serde_json::to_vec(&request).map_err(ClientError::Serialize)?;
-        if bytes.is_empty() || bytes.len() > config.max_frame_len {
-            return Err(ClientError::RequestTooLarge);
-        }
-
-        let length = u32::try_from(bytes.len()).map_err(|_| ClientError::RequestTooLarge)?;
-        let mut frame = Vec::with_capacity(4_usize.saturating_add(bytes.len()));
-        frame.extend_from_slice(&length.to_be_bytes());
-        frame.extend_from_slice(&bytes);
-        let mut stream = connect(config, frame)?;
-
-        let response = read_response(&mut stream, config.max_frame_len)?;
+        let bytes = round_trip(config, &request)?;
+        let response = serde_json::from_slice::<ResponseEnvelope>(&bytes)
+            .map_err(|_| ClientError::MalformedResponse)?;
         if response.request_id != request_id {
             return Err(ClientError::RequestIdMismatch);
         }
@@ -179,6 +304,78 @@ mod unix {
             ResponsePayload::Ok { event } => validate_event(expected_event, event, version),
             payload @ ResponsePayload::Error { .. } => Err(response_error(payload, config)),
         }
+    }
+
+    pub(super) fn request_v3(
+        config: &DaemonConfig,
+        grants: V3CapabilitySet,
+        command: V3Command,
+    ) -> Result<V3Event, ClientError> {
+        grants
+            .validate()
+            .map_err(|_| ClientError::InvalidV3Request)?;
+        command
+            .validate()
+            .map_err(|_| ClientError::InvalidV3Request)?;
+        if !grants.permits(&command)
+            || (matches!(command, V3Command::Negotiate(_)) && !grants.as_slice().is_empty())
+        {
+            return Err(ClientError::InvalidV3Request);
+        }
+
+        let request_id = uuid::Uuid::new_v4().to_string();
+        let request = V3RequestEnvelope {
+            version: crate::app_core::APP_PROTOCOL_V3,
+            schema_version: crate::app_core::APP_SCHEMA_V3,
+            request_id: request_id.clone(),
+            bearer: config.bearer.as_str().to_owned(),
+            grants,
+            command,
+        };
+        let bytes = round_trip(config, &request)?;
+        let response = serde_json::from_slice::<V3ResponseEnvelope>(&bytes)
+            .map_err(|_| ClientError::MalformedResponse)?;
+        if response.request_id != request_id {
+            return Err(ClientError::RequestIdMismatch);
+        }
+        if response.version != crate::app_core::APP_PROTOCOL_V3
+            || response.schema_version != crate::app_core::APP_SCHEMA_V3
+        {
+            return Err(ClientError::InvalidV3Response);
+        }
+        match response.payload {
+            V3ResponsePayload::Ok { event } => {
+                event
+                    .validate()
+                    .map_err(|_| ClientError::InvalidV3Response)?;
+                Ok(event)
+            }
+            V3ResponsePayload::Error { error } => {
+                error
+                    .validate()
+                    .map_err(|_| ClientError::InvalidV3Response)?;
+                Err(ClientError::DaemonV3 {
+                    code: error.code,
+                    message: redact_bearer(error.message, config.bearer.as_str()),
+                })
+            }
+        }
+    }
+
+    fn round_trip<T: serde::Serialize>(
+        config: &DaemonConfig,
+        request: &T,
+    ) -> Result<Vec<u8>, ClientError> {
+        let bytes = serde_json::to_vec(request).map_err(ClientError::Serialize)?;
+        if bytes.is_empty() || bytes.len() > config.max_frame_len {
+            return Err(ClientError::RequestTooLarge);
+        }
+        let length = u32::try_from(bytes.len()).map_err(|_| ClientError::RequestTooLarge)?;
+        let mut frame = Vec::with_capacity(4_usize.saturating_add(bytes.len()));
+        frame.extend_from_slice(&length.to_be_bytes());
+        frame.extend_from_slice(&bytes);
+        let mut stream = connect(config, frame)?;
+        read_response(&mut stream, config.max_frame_len)
     }
 
     fn response_error(payload: ResponsePayload, config: &DaemonConfig) -> ClientError {
@@ -443,7 +640,7 @@ mod unix {
     fn read_response(
         stream: &mut UnixStream,
         max_frame_len: usize,
-    ) -> Result<ResponseEnvelope, ClientError> {
+    ) -> Result<Vec<u8>, ClientError> {
         let mut prefix = [0_u8; 4];
         stream.read_exact(&mut prefix).map_err(ClientError::Read)?;
         let length = u32::from_be_bytes(prefix) as usize;
@@ -455,7 +652,32 @@ mod unix {
         }
         let mut bytes = vec![0_u8; length];
         stream.read_exact(&mut bytes).map_err(ClientError::Read)?;
-        serde_json::from_slice(&bytes).map_err(|_| ClientError::MalformedResponse)
+        Ok(bytes)
+    }
+}
+
+fn v3_event_name(event: &V3Event) -> &'static str {
+    match event {
+        V3Event::Negotiated(_) => "capability negotiation",
+        V3Event::Tools(_) => "tool inventory",
+        V3Event::ToolStatus(_) => "tool status",
+        V3Event::ToolApprovalStatus(_) => "tool approval status",
+        V3Event::MemorySpaces(_) => "memory spaces",
+        V3Event::MemorySearchResults(_) => "memory search results",
+        V3Event::MemoryMetadata(_) => "memory metadata",
+        V3Event::Models(_) => "model inventory",
+        V3Event::ModelStatus(_) => "model status",
+        V3Event::TrainingDatasetStatus(_) => "training dataset status",
+        V3Event::TrainingStatus(_) => "training status",
+        V3Event::TrainingMetrics(_) => "training metrics",
+        V3Event::AdapterStatus(_) => "adapter status",
+        V3Event::Clusters(_) => "cluster inventory",
+        V3Event::Workers(_) => "worker inventory",
+        V3Event::WorkerHealth(_) => "worker health",
+        V3Event::JobStatus(_) => "job status",
+        V3Event::Claim(_) => "claim",
+        V3Event::Events(_) => "event page",
+        V3Event::Error(_) => "error event",
     }
 }
 

@@ -228,6 +228,18 @@ dispatch; echoing an unsupported grant cannot manufacture daemon authority. Ther
 inference command, download, load/unload, tool, approval, memory, training, worker, polling,
 desktop, remote, or Windows authority yet.
 
+`DaemonClient::negotiate_v3` sends one strict negotiation request and returns a typed
+`V3DaemonSession`. The session keeps the validated daemon-returned grants private; its model
+read echoes that exact set and validates the response kind, versions, request correlation,
+page query, watermark, bounds, and record schema before presentation. A denied
+`read_models` grant stops locally before a second request. Neither negotiation nor model
+inventory uses the legacy v1 downgrade path or any automatic retry.
+
+`abbey daemon negotiate` presents the explicit negotiation, while `abbey daemon models`
+negotiates `read_models` and reads one bounded page. Both human and JSON views consume only
+validated `V3Event` values. These commands do not select a provider, executable, model,
+workspace, or grant, and their addition does not expand daemon authority.
+
 ## Shared presentation reducer
 
 `src/run_control.rs` is the single presentation-neutral reducer used by
