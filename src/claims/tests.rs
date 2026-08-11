@@ -160,7 +160,8 @@ fn app_core_daemon_claim_stays_narrower_than_owned_runtime() {
     assert!(daemon.note.contains("protocol-v1"));
     assert!(daemon.note.contains("read-only"));
     assert!(daemon.note.contains("separate protocol-v2 surface"));
-    assert!(daemon.note.contains("provider-neutral"));
+    assert!(daemon.note.contains("protocol-v3 envelope"));
+    assert!(daemon.note.contains("ABI-local model inventory only"));
     assert!(daemon.note.contains("remain unavailable"));
 
     let bounded_runs = CLAIMS
@@ -180,7 +181,7 @@ fn app_core_daemon_claim_stays_narrower_than_owned_runtime() {
         "live subscriptions",
         "daemon-owned memory",
         "desktop bridge",
-        "provider-neutral model ownership",
+        "model registry lifecycle",
     ] {
         assert!(bounded_runs.note.contains(excluded));
     }
@@ -195,6 +196,24 @@ fn app_core_daemon_claim_stays_narrower_than_owned_runtime() {
         .find(|claim| claim.name.starts_with("provider-neutral Abbey-owned"))
         .expect("owned runtime claim");
     assert_eq!(owned_runtime.status, Status::Proposed);
+}
+
+#[test]
+fn protocol_v3_model_inventory_claim_stays_read_only_and_route_bound() {
+    let claim = CLAIMS
+        .iter()
+        .find(|claim| claim.id == "daemon-protocol-v3-abi-model-inventory")
+        .expect("protocol-v3 model inventory claim");
+    assert_eq!(claim.status, Status::Current);
+    for required in [
+        "read_models",
+        "same startup-owned ABI ModelProvider route",
+        "missing grant",
+        "forged unsupported grant",
+        "There is no v3 model inference command",
+    ] {
+        assert!(claim.note.contains(required));
+    }
 }
 
 #[test]

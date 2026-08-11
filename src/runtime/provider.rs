@@ -121,6 +121,17 @@ pub struct ModelProviderExecutor {
 }
 
 impl ModelProviderExecutor {
+    /// Construct an executor with no provider authority.
+    ///
+    /// This is distinct from accepting an accidentally empty configured route
+    /// list: callers must opt into the fail-closed daemon state explicitly.
+    #[must_use]
+    pub fn deny_all() -> Self {
+        Self {
+            routes: BTreeMap::new(),
+        }
+    }
+
     /// Validate and freeze the startup-owned provider route table.
     pub fn new(
         routes: impl IntoIterator<Item = ProviderRoute>,
@@ -288,6 +299,20 @@ mod tests {
             input: "hello there".into(),
             labels: Vec::new(),
         }
+    }
+
+    #[test]
+    fn explicit_deny_all_executor_has_no_route_authority() {
+        let executor = ModelProviderExecutor::deny_all();
+        assert_eq!(executor.routes().len(), 0);
+        let error = executor
+            .execute(
+                &RunId::new(),
+                request(BackendSelection::Abi),
+                &CancellationToken::new(),
+            )
+            .unwrap_err();
+        assert_eq!(error.kind(), ExecutionErrorKind::Unsupported);
     }
 
     #[test]

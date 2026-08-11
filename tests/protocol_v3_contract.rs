@@ -5,13 +5,13 @@ use abbey::app_core::{
 use abbey::daemon::{CURRENT_PROTOCOL_VERSION, SUPPORTED_PROTOCOL_VERSIONS};
 
 #[test]
-fn v3_is_additive_and_not_daemon_authority() {
+fn v3_is_additive_while_legacy_client_authority_stays_on_v2() {
     assert_eq!(APP_PROTOCOL_V1, 1);
     assert_eq!(APP_PROTOCOL_VERSION, 2);
     assert_eq!(APP_PROTOCOL_V3, 3);
     assert_eq!(CURRENT_PROTOCOL_VERSION, 2);
-    assert_eq!(SUPPORTED_PROTOCOL_VERSIONS, &[1, 2]);
-    assert!(!SUPPORTED_PROTOCOL_VERSIONS.contains(&APP_PROTOCOL_V3));
+    assert_eq!(SUPPORTED_PROTOCOL_VERSIONS, &[1, 2, 3]);
+    assert!(SUPPORTED_PROTOCOL_VERSIONS.contains(&APP_PROTOCOL_V3));
 
     assert_eq!(
         serde_json::to_value(AppCommand::Status).unwrap(),

@@ -6,12 +6,14 @@ use std::time::Instant;
 
 use thiserror::Error;
 
-use crate::app_core::{AppCommand, AppEvent, AppService};
+use crate::app_core::{
+    AppCommand, AppEvent, AppService, V3CapabilitySet, V3Command, V3ErrorCode, V3Event,
+};
 
 use super::config::DaemonConfig;
 use super::protocol::{
     CURRENT_PROTOCOL_VERSION, PROTOCOL_VERSION, RequestEnvelope, ResponseEnvelope,
-    SUPPORTED_PROTOCOL_VERSIONS,
+    SUPPORTED_PROTOCOL_VERSIONS, V3RequestEnvelope, V3ResponseEnvelope,
 };
 
 const MAX_REQUEST_ID_LEN: usize = 128;
@@ -35,6 +37,25 @@ pub trait DaemonHandler: Send + Sync + 'static {
         version: u16,
         command: AppCommand,
     ) -> Result<AppEvent, HandlerFailure>;
+
+    /// Whether this handler owns any protocol-v3 authority.
+    fn supports_v3(&self) -> bool {
+        false
+    }
+
+    /// Prove an echoed grant set is a subset of startup-owned authority and
+    /// contains the exact grant required by this non-negotiation command.
+    fn authorizes_v3(&self, _grants: &V3CapabilitySet, _command: &V3Command) -> bool {
+        false
+    }
+
+    /// Handle one already authenticated and structurally validated v3 command.
+    fn handle_v3(&self, _command: V3Command) -> Result<V3Event, HandlerFailure> {
+        Err(HandlerFailure::new(
+            "capability_denied",
+            "protocol-v3 authority is unavailable",
+        ))
+    }
 }
 
 impl<T: ReadOnlyHandler> DaemonHandler for T {
@@ -176,6 +197,85 @@ fn dispatch_authenticated<H: DaemonHandler>(
             failure.code,
             failure.message,
         ),
+    }
+}
+
+fn dispatch_authenticated_v3<H: DaemonHandler>(
+    request: V3RequestEnvelope,
+    handler: &H,
+) -> V3ResponseEnvelope {
+    if !valid_request_id(&request.request_id) {
+        return V3ResponseEnvelope::error("", V3ErrorCode::InvalidCommand, "request_id is invalid");
+    }
+    if request.version != crate::app_core::APP_PROTOCOL_V3
+        || request.schema_version != crate::app_core::APP_SCHEMA_V3
+        || !handler.supports_v3()
+    {
+        return V3ResponseEnvelope::error(
+            request.request_id,
+            V3ErrorCode::UnsupportedVersion,
+            "protocol version is unsupported",
+        );
+    }
+    if request.grants.validate().is_err()
+        || (matches!(request.command, V3Command::Negotiate(_))
+            && !request.grants.as_slice().is_empty())
+    {
+        return V3ResponseEnvelope::error(
+            request.request_id,
+            V3ErrorCode::InvalidCommand,
+            "grant declaration is invalid",
+        );
+    }
+    if !request.grants.permits(&request.command) {
+        return V3ResponseEnvelope::error(
+            request.request_id,
+            V3ErrorCode::CapabilityDenied,
+            "command lacks its advertised capability grant",
+        );
+    }
+    if !matches!(request.command, V3Command::Negotiate(_))
+        && !handler.authorizes_v3(&request.grants, &request.command)
+    {
+        return V3ResponseEnvelope::error(
+            request.request_id,
+            V3ErrorCode::CapabilityDenied,
+            "advertised grants exceed daemon authority",
+        );
+    }
+    if request.command.validate().is_err() {
+        return V3ResponseEnvelope::error(
+            request.request_id,
+            V3ErrorCode::InvalidCommand,
+            "command payload is invalid",
+        );
+    }
+
+    match handler.handle_v3(request.command) {
+        Ok(event) if event.validate().is_ok() => V3ResponseEnvelope::ok(request.request_id, event),
+        Ok(_) => V3ResponseEnvelope::error(
+            request.request_id,
+            V3ErrorCode::Internal,
+            "handler returned an invalid event",
+        ),
+        Err(failure) => V3ResponseEnvelope::error(
+            request.request_id,
+            v3_error_code(failure.code),
+            failure.message,
+        ),
+    }
+}
+
+fn v3_error_code(code: &str) -> V3ErrorCode {
+    match code {
+        "capability_denied" => V3ErrorCode::CapabilityDenied,
+        "invalid_command" => V3ErrorCode::InvalidCommand,
+        "not_found" => V3ErrorCode::NotFound,
+        "conflict" => V3ErrorCode::Conflict,
+        "cancelled" => V3ErrorCode::Cancelled,
+        "deadline_exceeded" => V3ErrorCode::DeadlineExceeded,
+        "budget_exceeded" => V3ErrorCode::BudgetExceeded,
+        _ => V3ErrorCode::Internal,
     }
 }
 
@@ -365,7 +465,7 @@ mod tests {
             "large",
             "x".repeat(2_048),
         );
-        unix::write_response(&mut writer, response, 512).unwrap();
+        unix::write_wire_response(&mut writer, unix::WireResponse::Legacy(response), 512).unwrap();
         let response = read_response(&mut reader);
         assert_eq!(response.version, CURRENT_PROTOCOL_VERSION);
         assert_error(&response, "response_too_large");

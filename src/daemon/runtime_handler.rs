@@ -1,26 +1,31 @@
-//! Protocol-v2 adapter over the durable runtime and fixed delegated executor.
+//! Protocol-v2 runtime plus the first deny-by-default protocol-v3 authority.
 
 use std::sync::Arc;
+
+use abi_agent_runtime::RunBudget;
 
 use crate::app_core::{
     APP_PROTOCOL_V1, APP_PROTOCOL_VERSION, AppCommand, AppContext, AppEvent, AppService,
     BackendSelection, RunMode, RunRouteCapability, RunSubmission, RunSubmissionDisposition,
+    V3Command, V3Event,
 };
 use crate::runtime::{
-    DelegatedExecutor, DelegatedExecutorConfig, ManagerError, RunManager, RuntimeStore, StoreError,
-    SubmitDisposition, SystemClock,
+    FixedProviderKind, FixedRecipeProvider, ManagerError, ModelProviderExecutor, ProviderRoute,
+    RunManager, RuntimeStore, StoreError, SubmitDisposition, SystemClock,
 };
 
 use super::runtime_config::{RuntimeConfigError, RuntimeDaemonConfig, open_private_store};
+use super::runtime_v3::V3RuntimeAuthority;
 use super::server::{DaemonHandler, HandlerFailure};
 
-/// Authenticated protocol-v2 lifecycle handler.
+/// Authenticated v1/v2 lifecycle plus narrowly scoped v3 model authority.
 pub struct RuntimeHandler {
     readonly_v1: AppService,
     runtime_v2: AppService,
     store: Arc<RuntimeStore>,
-    manager: RunManager<DelegatedExecutor, SystemClock>,
+    manager: RunManager<ModelProviderExecutor, SystemClock>,
     routes: Vec<RunRouteCapability>,
+    v3: V3RuntimeAuthority,
 }
 
 impl RuntimeHandler {
@@ -35,29 +40,62 @@ impl RuntimeHandler {
         {
             let parts = config.parts();
             let store = Arc::new(open_private_store(&parts.state_root)?);
-            let mut delegated = DelegatedExecutorConfig::new(&parts.workspace)
-                .map_err(|_| RuntimeConfigError::Workspace)?
-                .with_limits(parts.delegated)
-                .map_err(|_| RuntimeConfigError::DelegatedLimits)?;
-            let mut routes = Vec::with_capacity(2);
+            let mut provider_routes = Vec::with_capacity(2);
             if let Some(executable) = parts.abi_binary {
-                delegated = delegated
-                    .bind_abi_local(executable)
-                    .map_err(|_| RuntimeConfigError::ProviderBinding)?;
-                routes.push(route(BackendSelection::Abi));
+                let provider = FixedRecipeProvider::new(
+                    FixedProviderKind::AbiLocal,
+                    executable,
+                    &parts.workspace,
+                    "local",
+                    parts.delegated,
+                )
+                .map_err(|_| RuntimeConfigError::ProviderBinding)?;
+                provider_routes.push(
+                    ProviderRoute::new(
+                        BackendSelection::Abi,
+                        "local",
+                        Arc::new(provider),
+                        provider_budget(parts.delegated),
+                    )
+                    .map_err(|_| RuntimeConfigError::Routes)?,
+                );
             }
             if let Some(executable) = parts.foundation_models_binary {
-                delegated = delegated
-                    .bind_foundation_models(executable)
-                    .map_err(|_| RuntimeConfigError::ProviderBinding)?;
-                routes.push(route(BackendSelection::FoundationModels));
+                let provider = FixedRecipeProvider::new(
+                    FixedProviderKind::FoundationModels,
+                    executable,
+                    &parts.workspace,
+                    "system",
+                    parts.delegated,
+                )
+                .map_err(|_| RuntimeConfigError::ProviderBinding)?;
+                provider_routes.push(
+                    ProviderRoute::new(
+                        BackendSelection::FoundationModels,
+                        "system",
+                        Arc::new(provider),
+                        provider_budget(parts.delegated),
+                    )
+                    .map_err(|_| RuntimeConfigError::Routes)?,
+                );
             }
-            routes.sort_by_key(|route| route.backend);
+            let executor = if provider_routes.is_empty() {
+                ModelProviderExecutor::deny_all()
+            } else {
+                ModelProviderExecutor::new(provider_routes)
+                    .map_err(|_| RuntimeConfigError::Routes)?
+            };
+            let routes = executor
+                .routes()
+                .map(|provider| route(provider.backend()))
+                .collect::<Vec<_>>();
+            let v3 = V3RuntimeAuthority::from_provider_routes(executor.routes())
+                .map_err(|_| RuntimeConfigError::Routes)?;
             let context =
                 AppContext::runtime_v2(routes.clone()).map_err(|_| RuntimeConfigError::Routes)?;
             let manager = RunManager::start(
                 Arc::clone(&store),
-                Arc::new(DelegatedExecutor::new(delegated)),
+                Arc::new(executor),
                 Arc::new(SystemClock),
                 parts.manager,
             );
@@ -67,6 +105,7 @@ impl RuntimeHandler {
                 store,
                 manager,
                 routes,
+                v3,
             })
         }
     }
@@ -159,6 +198,29 @@ impl DaemonHandler for RuntimeHandler {
             )),
         }
     }
+
+    fn supports_v3(&self) -> bool {
+        true
+    }
+
+    fn authorizes_v3(
+        &self,
+        grants: &crate::app_core::V3CapabilitySet,
+        command: &V3Command,
+    ) -> bool {
+        self.v3.authorizes(grants, command)
+    }
+
+    fn handle_v3(&self, command: V3Command) -> Result<V3Event, HandlerFailure> {
+        self.v3.handle(command)
+    }
+}
+
+fn provider_budget(limits: crate::runtime::DelegatedLimits) -> RunBudget {
+    RunBudget::unlimited()
+        .with_max_events(8)
+        .with_max_output_tokens(1)
+        .with_max_duration(limits.timeout)
 }
 
 fn route(backend: BackendSelection) -> RunRouteCapability {
@@ -220,7 +282,8 @@ mod tests {
     use super::*;
     use crate::app_core::{
         AppCapability, IdempotencyKey, RunEventsQuery, RunQuery, RunRequest, RunState,
-        RuntimeStatus,
+        RuntimeStatus, V3Capability, V3CapabilitySet, V3Command, V3ErrorCode, V3Event,
+        V3GrantRequest, V3PageQuery,
     };
     use std::io::{Read as _, Write as _};
     use std::os::unix::fs::{FileTypeExt as _, PermissionsExt as _};
@@ -418,14 +481,14 @@ mod tests {
     }
 
     #[test]
-    fn authenticated_unix_server_accepts_v1_reads_and_v2_run_lifecycle() {
+    fn authenticated_unix_server_accepts_v1_v2_and_separate_v3_envelopes() {
         const BEARER: &str = "runtime-handler-wire-bearer-000001";
 
         let root = scratch("wire");
         let workspace = root.join("workspace");
         std::fs::create_dir(&workspace).unwrap();
         let executable = root.join("abi-provider");
-        write_script(&executable, "exit 0");
+        write_script(&executable, "printf 'ok'");
         let handler = RuntimeHandler::start(
             RuntimeDaemonConfig::new(&root, &workspace).bind_abi_local(&executable),
         )
@@ -439,6 +502,46 @@ mod tests {
             crate::daemon::DaemonServer::new(daemon_config, handler).serve(server_shutdown)
         });
         wait_for_socket(&socket);
+
+        let unauthorized = wire_v3_request(
+            &socket,
+            crate::daemon::V3RequestEnvelope {
+                version: crate::app_core::APP_PROTOCOL_V3,
+                schema_version: crate::app_core::APP_SCHEMA_V3,
+                request_id: "v3-unauthorized".into(),
+                bearer: "wrong-bearer-00000000000000000000".into(),
+                grants: V3CapabilitySet::deny_all(),
+                command: V3Command::Negotiate(V3GrantRequest {
+                    supported_versions: vec![3],
+                    requested: V3CapabilitySet::deny_all(),
+                }),
+            },
+        );
+        assert!(matches!(
+            unauthorized.payload,
+            crate::daemon::V3ResponsePayload::Error { error }
+                if error.code == V3ErrorCode::Unauthorized
+        ));
+
+        let wrong_schema = wire_v3_request(
+            &socket,
+            crate::daemon::V3RequestEnvelope {
+                version: crate::app_core::APP_PROTOCOL_V3,
+                schema_version: crate::app_core::APP_SCHEMA_V3 + 1,
+                request_id: "v3-wrong-schema".into(),
+                bearer: BEARER.into(),
+                grants: V3CapabilitySet::deny_all(),
+                command: V3Command::Negotiate(V3GrantRequest {
+                    supported_versions: vec![3],
+                    requested: V3CapabilitySet::deny_all(),
+                }),
+            },
+        );
+        assert!(matches!(
+            wrong_schema.payload,
+            crate::daemon::V3ResponsePayload::Error { error }
+                if error.code == V3ErrorCode::UnsupportedVersion
+        ));
 
         let v1 = wire_request(
             &socket,
@@ -526,6 +629,84 @@ mod tests {
         ));
         assert!(!rendered.contains("wire private prompt"));
 
+        let negotiated = wire_v3_request(
+            &socket,
+            crate::daemon::V3RequestEnvelope {
+                version: crate::app_core::APP_PROTOCOL_V3,
+                schema_version: crate::app_core::APP_SCHEMA_V3,
+                request_id: "v3-negotiate".into(),
+                bearer: BEARER.into(),
+                grants: V3CapabilitySet::deny_all(),
+                command: V3Command::Negotiate(V3GrantRequest {
+                    supported_versions: vec![3],
+                    requested: V3CapabilitySet::from_sorted(vec![V3Capability::ReadModels])
+                        .unwrap(),
+                }),
+            },
+        );
+        assert!(matches!(
+            negotiated.payload,
+            crate::daemon::V3ResponsePayload::Ok {
+                event: V3Event::Negotiated(_)
+            }
+        ));
+
+        let models = wire_v3_request(
+            &socket,
+            crate::daemon::V3RequestEnvelope {
+                version: crate::app_core::APP_PROTOCOL_V3,
+                schema_version: crate::app_core::APP_SCHEMA_V3,
+                request_id: "v3-models".into(),
+                bearer: BEARER.into(),
+                grants: V3CapabilitySet::from_sorted(vec![V3Capability::ReadModels]).unwrap(),
+                command: V3Command::ListModels(V3PageQuery::default()),
+            },
+        );
+        assert!(matches!(
+            models.payload,
+            crate::daemon::V3ResponsePayload::Ok {
+                event: V3Event::Models(_)
+            }
+        ));
+
+        let missing_grant = wire_v3_request(
+            &socket,
+            crate::daemon::V3RequestEnvelope {
+                version: crate::app_core::APP_PROTOCOL_V3,
+                schema_version: crate::app_core::APP_SCHEMA_V3,
+                request_id: "v3-missing-grant".into(),
+                bearer: BEARER.into(),
+                grants: V3CapabilitySet::deny_all(),
+                command: V3Command::ListModels(V3PageQuery::default()),
+            },
+        );
+        assert!(matches!(
+            missing_grant.payload,
+            crate::daemon::V3ResponsePayload::Error { error }
+                if error.code == V3ErrorCode::CapabilityDenied
+        ));
+
+        let denied = wire_v3_request(
+            &socket,
+            crate::daemon::V3RequestEnvelope {
+                version: crate::app_core::APP_PROTOCOL_V3,
+                schema_version: crate::app_core::APP_SCHEMA_V3,
+                request_id: "v3-denied".into(),
+                bearer: BEARER.into(),
+                grants: V3CapabilitySet::from_sorted(vec![
+                    V3Capability::ReadModels,
+                    V3Capability::PollEvents,
+                ])
+                .unwrap(),
+                command: V3Command::ListModels(V3PageQuery::default()),
+            },
+        );
+        assert!(matches!(
+            denied.payload,
+            crate::daemon::V3ResponsePayload::Error { error }
+                if error.code == V3ErrorCode::CapabilityDenied
+        ));
+
         shutdown.request();
         server.join().unwrap().unwrap();
         std::fs::remove_dir_all(root).unwrap();
@@ -568,11 +749,26 @@ mod tests {
         socket: &Path,
         request: crate::daemon::RequestEnvelope,
     ) -> crate::daemon::ResponseEnvelope {
+        wire_exchange(socket, &request)
+    }
+
+    fn wire_v3_request(
+        socket: &Path,
+        request: crate::daemon::V3RequestEnvelope,
+    ) -> crate::daemon::V3ResponseEnvelope {
+        wire_exchange(socket, &request)
+    }
+
+    fn wire_exchange<T, R>(socket: &Path, request: &T) -> R
+    where
+        T: serde::Serialize,
+        R: serde::de::DeserializeOwned,
+    {
         let mut stream = UnixStream::connect(socket).unwrap();
         stream
             .set_read_timeout(Some(Duration::from_secs(1)))
             .unwrap();
-        let bytes = serde_json::to_vec(&request).unwrap();
+        let bytes = serde_json::to_vec(request).unwrap();
         let mut frame = Vec::with_capacity(4 + bytes.len());
         frame.extend_from_slice(&(bytes.len() as u32).to_be_bytes());
         frame.extend_from_slice(&bytes);
