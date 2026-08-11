@@ -45,7 +45,8 @@ use abi_agent_host::{ToolExecutionContext, ToolExecutionError, ToolExecutor, Too
 use abi_agent_runtime::{ToolCall, ToolEffect, ToolSpec};
 
 use crate::app_core::{
-    AppCommand, AppEvent, AppService, ClaimStatus, ClaimsQuery, V3ToolDescriptor, ValidationError,
+    AppCommand, AppEvent, AppService, ClaimStatus, ClaimsQuery, V3ToolDescriptor, V3ToolEffect,
+    ValidationError,
 };
 
 /// The only effect class this registry can express.
@@ -152,6 +153,7 @@ pub(crate) fn v3_descriptors() -> Result<Vec<V3ToolDescriptor>, ValidationError>
             let descriptor = V3ToolDescriptor {
                 tool_id: tool.name.to_owned(),
                 description: tool.description.to_owned(),
+                effect: V3ToolEffect::ReadOnly,
                 input_schema: (tool.schema)(),
             };
             descriptor.validate()?;

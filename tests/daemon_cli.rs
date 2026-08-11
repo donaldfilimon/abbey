@@ -4,7 +4,8 @@
 
 use abbey::app_core::{
     AppEvent, ClaimStatus, Edition, RuntimeState, V3Capability, V3CapabilitySet, V3ErrorCode,
-    V3Event, V3OperationState, V3PageQuery, V3ResourceQuery, V3ToolCall,
+    V3Event, V3OperationState, V3PageQuery, V3ResourceQuery, V3ToolCall, V3ToolEffect,
+    V3ToolInvocation,
 };
 use abbey::daemon::{BearerSecret, ClientError, DaemonClient, DaemonConfig};
 use abbey::edition;
@@ -300,13 +301,29 @@ fn protocol_v3_safe_tool_inventory_and_audited_status_invocation_round_trip() {
         .list_tools(V3PageQuery::default())
         .expect("read canonical safe tool inventory");
     assert_eq!(page.after, 0);
-    assert_eq!(page.through, 3);
+    let expected_tool_ids = if EXPECTED_EDITION == Edition::Standard {
+        vec![
+            "abbey_status",
+            "abbey_claims",
+            "abbey_platform",
+            "abbey_memory_mark_obsolete",
+        ]
+    } else {
+        vec!["abbey_status", "abbey_claims", "abbey_platform"]
+    };
+    assert_eq!(page.through, expected_tool_ids.len() as u64);
     assert_eq!(
         page.tools
             .iter()
             .map(|tool| tool.tool_id.as_str())
             .collect::<Vec<_>>(),
-        vec!["abbey_status", "abbey_claims", "abbey_platform"]
+        expected_tool_ids
+    );
+    assert!(
+        page.tools
+            .iter()
+            .take(3)
+            .all(|tool| tool.effect == V3ToolEffect::ReadOnly)
     );
     assert!(page.tools.iter().all(|tool| tool.input_schema.is_object()));
     assert!(page.tools.iter().all(|tool| {
@@ -318,7 +335,7 @@ fn protocol_v3_safe_tool_inventory_and_audited_status_invocation_round_trip() {
     let second = session
         .list_tools(V3PageQuery {
             after: 1,
-            through: Some(3),
+            through: Some(page.through),
             limit: 1,
         })
         .expect("read one fixed-watermark tool page");
@@ -355,6 +372,36 @@ fn protocol_v3_safe_tool_inventory_and_audited_status_invocation_round_trip() {
         }
     ));
 
+    if EXPECTED_EDITION == Edition::Standard {
+        let mut put = harness.command(&[
+            "memory",
+            "put",
+            "pending approval must not mutate this record",
+        ]);
+        let put = put.output().expect("seed one memory record");
+        assert_success(&put, "memory put before pending tool request");
+        let record_id = String::from_utf8(put.stdout).unwrap().trim().to_owned();
+        let call = V3ToolCall {
+            tool_id: "abbey_memory_mark_obsolete".into(),
+            call_id: "real-pending-call-1".into(),
+            input: serde_json::json!({"record_id": record_id}),
+        };
+        let expected_digest = call.approval_digest().unwrap();
+        let V3ToolInvocation::ApprovalRequired(status) = session
+            .request_tool(call)
+            .expect("persist one exact pending approval")
+        else {
+            panic!("mutating safe tool must not execute before approval");
+        };
+        assert_eq!(status.call_digest, expected_digest);
+
+        let mut get = harness.command(&["memory", "get", &record_id]);
+        let get = get.output().expect("read memory after pending request");
+        assert_success(&get, "memory get after pending tool request");
+        let memory: serde_json::Value = serde_json::from_slice(&get.stdout).unwrap();
+        assert_eq!(memory["obsolete"], false, "pending must not execute");
+    }
+
     let database = harness.root.join("daemon/runtime.sqlite");
     let connection = rusqlite::Connection::open(database).expect("open daemon audit database");
     let audit = connection
@@ -383,6 +430,32 @@ fn protocol_v3_safe_tool_inventory_and_audited_status_invocation_round_trip() {
             && !metadata.contains("protocol_version")
             && !metadata.contains("capabilities")
     }));
+    if EXPECTED_EDITION == Edition::Standard {
+        let approval = connection
+            .query_row(
+                "SELECT tool_id, call_digest, state FROM tool_approvals WHERE call_id=?1",
+                ["real-pending-call-1"],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                    ))
+                },
+            )
+            .unwrap();
+        assert_eq!(approval.0, "abbey_memory_mark_obsolete");
+        assert_eq!(approval.1.len(), 64);
+        assert_eq!(approval.2, "pending");
+        let events: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM tool_approval_events WHERE call_id=?1 AND state='pending'",
+                ["real-pending-call-1"],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(events, 1);
+    }
 }
 
 /// Real-binary proof for the route audit, including that the human and JSON

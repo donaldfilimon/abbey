@@ -38,4 +38,7 @@ pub use v3::{
     V3ModelAction, V3OperationState, V3OperationStatus, V3PageQuery, V3ResourceQuery,
     V3SearchRequest, V3StableClaim, V3TrainingStart,
 };
-pub use v3_tool::{V3ToolCall, V3ToolDecision, V3ToolDescriptor, V3ToolPage, V3ToolResult};
+pub use v3_tool::{
+    V3ToolApprovalState, V3ToolApprovalStatus, V3ToolCall, V3ToolDecision, V3ToolDescriptor,
+    V3ToolEffect, V3ToolInvocation, V3ToolPage, V3ToolResult,
+};

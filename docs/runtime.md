@@ -220,22 +220,26 @@ version list is now `[1, 2, 3]`. Version 3 uses a separate envelope carrying sch
 bearer, canonical echoed grants, and `V3Command`; it cannot be decoded as a legacy command.
 
 The served authority is deliberately smaller than the contract catalog. Negotiation may
-always grant `list_tools` and `invoke_tools`; `ListTools` returns bounded fixed-watermark descriptors projected
-from the same `SAFE_TOOLS` registry used by MCP. That registry's effect type can express
-only `ReadOnly`, and the projection carries description and input schema but no handler or
-invocation authority. At daemon startup those canonical schemas are compiled separately;
+always grant `list_tools` and `invoke_tools`; `ListTools` returns bounded fixed-watermark
+descriptors. The first three are projected from the same structurally read-only `SAFE_TOOLS`
+registry used by MCP. The default safe daemon appends one local-only mutating descriptor,
+`abbey_memory_mark_obsolete`; the personal build and MCP do not. At daemon startup those
+schemas are compiled separately;
 `InvokeTool` validates a registered tool and its bounded object input before ABI's
 `EffectScopedPolicy` authorizes it, persists digest-only authorization before an ABI
 `ToolExecutor` adapter runs the handler, and returns terminal correlated JSON bounded to
 32 KiB. A second audit row records only result metadata and digests. Call IDs remain
 single-use after daemon reopen because the authority recovers reservations from that audit.
 The one-second deadline is cooperative and rejects late completion; it cannot pre-empt a
-synchronous handler mid-call. Runtime schema v5 additionally provides a dormant,
-transactional approval ledger: one lowercase call digest, bounded expiry, single-use
+synchronous handler mid-call. For the local mutating descriptor, schema validation and
+ABI policy must produce `RequireConfirmation`; the daemon then computes a domain-separated
+digest over call ID, tool ID, and canonical JSON input, stores one bounded pending record,
+and returns a typed approval status. It stores no raw input and performs no memory mutation.
+Runtime schema v5 provides the transactional approval ledger: one lowercase call digest, bounded expiry, single-use
 decision/cancellation identifiers, atomic consumption, durable terminal states, and
-append-only transition evidence. That store is deliberately not connected to v3 dispatch,
-so `decide_tool_approvals` and `cancel_tools` remain denied and no mutating tool can create
-a pending request yet. Negotiation may also always grant `read_claims_by_id`; `ClaimById`
+append-only transition evidence. Only pending creation is connected to v3 dispatch:
+`decide_tool_approvals` and `cancel_tools` remain denied, and approved calls cannot execute
+or consume approval yet. Negotiation may also always grant `read_claims_by_id`; `ClaimById`
 projects one exact stable-ID match from Abbey's canonical claim registry and returns
 `not_found` for a missing or non-exact ID. There is no fuzzy claim search. When daemon
 startup binds an ABI-local fixed provider,
@@ -244,9 +248,10 @@ fixed-watermark inventory derived from the same startup-owned `ModelProvider` ob
 by protocol-v2 execution. Without that provider, model authority remains denied while the
 canonical claim read remains available. A non-negotiation request missing its exact grant
 is rejected before dispatch; echoing an unsupported grant cannot manufacture daemon
-authority. There is no fuzzy claim search or served v3 inference command, download, load/unload, approval,
-cancellation, mutating or personal-shell tool, memory, training, worker, polling, CLI invocation
-presentation, desktop, remote, or Windows authority yet.
+authority. There is no fuzzy claim search or served v3 inference command, download,
+load/unload, approval decision, cancellation, approved-call execution, personal-shell tool,
+daemon-owned memory execution, training, worker, polling, CLI invocation presentation,
+desktop, remote, or Windows authority yet.
 
 `DaemonClient::negotiate_v3` sends one strict negotiation request and returns a typed
 `V3DaemonSession`. The session keeps the validated daemon-returned grants private; its tool,

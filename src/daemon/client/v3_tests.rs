@@ -3,8 +3,8 @@
 
 use super::*;
 use crate::app_core::{
-    ClaimStatus, V3OperationState, V3ResourceQuery, V3StableClaim, V3ToolCall, V3ToolDescriptor,
-    V3ToolPage, V3ToolResult,
+    ClaimStatus, V3OperationState, V3ResourceQuery, V3StableClaim, V3ToolApprovalState,
+    V3ToolApprovalStatus, V3ToolCall, V3ToolDescriptor, V3ToolInvocation, V3ToolPage, V3ToolResult,
 };
 
 #[test]
@@ -290,6 +290,7 @@ fn v3_tool_inventory_echoes_grants_and_correlates_the_fixed_page() {
                     tools: vec![V3ToolDescriptor {
                         tool_id: "abbey_claims".into(),
                         description: "Read bounded canonical claims".into(),
+                        effect: crate::app_core::V3ToolEffect::ReadOnly,
                         input_schema: serde_json::json!({
                             "type": "object",
                             "additionalProperties": false
@@ -428,6 +429,89 @@ fn v3_safe_tool_invocation_is_single_shot_and_correlates_the_terminal_result() {
     assert_eq!(result.output["edition"], "standard");
     assert!(matches!(
         session.invoke_tool(call),
+        Err(ClientError::InvalidV3Response)
+    ));
+    thread.join().unwrap();
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn v3_pending_tool_request_is_exactly_correlated_and_never_replayed() {
+    let root = scratch_dir("v3-tool-pending");
+    let config = test_config(root.join("abbeyd.sock"));
+    let listener = UnixListener::bind(&config.socket_path).unwrap();
+    let thread = thread::spawn(move || {
+        let (mut negotiation_stream, _) = listener.accept().unwrap();
+        let negotiation_request = read_v3_request(&mut negotiation_stream);
+        let granted = V3CapabilitySet::from_sorted(vec![V3Capability::InvokeTools]).unwrap();
+        negotiation_stream
+            .write_all(&encoded_v3_response(V3ResponseEnvelope::ok(
+                negotiation_request.request_id,
+                V3Event::Negotiated(V3GrantNegotiation {
+                    protocol_version: crate::app_core::APP_PROTOCOL_V3,
+                    schema_version: crate::app_core::APP_SCHEMA_V3,
+                    granted: granted.clone(),
+                }),
+            )))
+            .unwrap();
+
+        for (expected_call_id, exact_digest) in [
+            ("pending-client-1", true),
+            ("pending-client-2", true),
+            ("pending-client-3", false),
+        ] {
+            let (mut stream, _) = listener.accept().unwrap();
+            let request = read_v3_request(&mut stream);
+            assert_eq!(request.grants, granted);
+            let V3Command::InvokeTool(call) = request.command else {
+                panic!("expected pending tool request");
+            };
+            assert_eq!(call.call_id, expected_call_id);
+            let digest = if exact_digest {
+                call.approval_digest().unwrap()
+            } else {
+                "0".repeat(64)
+            };
+            stream
+                .write_all(&encoded_v3_response(V3ResponseEnvelope::ok(
+                    request.request_id,
+                    V3Event::ToolApprovalStatus(V3ToolApprovalStatus {
+                        tool_id: call.tool_id,
+                        call_id: call.call_id,
+                        call_digest: digest,
+                        state: V3ToolApprovalState::Pending,
+                        expires_at_ms: 2_000,
+                    }),
+                )))
+                .unwrap();
+        }
+    });
+
+    let requested = V3CapabilitySet::from_sorted(vec![V3Capability::InvokeTools]).unwrap();
+    let session = DaemonClient::new(config).negotiate_v3(requested).unwrap();
+    let call = |call_id: &str| V3ToolCall {
+        tool_id: "abbey_memory_mark_obsolete".into(),
+        call_id: call_id.into(),
+        input: serde_json::json!({"record_id": "memory:one"}),
+    };
+    let first = call("pending-client-1");
+    let V3ToolInvocation::ApprovalRequired(status) = session.request_tool(first.clone()).unwrap()
+    else {
+        panic!("expected approval-required outcome");
+    };
+    assert_eq!(status.call_digest, first.approval_digest().unwrap());
+
+    let second = call("pending-client-2");
+    assert!(matches!(
+        session.invoke_tool(second.clone()),
+        Err(ClientError::V3ToolApprovalRequired {
+            call_id,
+            call_digest,
+            expires_at_ms: 2_000,
+        }) if call_id == second.call_id && call_digest == second.approval_digest().unwrap()
+    ));
+    assert!(matches!(
+        session.request_tool(call("pending-client-3")),
         Err(ClientError::InvalidV3Response)
     ));
     thread.join().unwrap();
