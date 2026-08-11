@@ -1,41 +1,41 @@
 //! Minimal daemon-owned authority for the first served protocol-v3 slice.
 //!
-//! Only the canonical safe read-only tool inventory and invocation,
-//! startup-bound ABI-local model inventory, and exact stable-ID reads from
-//! Abbey's canonical claim registry are representable here. Approval, memory,
+//! Only bounded safe tool inventory/invocation, one default-edition pending
+//! mutation, startup-bound ABI-local model inventory, and exact stable-ID
+//! claim reads are representable here. Approval decisions, execution, memory,
 //! training, worker, cancellation, and polling grants remain absent.
 
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use abi_agent_host::{ToolExecutionContext, ToolExecutor};
 use abi_agent_runtime::{
-    CancellationToken, EffectScopedPolicy, ExecutionPolicy, ToolCall, ToolSpec, ToolStatus,
+    CancellationToken, EffectScopedPolicy, ExecutionPolicy, PolicyDecision, ToolCall, ToolStatus,
 };
-use jsonschema::Validator;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
 use crate::app_core::{
     APP_PROTOCOL_V3, APP_SCHEMA_V3, BackendSelection, ClaimStatus, V3Capability, V3CapabilitySet,
     V3Command, V3EntityPage, V3EntityRecord, V3Event, V3GrantNegotiation, V3OperationState,
-    V3StableClaim, V3ToolDescriptor, V3ToolPage, V3ToolResult,
+    V3StableClaim, V3ToolApprovalState, V3ToolApprovalStatus, V3ToolPage, V3ToolResult,
 };
-use crate::runtime::{AuditMetadata, NewAuditEvent, ProviderRoute, RuntimeStore};
+use crate::runtime::{
+    AuditMetadata, MAX_TOOL_APPROVAL_TTL_MS, NewAuditEvent, NewToolApproval, ProviderRoute,
+    RuntimeStore, StoreError,
+};
 
 use super::server::HandlerFailure;
 
-struct BoundSafeTool {
-    descriptor: V3ToolDescriptor,
-    spec: ToolSpec,
-    validator: Validator,
-}
+mod tool_catalog;
+
+use tool_catalog::{BoundTool, ToolRoute};
 
 /// Frozen protocol-v3 grants plus presentation-safe tool, model, and claim authority.
 pub(super) struct V3RuntimeAuthority {
     grants: V3CapabilitySet,
-    tools: Vec<BoundSafeTool>,
+    tools: Vec<BoundTool>,
     models: Vec<V3EntityRecord>,
     store: Arc<RuntimeStore>,
     used_tool_call_ids: Mutex<HashSet<String>>,
@@ -57,27 +57,7 @@ impl V3RuntimeAuthority {
                 state: V3OperationState::Available,
             })
             .collect::<Vec<_>>();
-        let descriptors = crate::mcp_host::v3_descriptors().map_err(|_| internal_failure())?;
-        let specs = crate::mcp_host::v3_specs().map_err(|_| internal_failure())?;
-        if descriptors.len() != specs.len() {
-            return Err(internal_failure());
-        }
-        let tools = descriptors
-            .into_iter()
-            .zip(specs)
-            .map(|(descriptor, spec)| {
-                if descriptor.tool_id != spec.name {
-                    return Err(internal_failure());
-                }
-                let validator = jsonschema::validator_for(&descriptor.input_schema)
-                    .map_err(|_| internal_failure())?;
-                Ok(BoundSafeTool {
-                    descriptor,
-                    spec,
-                    validator,
-                })
-            })
-            .collect::<Result<Vec<_>, HandlerFailure>>()?;
+        let tools = tool_catalog::build().map_err(|()| internal_failure())?;
         let used_tool_call_ids = store
             .audit_events_for_run(None)
             .map_err(|_| internal_failure())?
@@ -198,6 +178,7 @@ impl V3RuntimeAuthority {
     }
 
     fn invoke_tool(&self, call: crate::app_core::V3ToolCall) -> Result<V3Event, HandlerFailure> {
+        call.validate().map_err(|_| invalid_command_failure())?;
         let tool = self
             .tools
             .iter()
@@ -222,6 +203,42 @@ impl V3RuntimeAuthority {
         let input_digest = digest(abi_call.input.as_bytes());
         let policy = EffectScopedPolicy;
         let decision = policy.authorize(&abi_call, Some(&tool.spec));
+        if tool.route == ToolRoute::ApprovalRequired {
+            if !matches!(decision, PolicyDecision::RequireConfirmation { .. }) {
+                return Err(capability_denied_failure());
+            }
+            let now = now_ms()?;
+            let expires_at_ms = now
+                .checked_add(MAX_TOOL_APPROVAL_TTL_MS)
+                .ok_or_else(internal_failure)?;
+            let call_digest = call
+                .approval_digest()
+                .map_err(|_| invalid_command_failure())?;
+            let request = NewToolApproval {
+                call_id: call.call_id.clone(),
+                tool_id: call.tool_id.clone(),
+                call_digest: call_digest.clone(),
+                created_at_ms: now,
+                expires_at_ms,
+            };
+            if let Err(error) = self.store.create_tool_approval(request) {
+                if !matches!(error, StoreError::ToolApprovalConflict) {
+                    self.forget_tool_call(&call.call_id);
+                    return Err(internal_failure());
+                }
+                return Err(conflict_failure());
+            }
+            return Ok(V3Event::ToolApprovalStatus(V3ToolApprovalStatus {
+                tool_id: call.tool_id,
+                call_id: call.call_id,
+                call_digest,
+                state: V3ToolApprovalState::Pending,
+                expires_at_ms,
+            }));
+        }
+        if !matches!(decision, PolicyDecision::Allow) {
+            return Err(capability_denied_failure());
+        }
         if self
             .record_tool_audit(
                 "v3_tool_authorization",
@@ -236,10 +253,6 @@ impl V3RuntimeAuthority {
             self.forget_tool_call(&call.call_id);
             return Err(internal_failure());
         }
-        if !decision.is_allowed() {
-            return Err(capability_denied_failure());
-        }
-
         let cancellation = CancellationToken::new();
         let deadline = Instant::now() + Duration::from_secs(1);
         let output = match crate::mcp_host::V3SafeToolExecutor.execute(
@@ -370,6 +383,13 @@ fn digest(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
 
+fn now_ms() -> Result<u64, HandlerFailure> {
+    let elapsed = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| internal_failure())?;
+    u64::try_from(elapsed.as_millis()).map_err(|_| internal_failure())
+}
+
 const fn invalid_command_failure() -> HandlerFailure {
     HandlerFailure::new("invalid_command", "command payload is invalid")
 }
@@ -416,269 +436,4 @@ const fn claim_status(status: crate::claims::Status) -> ClaimStatus {
 }
 
 #[cfg(test)]
-mod tests {
-    use std::sync::Arc;
-    use std::time::Duration;
-
-    use abi_agent_runtime::{EchoProvider, RunBudget};
-
-    use super::*;
-    use crate::app_core::{
-        APP_PROTOCOL_V1, V3GrantRequest, V3PageQuery, V3ResourceQuery, V3ToolCall,
-    };
-
-    fn store() -> Arc<RuntimeStore> {
-        Arc::new(RuntimeStore::open(std::path::Path::new(":memory:")).unwrap())
-    }
-
-    fn abi_route() -> ProviderRoute {
-        ProviderRoute::new(
-            BackendSelection::Abi,
-            "local",
-            Arc::new(EchoProvider::new()),
-            RunBudget::unlimited()
-                .with_max_events(8)
-                .with_max_output_tokens(8)
-                .with_max_duration(Duration::from_secs(1)),
-        )
-        .unwrap()
-    }
-
-    #[test]
-    fn negotiates_only_startup_bound_abi_model_reads() {
-        let route = abi_route();
-        let authority = V3RuntimeAuthority::from_provider_routes([&route], store()).unwrap();
-        let requested =
-            V3CapabilitySet::from_sorted(vec![V3Capability::ReadModels, V3Capability::PollEvents])
-                .unwrap();
-        let V3Event::Negotiated(negotiated) = authority
-            .handle(V3Command::Negotiate(V3GrantRequest {
-                supported_versions: vec![1, 2, 3],
-                requested,
-            }))
-            .unwrap()
-        else {
-            panic!("expected v3 negotiation");
-        };
-        assert_eq!(negotiated.granted.as_slice(), &[V3Capability::ReadModels]);
-
-        let V3Event::Models(models) = authority
-            .handle(V3Command::ListModels(V3PageQuery::default()))
-            .unwrap()
-        else {
-            panic!("expected model inventory");
-        };
-        assert_eq!(models.after, 0);
-        assert_eq!(models.through, 1);
-        assert_eq!(models.records.len(), 1);
-        assert_eq!(models.records[0].id, "abi-local:local");
-        assert_eq!(
-            authority
-                .handle(V3Command::ListModels(V3PageQuery {
-                    after: 0,
-                    through: Some(2),
-                    limit: 1,
-                }))
-                .unwrap_err()
-                .code(),
-            "invalid_command"
-        );
-        assert_eq!(
-            authority
-                .handle(V3Command::PollEvents(V3PageQuery::default()))
-                .unwrap_err()
-                .code(),
-            "capability_denied"
-        );
-    }
-
-    #[test]
-    fn no_abi_route_still_negotiates_safe_tools_and_canonical_claim_reads() {
-        let store = store();
-        let authority = V3RuntimeAuthority::from_provider_routes([], Arc::clone(&store)).unwrap();
-        let V3Event::Negotiated(negotiated) = authority
-            .handle(V3Command::Negotiate(V3GrantRequest {
-                supported_versions: vec![3],
-                requested: V3CapabilitySet::from_sorted(vec![
-                    V3Capability::ListTools,
-                    V3Capability::InvokeTools,
-                    V3Capability::ReadModels,
-                    V3Capability::ReadClaimsById,
-                ])
-                .unwrap(),
-            }))
-            .unwrap()
-        else {
-            panic!("expected v3 negotiation");
-        };
-        assert_eq!(
-            negotiated.granted.as_slice(),
-            &[
-                V3Capability::ListTools,
-                V3Capability::InvokeTools,
-                V3Capability::ReadClaimsById,
-            ]
-        );
-        let V3Event::Tools(tools) = authority
-            .handle(V3Command::ListTools(V3PageQuery::default()))
-            .unwrap()
-        else {
-            panic!("expected safe tool inventory");
-        };
-        assert_eq!(tools.after, 0);
-        assert_eq!(tools.through, 3);
-        assert_eq!(
-            tools
-                .tools
-                .iter()
-                .map(|tool| tool.tool_id.as_str())
-                .collect::<Vec<_>>(),
-            crate::mcp_host::tool_names()
-        );
-        for (descriptor, safe) in tools.tools.iter().zip(crate::mcp_host::SAFE_TOOLS) {
-            assert_eq!(descriptor.description, safe.description);
-            assert_eq!(descriptor.input_schema, (safe.schema)());
-        }
-        let V3Event::Claim(claim) = authority
-            .handle(V3Command::ClaimById(V3ResourceQuery {
-                resource_id: "backend-cursor-agent".into(),
-            }))
-            .unwrap()
-        else {
-            panic!("expected stable claim");
-        };
-        assert_eq!(claim.id, "backend-cursor-agent");
-        assert_eq!(claim.status, ClaimStatus::Current);
-        assert_eq!(
-            authority
-                .handle(V3Command::ListModels(V3PageQuery::default()))
-                .unwrap_err()
-                .code(),
-            "capability_denied"
-        );
-        assert_eq!(
-            authority
-                .handle(V3Command::ClaimById(V3ResourceQuery {
-                    resource_id: "backend-cursor".into(),
-                }))
-                .unwrap_err()
-                .code(),
-            "not_found"
-        );
-        assert_eq!(
-            authority
-                .handle(V3Command::InvokeTool(V3ToolCall {
-                    tool_id: "abbey_status".into(),
-                    call_id: "schema-retry".into(),
-                    input: serde_json::json!({"unexpected": true}),
-                }))
-                .unwrap_err()
-                .code(),
-            "invalid_command"
-        );
-        assert_eq!(
-            authority
-                .handle(V3Command::InvokeTool(V3ToolCall {
-                    tool_id: "missing_tool".into(),
-                    call_id: "unknown-call".into(),
-                    input: serde_json::json!({}),
-                }))
-                .unwrap_err()
-                .code(),
-            "not_found"
-        );
-        assert!(store.audit_events_for_run(None).unwrap().is_empty());
-        let V3Event::ToolResult(result) = authority
-            .handle(V3Command::InvokeTool(V3ToolCall {
-                tool_id: "abbey_status".into(),
-                call_id: "schema-retry".into(),
-                input: serde_json::json!({}),
-            }))
-            .unwrap()
-        else {
-            panic!("expected bounded tool result");
-        };
-        assert_eq!(result.tool_id, "abbey_status");
-        assert_eq!(result.call_id, "schema-retry");
-        assert_eq!(result.state, V3OperationState::Succeeded);
-        assert_eq!(result.output["protocol_version"], APP_PROTOCOL_V1);
-        let audit = store.audit_events_for_run(None).unwrap();
-        assert_eq!(audit.len(), 2);
-        assert_eq!(audit[0].action, "v3_tool_authorization");
-        assert_eq!(audit[0].outcome, "allow");
-        assert_eq!(audit[0].metadata["policy"], "effect-scoped");
-        assert_eq!(audit[1].action, "v3_tool_execution");
-        assert_eq!(audit[1].outcome, "succeeded");
-        assert!(
-            audit
-                .iter()
-                .all(|event| event.metadata.get("input").is_none())
-        );
-        assert_eq!(
-            authority
-                .handle(V3Command::InvokeTool(V3ToolCall {
-                    tool_id: "abbey_status".into(),
-                    call_id: "schema-retry".into(),
-                    input: serde_json::json!({}),
-                }))
-                .unwrap_err()
-                .code(),
-            "conflict"
-        );
-        assert_eq!(
-            authority
-                .handle(V3Command::ListTools(V3PageQuery {
-                    after: 0,
-                    through: Some(4),
-                    limit: 1,
-                }))
-                .unwrap_err()
-                .code(),
-            "invalid_command"
-        );
-    }
-
-    #[test]
-    fn persisted_authorization_rejects_duplicate_call_ids_after_reopen() {
-        let root = std::env::temp_dir().join(format!(
-            "abbey-v3-tool-reopen-{}-{}",
-            std::process::id(),
-            uuid::Uuid::new_v4().simple()
-        ));
-        std::fs::create_dir(&root).unwrap();
-        let database = root.join("runtime.sqlite");
-        {
-            let store = Arc::new(RuntimeStore::open(&database).unwrap());
-            let authority =
-                V3RuntimeAuthority::from_provider_routes([], Arc::clone(&store)).unwrap();
-            assert!(matches!(
-                authority
-                    .handle(V3Command::InvokeTool(V3ToolCall {
-                        tool_id: "abbey_status".into(),
-                        call_id: "durable-call-1".into(),
-                        input: serde_json::json!({}),
-                    }))
-                    .unwrap(),
-                V3Event::ToolResult(_)
-            ));
-        }
-        {
-            let store = Arc::new(RuntimeStore::open(&database).unwrap());
-            let authority =
-                V3RuntimeAuthority::from_provider_routes([], Arc::clone(&store)).unwrap();
-            assert_eq!(
-                authority
-                    .handle(V3Command::InvokeTool(V3ToolCall {
-                        tool_id: "abbey_status".into(),
-                        call_id: "durable-call-1".into(),
-                        input: serde_json::json!({}),
-                    }))
-                    .unwrap_err()
-                    .code(),
-                "conflict"
-            );
-            assert_eq!(store.audit_events_for_run(None).unwrap().len(), 2);
-        }
-        std::fs::remove_dir_all(root).unwrap();
-    }
-}
+mod tests;

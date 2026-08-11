@@ -78,6 +78,7 @@ fn tool_input_is_object_bounded_and_depth_limited() {
     let descriptor = V3ToolDescriptor {
         tool_id: "abbey.status".into(),
         description: "Read bounded Abbey status".into(),
+        effect: V3ToolEffect::ReadOnly,
         input_schema: serde_json::json!({
             "type": "object",
             "properties": {"verbose": {"type": "boolean"}},
@@ -109,6 +110,56 @@ fn tool_input_is_object_bounded_and_depth_limited() {
     let mut invalid = valid;
     invalid.input = nested;
     assert!(invalid.validate().is_err());
+}
+
+#[test]
+fn tool_approval_digest_and_pending_status_are_exact_and_bounded() {
+    let call = V3ToolCall {
+        tool_id: "abbey_memory_mark_obsolete".into(),
+        call_id: "call-approval-1".into(),
+        input: serde_json::json!({"record_id": "memory-1"}),
+    };
+    assert_eq!(
+        call.approval_digest().unwrap(),
+        "25402b4e238c176d592218280e69729ee6bf942881555d86f40a106cd2fd46c8"
+    );
+    let status = V3ToolApprovalStatus {
+        tool_id: call.tool_id.clone(),
+        call_id: call.call_id.clone(),
+        call_digest: call.approval_digest().unwrap(),
+        state: V3ToolApprovalState::Pending,
+        expires_at_ms: 1_000,
+    };
+    V3Event::ToolApprovalStatus(status.clone())
+        .validate()
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(V3Event::ToolApprovalStatus(status)).unwrap()["payload"]["state"],
+        "pending"
+    );
+
+    let mut changed = call.clone();
+    changed.input = serde_json::json!({"record_id": "memory-2"});
+    assert_ne!(
+        call.approval_digest().unwrap(),
+        changed.approval_digest().unwrap()
+    );
+
+    let mut first = serde_json::Map::new();
+    first.insert("z".into(), serde_json::json!({"b": 2, "a": 1}));
+    first.insert("a".into(), serde_json::json!(0));
+    let mut second = serde_json::Map::new();
+    second.insert("a".into(), serde_json::json!(0));
+    second.insert("z".into(), serde_json::json!({"a": 1, "b": 2}));
+    let ordered = |input| V3ToolCall {
+        tool_id: "abbey.test".into(),
+        call_id: "call-order".into(),
+        input: serde_json::Value::Object(input),
+    };
+    assert_eq!(
+        ordered(first).approval_digest().unwrap(),
+        ordered(second).approval_digest().unwrap()
+    );
 }
 
 #[test]

@@ -209,7 +209,7 @@ fn app_core_daemon_claim_stays_narrower_than_owned_runtime() {
 }
 
 #[test]
-fn protocol_v3_safe_inventory_stays_read_only_bounded_and_exact() {
+fn protocol_v3_safe_inventory_keeps_mcp_read_only_and_pending_authority_narrow() {
     let claim = CLAIMS
         .iter()
         .find(|claim| claim.id == "daemon-protocol-v3-abi-model-inventory")
@@ -219,23 +219,28 @@ fn protocol_v3_safe_inventory_stays_read_only_bounded_and_exact() {
         "read_models",
         "list_tools",
         "canonical SAFE_TOOLS registry",
-        "effect type admits only ReadOnly",
-        "without handlers",
+        "structurally read-only",
+        "MCP remain exactly three read-only tools",
+        "abbey_memory_mark_obsolete",
+        "RequireConfirmation",
+        "domain-separated SHA-256",
+        "stores no raw input",
+        "performs no memory mutation",
+        "request_tool sends once",
+        "typed approval-required error",
+        "DecideToolApprovals and CancelTools remain denied",
         "read_claims_by_id",
-        "exact stable-ID reads",
-        "non-exact claim IDs return not_found",
-        "same startup-owned ABI ModelProvider route",
-        "missing grant",
-        "forged unsupported grant",
+        "exact stable-ID",
+        "same startup-owned ABI ModelProvider route used by protocol-v2 execution",
+        "missing or forged grants",
         "There is no fuzzy claim search",
         "EffectScopedPolicy",
         "digest-only authorization",
         "single-use",
         "32 KiB",
-        "mutating or personal-shell tool",
-        "approval",
+        "no approval, denial, cancellation, consumption, or execution-after-approval path",
     ] {
-        assert!(claim.note.contains(required));
+        assert!(claim.note.contains(required), "missing `{required}`");
     }
 }
 

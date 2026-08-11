@@ -189,6 +189,14 @@ pub enum ClientError {
     InvalidV3Request,
     #[error("abbeyd returned an invalid protocol-v3 response")]
     InvalidV3Response,
+    #[error(
+        "tool call {call_id} requires exact-call approval for digest {call_digest} before {expires_at_ms}"
+    )]
+    V3ToolApprovalRequired {
+        call_id: String,
+        call_digest: String,
+        expires_at_ms: u64,
+    },
     #[error("abbeyd did not grant required protocol-v3 capability {capability:?}")]
     V3CapabilityNotGranted { capability: V3Capability },
     #[error("abbeyd returned {received} for expected protocol-v3 {expected}")]

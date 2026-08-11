@@ -2,7 +2,7 @@
 
 use crate::app_core::{
     V3Capability, V3Command, V3EntityPage, V3Event, V3PageQuery, V3ResourceQuery, V3StableClaim,
-    V3ToolCall, V3ToolPage, V3ToolResult,
+    V3ToolApprovalState, V3ToolCall, V3ToolInvocation, V3ToolPage, V3ToolResult,
 };
 
 use super::{ClientError, V3DaemonSession};
@@ -63,13 +63,13 @@ impl V3DaemonSession {
         Err(ClientError::UnsupportedPlatform)
     }
 
-    /// Invoke one schema-validated safe read-only tool exactly once.
+    /// Request one schema-validated tool exactly once.
     ///
     /// The daemon owns the registry, policy, execution, deadline, result bound,
     /// duplicate-call rejection, and persistent audit. This client only checks
     /// its private negotiated grant and terminal response correlation.
     #[cfg(unix)]
-    pub fn invoke_tool(&self, call: V3ToolCall) -> Result<V3ToolResult, ClientError> {
+    pub fn request_tool(&self, call: V3ToolCall) -> Result<V3ToolInvocation, ClientError> {
         call.validate().map_err(|_| ClientError::InvalidV3Request)?;
         if !self.negotiation.granted.contains(V3Capability::InvokeTools) {
             return Err(ClientError::V3CapabilityNotGranted {
@@ -81,25 +81,60 @@ impl V3DaemonSession {
             self.negotiation.granted.clone(),
             V3Command::InvokeTool(call.clone()),
         )?;
-        let V3Event::ToolResult(result) = event else {
-            return Err(ClientError::UnexpectedV3Event {
-                expected: "tool result",
+        match event {
+            V3Event::ToolResult(result) => {
+                result
+                    .validate()
+                    .map_err(|_| ClientError::InvalidV3Response)?;
+                if result.tool_id != call.tool_id || result.call_id != call.call_id {
+                    return Err(ClientError::InvalidV3Response);
+                }
+                Ok(V3ToolInvocation::Completed(result))
+            }
+            V3Event::ToolApprovalStatus(status) => {
+                status
+                    .validate()
+                    .map_err(|_| ClientError::InvalidV3Response)?;
+                if status.tool_id != call.tool_id
+                    || status.call_id != call.call_id
+                    || status.state != V3ToolApprovalState::Pending
+                    || status.call_digest
+                        != call
+                            .approval_digest()
+                            .map_err(|_| ClientError::InvalidV3Request)?
+                {
+                    return Err(ClientError::InvalidV3Response);
+                }
+                Ok(V3ToolInvocation::ApprovalRequired(status))
+            }
+            event => Err(ClientError::UnexpectedV3Event {
+                expected: "tool result or approval status",
                 received: super::v3_event_name(&event),
-            });
-        };
-        result
-            .validate()
-            .map_err(|_| ClientError::InvalidV3Response)?;
-        if result.tool_id != call.tool_id || result.call_id != call.call_id {
-            return Err(ClientError::InvalidV3Response);
+            }),
         }
-        Ok(result)
     }
 
     /// Windows remains fail-closed until the named-pipe transport lands.
     #[cfg(not(unix))]
-    pub fn invoke_tool(&self, _call: V3ToolCall) -> Result<V3ToolResult, ClientError> {
+    pub fn request_tool(&self, _call: V3ToolCall) -> Result<V3ToolInvocation, ClientError> {
         Err(ClientError::UnsupportedPlatform)
+    }
+
+    /// Invoke a read-only tool, retaining the pre-approval source contract.
+    ///
+    /// Mutating calls are sent once but return an explicit typed error that
+    /// contains only their durable approval correlation and digest.
+    pub fn invoke_tool(&self, call: V3ToolCall) -> Result<V3ToolResult, ClientError> {
+        match self.request_tool(call)? {
+            V3ToolInvocation::Completed(result) => Ok(result),
+            V3ToolInvocation::ApprovalRequired(status) => {
+                Err(ClientError::V3ToolApprovalRequired {
+                    call_id: status.call_id,
+                    call_digest: status.call_digest,
+                    expires_at_ms: status.expires_at_ms,
+                })
+            }
+        }
     }
 
     /// Read one bounded fixed-watermark model inventory page.

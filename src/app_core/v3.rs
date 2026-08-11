@@ -6,7 +6,10 @@
 //! it: the daemon must explicitly negotiate and advertise every grant before a
 //! command can be dispatched.
 
-use super::{ClaimStatus, V3ToolCall, V3ToolDecision, V3ToolPage, V3ToolResult, ValidationError};
+use super::{
+    ClaimStatus, V3ToolApprovalStatus, V3ToolCall, V3ToolDecision, V3ToolPage, V3ToolResult,
+    ValidationError,
+};
 use serde::{Deserialize, Serialize};
 
 /// Additive application protocol reserved for capability-gated authority.
@@ -671,7 +674,7 @@ pub enum V3Event {
     Tools(V3ToolPage),
     ToolResult(V3ToolResult),
     ToolStatus(V3OperationStatus),
-    ToolApprovalStatus(V3OperationStatus),
+    ToolApprovalStatus(V3ToolApprovalStatus),
     MemorySpaces(V3EntityPage),
     MemorySearchResults(V3EntityPage),
     MemoryMetadata(V3EntityRecord),
@@ -703,11 +706,11 @@ impl V3Event {
             | Self::Clusters(value)
             | Self::Workers(value) => value.validate(),
             Self::ToolStatus(value)
-            | Self::ToolApprovalStatus(value)
             | Self::ModelStatus(value)
             | Self::TrainingStatus(value)
             | Self::AdapterStatus(value)
             | Self::JobStatus(value) => value.validate(),
+            Self::ToolApprovalStatus(value) => value.validate(),
             Self::MemoryMetadata(value)
             | Self::TrainingDatasetStatus(value)
             | Self::WorkerHealth(value) => value.validate(),
