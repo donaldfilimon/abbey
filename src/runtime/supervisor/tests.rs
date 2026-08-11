@@ -26,8 +26,8 @@ const TEARDOWN_GRACE: Duration = Duration::from_secs(1);
 /// Upper bound for "the supervisor returned instead of waiting out a child's
 /// own 30-second sleep". It must clear the fixture's worst-case teardown —
 /// `terminate` spends up to `3 * TEARDOWN_GRACE` (SIGTERM, SIGKILL, gone) and
-/// `collect_readers` one more — or the teardown race simply moves into this
-/// assertion.
+/// `collect_readers` has its own bounded doubled scheduling window — or the
+/// teardown race simply moves into this assertion.
 const LIVENESS_BOUND: Duration = Duration::from_secs(10);
 
 fn limits(stdout_bytes: usize, stderr_bytes: usize) -> SupervisorLimits {
