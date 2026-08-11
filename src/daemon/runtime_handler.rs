@@ -89,8 +89,9 @@ impl RuntimeHandler {
                 .routes()
                 .map(|provider| route(provider.backend()))
                 .collect::<Vec<_>>();
-            let v3 = V3RuntimeAuthority::from_provider_routes(executor.routes())
-                .map_err(|_| RuntimeConfigError::Routes)?;
+            let v3 =
+                V3RuntimeAuthority::from_provider_routes(executor.routes(), Arc::clone(&store))
+                    .map_err(|_| RuntimeConfigError::Routes)?;
             let context =
                 AppContext::runtime_v2(routes.clone()).map_err(|_| RuntimeConfigError::Routes)?;
             let manager = RunManager::start(

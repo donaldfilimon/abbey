@@ -112,6 +112,25 @@ fn tool_input_is_object_bounded_and_depth_limited() {
 }
 
 #[test]
+fn tool_results_are_terminal_correlated_and_bounded() {
+    let valid = V3ToolResult {
+        tool_id: "abbey_status".into(),
+        call_id: "call-1".into(),
+        state: V3OperationState::Succeeded,
+        output: serde_json::json!({"edition": "standard"}),
+    };
+    V3Event::ToolResult(valid.clone()).validate().unwrap();
+
+    let mut running = valid.clone();
+    running.state = V3OperationState::Running;
+    assert!(running.validate().is_err());
+
+    let mut oversized = valid;
+    oversized.output = serde_json::json!({"text": "x".repeat(33 * 1_024)});
+    assert!(oversized.validate().is_err());
+}
+
+#[test]
 fn pages_reject_future_cursors_and_invalid_event_order() {
     assert!(
         V3PageQuery {

@@ -38,4 +38,4 @@ pub use v3::{
     V3ModelAction, V3OperationState, V3OperationStatus, V3PageQuery, V3ResourceQuery,
     V3SearchRequest, V3StableClaim, V3TrainingStart,
 };
-pub use v3_tool::{V3ToolCall, V3ToolDecision, V3ToolDescriptor, V3ToolPage};
+pub use v3_tool::{V3ToolCall, V3ToolDecision, V3ToolDescriptor, V3ToolPage, V3ToolResult};

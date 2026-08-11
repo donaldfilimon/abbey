@@ -2,7 +2,7 @@
 
 use crate::app_core::{
     V3Capability, V3Command, V3EntityPage, V3Event, V3PageQuery, V3ResourceQuery, V3StableClaim,
-    V3ToolPage,
+    V3ToolCall, V3ToolPage, V3ToolResult,
 };
 
 use super::{ClientError, V3DaemonSession};
@@ -60,6 +60,45 @@ impl V3DaemonSession {
     /// Windows remains fail-closed until the named-pipe transport lands.
     #[cfg(not(unix))]
     pub fn list_tools(&self, _query: V3PageQuery) -> Result<V3ToolPage, ClientError> {
+        Err(ClientError::UnsupportedPlatform)
+    }
+
+    /// Invoke one schema-validated safe read-only tool exactly once.
+    ///
+    /// The daemon owns the registry, policy, execution, deadline, result bound,
+    /// duplicate-call rejection, and persistent audit. This client only checks
+    /// its private negotiated grant and terminal response correlation.
+    #[cfg(unix)]
+    pub fn invoke_tool(&self, call: V3ToolCall) -> Result<V3ToolResult, ClientError> {
+        call.validate().map_err(|_| ClientError::InvalidV3Request)?;
+        if !self.negotiation.granted.contains(V3Capability::InvokeTools) {
+            return Err(ClientError::V3CapabilityNotGranted {
+                capability: V3Capability::InvokeTools,
+            });
+        }
+        let event = super::unix::request_v3(
+            &self.client.config,
+            self.negotiation.granted.clone(),
+            V3Command::InvokeTool(call.clone()),
+        )?;
+        let V3Event::ToolResult(result) = event else {
+            return Err(ClientError::UnexpectedV3Event {
+                expected: "tool result",
+                received: super::v3_event_name(&event),
+            });
+        };
+        result
+            .validate()
+            .map_err(|_| ClientError::InvalidV3Response)?;
+        if result.tool_id != call.tool_id || result.call_id != call.call_id {
+            return Err(ClientError::InvalidV3Response);
+        }
+        Ok(result)
+    }
+
+    /// Windows remains fail-closed until the named-pipe transport lands.
+    #[cfg(not(unix))]
+    pub fn invoke_tool(&self, _call: V3ToolCall) -> Result<V3ToolResult, ClientError> {
         Err(ClientError::UnsupportedPlatform)
     }
 

@@ -6,7 +6,7 @@
 //! it: the daemon must explicitly negotiate and advertise every grant before a
 //! command can be dispatched.
 
-use super::{ClaimStatus, V3ToolCall, V3ToolDecision, V3ToolPage, ValidationError};
+use super::{ClaimStatus, V3ToolCall, V3ToolDecision, V3ToolPage, V3ToolResult, ValidationError};
 use serde::{Deserialize, Serialize};
 
 /// Additive application protocol reserved for capability-gated authority.
@@ -669,6 +669,7 @@ impl V3Error {
 pub enum V3Event {
     Negotiated(V3GrantNegotiation),
     Tools(V3ToolPage),
+    ToolResult(V3ToolResult),
     ToolStatus(V3OperationStatus),
     ToolApprovalStatus(V3OperationStatus),
     MemorySpaces(V3EntityPage),
@@ -695,6 +696,7 @@ impl V3Event {
         match self {
             Self::Negotiated(value) => value.validate(),
             Self::Tools(value) => value.validate(),
+            Self::ToolResult(value) => value.validate(),
             Self::MemorySpaces(value)
             | Self::MemorySearchResults(value)
             | Self::Models(value)

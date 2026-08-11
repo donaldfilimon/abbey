@@ -228,7 +228,11 @@ fn protocol_v3_safe_inventory_stays_read_only_bounded_and_exact() {
         "missing grant",
         "forged unsupported grant",
         "There is no fuzzy claim search",
-        "tool invocation",
+        "EffectScopedPolicy",
+        "digest-only authorization",
+        "single-use",
+        "32 KiB",
+        "mutating or personal-shell tool",
         "approval",
     ] {
         assert!(claim.note.contains(required));
