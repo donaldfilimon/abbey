@@ -41,7 +41,9 @@
 
 use serde_json::{Value, json};
 
-use crate::app_core::{AppCommand, AppEvent, AppService, ClaimStatus, ClaimsQuery};
+use crate::app_core::{
+    AppCommand, AppEvent, AppService, ClaimStatus, ClaimsQuery, V3ToolDescriptor, ValidationError,
+};
 
 /// The only effect class this registry can express.
 ///
@@ -96,7 +98,7 @@ impl SafeTool {
     }
 }
 
-/// The canonical registry advertised to every MCP client.
+/// The canonical safe registry advertised to MCP and projected into daemon v3.
 pub const SAFE_TOOLS: &[SafeTool] = &[
     SafeTool {
         name: "abbey_status",
@@ -133,6 +135,26 @@ pub const SAFE_TOOLS: &[SafeTool] = &[
 #[must_use]
 pub fn tool_names() -> Vec<&'static str> {
     SAFE_TOOLS.iter().map(|tool| tool.name).collect()
+}
+
+/// Project the canonical safe registry into bounded protocol-v3 descriptors.
+///
+/// This carries description and input-schema identity from the same registry
+/// served over MCP. It deliberately projects no handler or invocation
+/// authority.
+pub(crate) fn v3_descriptors() -> Result<Vec<V3ToolDescriptor>, ValidationError> {
+    SAFE_TOOLS
+        .iter()
+        .map(|tool| {
+            let descriptor = V3ToolDescriptor {
+                tool_id: tool.name.to_owned(),
+                description: tool.description.to_owned(),
+                input_schema: (tool.schema)(),
+            };
+            descriptor.validate()?;
+            Ok(descriptor)
+        })
+        .collect()
 }
 
 /// The `tools/list` payload.

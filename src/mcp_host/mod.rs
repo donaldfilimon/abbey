@@ -57,6 +57,7 @@ pub use limits::{
     MAX_REQUESTS_PER_WINDOW, MAX_RESPONSE_BYTES, RATE_LIMIT_WINDOW,
 };
 pub use serve::{LATEST_PROTOCOL_VERSION, SUPPORTED_PROTOCOL_VERSIONS, Server};
+pub(crate) use tools::v3_descriptors;
 pub use tools::{SAFE_TOOLS, tool_names};
 
 use anyhow::Result;
