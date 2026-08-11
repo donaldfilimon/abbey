@@ -18,7 +18,7 @@ use super::runtime_config::{RuntimeConfigError, RuntimeDaemonConfig, open_privat
 use super::runtime_v3::{MemoryEffectRoute, V3RuntimeAuthority};
 use super::server::{DaemonHandler, HandlerFailure};
 
-/// Authenticated v1/v2 lifecycle plus narrowly scoped v3 model authority.
+/// Authenticated v1/v2 lifecycle plus narrowly scoped v3 runtime authority.
 pub struct RuntimeHandler {
     readonly_v1: AppService,
     runtime_v2: AppService,

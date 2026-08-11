@@ -98,6 +98,7 @@ fn no_abi_route_still_negotiates_safe_tools_and_canonical_claim_reads() {
                 V3Capability::InvokeTools,
                 V3Capability::DecideToolApprovals,
                 V3Capability::CancelTools,
+                V3Capability::ReadMemory,
                 V3Capability::ReadModels,
                 V3Capability::ReadClaimsById,
             ])
@@ -113,12 +114,14 @@ fn no_abi_route_still_negotiates_safe_tools_and_canonical_claim_reads() {
             V3Capability::InvokeTools,
             V3Capability::DecideToolApprovals,
             V3Capability::CancelTools,
+            V3Capability::ReadMemory,
             V3Capability::ReadClaimsById,
         ]
     } else {
         vec![
             V3Capability::ListTools,
             V3Capability::InvokeTools,
+            V3Capability::ReadMemory,
             V3Capability::ReadClaimsById,
         ]
     };
