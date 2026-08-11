@@ -1,10 +1,9 @@
 //! Minimal daemon-owned authority for the first served protocol-v3 slice.
 //!
 //! Only bounded safe tool inventory/invocation, one default-edition pending
-//! mutation plus exact approve/deny decisions, startup-bound ABI-local model
-//! inventory, and exact stable-ID claim reads are representable here.
-//! Execution, memory, training, worker, cancellation, and polling grants remain
-//! absent.
+//! mutation plus exact approve/deny/cancel transitions, startup-bound ABI-local
+//! model inventory, and exact stable-ID claim reads are representable here.
+//! Execution, memory, training, worker, and polling grants remain absent.
 
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
@@ -73,7 +72,7 @@ impl V3RuntimeAuthority {
                     .map(str::to_owned)
             })
             .collect();
-        let mut available = Vec::with_capacity(5);
+        let mut available = Vec::with_capacity(6);
         if !tools.is_empty() {
             available.push(V3Capability::ListTools);
             available.push(V3Capability::InvokeTools);
@@ -83,6 +82,7 @@ impl V3RuntimeAuthority {
             .any(|tool| tool.route == ToolRoute::ApprovalRequired)
         {
             available.push(V3Capability::DecideToolApprovals);
+            available.push(V3Capability::CancelTools);
         }
         if !models.is_empty() {
             available.push(V3Capability::ReadModels);
@@ -148,6 +148,7 @@ impl V3RuntimeAuthority {
             V3Command::DenyTool(decision) => {
                 self.decide_tool_approval(decision, ToolApprovalDecision::Deny)
             }
+            V3Command::CancelTool(action) => self.cancel_tool_approval(action),
             V3Command::ListModels(page) => {
                 let snapshot = u64::try_from(self.models.len()).map_err(|_| internal_failure())?;
                 let through = page.through.unwrap_or(snapshot);
@@ -372,6 +373,18 @@ impl V3RuntimeAuthority {
                 outcome,
                 now_ms()?,
             )
+            .map_err(map_approval_store_error)?;
+        Ok(V3Event::ToolApprovalStatus(approval_status(record)))
+    }
+
+    fn cancel_tool_approval(
+        &self,
+        action: crate::app_core::V3Action,
+    ) -> Result<V3Event, HandlerFailure> {
+        action.validate().map_err(|_| invalid_command_failure())?;
+        let record = self
+            .store
+            .cancel_tool_approval(&action.resource_id, &action.operation_id, now_ms()?)
             .map_err(map_approval_store_error)?;
         Ok(V3Event::ToolApprovalStatus(approval_status(record)))
     }

@@ -133,6 +133,9 @@ fn read_only_request_downgrades_once_but_mutation_never_replays() {
 #[path = "v3_tests.rs"]
 mod v3_tests;
 
+#[path = "v3_cancellation_tests.rs"]
+mod v3_cancellation_tests;
+
 #[test]
 fn rejects_cross_kind_and_approval_events() {
     let (config, thread, root) = fake_server(|request| {

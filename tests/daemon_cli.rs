@@ -3,9 +3,9 @@
 #![cfg(unix)]
 
 use abbey::app_core::{
-    AppEvent, ClaimStatus, Edition, RuntimeState, V3Capability, V3CapabilitySet, V3ErrorCode,
-    V3Event, V3OperationState, V3PageQuery, V3ResourceQuery, V3ToolCall, V3ToolDecision,
-    V3ToolEffect, V3ToolInvocation,
+    AppEvent, ClaimStatus, Edition, RuntimeState, V3Action, V3Capability, V3CapabilitySet,
+    V3ErrorCode, V3Event, V3OperationState, V3PageQuery, V3ResourceQuery, V3ToolCall,
+    V3ToolDecision, V3ToolEffect, V3ToolInvocation,
 };
 use abbey::daemon::{BearerSecret, ClientError, DaemonClient, DaemonConfig};
 use abbey::edition;
@@ -290,6 +290,7 @@ fn protocol_v3_safe_tool_inventory_and_audited_status_invocation_round_trip() {
         V3Capability::ListTools,
         V3Capability::InvokeTools,
         V3Capability::DecideToolApprovals,
+        V3Capability::CancelTools,
     ])
     .unwrap();
     let session = DaemonClient::new(config)
@@ -300,6 +301,7 @@ fn protocol_v3_safe_tool_inventory_and_audited_status_invocation_round_trip() {
             V3Capability::ListTools,
             V3Capability::InvokeTools,
             V3Capability::DecideToolApprovals,
+            V3Capability::CancelTools,
         ]
     } else {
         vec![V3Capability::ListTools, V3Capability::InvokeTools]
@@ -414,6 +416,16 @@ fn protocol_v3_safe_tool_inventory_and_audited_status_invocation_round_trip() {
             approved.state,
             abbey::app_core::V3ToolApprovalState::Approved
         );
+        let cancelled_approved = session
+            .cancel_tool(V3Action {
+                resource_id: "real-pending-call-1".into(),
+                operation_id: "real-cancellation-approved-1".into(),
+            })
+            .expect("cancel exact approved record without executing it");
+        assert_eq!(
+            cancelled_approved.state,
+            abbey::app_core::V3ToolApprovalState::Cancelled
+        );
 
         let deny_call = V3ToolCall {
             tool_id: "abbey_memory_mark_obsolete".into(),
@@ -434,6 +446,28 @@ fn protocol_v3_safe_tool_inventory_and_audited_status_invocation_round_trip() {
             })
             .expect("deny exact pending record");
         assert_eq!(denied.state, abbey::app_core::V3ToolApprovalState::Denied);
+
+        let cancel_pending_call = V3ToolCall {
+            tool_id: "abbey_memory_mark_obsolete".into(),
+            call_id: "real-pending-call-3".into(),
+            input: serde_json::json!({"record_id": record_id}),
+        };
+        let V3ToolInvocation::ApprovalRequired(_) = session
+            .request_tool(cancel_pending_call)
+            .expect("persist third exact pending approval")
+        else {
+            panic!("third mutating safe tool must await approval");
+        };
+        let cancelled_pending = session
+            .cancel_tool(V3Action {
+                resource_id: "real-pending-call-3".into(),
+                operation_id: "real-cancellation-pending-1".into(),
+            })
+            .expect("cancel exact pending record without executing it");
+        assert_eq!(
+            cancelled_pending.state,
+            abbey::app_core::V3ToolApprovalState::Cancelled
+        );
 
         let mut get = harness.command(&["memory", "get", &record_id]);
         let get = get.output().expect("read memory after pending request");
@@ -486,7 +520,7 @@ fn protocol_v3_safe_tool_inventory_and_audited_status_invocation_round_trip() {
             .unwrap();
         assert_eq!(approval.0, "abbey_memory_mark_obsolete");
         assert_eq!(approval.1.len(), 64);
-        assert_eq!(approval.2, "approved");
+        assert_eq!(approval.2, "cancelled");
         let events: i64 = connection
             .query_row(
                 "SELECT COUNT(*) FROM tool_approval_events WHERE call_id=?1",
@@ -494,7 +528,7 @@ fn protocol_v3_safe_tool_inventory_and_audited_status_invocation_round_trip() {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(events, 2);
+        assert_eq!(events, 3);
         let denied = connection
             .query_row(
                 "SELECT state, decision_id FROM tool_approvals WHERE call_id=?1",
@@ -512,6 +546,23 @@ fn protocol_v3_safe_tool_inventory_and_audited_status_invocation_round_trip() {
             )
             .unwrap();
         assert_eq!(denied_events, 2);
+        let cancelled_pending = connection
+            .query_row(
+                "SELECT state, cancellation_id FROM tool_approvals WHERE call_id=?1",
+                ["real-pending-call-3"],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+            )
+            .unwrap();
+        assert_eq!(cancelled_pending.0, "cancelled");
+        assert_eq!(cancelled_pending.1, "real-cancellation-pending-1");
+        let cancelled_events: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM tool_approval_events WHERE call_id=?1",
+                ["real-pending-call-3"],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(cancelled_events, 2);
     }
 }
 
