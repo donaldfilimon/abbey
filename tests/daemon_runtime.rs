@@ -318,8 +318,10 @@ fn spawn_daemon(
         .unwrap();
     Command::new(ABBEYD_BIN)
         .env(edition::ACTIVE.state_dir_env(), root)
+        .env(edition::ACTIVE.config_path_env(), root.join("config.toml"))
         .env(edition::ACTIVE.daemon_socket_env(), socket)
         .env(edition::ACTIVE.daemon_bearer_env(), BEARER)
+        .env("ABBEY_MEMORY_BACKEND", "sqlite")
         .env(edition::ACTIVE.scoped_env("ABI_BIN"), provider)
         .stdout(Stdio::from(stdout))
         .stderr(Stdio::from(stderr))

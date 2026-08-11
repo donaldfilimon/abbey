@@ -57,8 +57,10 @@ impl Harness {
         let mut daemon = Command::new(ABBEYD_BIN);
         daemon
             .env(edition::ACTIVE.state_dir_env(), &root)
+            .env(edition::ACTIVE.config_path_env(), root.join("config.toml"))
             .env(edition::ACTIVE.daemon_socket_env(), &socket)
-            .env(edition::ACTIVE.daemon_bearer_env(), BEARER);
+            .env(edition::ACTIVE.daemon_bearer_env(), BEARER)
+            .env("ABBEY_MEMORY_BACKEND", "sqlite");
         if bind_abi {
             daemon.env(edition::ACTIVE.scoped_env("ABI_BIN"), &abi_provider);
         }
