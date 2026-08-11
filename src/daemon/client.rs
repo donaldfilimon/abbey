@@ -10,7 +10,7 @@ use crate::app_core::{
     APP_PROTOCOL_V1, APP_PROTOCOL_VERSION, APP_SCHEMA_V1, APP_SCHEMA_VERSION, AppCommand, AppEvent,
     CapabilitySet, ClaimsSnapshot, RuntimeStatus, V3Capability, V3CapabilitySet, V3Command,
     V3EntityPage, V3Event, V3GrantNegotiation, V3GrantRequest, V3PageQuery, V3ResourceQuery,
-    V3StableClaim,
+    V3StableClaim, V3ToolPage,
 };
 
 use super::{
@@ -116,6 +116,55 @@ impl V3DaemonSession {
     #[must_use]
     pub const fn negotiation(&self) -> &V3GrantNegotiation {
         &self.negotiation
+    }
+
+    /// Read one bounded fixed-watermark page from the canonical safe registry.
+    ///
+    /// Descriptors carry no invocation authority. The request echoes the
+    /// private negotiated grant set and is sent exactly once without retry or
+    /// downgrade.
+    #[cfg(unix)]
+    pub fn list_tools(&self, query: V3PageQuery) -> Result<V3ToolPage, ClientError> {
+        query
+            .validate()
+            .map_err(|_| ClientError::InvalidV3Request)?;
+        if !self.negotiation.granted.contains(V3Capability::ListTools) {
+            return Err(ClientError::V3CapabilityNotGranted {
+                capability: V3Capability::ListTools,
+            });
+        }
+        let event = unix::request_v3(
+            &self.client.config,
+            self.negotiation.granted.clone(),
+            V3Command::ListTools(query),
+        )?;
+        let V3Event::Tools(page) = event else {
+            return Err(ClientError::UnexpectedV3Event {
+                expected: "tool inventory",
+                received: v3_event_name(&event),
+            });
+        };
+        page.validate()
+            .map_err(|_| ClientError::InvalidV3Response)?;
+        let expected = usize::try_from(
+            page.through
+                .saturating_sub(page.after)
+                .min(u64::from(query.limit)),
+        )
+        .map_err(|_| ClientError::InvalidV3Response)?;
+        if page.after != query.after
+            || query.through.is_some_and(|through| page.through != through)
+            || page.tools.len() != expected
+        {
+            return Err(ClientError::InvalidV3Response);
+        }
+        Ok(page)
+    }
+
+    /// Windows remains fail-closed until the named-pipe transport lands.
+    #[cfg(not(unix))]
+    pub fn list_tools(&self, _query: V3PageQuery) -> Result<V3ToolPage, ClientError> {
+        Err(ClientError::UnsupportedPlatform)
     }
 
     /// Read one bounded fixed-watermark model inventory page.

@@ -1,21 +1,23 @@
 //! Minimal daemon-owned authority for the first served protocol-v3 slice.
 //!
-//! Only startup-bound ABI-local model inventory and exact stable-ID reads from
-//! Abbey's canonical claim registry are representable here. Tool, memory,
+//! Only the canonical safe read-only tool inventory, startup-bound ABI-local
+//! model inventory, and exact stable-ID reads from Abbey's canonical claim
+//! registry are representable here. Tool invocation, approval, memory,
 //! training, worker, cancellation, and polling grants remain absent.
 
 use crate::app_core::{
     APP_PROTOCOL_V3, APP_SCHEMA_V3, BackendSelection, ClaimStatus, V3Capability, V3CapabilitySet,
     V3Command, V3EntityPage, V3EntityRecord, V3Event, V3GrantNegotiation, V3OperationState,
-    V3StableClaim,
+    V3StableClaim, V3ToolDescriptor, V3ToolPage,
 };
 use crate::runtime::ProviderRoute;
 
 use super::server::HandlerFailure;
 
-/// Frozen protocol-v3 grants and presentation-safe model inventory.
+/// Frozen protocol-v3 grants plus presentation-safe tool, model, and claim reads.
 pub(super) struct V3RuntimeAuthority {
     grants: V3CapabilitySet,
+    tools: Vec<V3ToolDescriptor>,
     models: Vec<V3EntityRecord>,
 }
 
@@ -34,16 +36,24 @@ impl V3RuntimeAuthority {
                 state: V3OperationState::Available,
             })
             .collect::<Vec<_>>();
-        let mut available = Vec::with_capacity(2);
+        let tools = crate::mcp_host::v3_descriptors().map_err(|_| internal_failure())?;
+        let mut available = Vec::with_capacity(3);
+        if !tools.is_empty() {
+            available.push(V3Capability::ListTools);
+        }
         if !models.is_empty() {
             available.push(V3Capability::ReadModels);
         }
         available.push(V3Capability::ReadClaimsById);
         let grants = V3CapabilitySet::from_sorted(available).map_err(|_| internal_failure())?;
-        Ok(Self { grants, models })
+        Ok(Self {
+            grants,
+            tools,
+            models,
+        })
     }
 
-    /// Dispatch negotiation or the one granted read-only model command.
+    /// Dispatch negotiation or one explicitly granted read-only command.
     pub(super) fn handle(&self, command: V3Command) -> Result<V3Event, HandlerFailure> {
         if let V3Command::Negotiate(request) = command {
             let granted = self
@@ -64,6 +74,22 @@ impl V3RuntimeAuthority {
             return Err(capability_denied_failure());
         }
         match command {
+            V3Command::ListTools(page) => {
+                let snapshot = u64::try_from(self.tools.len()).map_err(|_| internal_failure())?;
+                let through = page.through.unwrap_or(snapshot);
+                if through > snapshot || page.after > through {
+                    return Err(invalid_command_failure());
+                }
+                let available = through.saturating_sub(page.after);
+                let take = available.min(u64::from(page.limit));
+                let skip = usize::try_from(page.after).map_err(|_| invalid_command_failure())?;
+                let take = usize::try_from(take).map_err(|_| invalid_command_failure())?;
+                Ok(V3Event::Tools(V3ToolPage {
+                    after: page.after,
+                    through,
+                    tools: self.tools.iter().skip(skip).take(take).cloned().collect(),
+                }))
+            }
             V3Command::ListModels(page) => {
                 let snapshot = u64::try_from(self.models.len()).map_err(|_| internal_failure())?;
                 let through = page.through.unwrap_or(snapshot);
@@ -145,7 +171,7 @@ mod tests {
     use abi_agent_runtime::{EchoProvider, RunBudget};
 
     use super::*;
-    use crate::app_core::{V3GrantRequest, V3PageQuery, V3ResourceQuery};
+    use crate::app_core::{V3GrantRequest, V3PageQuery, V3ResourceQuery, V3ToolCall};
 
     fn abi_route() -> ProviderRoute {
         ProviderRoute::new(
@@ -209,12 +235,13 @@ mod tests {
     }
 
     #[test]
-    fn no_abi_route_still_negotiates_canonical_claim_reads() {
+    fn no_abi_route_still_negotiates_safe_tools_and_canonical_claim_reads() {
         let authority = V3RuntimeAuthority::from_provider_routes([]).unwrap();
         let V3Event::Negotiated(negotiated) = authority
             .handle(V3Command::Negotiate(V3GrantRequest {
                 supported_versions: vec![3],
                 requested: V3CapabilitySet::from_sorted(vec![
+                    V3Capability::ListTools,
                     V3Capability::ReadModels,
                     V3Capability::ReadClaimsById,
                 ])
@@ -226,8 +253,28 @@ mod tests {
         };
         assert_eq!(
             negotiated.granted.as_slice(),
-            &[V3Capability::ReadClaimsById]
+            &[V3Capability::ListTools, V3Capability::ReadClaimsById]
         );
+        let V3Event::Tools(tools) = authority
+            .handle(V3Command::ListTools(V3PageQuery::default()))
+            .unwrap()
+        else {
+            panic!("expected safe tool inventory");
+        };
+        assert_eq!(tools.after, 0);
+        assert_eq!(tools.through, 3);
+        assert_eq!(
+            tools
+                .tools
+                .iter()
+                .map(|tool| tool.tool_id.as_str())
+                .collect::<Vec<_>>(),
+            crate::mcp_host::tool_names()
+        );
+        for (descriptor, safe) in tools.tools.iter().zip(crate::mcp_host::SAFE_TOOLS) {
+            assert_eq!(descriptor.description, safe.description);
+            assert_eq!(descriptor.input_schema, (safe.schema)());
+        }
         let V3Event::Claim(claim) = authority
             .handle(V3Command::ClaimById(V3ResourceQuery {
                 resource_id: "backend-cursor-agent".into(),
@@ -253,6 +300,28 @@ mod tests {
                 .unwrap_err()
                 .code(),
             "not_found"
+        );
+        assert_eq!(
+            authority
+                .handle(V3Command::InvokeTool(V3ToolCall {
+                    tool_id: "abbey_status".into(),
+                    call_id: "call-1".into(),
+                    input: serde_json::json!({}),
+                }))
+                .unwrap_err()
+                .code(),
+            "capability_denied"
+        );
+        assert_eq!(
+            authority
+                .handle(V3Command::ListTools(V3PageQuery {
+                    after: 0,
+                    through: Some(4),
+                    limit: 1,
+                }))
+                .unwrap_err()
+                .code(),
+            "invalid_command"
         );
     }
 }

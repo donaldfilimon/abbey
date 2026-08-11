@@ -161,6 +161,11 @@ fn app_core_daemon_claim_stays_narrower_than_owned_runtime() {
     assert!(daemon.note.contains("read-only"));
     assert!(daemon.note.contains("separate protocol-v2 surface"));
     assert!(daemon.note.contains("protocol-v3 envelope"));
+    assert!(
+        daemon
+            .note
+            .contains("canonical safe read-only tool inventory")
+    );
     assert!(daemon.note.contains("exact canonical stable-claim reads"));
     assert!(
         daemon
@@ -204,7 +209,7 @@ fn app_core_daemon_claim_stays_narrower_than_owned_runtime() {
 }
 
 #[test]
-fn protocol_v3_inventory_and_claim_lookup_stay_read_only_and_exact() {
+fn protocol_v3_safe_inventory_stays_read_only_bounded_and_exact() {
     let claim = CLAIMS
         .iter()
         .find(|claim| claim.id == "daemon-protocol-v3-abi-model-inventory")
@@ -212,6 +217,10 @@ fn protocol_v3_inventory_and_claim_lookup_stay_read_only_and_exact() {
     assert_eq!(claim.status, Status::Current);
     for required in [
         "read_models",
+        "list_tools",
+        "canonical SAFE_TOOLS registry",
+        "effect type admits only ReadOnly",
+        "without handlers",
         "read_claims_by_id",
         "exact stable-ID reads",
         "non-exact claim IDs return not_found",
@@ -219,6 +228,8 @@ fn protocol_v3_inventory_and_claim_lookup_stay_read_only_and_exact() {
         "missing grant",
         "forged unsupported grant",
         "There is no fuzzy claim search",
+        "tool invocation",
+        "approval",
     ] {
         assert!(claim.note.contains(required));
     }

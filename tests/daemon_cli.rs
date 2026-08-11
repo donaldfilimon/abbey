@@ -4,7 +4,7 @@
 
 use abbey::app_core::{
     AppEvent, ClaimStatus, Edition, RuntimeState, V3Capability, V3CapabilitySet, V3ErrorCode,
-    V3Event, V3OperationState, V3ResourceQuery,
+    V3Event, V3OperationState, V3PageQuery, V3ResourceQuery,
 };
 use abbey::daemon::{BearerSecret, ClientError, DaemonClient, DaemonConfig};
 use abbey::edition;
@@ -276,6 +276,54 @@ fn protocol_v3_stable_claim_lookup_round_trips_through_real_daemon_and_typed_cli
             ..
         }
     ));
+}
+
+#[test]
+fn protocol_v3_safe_tool_inventory_round_trips_without_invocation_authority() {
+    let harness = Harness::start();
+    let config = DaemonConfig::local(
+        harness.socket.clone(),
+        BearerSecret::parse(BEARER).expect("valid bearer"),
+    );
+    let requested =
+        V3CapabilitySet::from_sorted(vec![V3Capability::ListTools, V3Capability::InvokeTools])
+            .unwrap();
+    let session = DaemonClient::new(config)
+        .negotiate_v3(requested)
+        .expect("negotiate safe tool inventory");
+    assert_eq!(
+        session.negotiation().granted.as_slice(),
+        &[V3Capability::ListTools]
+    );
+
+    let page = session
+        .list_tools(V3PageQuery::default())
+        .expect("read canonical safe tool inventory");
+    assert_eq!(page.after, 0);
+    assert_eq!(page.through, 3);
+    assert_eq!(
+        page.tools
+            .iter()
+            .map(|tool| tool.tool_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["abbey_status", "abbey_claims", "abbey_platform"]
+    );
+    assert!(page.tools.iter().all(|tool| tool.input_schema.is_object()));
+    assert!(page.tools.iter().all(|tool| {
+        !tool.tool_id.contains("shell")
+            && !tool.tool_id.contains("exec")
+            && !tool.tool_id.contains("process")
+    }));
+
+    let second = session
+        .list_tools(V3PageQuery {
+            after: 1,
+            through: Some(3),
+            limit: 1,
+        })
+        .expect("read one fixed-watermark tool page");
+    assert_eq!(second.tools.len(), 1);
+    assert_eq!(second.tools[0].tool_id, "abbey_claims");
 }
 
 /// Real-binary proof for the route audit, including that the human and JSON
