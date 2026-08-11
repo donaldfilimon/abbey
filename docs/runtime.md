@@ -220,10 +220,17 @@ version list is now `[1, 2, 3]`. Version 3 uses a separate envelope carrying sch
 bearer, canonical echoed grants, and `V3Command`; it cannot be decoded as a legacy command.
 
 The served authority is deliberately smaller than the contract catalog. Negotiation may
-always grant `list_tools`; `ListTools` returns bounded fixed-watermark descriptors projected
+always grant `list_tools` and `invoke_tools`; `ListTools` returns bounded fixed-watermark descriptors projected
 from the same `SAFE_TOOLS` registry used by MCP. That registry's effect type can express
 only `ReadOnly`, and the projection carries description and input schema but no handler or
-invocation authority. Negotiation may also always grant `read_claims_by_id`; `ClaimById`
+invocation authority. At daemon startup those canonical schemas are compiled separately;
+`InvokeTool` validates a registered tool and its bounded object input before ABI's
+`EffectScopedPolicy` authorizes it, persists digest-only authorization before an ABI
+`ToolExecutor` adapter runs the handler, and returns terminal correlated JSON bounded to
+32 KiB. A second audit row records only result metadata and digests. Call IDs remain
+single-use after daemon reopen because the authority recovers reservations from that audit.
+The one-second deadline is cooperative and rejects late completion; it cannot pre-empt a
+synchronous handler mid-call. Negotiation may also always grant `read_claims_by_id`; `ClaimById`
 projects one exact stable-ID match from Abbey's canonical claim registry and returns
 `not_found` for a missing or non-exact ID. There is no fuzzy claim search. When daemon
 startup binds an ABI-local fixed provider,
@@ -232,16 +239,18 @@ fixed-watermark inventory derived from the same startup-owned `ModelProvider` ob
 by protocol-v2 execution. Without that provider, model authority remains denied while the
 canonical claim read remains available. A non-negotiation request missing its exact grant
 is rejected before dispatch; echoing an unsupported grant cannot manufacture daemon
-authority. There is no v3 inference command, download, load/unload, tool invocation,
-approval, memory, training, worker, polling, desktop, remote, or Windows authority yet.
+authority. There is no v3 inference command, download, load/unload, approval, cancellation,
+mutating or personal-shell tool, memory, training, worker, polling, CLI invocation
+presentation, desktop, remote, or Windows authority yet.
 
 `DaemonClient::negotiate_v3` sends one strict negotiation request and returns a typed
 `V3DaemonSession`. The session keeps the validated daemon-returned grants private; its tool,
-model, and stable-claim reads echo that exact set. Tool and model reads validate the
+model, stable-claim, and safe-tool invocation requests echo that exact set. Tool and model reads validate the
 response kind, versions, request correlation, page query, watermark, bounds, and record or
 descriptor schema. Claim reads additionally require the returned stable ID to equal the
-requested ID. A denied grant stops locally before a second request. Negotiation and every
-read make one correlated request without the legacy v1 downgrade path or automatic retry.
+requested ID. Tool invocation additionally validates terminal output plus exact tool and
+call correlation. A denied grant stops locally before a second request. Negotiation and every
+operation make one correlated request without the legacy v1 downgrade path or automatic retry.
 
 `abbey daemon negotiate` presents the explicit negotiation, while `abbey daemon models`
 negotiates `read_models` and reads one bounded page. Both human and JSON views consume only

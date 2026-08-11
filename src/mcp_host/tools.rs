@@ -41,6 +41,9 @@
 
 use serde_json::{Value, json};
 
+use abi_agent_host::{ToolExecutionContext, ToolExecutionError, ToolExecutor, ToolOutput};
+use abi_agent_runtime::{ToolCall, ToolEffect, ToolSpec};
+
 use crate::app_core::{
     AppCommand, AppEvent, AppService, ClaimStatus, ClaimsQuery, V3ToolDescriptor, ValidationError,
 };
@@ -155,6 +158,59 @@ pub(crate) fn v3_descriptors() -> Result<Vec<V3ToolDescriptor>, ValidationError>
             Ok(descriptor)
         })
         .collect()
+}
+
+/// Project the canonical safe registry into ABI's provider-neutral tool specs.
+pub(crate) fn v3_specs() -> Result<Vec<ToolSpec>, serde_json::Error> {
+    SAFE_TOOLS
+        .iter()
+        .map(|tool| {
+            serde_json::to_string(&(tool.schema)()).map(|schema| {
+                ToolSpec::new(tool.name)
+                    .with_description(tool.description)
+                    .with_input_schema(schema)
+                    .with_effect(ToolEffect::ReadOnly)
+            })
+        })
+        .collect()
+}
+
+/// Startup-owned executor for the canonical, structurally read-only registry.
+pub(crate) struct V3SafeToolExecutor;
+
+impl ToolExecutor for V3SafeToolExecutor {
+    fn execute(
+        &self,
+        call: &ToolCall,
+        spec: &ToolSpec,
+        context: ToolExecutionContext<'_>,
+    ) -> Result<ToolOutput, ToolExecutionError> {
+        if context.should_stop() {
+            return Err(ToolExecutionError::new("safe tool deadline expired"));
+        }
+        if spec.effect != ToolEffect::ReadOnly || spec.name != call.name {
+            return Err(ToolExecutionError::new(
+                "safe tool specification does not match the call",
+            ));
+        }
+        let tool = SAFE_TOOLS
+            .iter()
+            .find(|tool| tool.name == call.name)
+            .ok_or_else(|| ToolExecutionError::new("safe tool is not registered"))?;
+        if !matches!(tool.effect, EffectClass::ReadOnly) {
+            return Err(ToolExecutionError::new("safe tool effect is not read-only"));
+        }
+        let input = serde_json::from_str(&call.input)
+            .map_err(|_| ToolExecutionError::new("validated safe tool input was malformed"))?;
+        match (tool.handler)(&input) {
+            Ok(output) => serde_json::to_string(&output)
+                .map(ToolOutput::ok)
+                .map_err(|_| ToolExecutionError::new("safe tool output could not be encoded")),
+            Err(ToolError(message)) => serde_json::to_string(&json!({"message": message}))
+                .map(ToolOutput::error)
+                .map_err(|_| ToolExecutionError::new("safe tool error could not be encoded")),
+        }
+    }
 }
 
 /// The `tools/list` payload.

@@ -4,7 +4,7 @@
 
 use abbey::app_core::{
     AppEvent, ClaimStatus, Edition, RuntimeState, V3Capability, V3CapabilitySet, V3ErrorCode,
-    V3Event, V3OperationState, V3PageQuery, V3ResourceQuery,
+    V3Event, V3OperationState, V3PageQuery, V3ResourceQuery, V3ToolCall,
 };
 use abbey::daemon::{BearerSecret, ClientError, DaemonClient, DaemonConfig};
 use abbey::edition;
@@ -279,7 +279,7 @@ fn protocol_v3_stable_claim_lookup_round_trips_through_real_daemon_and_typed_cli
 }
 
 #[test]
-fn protocol_v3_safe_tool_inventory_round_trips_without_invocation_authority() {
+fn protocol_v3_safe_tool_inventory_and_audited_status_invocation_round_trip() {
     let harness = Harness::start();
     let config = DaemonConfig::local(
         harness.socket.clone(),
@@ -293,7 +293,7 @@ fn protocol_v3_safe_tool_inventory_round_trips_without_invocation_authority() {
         .expect("negotiate safe tool inventory");
     assert_eq!(
         session.negotiation().granted.as_slice(),
-        &[V3Capability::ListTools]
+        &[V3Capability::ListTools, V3Capability::InvokeTools]
     );
 
     let page = session
@@ -324,6 +324,65 @@ fn protocol_v3_safe_tool_inventory_round_trips_without_invocation_authority() {
         .expect("read one fixed-watermark tool page");
     assert_eq!(second.tools.len(), 1);
     assert_eq!(second.tools[0].tool_id, "abbey_claims");
+
+    let result = session
+        .invoke_tool(V3ToolCall {
+            tool_id: "abbey_status".into(),
+            call_id: "real-safe-call-1".into(),
+            input: serde_json::json!({}),
+        })
+        .expect("invoke the schema-validated read-only status tool");
+    assert_eq!(result.tool_id, "abbey_status");
+    assert_eq!(result.call_id, "real-safe-call-1");
+    assert_eq!(result.state, V3OperationState::Succeeded);
+    assert_eq!(
+        result.output["edition"],
+        serde_json::json!(EXPECTED_EDITION)
+    );
+
+    let duplicate = session
+        .invoke_tool(V3ToolCall {
+            tool_id: "abbey_status".into(),
+            call_id: "real-safe-call-1".into(),
+            input: serde_json::json!({}),
+        })
+        .unwrap_err();
+    assert!(matches!(
+        duplicate,
+        ClientError::DaemonV3 {
+            code: V3ErrorCode::Conflict,
+            ..
+        }
+    ));
+
+    let database = harness.root.join("daemon/runtime.sqlite");
+    let connection = rusqlite::Connection::open(database).expect("open daemon audit database");
+    let audit = connection
+        .prepare(
+            "SELECT action, outcome, metadata_json FROM audit_events \
+             WHERE action IN ('v3_tool_authorization', 'v3_tool_execution') ORDER BY id",
+        )
+        .unwrap()
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })
+        .unwrap()
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .unwrap();
+    assert_eq!(audit.len(), 2);
+    assert_eq!(&audit[0].0, "v3_tool_authorization");
+    assert_eq!(&audit[0].1, "allow");
+    assert_eq!(&audit[1].0, "v3_tool_execution");
+    assert_eq!(&audit[1].1, "succeeded");
+    assert!(audit.iter().all(|(_, _, metadata)| {
+        metadata.contains("input_digest")
+            && !metadata.contains("protocol_version")
+            && !metadata.contains("capabilities")
+    }));
 }
 
 /// Real-binary proof for the route audit, including that the human and JSON

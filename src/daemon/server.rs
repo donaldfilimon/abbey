@@ -275,6 +275,7 @@ fn v3_error_code(code: &str) -> V3ErrorCode {
         "cancelled" => V3ErrorCode::Cancelled,
         "deadline_exceeded" => V3ErrorCode::DeadlineExceeded,
         "budget_exceeded" => V3ErrorCode::BudgetExceeded,
+        "response_too_large" => V3ErrorCode::ResponseTooLarge,
         _ => V3ErrorCode::Internal,
     }
 }

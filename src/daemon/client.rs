@@ -611,6 +611,7 @@ fn v3_event_name(event: &V3Event) -> &'static str {
     match event {
         V3Event::Negotiated(_) => "capability negotiation",
         V3Event::Tools(_) => "tool inventory",
+        V3Event::ToolResult(_) => "tool result",
         V3Event::ToolStatus(_) => "tool status",
         V3Event::ToolApprovalStatus(_) => "tool approval status",
         V3Event::MemorySpaces(_) => "memory spaces",

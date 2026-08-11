@@ -15,8 +15,7 @@ use crate::app_core::{
     ClaimsSnapshot, ConversationId, IdempotencyKey, RunEventPage, RunEventRecord, RunId,
     RunLifecycleEvent, RunMode, RunRequest, RunRouteCapability, RunSnapshot, RunState,
     RunSubmission, RunSubmissionDisposition, RuntimeState, V3Capability, V3CapabilitySet,
-    V3Command, V3EntityPage, V3EntityRecord, V3ErrorCode, V3Event, V3GrantNegotiation,
-    V3OperationState, V3PageQuery,
+    V3Command, V3EntityPage, V3EntityRecord, V3ErrorCode, V3Event, V3GrantNegotiation, V3PageQuery,
 };
 use crate::daemon::{DaemonServer, Shutdown};
 

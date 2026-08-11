@@ -1,7 +1,7 @@
 //! Tool-specific protocol-v3 request and descriptor contracts.
 
 use super::v3::{validate_digest, validate_id, validate_text};
-use super::{MAX_V3_PAGE, ValidationError};
+use super::{MAX_V3_PAGE, V3OperationState, ValidationError};
 use serde::{Deserialize, Serialize};
 
 const MAX_TOOL_DESCRIPTION_BYTES: usize = 1_024;
@@ -58,6 +58,31 @@ pub struct V3ToolCall {
     pub input: serde_json::Value,
 }
 
+/// Bounded terminal result from one schema-validated safe tool call.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct V3ToolResult {
+    pub tool_id: String,
+    pub call_id: String,
+    pub state: V3OperationState,
+    pub output: serde_json::Value,
+}
+
+impl V3ToolResult {
+    /// Validate correlation, terminal state, and bounded JSON output.
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        validate_id(&self.tool_id)?;
+        validate_id(&self.call_id)?;
+        if !matches!(
+            self.state,
+            V3OperationState::Succeeded | V3OperationState::Failed
+        ) {
+            return Err(ValidationError::new("v3 tool result must be terminal"));
+        }
+        validate_json_value(&self.output, "invalid or oversized v3 tool output")
+    }
+}
+
 impl V3ToolCall {
     /// Validate identifiers and structural JSON bounds before policy evaluation.
     pub fn validate(&self) -> Result<(), ValidationError> {
@@ -89,8 +114,17 @@ fn validate_json_object(
     value: &serde_json::Value,
     message: &'static str,
 ) -> Result<(), ValidationError> {
-    if !value.is_object()
-        || serde_json::to_vec(value).map_or(true, |encoded| encoded.len() > MAX_TOOL_JSON_BYTES)
+    if !value.is_object() {
+        return Err(ValidationError::new(message));
+    }
+    validate_json_value(value, message)
+}
+
+fn validate_json_value(
+    value: &serde_json::Value,
+    message: &'static str,
+) -> Result<(), ValidationError> {
+    if serde_json::to_vec(value).map_or(true, |encoded| encoded.len() > MAX_TOOL_JSON_BYTES)
         || json_depth(value) > MAX_TOOL_JSON_DEPTH
     {
         return Err(ValidationError::new(message));
