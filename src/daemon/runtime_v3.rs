@@ -1,11 +1,13 @@
 //! Minimal daemon-owned authority for the first served protocol-v3 slice.
 //!
-//! Only startup-bound ABI-local model inventory is representable here. Tool,
-//! memory, training, worker, cancellation, and polling grants remain absent.
+//! Only startup-bound ABI-local model inventory and exact stable-ID reads from
+//! Abbey's canonical claim registry are representable here. Tool, memory,
+//! training, worker, cancellation, and polling grants remain absent.
 
 use crate::app_core::{
-    APP_PROTOCOL_V3, APP_SCHEMA_V3, BackendSelection, V3Capability, V3CapabilitySet, V3Command,
-    V3EntityPage, V3EntityRecord, V3Event, V3GrantNegotiation, V3OperationState,
+    APP_PROTOCOL_V3, APP_SCHEMA_V3, BackendSelection, ClaimStatus, V3Capability, V3CapabilitySet,
+    V3Command, V3EntityPage, V3EntityRecord, V3Event, V3GrantNegotiation, V3OperationState,
+    V3StableClaim,
 };
 use crate::runtime::ProviderRoute;
 
@@ -32,12 +34,12 @@ impl V3RuntimeAuthority {
                 state: V3OperationState::Available,
             })
             .collect::<Vec<_>>();
-        let grants = if models.is_empty() {
-            V3CapabilitySet::deny_all()
-        } else {
-            V3CapabilitySet::from_sorted(vec![V3Capability::ReadModels])
-                .map_err(|_| internal_failure())?
-        };
+        let mut available = Vec::with_capacity(2);
+        if !models.is_empty() {
+            available.push(V3Capability::ReadModels);
+        }
+        available.push(V3Capability::ReadClaimsById);
+        let grants = V3CapabilitySet::from_sorted(available).map_err(|_| internal_failure())?;
         Ok(Self { grants, models })
     }
 
@@ -78,6 +80,20 @@ impl V3RuntimeAuthority {
                     records: self.models.iter().skip(skip).take(take).cloned().collect(),
                 }))
             }
+            V3Command::ClaimById(query) => {
+                let claim = crate::claims::CLAIMS
+                    .iter()
+                    .find(|claim| claim.id == query.resource_id)
+                    .ok_or_else(not_found_failure)?;
+                let claim = V3StableClaim {
+                    id: claim.id.to_owned(),
+                    name: claim.name.to_owned(),
+                    status: claim_status(claim.status),
+                    note: claim.note.to_owned(),
+                };
+                claim.validate().map_err(|_| internal_failure())?;
+                Ok(V3Event::Claim(claim))
+            }
             _ => Err(capability_denied_failure()),
         }
     }
@@ -103,8 +119,22 @@ const fn capability_denied_failure() -> HandlerFailure {
     )
 }
 
+const fn not_found_failure() -> HandlerFailure {
+    HandlerFailure::new("not_found", "claim id was not found")
+}
+
 const fn internal_failure() -> HandlerFailure {
     HandlerFailure::new("runtime_unavailable", "runtime operation is unavailable")
+}
+
+const fn claim_status(status: crate::claims::Status) -> ClaimStatus {
+    match status {
+        crate::claims::Status::Current => ClaimStatus::Current,
+        crate::claims::Status::Partial => ClaimStatus::Partial,
+        crate::claims::Status::Proposed => ClaimStatus::Proposed,
+        crate::claims::Status::Blocked => ClaimStatus::Blocked,
+        crate::claims::Status::OutOfScope => ClaimStatus::OutOfScope,
+    }
 }
 
 #[cfg(test)]
@@ -115,7 +145,7 @@ mod tests {
     use abi_agent_runtime::{EchoProvider, RunBudget};
 
     use super::*;
-    use crate::app_core::{V3GrantRequest, V3PageQuery};
+    use crate::app_core::{V3GrantRequest, V3PageQuery, V3ResourceQuery};
 
     fn abi_route() -> ProviderRoute {
         ProviderRoute::new(
@@ -179,24 +209,50 @@ mod tests {
     }
 
     #[test]
-    fn no_abi_route_negotiates_deny_all() {
+    fn no_abi_route_still_negotiates_canonical_claim_reads() {
         let authority = V3RuntimeAuthority::from_provider_routes([]).unwrap();
         let V3Event::Negotiated(negotiated) = authority
             .handle(V3Command::Negotiate(V3GrantRequest {
                 supported_versions: vec![3],
-                requested: V3CapabilitySet::from_sorted(vec![V3Capability::ReadModels]).unwrap(),
+                requested: V3CapabilitySet::from_sorted(vec![
+                    V3Capability::ReadModels,
+                    V3Capability::ReadClaimsById,
+                ])
+                .unwrap(),
             }))
             .unwrap()
         else {
             panic!("expected v3 negotiation");
         };
-        assert!(negotiated.granted.as_slice().is_empty());
+        assert_eq!(
+            negotiated.granted.as_slice(),
+            &[V3Capability::ReadClaimsById]
+        );
+        let V3Event::Claim(claim) = authority
+            .handle(V3Command::ClaimById(V3ResourceQuery {
+                resource_id: "backend-cursor-agent".into(),
+            }))
+            .unwrap()
+        else {
+            panic!("expected stable claim");
+        };
+        assert_eq!(claim.id, "backend-cursor-agent");
+        assert_eq!(claim.status, ClaimStatus::Current);
         assert_eq!(
             authority
                 .handle(V3Command::ListModels(V3PageQuery::default()))
                 .unwrap_err()
                 .code(),
             "capability_denied"
+        );
+        assert_eq!(
+            authority
+                .handle(V3Command::ClaimById(V3ResourceQuery {
+                    resource_id: "backend-cursor".into(),
+                }))
+                .unwrap_err()
+                .code(),
+            "not_found"
         );
     }
 }

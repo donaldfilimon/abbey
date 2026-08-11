@@ -2,6 +2,7 @@
 //! both test modules remain below Abbey's 800-line soft cap.
 
 use super::*;
+use crate::app_core::{ClaimStatus, V3ResourceQuery, V3StableClaim};
 
 #[test]
 fn v3_session_echoes_exact_negotiated_grants_for_one_model_read() {
@@ -130,6 +131,114 @@ fn v3_model_read_refuses_locally_when_negotiation_denies_the_grant() {
         session.list_models(V3PageQuery::default()),
         Err(ClientError::V3CapabilityNotGranted {
             capability: V3Capability::ReadModels
+        })
+    ));
+    thread.join().unwrap();
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn v3_claim_read_echoes_grants_and_requires_the_exact_response_id() {
+    let root = scratch_dir("v3-claim");
+    let config = test_config(root.join("abbeyd.sock"));
+    let listener = UnixListener::bind(&config.socket_path).unwrap();
+    let thread = thread::spawn(move || {
+        let (mut negotiation_stream, _) = listener.accept().unwrap();
+        let negotiation_request = read_v3_request(&mut negotiation_stream);
+        let V3Command::Negotiate(requested) = negotiation_request.command else {
+            panic!("expected negotiation request");
+        };
+        assert_eq!(
+            requested.requested.as_slice(),
+            &[V3Capability::ReadClaimsById]
+        );
+        let granted = V3CapabilitySet::from_sorted(vec![V3Capability::ReadClaimsById]).unwrap();
+        negotiation_stream
+            .write_all(&encoded_v3_response(V3ResponseEnvelope::ok(
+                negotiation_request.request_id,
+                V3Event::Negotiated(V3GrantNegotiation {
+                    protocol_version: crate::app_core::APP_PROTOCOL_V3,
+                    schema_version: crate::app_core::APP_SCHEMA_V3,
+                    granted: granted.clone(),
+                }),
+            )))
+            .unwrap();
+
+        let (mut claim_stream, _) = listener.accept().unwrap();
+        let claim_request = read_v3_request(&mut claim_stream);
+        assert_eq!(claim_request.grants, granted);
+        let V3Command::ClaimById(query) = claim_request.command else {
+            panic!("expected stable claim request");
+        };
+        assert_eq!(query.resource_id, "backend-cursor-agent");
+        claim_stream
+            .write_all(&encoded_v3_response(V3ResponseEnvelope::ok(
+                claim_request.request_id,
+                V3Event::Claim(V3StableClaim {
+                    id: query.resource_id,
+                    name: "cursor-agent backend (CLI/TUI)".into(),
+                    status: ClaimStatus::Current,
+                    note: "bounded canonical fixture".into(),
+                }),
+            )))
+            .unwrap();
+
+        let (mut mismatch_stream, _) = listener.accept().unwrap();
+        let mismatch_request = read_v3_request(&mut mismatch_stream);
+        assert_eq!(mismatch_request.grants, granted);
+        assert!(matches!(mismatch_request.command, V3Command::ClaimById(_)));
+        mismatch_stream
+            .write_all(&encoded_v3_response(V3ResponseEnvelope::ok(
+                mismatch_request.request_id,
+                V3Event::Claim(V3StableClaim {
+                    id: "different-stable-id".into(),
+                    name: "wrong claim".into(),
+                    status: ClaimStatus::Current,
+                    note: "must be rejected".into(),
+                }),
+            )))
+            .unwrap();
+    });
+
+    let requested = V3CapabilitySet::from_sorted(vec![V3Capability::ReadClaimsById]).unwrap();
+    let session = DaemonClient::new(config).negotiate_v3(requested).unwrap();
+    let claim = session
+        .claim_by_id(V3ResourceQuery {
+            resource_id: "backend-cursor-agent".into(),
+        })
+        .unwrap();
+    assert_eq!(claim.id, "backend-cursor-agent");
+    assert_eq!(claim.status, ClaimStatus::Current);
+    assert!(matches!(
+        session.claim_by_id(V3ResourceQuery {
+            resource_id: "ci-self-hosted-linux-proof".into(),
+        }),
+        Err(ClientError::InvalidV3Response)
+    ));
+    thread.join().unwrap();
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn v3_claim_read_refuses_locally_when_negotiation_denies_the_grant() {
+    let requested = V3CapabilitySet::from_sorted(vec![V3Capability::ReadClaimsById]).unwrap();
+    let (config, thread, root) = fake_v3_server(|request| {
+        encoded_v3_response(V3ResponseEnvelope::ok(
+            request.request_id,
+            V3Event::Negotiated(V3GrantNegotiation {
+                protocol_version: crate::app_core::APP_PROTOCOL_V3,
+                schema_version: crate::app_core::APP_SCHEMA_V3,
+                granted: V3CapabilitySet::deny_all(),
+            }),
+        ))
+    });
+    let session = DaemonClient::new(config).negotiate_v3(requested).unwrap();
+    assert!(matches!(
+        session.claim_by_id(V3ResourceQuery {
+            resource_id: "backend-cursor-agent".into(),
+        }),
+        Err(ClientError::V3CapabilityNotGranted {
+            capability: V3Capability::ReadClaimsById
         })
     ));
     thread.join().unwrap();

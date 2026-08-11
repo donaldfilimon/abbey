@@ -161,7 +161,12 @@ fn app_core_daemon_claim_stays_narrower_than_owned_runtime() {
     assert!(daemon.note.contains("read-only"));
     assert!(daemon.note.contains("separate protocol-v2 surface"));
     assert!(daemon.note.contains("protocol-v3 envelope"));
-    assert!(daemon.note.contains("ABI-local model inventory only"));
+    assert!(daemon.note.contains("exact canonical stable-claim reads"));
+    assert!(
+        daemon
+            .note
+            .contains("conditional bounded ABI-local model inventory")
+    );
     assert!(daemon.note.contains("remain unavailable"));
 
     let bounded_runs = CLAIMS
@@ -199,7 +204,7 @@ fn app_core_daemon_claim_stays_narrower_than_owned_runtime() {
 }
 
 #[test]
-fn protocol_v3_model_inventory_claim_stays_read_only_and_route_bound() {
+fn protocol_v3_inventory_and_claim_lookup_stay_read_only_and_exact() {
     let claim = CLAIMS
         .iter()
         .find(|claim| claim.id == "daemon-protocol-v3-abi-model-inventory")
@@ -207,10 +212,13 @@ fn protocol_v3_model_inventory_claim_stays_read_only_and_route_bound() {
     assert_eq!(claim.status, Status::Current);
     for required in [
         "read_models",
+        "read_claims_by_id",
+        "exact stable-ID reads",
+        "non-exact claim IDs return not_found",
         "same startup-owned ABI ModelProvider route",
         "missing grant",
         "forged unsupported grant",
-        "There is no v3 model inference command",
+        "There is no fuzzy claim search",
     ] {
         assert!(claim.note.contains(required));
     }
