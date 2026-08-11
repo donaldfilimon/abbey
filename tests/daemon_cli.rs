@@ -3,8 +3,10 @@
 #![cfg(unix)]
 
 use abbey::app_core::{
-    AppEvent, ClaimStatus, Edition, RuntimeState, V3Capability, V3Event, V3OperationState,
+    AppEvent, ClaimStatus, Edition, RuntimeState, V3Capability, V3CapabilitySet, V3ErrorCode,
+    V3Event, V3OperationState, V3ResourceQuery,
 };
+use abbey::daemon::{BearerSecret, ClientError, DaemonClient, DaemonConfig};
 use abbey::edition;
 use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Path, PathBuf};
@@ -233,6 +235,47 @@ fn protocol_v3_negotiation_and_model_inventory_round_trip_through_real_binaries(
             "--limit {rejected} must be rejected"
         );
     }
+}
+
+#[test]
+fn protocol_v3_stable_claim_lookup_round_trips_through_real_daemon_and_typed_client() {
+    let harness = Harness::start();
+    let config = DaemonConfig::local(
+        harness.socket.clone(),
+        BearerSecret::parse(BEARER).expect("valid bearer"),
+    );
+    let requested =
+        V3CapabilitySet::from_sorted(vec![V3Capability::ReadModels, V3Capability::ReadClaimsById])
+            .unwrap();
+    let session = DaemonClient::new(config)
+        .negotiate_v3(requested)
+        .expect("negotiate stable claim authority");
+    assert_eq!(
+        session.negotiation().granted.as_slice(),
+        &[V3Capability::ReadClaimsById]
+    );
+
+    let claim = session
+        .claim_by_id(V3ResourceQuery {
+            resource_id: "ci-self-hosted-linux-proof".into(),
+        })
+        .expect("read canonical claim by stable id");
+    assert_eq!(claim.id, "ci-self-hosted-linux-proof");
+    assert_eq!(claim.status, ClaimStatus::Blocked);
+    assert!(claim.note.contains("Linux ARM64"));
+
+    let error = session
+        .claim_by_id(V3ResourceQuery {
+            resource_id: "ci-self-hosted-linux".into(),
+        })
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        ClientError::DaemonV3 {
+            code: V3ErrorCode::NotFound,
+            ..
+        }
+    ));
 }
 
 /// Real-binary proof for the route audit, including that the human and JSON

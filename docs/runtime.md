@@ -219,25 +219,30 @@ request envelope, fixtures, and downgrade behavior are unchanged. The daemon's s
 version list is now `[1, 2, 3]`. Version 3 uses a separate envelope carrying schema version,
 bearer, canonical echoed grants, and `V3Command`; it cannot be decoded as a legacy command.
 
-The first served authority is deliberately smaller than the contract catalog. When daemon
-startup binds an ABI-local fixed provider, negotiation may return only `read_models`, and
-`ListModels` returns bounded fixed-watermark inventory derived from the same startup-owned
-`ModelProvider` object used by protocol-v2 execution. Without that provider, negotiation
-returns deny-all. A non-negotiation request missing its exact grant is rejected before
-dispatch; echoing an unsupported grant cannot manufacture daemon authority. There is no v3
-inference command, download, load/unload, tool, approval, memory, training, worker, polling,
-desktop, remote, or Windows authority yet.
+The first served authority is deliberately smaller than the contract catalog. Negotiation
+may always grant `read_claims_by_id`; `ClaimById` projects one exact stable-ID match from
+Abbey's canonical claim registry and returns `not_found` for a missing or non-exact ID.
+There is no fuzzy claim search. When daemon startup binds an ABI-local fixed provider,
+negotiation may additionally grant `read_models`, and `ListModels` returns bounded
+fixed-watermark inventory derived from the same startup-owned `ModelProvider` object used
+by protocol-v2 execution. Without that provider, model authority remains denied while the
+canonical claim read remains available. A non-negotiation request missing its exact grant
+is rejected before dispatch; echoing an unsupported grant cannot manufacture daemon
+authority. There is no v3 inference command, download, load/unload, tool, approval, memory,
+training, worker, polling, desktop, remote, or Windows authority yet.
 
 `DaemonClient::negotiate_v3` sends one strict negotiation request and returns a typed
 `V3DaemonSession`. The session keeps the validated daemon-returned grants private; its model
-read echoes that exact set and validates the response kind, versions, request correlation,
-page query, watermark, bounds, and record schema before presentation. A denied
-`read_models` grant stops locally before a second request. Neither negotiation nor model
-inventory uses the legacy v1 downgrade path or any automatic retry.
+and stable-claim reads echo that exact set. Model reads validate the response kind,
+versions, request correlation, page query, watermark, bounds, and record schema. Claim
+reads additionally require the returned stable ID to equal the requested ID. A denied
+grant stops locally before a second request. Negotiation and both reads make one correlated
+request without the legacy v1 downgrade path or any automatic retry.
 
 `abbey daemon negotiate` presents the explicit negotiation, while `abbey daemon models`
 negotiates `read_models` and reads one bounded page. Both human and JSON views consume only
-validated `V3Event` values. These commands do not select a provider, executable, model,
+validated `V3Event` values. The stable-claim read is currently a typed client authority,
+not a new CLI command. These commands do not select a provider, executable, model,
 workspace, or grant, and their addition does not expand daemon authority.
 
 ## Shared presentation reducer

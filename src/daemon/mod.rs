@@ -4,8 +4,9 @@
 //! sanitized ReadRoutes audit tail. Protocol v2 adds
 //! durable run submission, status, cancellation, and sanitized paged lifecycle
 //! events for startup-bound fixed local providers. Protocol v3 is a separate
-//! authenticated envelope and initially negotiates only bounded ABI-local
-//! model inventory when that provider is configured at startup. Requests never
+//! authenticated envelope and currently negotiates bounded ABI-local model
+//! inventory when that provider is configured plus exact stable-ID reads from
+//! Abbey's canonical claims registry. Requests never
 //! choose a program, argument recipe, environment, or workspace; tools, shell,
 //! memory, automations, live subscriptions, and non-Unix transports remain
 //! unavailable.
