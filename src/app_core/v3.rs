@@ -436,6 +436,7 @@ impl V3Command {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum V3OperationState {
+    Available,
     Queued,
     Running,
     InputRequired,
@@ -606,6 +607,7 @@ impl V3EventPage {
 #[serde(rename_all = "snake_case")]
 pub enum V3ErrorCode {
     UnsupportedVersion,
+    Unauthorized,
     CapabilityDenied,
     InvalidCommand,
     NotFound,
@@ -613,6 +615,8 @@ pub enum V3ErrorCode {
     Cancelled,
     DeadlineExceeded,
     BudgetExceeded,
+    RateLimited,
+    ResponseTooLarge,
     Internal,
 }
 

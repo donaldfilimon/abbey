@@ -201,7 +201,7 @@ request once with v1 only after an explicit `unsupported_version`. It never retr
 `SubmitRun` or `CancelRun`, because a lost mutation response does not prove the operation
 was not committed.
 
-## Additive protocol-v3 contracts
+## Protocol-v3 contracts and first daemon authority
 
 `app_core::v3` defines a separate protocol-v3 command and event family. It covers explicit
 grant negotiation, tools and digest-bound approval decisions, memory reads, immutable model
@@ -211,11 +211,19 @@ metric, and page field is bounded and validated. Capability sets are canonically
 duplicate-free, and deny all authority unless the exact command grant is present; a server
 negotiation cannot return an unrequested grant.
 
-This is a contracts-only foundation. `APP_PROTOCOL_VERSION` and the daemon's supported
-version list remain 2 and `[1, 2]`; the existing `AppCommand`, `AppEvent`, request envelope,
-and downgrade behavior are unchanged. `abbeyd` therefore rejects version 3 and advertises
-no v3 authority until a later PR adds an authenticated v3 envelope, durable handlers, and
-runtime evidence for each grant.
+The legacy client constant remains 2, and the existing `AppCommand`, `AppEvent`, v1/v2
+request envelope, fixtures, and downgrade behavior are unchanged. The daemon's supported
+version list is now `[1, 2, 3]`. Version 3 uses a separate envelope carrying schema version,
+bearer, canonical echoed grants, and `V3Command`; it cannot be decoded as a legacy command.
+
+The first served authority is deliberately smaller than the contract catalog. When daemon
+startup binds an ABI-local fixed provider, negotiation may return only `read_models`, and
+`ListModels` returns bounded fixed-watermark inventory derived from the same startup-owned
+`ModelProvider` object used by protocol-v2 execution. Without that provider, negotiation
+returns deny-all. A non-negotiation request missing its exact grant is rejected before
+dispatch; echoing an unsupported grant cannot manufacture daemon authority. There is no v3
+inference command, download, load/unload, tool, approval, memory, training, worker, polling,
+desktop, remote, or Windows authority yet.
 
 ## Shared presentation reducer
 
@@ -247,9 +255,9 @@ run state; audit events record bounded operational facts. Neither is a transcrip
 
 ## Claim boundary
 
-The Current product surface is exact v1 read compatibility plus authenticated protocol-v2
-fixed-recipe local run control on Unix. Protocol-v3 types are Proposed contracts, not a
-served capability. A real scratch-daemon test proves idempotent single
+The Current product surface is exact v1 read compatibility, authenticated protocol-v2
+fixed-recipe local run control, and authenticated protocol-v3 ABI-local model inventory on
+Unix. The other protocol-v3 command families remain unserved contracts. A real scratch-daemon test proves idempotent single
 launch, terminal persistence, cancellation and descendant death, fixed-watermark paging,
 restart/reopen, and absence of bearer, prompt, provider-output, and executable-path
 disclosure. A second real process proof covers the shared CLI/TUI-slash command grammar,
@@ -259,5 +267,5 @@ proof covers the canonical legacy-metadata backup/import boundary, including unc
 transcript/route/memory/WDBX canaries and absence of raw identifiers or cwd values in
 SQLite and output. Tool dispatch, automations, approvals,
 live subscriptions, daemon-owned memory, the desktop run bridge, Windows named pipes/Job
-Objects, and provider-neutral model ownership remain separate incomplete or Proposed
+Objects, model registry lifecycle, and full provider-neutral tool ownership remain separate incomplete or Proposed
 evidence slices.

@@ -88,45 +88,113 @@ fn handle_connection<H: DaemonHandler>(
                 request_id,
             } => {
                 if !limiter.admit() {
-                    ResponseEnvelope::error_for(
-                        response_version,
-                        request_id,
-                        "rate_limited",
-                        "authenticated request rate limit exceeded",
-                    )
+                    WireResponse::rate_limited(response_version, request_id)
+                } else if response_version == crate::app_core::APP_PROTOCOL_V3 {
+                    match serde_json::from_slice::<V3RequestEnvelope>(&bytes) {
+                        Ok(request) => {
+                            WireResponse::V3(dispatch_authenticated_v3(request, handler))
+                        }
+                        Err(_) => WireResponse::V3(V3ResponseEnvelope::error(
+                            "",
+                            crate::app_core::V3ErrorCode::InvalidCommand,
+                            "request is not valid protocol-v3 JSON",
+                        )),
+                    }
                 } else {
                     match serde_json::from_slice::<RequestEnvelope>(&bytes) {
-                        Ok(request) => dispatch_authenticated(request, handler),
-                        Err(_) => ResponseEnvelope::error(
+                        Ok(request) => {
+                            WireResponse::Legacy(dispatch_authenticated(request, handler))
+                        }
+                        Err(_) => WireResponse::Legacy(ResponseEnvelope::error(
                             "",
                             "malformed_request",
                             "request is not valid JSON",
-                        ),
+                        )),
                     }
                 }
             }
             FrameAuthentication::Unauthorized {
                 response_version,
                 request_id,
-            } => ResponseEnvelope::error_for(
-                response_version,
+            } => WireResponse::unauthorized(response_version, request_id),
+            FrameAuthentication::Malformed => WireResponse::Legacy(ResponseEnvelope::error(
+                "",
+                "malformed_request",
+                "request is not valid JSON",
+            )),
+        },
+        Err(FrameError::Oversize) => WireResponse::Legacy(ResponseEnvelope::error(
+            "",
+            "frame_too_large",
+            "frame exceeds configured limit",
+        )),
+        Err(FrameError::Empty) => WireResponse::Legacy(ResponseEnvelope::error(
+            "",
+            "malformed_request",
+            "frame must not be empty",
+        )),
+        Err(FrameError::Io) => return,
+    };
+    let _ = write_wire_response(&mut stream, response, config.max_frame_len);
+}
+
+#[derive(serde::Serialize)]
+#[serde(untagged)]
+pub(super) enum WireResponse {
+    Legacy(ResponseEnvelope),
+    V3(V3ResponseEnvelope),
+}
+
+impl WireResponse {
+    fn unauthorized(version: u16, request_id: String) -> Self {
+        if version == crate::app_core::APP_PROTOCOL_V3 {
+            Self::V3(V3ResponseEnvelope::error(
+                request_id,
+                crate::app_core::V3ErrorCode::Unauthorized,
+                "authentication failed",
+            ))
+        } else {
+            Self::Legacy(ResponseEnvelope::error_for(
+                version,
                 request_id,
                 "unauthorized",
                 "authentication failed",
-            ),
-            FrameAuthentication::Malformed => {
-                ResponseEnvelope::error("", "malformed_request", "request is not valid JSON")
-            }
-        },
-        Err(FrameError::Oversize) => {
-            ResponseEnvelope::error("", "frame_too_large", "frame exceeds configured limit")
+            ))
         }
-        Err(FrameError::Empty) => {
-            ResponseEnvelope::error("", "malformed_request", "frame must not be empty")
+    }
+
+    fn rate_limited(version: u16, request_id: String) -> Self {
+        if version == crate::app_core::APP_PROTOCOL_V3 {
+            Self::V3(V3ResponseEnvelope::error(
+                request_id,
+                crate::app_core::V3ErrorCode::RateLimited,
+                "authenticated request rate limit exceeded",
+            ))
+        } else {
+            Self::Legacy(ResponseEnvelope::error_for(
+                version,
+                request_id,
+                "rate_limited",
+                "authenticated request rate limit exceeded",
+            ))
         }
-        Err(FrameError::Io) => return,
-    };
-    let _ = write_response(&mut stream, response, config.max_frame_len);
+    }
+
+    fn response_too_large(self) -> Self {
+        match self {
+            Self::Legacy(response) => Self::Legacy(ResponseEnvelope::error_for(
+                response.version,
+                response.request_id,
+                "response_too_large",
+                "handler response exceeds configured limit",
+            )),
+            Self::V3(response) => Self::V3(V3ResponseEnvelope::error(
+                response.request_id,
+                crate::app_core::V3ErrorCode::ResponseTooLarge,
+                "handler response exceeds configured limit",
+            )),
+        }
+    }
 }
 
 enum FrameAuthentication {
@@ -198,20 +266,14 @@ fn read_frame(stream: &mut UnixStream, max: usize) -> Result<Vec<u8>, FrameError
     Ok(bytes)
 }
 
-pub(super) fn write_response(
+pub(super) fn write_wire_response(
     stream: &mut UnixStream,
-    response: ResponseEnvelope,
+    response: WireResponse,
     max: usize,
 ) -> io::Result<()> {
     let mut bytes = serde_json::to_vec(&response).map_err(io::Error::other)?;
     if bytes.len() > max {
-        bytes = serde_json::to_vec(&ResponseEnvelope::error_for(
-            response.version,
-            response.request_id,
-            "response_too_large",
-            "handler response exceeds configured limit",
-        ))
-        .map_err(io::Error::other)?;
+        bytes = serde_json::to_vec(&response.response_too_large()).map_err(io::Error::other)?;
     }
     let length = u32::try_from(bytes.len())
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "response too large"))?;
