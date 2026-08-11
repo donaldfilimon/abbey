@@ -178,7 +178,7 @@ fn legacy_metadata_backup_and_schema_v2_import_are_exact_and_idempotent() {
                 row.get::<_, i64>(0)
             })
             .unwrap(),
-            5
+            6
         );
         assert_eq!(
             conn.query_row(

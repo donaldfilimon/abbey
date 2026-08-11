@@ -24,6 +24,7 @@ mod private;
 mod projection;
 mod records;
 mod tool_approval;
+mod tool_execution;
 
 pub use audit::{AuditEvent, AuditMetadata, NewAuditEvent};
 use audit::{row_to_audit, validate_audit_label};
@@ -32,6 +33,10 @@ pub use records::{ConversationBackend, NewRun, NewRunEvent, RunEvent, RunRecord}
 pub use tool_approval::{
     MAX_TOOL_APPROVAL_TTL_MS, NewToolApproval, ToolApprovalDecision, ToolApprovalEvent,
     ToolApprovalRecord, ToolApprovalState,
+};
+pub use tool_execution::{
+    ToolExecutionEvent, ToolExecutionOutcome, ToolExecutionPreparation, ToolExecutionRecord,
+    ToolExecutionState,
 };
 
 #[derive(Debug, Error)]
@@ -58,6 +63,10 @@ pub enum StoreError {
     ToolApprovalConflict,
     #[error("tool approval digest does not match the pending call")]
     ToolApprovalDigestMismatch,
+    #[error("tool execution was not found: {0}")]
+    ToolExecutionNotFound(String),
+    #[error("tool execution transition conflicts with durable state")]
+    ToolExecutionConflict,
     #[error("runtime database contains invalid data: {0}")]
     CorruptData(&'static str),
     #[error(transparent)]
@@ -73,6 +82,7 @@ pub enum StoreError {
 pub struct RuntimeStore {
     conn: Mutex<Connection>,
     recovered_runs: usize,
+    recovered_tool_executions: usize,
     legacy_imported: bool,
 }
 
@@ -146,9 +156,15 @@ impl RuntimeStore {
         } else {
             0
         };
+        let recovered_tool_executions = if recover_interrupted {
+            tool_execution::recover_prepared_on(&mut conn, epoch_ms()?)?
+        } else {
+            0
+        };
         Ok(Self {
             conn: Mutex::new(conn),
             recovered_runs,
+            recovered_tool_executions,
             legacy_imported,
         })
     }
@@ -156,6 +172,12 @@ impl RuntimeStore {
     #[must_use]
     pub const fn recovered_runs(&self) -> usize {
         self.recovered_runs
+    }
+
+    /// Number of prepared tool effects marked interrupted during this open.
+    #[must_use]
+    pub const fn recovered_tool_executions(&self) -> usize {
+        self.recovered_tool_executions
     }
 
     /// Whether this open committed a new legacy metadata snapshot.
@@ -759,6 +781,11 @@ fn to_sql_error(error: StoreError) -> rusqlite::Error {
 
 fn now() -> String {
     Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true)
+}
+
+fn epoch_ms() -> Result<u64, StoreError> {
+    u64::try_from(Utc::now().timestamp_millis())
+        .map_err(|_| StoreError::CorruptData("system time precedes the Unix epoch"))
 }
 
 #[cfg(test)]

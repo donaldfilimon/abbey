@@ -3,7 +3,7 @@
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 use thiserror::Error;
 
-pub(super) const CURRENT_SCHEMA_VERSION: i64 = 5;
+pub(super) const CURRENT_SCHEMA_VERSION: i64 = 6;
 
 const CREATE_LEDGER: &str = r#"
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -333,6 +333,7 @@ FROM conversation_identity_scopes;
 "#;
 
 const MIGRATION_5: &str = include_str!("migration_5_tool_approvals.sql");
+const MIGRATION_6: &str = include_str!("migration_6_tool_executions.sql");
 
 const MIGRATIONS: &[(i64, &str)] = &[
     (1, MIGRATION_1),
@@ -340,6 +341,7 @@ const MIGRATIONS: &[(i64, &str)] = &[
     (3, MIGRATION_3),
     (4, MIGRATION_4),
     (5, MIGRATION_5),
+    (6, MIGRATION_6),
 ];
 
 #[derive(Debug, Error)]
@@ -610,10 +612,11 @@ fn current_version(conn: &Connection) -> rusqlite::Result<i64> {
     .optional()
     .map(|value| value.flatten().unwrap_or(0))
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    include!("migrations/v6_tests.rs");
 
     #[test]
     fn repeat_migration_is_idempotent() {
@@ -625,7 +628,7 @@ mod tests {
             conn.query_row("SELECT COUNT(*) FROM schema_migrations", [], |row| row
                 .get::<_, i64>(0))
                 .unwrap(),
-            5
+            6
         );
     }
 
