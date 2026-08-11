@@ -19,7 +19,7 @@ pub enum ToolApprovalState {
 }
 
 impl ToolApprovalState {
-    const fn as_str(self) -> &'static str {
+    pub(super) const fn as_str(self) -> &'static str {
         match self {
             Self::Pending => "pending",
             Self::Approved => "approved",
@@ -220,45 +220,6 @@ impl RuntimeStore {
         Ok(record)
     }
 
-    /// Atomically consume one non-expired approval exactly once.
-    pub fn consume_tool_approval(
-        &self,
-        call_id: &str,
-        call_digest: &str,
-        now_ms: u64,
-    ) -> Result<ToolApprovalRecord, StoreError> {
-        validate_id(call_id, "tool approval call id is invalid")?;
-        validate_digest(call_digest)?;
-        let now = sql_u64(now_ms)?;
-        let mut conn = self.conn.lock().expect("runtime sqlite lock poisoned");
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let current = require_record(&tx, call_id)?;
-        require_digest(&current, call_digest)?;
-        if let Some(expired) = expire_if_needed(&tx, &current, now)? {
-            tx.commit()?;
-            return Ok(expired);
-        }
-        if current.state != ToolApprovalState::Approved {
-            return Err(StoreError::ToolApprovalConflict);
-        }
-        tx.execute(
-            "UPDATE tool_approvals SET state='consumed', updated_at_ms=?1
-             WHERE call_id=?2 AND state='approved'",
-            params![now, call_id],
-        )?;
-        insert_event(
-            &tx,
-            call_id,
-            ToolApprovalState::Consumed,
-            current.decision_id.as_deref(),
-            None,
-            now,
-        )?;
-        let record = require_record(&tx, call_id)?;
-        tx.commit()?;
-        Ok(record)
-    }
-
     /// Read one approval, applying durable expiry first when necessary.
     pub fn tool_approval(
         &self,
@@ -295,7 +256,7 @@ impl RuntimeStore {
     }
 }
 
-fn expire_if_needed(
+pub(super) fn expire_if_needed(
     tx: &Transaction<'_>,
     current: &ToolApprovalRecord,
     now: i64,
@@ -323,7 +284,10 @@ fn expire_if_needed(
     Ok(Some(require_record(tx, &current.call_id)?))
 }
 
-fn require_record(tx: &Transaction<'_>, call_id: &str) -> Result<ToolApprovalRecord, StoreError> {
+pub(super) fn require_record(
+    tx: &Transaction<'_>,
+    call_id: &str,
+) -> Result<ToolApprovalRecord, StoreError> {
     read_record(tx, call_id)?.ok_or_else(|| StoreError::ToolApprovalNotFound(call_id.to_owned()))
 }
 
@@ -369,7 +333,7 @@ fn row_to_event(row: &rusqlite::Row<'_>) -> rusqlite::Result<ToolApprovalEvent> 
     })
 }
 
-fn insert_event(
+pub(super) fn insert_event(
     tx: &Transaction<'_>,
     call_id: &str,
     state: ToolApprovalState,
@@ -392,10 +356,12 @@ fn insert_event(
     Ok(())
 }
 
-fn resolution_exists(tx: &Transaction<'_>, id: &str) -> Result<bool, StoreError> {
+pub(super) fn resolution_exists(tx: &Transaction<'_>, id: &str) -> Result<bool, StoreError> {
     tx.query_row(
         "SELECT EXISTS(
             SELECT 1 FROM tool_approvals WHERE decision_id=?1 OR cancellation_id=?1
+            UNION ALL
+            SELECT 1 FROM tool_executions WHERE execution_id=?1
          )",
         [id],
         |row| row.get(0),
@@ -403,7 +369,7 @@ fn resolution_exists(tx: &Transaction<'_>, id: &str) -> Result<bool, StoreError>
     .map_err(Into::into)
 }
 
-fn require_digest(record: &ToolApprovalRecord, digest: &str) -> Result<(), StoreError> {
+pub(super) fn require_digest(record: &ToolApprovalRecord, digest: &str) -> Result<(), StoreError> {
     if record.call_digest == digest {
         Ok(())
     } else {
@@ -411,7 +377,7 @@ fn require_digest(record: &ToolApprovalRecord, digest: &str) -> Result<(), Store
     }
 }
 
-fn validate_id(value: &str, message: &'static str) -> Result<(), StoreError> {
+pub(super) fn validate_id(value: &str, message: &'static str) -> Result<(), StoreError> {
     if value.is_empty()
         || value.len() > 128
         || !value
@@ -423,7 +389,7 @@ fn validate_id(value: &str, message: &'static str) -> Result<(), StoreError> {
     Ok(())
 }
 
-fn validate_digest(value: &str) -> Result<(), StoreError> {
+pub(super) fn validate_digest(value: &str) -> Result<(), StoreError> {
     if value.len() != 64
         || !value
             .bytes()
@@ -434,12 +400,12 @@ fn validate_digest(value: &str) -> Result<(), StoreError> {
     Ok(())
 }
 
-fn sql_u64(value: u64) -> Result<i64, StoreError> {
+pub(super) fn sql_u64(value: u64) -> Result<i64, StoreError> {
     i64::try_from(value)
         .map_err(|_| StoreError::InvalidInput("tool approval timestamp exceeds SQLite"))
 }
 
-fn from_sql_u64(value: i64) -> rusqlite::Result<u64> {
+pub(super) fn from_sql_u64(value: i64) -> rusqlite::Result<u64> {
     u64::try_from(value).map_err(|error| {
         rusqlite::Error::FromSqlConversionFailure(
             0,
@@ -474,7 +440,7 @@ mod tests {
     }
 
     #[test]
-    fn approval_is_digest_bound_single_use_and_append_only() {
+    fn approval_is_digest_bound_and_decision_is_append_only() {
         let store = store();
         let created = store
             .create_tool_approval(pending("call-1", 1_000, 2_000))
@@ -500,22 +466,10 @@ mod tests {
             )
             .unwrap();
         assert_eq!(approved.state, ToolApprovalState::Approved);
-        let consumed = store
-            .consume_tool_approval("call-1", DIGEST, 1_200)
-            .unwrap();
-        assert_eq!(consumed.state, ToolApprovalState::Consumed);
-        assert!(matches!(
-            store.consume_tool_approval("call-1", DIGEST, 1_300),
-            Err(StoreError::ToolApprovalConflict)
-        ));
         let events = store.tool_approval_events("call-1").unwrap();
         assert_eq!(
             events.iter().map(|event| event.state).collect::<Vec<_>>(),
-            vec![
-                ToolApprovalState::Pending,
-                ToolApprovalState::Approved,
-                ToolApprovalState::Consumed,
-            ]
+            vec![ToolApprovalState::Pending, ToolApprovalState::Approved]
         );
         assert!(
             events
@@ -632,7 +586,7 @@ mod tests {
     }
 
     #[test]
-    fn approved_state_reopens_and_can_still_be_consumed_once() {
+    fn approved_state_reopens_and_can_still_prepare_one_execution() {
         let root = std::env::temp_dir().join(format!(
             "abbey-tool-approval-{}-{}",
             std::process::id(),
@@ -657,10 +611,17 @@ mod tests {
         }
         {
             let store = RuntimeStore::open(&database).unwrap();
-            let consumed = store
-                .consume_tool_approval("call-reopen", DIGEST, 1_200)
+            store
+                .prepare_tool_execution("call-reopen", DIGEST, "execution-reopen", 1_200)
                 .unwrap();
-            assert_eq!(consumed.state, ToolApprovalState::Consumed);
+            assert_eq!(
+                store
+                    .tool_approval("call-reopen", 1_200)
+                    .unwrap()
+                    .unwrap()
+                    .state,
+                ToolApprovalState::Consumed
+            );
             assert_eq!(store.tool_approval_events("call-reopen").unwrap().len(), 3);
         }
         std::fs::remove_dir_all(root).unwrap();

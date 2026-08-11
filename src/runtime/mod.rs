@@ -35,4 +35,6 @@ pub use store::{
     AuditEvent, AuditMetadata, ConversationBackend, MAX_TOOL_APPROVAL_TTL_MS, NewAuditEvent,
     NewRun, NewRunEvent, NewToolApproval, RunEvent, RunRecord, RuntimeStore, StoreError,
     ToolApprovalDecision, ToolApprovalEvent, ToolApprovalRecord, ToolApprovalState,
+    ToolExecutionEvent, ToolExecutionOutcome, ToolExecutionPreparation, ToolExecutionRecord,
+    ToolExecutionState,
 };

@@ -237,7 +237,11 @@ fn protocol_v3_safe_inventory_keeps_mcp_read_only_and_approval_lifecycle_narrow(
         "globally single-use cancellation ID",
         "pending or approved record to cancelled",
         "cancel_tool sends once",
-        "cancelled or approved record is not consumed or executed",
+        "cancelled or approved record is not consumed or executed by protocol dispatch",
+        "Schema v6 adds a raw-free execution-intent ledger",
+        "atomically moves one exact approved digest to consumed and writes prepared intent before any effect may run",
+        "marks unfinished prepared intent interrupted on daemon reopen",
+        "explicit retry requires a fresh call and approval",
         "approve_tool and deny_tool also send once",
         "read_claims_by_id",
         "exact stable-ID",
@@ -248,7 +252,7 @@ fn protocol_v3_safe_inventory_keeps_mcp_read_only_and_approval_lifecycle_narrow(
         "digest-only authorization",
         "single-use",
         "32 KiB",
-        "No consumption or execution-after-approval path",
+        "No protocol consumption or execution-after-approval path",
     ] {
         assert!(claim.note.contains(required), "missing `{required}`");
     }
