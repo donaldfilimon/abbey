@@ -10,6 +10,10 @@ mod policy;
 mod routes;
 mod run;
 mod service;
+mod v3;
+#[cfg(test)]
+mod v3_tests;
+mod v3_tool;
 
 pub use context::AppContext;
 pub use contracts::{
@@ -27,3 +31,11 @@ pub use run::{
     RunSnapshot, RunState, RunSubmission, RunSubmissionDisposition,
 };
 pub use service::{AppService, AppServiceError};
+pub use v3::{
+    APP_PROTOCOL_V3, APP_SCHEMA_V3, MAX_V3_PAGE, V3Action, V3Capability, V3CapabilitySet,
+    V3Command, V3EntityPage, V3EntityRecord, V3Error, V3ErrorCode, V3Event, V3EventPage,
+    V3EventRecord, V3GrantNegotiation, V3GrantRequest, V3Metric, V3MetricPage, V3MetricQuery,
+    V3ModelAction, V3OperationState, V3OperationStatus, V3PageQuery, V3ResourceQuery,
+    V3SearchRequest, V3StableClaim, V3TrainingStart,
+};
+pub use v3_tool::{V3ToolCall, V3ToolDecision, V3ToolDescriptor, V3ToolPage};
