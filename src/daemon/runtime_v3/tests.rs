@@ -4,9 +4,9 @@ use std::time::Duration;
 use abi_agent_runtime::{EchoProvider, RunBudget};
 
 use super::*;
-#[cfg(not(feature = "personal-edition"))]
-use crate::app_core::V3ToolDecision;
 use crate::app_core::{APP_PROTOCOL_V1, V3GrantRequest, V3PageQuery, V3ResourceQuery, V3ToolCall};
+#[cfg(not(feature = "personal-edition"))]
+use crate::app_core::{V3Action, V3ToolDecision};
 
 fn store() -> Arc<RuntimeStore> {
     Arc::new(RuntimeStore::open(std::path::Path::new(":memory:")).unwrap())
@@ -84,6 +84,7 @@ fn no_abi_route_still_negotiates_safe_tools_and_canonical_claim_reads() {
                 V3Capability::ListTools,
                 V3Capability::InvokeTools,
                 V3Capability::DecideToolApprovals,
+                V3Capability::CancelTools,
                 V3Capability::ReadModels,
                 V3Capability::ReadClaimsById,
             ])
@@ -98,6 +99,7 @@ fn no_abi_route_still_negotiates_safe_tools_and_canonical_claim_reads() {
             V3Capability::ListTools,
             V3Capability::InvokeTools,
             V3Capability::DecideToolApprovals,
+            V3Capability::CancelTools,
             V3Capability::ReadClaimsById,
         ]
     } else {
@@ -470,6 +472,142 @@ fn exact_pending_decisions_are_durable_but_never_consumed_or_executed() {
             .collect::<Vec<_>>(),
         vec![ToolApprovalState::Pending, ToolApprovalState::Expired]
     );
+}
+
+#[cfg(not(feature = "personal-edition"))]
+#[test]
+fn exact_tool_cancellation_is_durable_without_consumption_or_execution() {
+    let store = store();
+    let authority = V3RuntimeAuthority::from_provider_routes([], Arc::clone(&store)).unwrap();
+    let pending = |call_id: &str| V3ToolCall {
+        tool_id: tool_catalog::MEMORY_MARK_OBSOLETE_TOOL_ID.into(),
+        call_id: call_id.into(),
+        input: serde_json::json!({"record_id": format!("memory:{call_id}")}),
+    };
+
+    let pending_call = pending("cancel-pending-call");
+    authority
+        .handle(V3Command::InvokeTool(pending_call))
+        .unwrap();
+    let V3Event::ToolApprovalStatus(cancelled) = authority
+        .handle(V3Command::CancelTool(V3Action {
+            resource_id: "cancel-pending-call".into(),
+            operation_id: "cancellation-pending-1".into(),
+        }))
+        .unwrap()
+    else {
+        panic!("expected cancelled pending status");
+    };
+    assert_eq!(cancelled.state, V3ToolApprovalState::Cancelled);
+    assert_eq!(
+        store
+            .tool_approval_events("cancel-pending-call")
+            .unwrap()
+            .iter()
+            .map(|event| event.state)
+            .collect::<Vec<_>>(),
+        vec![ToolApprovalState::Pending, ToolApprovalState::Cancelled]
+    );
+    assert_eq!(
+        authority
+            .handle(V3Command::CancelTool(V3Action {
+                resource_id: "cancel-pending-call".into(),
+                operation_id: "cancellation-after-terminal".into(),
+            }))
+            .unwrap_err()
+            .code(),
+        "conflict"
+    );
+
+    let approved_call = pending("cancel-approved-call");
+    let approved_digest = approved_call.approval_digest().unwrap();
+    authority
+        .handle(V3Command::InvokeTool(approved_call))
+        .unwrap();
+    authority
+        .handle(V3Command::ApproveTool(V3ToolDecision {
+            call_id: "cancel-approved-call".into(),
+            call_digest: approved_digest,
+            decision_id: "decision-before-cancel".into(),
+        }))
+        .unwrap();
+    let V3Event::ToolApprovalStatus(cancelled) = authority
+        .handle(V3Command::CancelTool(V3Action {
+            resource_id: "cancel-approved-call".into(),
+            operation_id: "cancellation-approved-1".into(),
+        }))
+        .unwrap()
+    else {
+        panic!("expected cancelled approved status");
+    };
+    assert_eq!(cancelled.state, V3ToolApprovalState::Cancelled);
+    assert_eq!(
+        store
+            .tool_approval_events("cancel-approved-call")
+            .unwrap()
+            .iter()
+            .map(|event| event.state)
+            .collect::<Vec<_>>(),
+        vec![
+            ToolApprovalState::Pending,
+            ToolApprovalState::Approved,
+            ToolApprovalState::Cancelled,
+        ]
+    );
+
+    let reused_id_call = pending("cancel-reused-id-call");
+    authority
+        .handle(V3Command::InvokeTool(reused_id_call))
+        .unwrap();
+    assert_eq!(
+        authority
+            .handle(V3Command::CancelTool(V3Action {
+                resource_id: "cancel-reused-id-call".into(),
+                operation_id: "decision-before-cancel".into(),
+            }))
+            .unwrap_err()
+            .code(),
+        "conflict"
+    );
+    assert_eq!(
+        store
+            .tool_approval("cancel-reused-id-call", 1)
+            .unwrap()
+            .unwrap()
+            .state,
+        ToolApprovalState::Pending
+    );
+    assert_eq!(
+        authority
+            .handle(V3Command::CancelTool(V3Action {
+                resource_id: "missing-cancel-call".into(),
+                operation_id: "cancellation-missing".into(),
+            }))
+            .unwrap_err()
+            .code(),
+        "not_found"
+    );
+
+    store
+        .create_tool_approval(NewToolApproval {
+            call_id: "cancel-expired-call".into(),
+            tool_id: tool_catalog::MEMORY_MARK_OBSOLETE_TOOL_ID.into(),
+            call_digest: "c".repeat(64),
+            created_at_ms: 1,
+            expires_at_ms: 2,
+        })
+        .unwrap();
+    let V3Event::ToolApprovalStatus(expired) = authority
+        .handle(V3Command::CancelTool(V3Action {
+            resource_id: "cancel-expired-call".into(),
+            operation_id: "cancellation-expired".into(),
+        }))
+        .unwrap()
+    else {
+        panic!("expected expired cancellation status");
+    };
+    assert_eq!(expired.state, V3ToolApprovalState::Expired);
+    assert!(store.audit_events_for_run(None).unwrap().is_empty());
 }
 
 #[test]

@@ -1,9 +1,9 @@
 //! Typed protocol-v3 session reads over the shared bounded daemon transport.
 
 use crate::app_core::{
-    V3Capability, V3Command, V3EntityPage, V3Event, V3PageQuery, V3ResourceQuery, V3StableClaim,
-    V3ToolApprovalState, V3ToolApprovalStatus, V3ToolCall, V3ToolDecision, V3ToolInvocation,
-    V3ToolPage, V3ToolResult,
+    V3Action, V3Capability, V3Command, V3EntityPage, V3Event, V3PageQuery, V3ResourceQuery,
+    V3StableClaim, V3ToolApprovalState, V3ToolApprovalStatus, V3ToolCall, V3ToolDecision,
+    V3ToolInvocation, V3ToolPage, V3ToolResult,
 };
 
 use super::{ClientError, V3DaemonSession};
@@ -208,6 +208,48 @@ impl V3DaemonSession {
         _decision: V3ToolDecision,
         _approve: bool,
     ) -> Result<V3ToolApprovalStatus, ClientError> {
+        Err(ClientError::UnsupportedPlatform)
+    }
+
+    /// Cancel one exact pending or approved tool record without executing it.
+    #[cfg(unix)]
+    pub fn cancel_tool(&self, action: V3Action) -> Result<V3ToolApprovalStatus, ClientError> {
+        action
+            .validate()
+            .map_err(|_| ClientError::InvalidV3Request)?;
+        if !self.negotiation.granted.contains(V3Capability::CancelTools) {
+            return Err(ClientError::V3CapabilityNotGranted {
+                capability: V3Capability::CancelTools,
+            });
+        }
+        let event = super::unix::request_v3(
+            &self.client.config,
+            self.negotiation.granted.clone(),
+            V3Command::CancelTool(action.clone()),
+        )?;
+        let V3Event::ToolApprovalStatus(status) = event else {
+            return Err(ClientError::UnexpectedV3Event {
+                expected: "tool approval status",
+                received: super::v3_event_name(&event),
+            });
+        };
+        status
+            .validate()
+            .map_err(|_| ClientError::InvalidV3Response)?;
+        if status.call_id != action.resource_id
+            || !matches!(
+                status.state,
+                V3ToolApprovalState::Cancelled | V3ToolApprovalState::Expired
+            )
+        {
+            return Err(ClientError::InvalidV3Response);
+        }
+        Ok(status)
+    }
+
+    /// Windows remains fail-closed until the named-pipe transport lands.
+    #[cfg(not(unix))]
+    pub fn cancel_tool(&self, _action: V3Action) -> Result<V3ToolApprovalStatus, ClientError> {
         Err(ClientError::UnsupportedPlatform)
     }
 
