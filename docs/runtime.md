@@ -201,6 +201,22 @@ request once with v1 only after an explicit `unsupported_version`. It never retr
 `SubmitRun` or `CancelRun`, because a lost mutation response does not prove the operation
 was not committed.
 
+## Additive protocol-v3 contracts
+
+`app_core::v3` defines a separate protocol-v3 command and event family. It covers explicit
+grant negotiation, tools and digest-bound approval decisions, memory reads, immutable model
+revision actions, reproducible training starts, worker/job reads and cancellation, stable
+claim-ID lookup, and fixed-watermark polling. Every free-text, identifier, JSON, progress,
+metric, and page field is bounded and validated. Capability sets are canonically ordered,
+duplicate-free, and deny all authority unless the exact command grant is present; a server
+negotiation cannot return an unrequested grant.
+
+This is a contracts-only foundation. `APP_PROTOCOL_VERSION` and the daemon's supported
+version list remain 2 and `[1, 2]`; the existing `AppCommand`, `AppEvent`, request envelope,
+and downgrade behavior are unchanged. `abbeyd` therefore rejects version 3 and advertises
+no v3 authority until a later PR adds an authenticated v3 envelope, durable handlers, and
+runtime evidence for each grant.
+
 ## Shared presentation reducer
 
 `src/run_control.rs` is the single presentation-neutral reducer used by
@@ -232,7 +248,8 @@ run state; audit events record bounded operational facts. Neither is a transcrip
 ## Claim boundary
 
 The Current product surface is exact v1 read compatibility plus authenticated protocol-v2
-fixed-recipe local run control on Unix. A real scratch-daemon test proves idempotent single
+fixed-recipe local run control on Unix. Protocol-v3 types are Proposed contracts, not a
+served capability. A real scratch-daemon test proves idempotent single
 launch, terminal persistence, cancellation and descendant death, fixed-watermark paging,
 restart/reopen, and absence of bearer, prompt, provider-output, and executable-path
 disclosure. A second real process proof covers the shared CLI/TUI-slash command grammar,
