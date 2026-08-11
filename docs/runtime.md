@@ -176,6 +176,9 @@ enforceable for its owned Unix children. The crate-private supervisor provides b
 stdout/stderr, deadlines, a fresh Unix process group, graceful `SIGTERM` followed by
 `SIGKILL`, descendant teardown, direct-child reaping, and a drop guard. It keeps monitoring
 the process group after the leader exits so an inherited pipe cannot hang the manager.
+After the group is gone, capture collection uses a separate doubled scheduling window capped
+at the same five-second hard maximum. This keeps a descheduled reader from being mislabeled
+as an open-pipe leak while preserving a fixed failure bound for a genuine inherited pipe.
 
 `DelegatedExecutor` exposes exactly two startup-bound recipes: ABI local completion and
 Apple Foundation Models response. A request supplies only one literal input argument; it

@@ -375,7 +375,13 @@ fn collect_readers(
     readers: [JoinHandle<()>; 2],
     grace: Duration,
 ) -> Result<(), SupervisorError> {
-    let deadline = Instant::now() + grace;
+    // Process-group termination and reader scheduling are sequential bounded
+    // phases. Reusing one grace period for both made a dead, fully reaped
+    // child look like an open-pipe leak when the reader threads were merely
+    // descheduled by a parallel test suite. Give collection its own doubled
+    // window, capped by the same hard five-second teardown maximum.
+    let collection_grace = grace.saturating_add(grace).min(MAX_TERMINATE_GRACE);
+    let deadline = Instant::now() + collection_grace;
     while !captures.complete() {
         let remaining = deadline.saturating_duration_since(Instant::now());
         if remaining.is_zero() {
@@ -429,5 +435,34 @@ pub(super) fn group_exists(process_group: Pid) -> Result<bool, SupervisorError> 
         Err(_) => Err(SupervisorError::Teardown(
             "inspect process group failed".into(),
         )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reader_collection_allows_bounded_scheduler_delay_after_teardown() {
+        let (sender, receiver) = mpsc::channel();
+        let readers = [StreamName::Stdout, StreamName::Stderr].map(|name| {
+            let sender = sender.clone();
+            thread::spawn(move || {
+                thread::sleep(Duration::from_millis(30));
+                let _ = sender.send(ReaderMessage {
+                    name,
+                    result: Ok(CapturedStream {
+                        name,
+                        bytes: Vec::new(),
+                        overflowed: false,
+                    }),
+                });
+            })
+        });
+        drop(sender);
+
+        let mut captures = Captures::default();
+        collect_readers(&receiver, &mut captures, readers, Duration::from_millis(20)).unwrap();
+        assert!(captures.complete());
     }
 }
