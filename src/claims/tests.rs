@@ -228,7 +228,14 @@ fn protocol_v3_safe_inventory_keeps_mcp_read_only_and_pending_authority_narrow()
         "performs no memory mutation",
         "request_tool sends once",
         "typed approval-required error",
-        "DecideToolApprovals and CancelTools remain denied",
+        "negotiates decide_tool_approvals",
+        "personal catalog and MCP remain exactly three read-only tools and do not receive decision authority",
+        "globally single-use decision ID",
+        "return expired",
+        "fail closed on a missing record, wrong digest, reused decision ID, or terminal state",
+        "approved record is not consumed or executed",
+        "approve_tool and deny_tool also send once",
+        "CancelTools remains denied",
         "read_claims_by_id",
         "exact stable-ID",
         "same startup-owned ABI ModelProvider route used by protocol-v2 execution",
@@ -238,7 +245,7 @@ fn protocol_v3_safe_inventory_keeps_mcp_read_only_and_pending_authority_narrow()
         "digest-only authorization",
         "single-use",
         "32 KiB",
-        "no approval, denial, cancellation, consumption, or execution-after-approval path",
+        "no cancellation, consumption, or execution-after-approval path",
     ] {
         assert!(claim.note.contains(required), "missing `{required}`");
     }

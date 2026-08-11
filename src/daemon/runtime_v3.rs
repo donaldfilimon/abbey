@@ -1,9 +1,10 @@
 //! Minimal daemon-owned authority for the first served protocol-v3 slice.
 //!
 //! Only bounded safe tool inventory/invocation, one default-edition pending
-//! mutation, startup-bound ABI-local model inventory, and exact stable-ID
-//! claim reads are representable here. Approval decisions, execution, memory,
-//! training, worker, cancellation, and polling grants remain absent.
+//! mutation plus exact approve/deny decisions, startup-bound ABI-local model
+//! inventory, and exact stable-ID claim reads are representable here.
+//! Execution, memory, training, worker, cancellation, and polling grants remain
+//! absent.
 
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
@@ -19,11 +20,12 @@ use sha2::{Digest, Sha256};
 use crate::app_core::{
     APP_PROTOCOL_V3, APP_SCHEMA_V3, BackendSelection, ClaimStatus, V3Capability, V3CapabilitySet,
     V3Command, V3EntityPage, V3EntityRecord, V3Event, V3GrantNegotiation, V3OperationState,
-    V3StableClaim, V3ToolApprovalState, V3ToolApprovalStatus, V3ToolPage, V3ToolResult,
+    V3StableClaim, V3ToolApprovalState, V3ToolApprovalStatus, V3ToolDecision, V3ToolPage,
+    V3ToolResult,
 };
 use crate::runtime::{
     AuditMetadata, MAX_TOOL_APPROVAL_TTL_MS, NewAuditEvent, NewToolApproval, ProviderRoute,
-    RuntimeStore, StoreError,
+    RuntimeStore, StoreError, ToolApprovalDecision, ToolApprovalRecord, ToolApprovalState,
 };
 
 use super::server::HandlerFailure;
@@ -71,10 +73,16 @@ impl V3RuntimeAuthority {
                     .map(str::to_owned)
             })
             .collect();
-        let mut available = Vec::with_capacity(4);
+        let mut available = Vec::with_capacity(5);
         if !tools.is_empty() {
             available.push(V3Capability::ListTools);
             available.push(V3Capability::InvokeTools);
+        }
+        if tools
+            .iter()
+            .any(|tool| tool.route == ToolRoute::ApprovalRequired)
+        {
+            available.push(V3Capability::DecideToolApprovals);
         }
         if !models.is_empty() {
             available.push(V3Capability::ReadModels);
@@ -134,6 +142,12 @@ impl V3RuntimeAuthority {
                 }))
             }
             V3Command::InvokeTool(call) => self.invoke_tool(call),
+            V3Command::ApproveTool(decision) => {
+                self.decide_tool_approval(decision, ToolApprovalDecision::Approve)
+            }
+            V3Command::DenyTool(decision) => {
+                self.decide_tool_approval(decision, ToolApprovalDecision::Deny)
+            }
             V3Command::ListModels(page) => {
                 let snapshot = u64::try_from(self.models.len()).map_err(|_| internal_failure())?;
                 let through = page.through.unwrap_or(snapshot);
@@ -343,6 +357,25 @@ impl V3RuntimeAuthority {
         Ok(V3Event::ToolResult(result))
     }
 
+    fn decide_tool_approval(
+        &self,
+        decision: V3ToolDecision,
+        outcome: ToolApprovalDecision,
+    ) -> Result<V3Event, HandlerFailure> {
+        decision.validate().map_err(|_| invalid_command_failure())?;
+        let record = self
+            .store
+            .decide_tool_approval(
+                &decision.call_id,
+                &decision.call_digest,
+                &decision.decision_id,
+                outcome,
+                now_ms()?,
+            )
+            .map_err(map_approval_store_error)?;
+        Ok(V3Event::ToolApprovalStatus(approval_status(record)))
+    }
+
     fn record_tool_audit(
         &self,
         action: &str,
@@ -390,6 +423,34 @@ fn now_ms() -> Result<u64, HandlerFailure> {
     u64::try_from(elapsed.as_millis()).map_err(|_| internal_failure())
 }
 
+fn approval_status(record: ToolApprovalRecord) -> V3ToolApprovalStatus {
+    V3ToolApprovalStatus {
+        tool_id: record.tool_id,
+        call_id: record.call_id,
+        call_digest: record.call_digest,
+        state: match record.state {
+            ToolApprovalState::Pending => V3ToolApprovalState::Pending,
+            ToolApprovalState::Approved => V3ToolApprovalState::Approved,
+            ToolApprovalState::Denied => V3ToolApprovalState::Denied,
+            ToolApprovalState::Cancelled => V3ToolApprovalState::Cancelled,
+            ToolApprovalState::Expired => V3ToolApprovalState::Expired,
+            ToolApprovalState::Consumed => V3ToolApprovalState::Consumed,
+        },
+        expires_at_ms: record.expires_at_ms,
+    }
+}
+
+fn map_approval_store_error(error: StoreError) -> HandlerFailure {
+    match error {
+        StoreError::ToolApprovalNotFound(_) => approval_not_found_failure(),
+        StoreError::ToolApprovalConflict | StoreError::ToolApprovalDigestMismatch => {
+            approval_conflict_failure()
+        }
+        StoreError::InvalidInput(_) => invalid_command_failure(),
+        _ => internal_failure(),
+    }
+}
+
 const fn invalid_command_failure() -> HandlerFailure {
     HandlerFailure::new("invalid_command", "command payload is invalid")
 }
@@ -403,6 +464,17 @@ const fn capability_denied_failure() -> HandlerFailure {
 
 const fn conflict_failure() -> HandlerFailure {
     HandlerFailure::new("conflict", "tool call id was already used")
+}
+
+const fn approval_conflict_failure() -> HandlerFailure {
+    HandlerFailure::new(
+        "conflict",
+        "tool approval decision conflicts with durable state",
+    )
+}
+
+const fn approval_not_found_failure() -> HandlerFailure {
+    HandlerFailure::new("not_found", "tool approval was not found")
 }
 
 const fn tool_not_found_failure() -> HandlerFailure {
