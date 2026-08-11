@@ -32,6 +32,7 @@ pub(crate) use identity::{
 pub(crate) use legacy::prepare as prepare_legacy_import;
 
 pub use store::{
-    AuditEvent, AuditMetadata, ConversationBackend, NewAuditEvent, NewRun, NewRunEvent, RunEvent,
-    RunRecord, RuntimeStore, StoreError,
+    AuditEvent, AuditMetadata, ConversationBackend, MAX_TOOL_APPROVAL_TTL_MS, NewAuditEvent,
+    NewRun, NewRunEvent, NewToolApproval, RunEvent, RunRecord, RuntimeStore, StoreError,
+    ToolApprovalDecision, ToolApprovalEvent, ToolApprovalRecord, ToolApprovalState,
 };

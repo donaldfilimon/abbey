@@ -3,7 +3,7 @@
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 use thiserror::Error;
 
-pub(super) const CURRENT_SCHEMA_VERSION: i64 = 4;
+pub(super) const CURRENT_SCHEMA_VERSION: i64 = 5;
 
 const CREATE_LEDGER: &str = r#"
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -332,11 +332,14 @@ SELECT edition_sha256, scope_sha256, alias_sha256, conversation_id, revision, up
 FROM conversation_identity_scopes;
 "#;
 
+const MIGRATION_5: &str = include_str!("migration_5_tool_approvals.sql");
+
 const MIGRATIONS: &[(i64, &str)] = &[
     (1, MIGRATION_1),
     (2, MIGRATION_2),
     (3, MIGRATION_3),
     (4, MIGRATION_4),
+    (5, MIGRATION_5),
 ];
 
 #[derive(Debug, Error)]
@@ -622,7 +625,7 @@ mod tests {
             conn.query_row("SELECT COUNT(*) FROM schema_migrations", [], |row| row
                 .get::<_, i64>(0))
                 .unwrap(),
-            4
+            5
         );
     }
 
@@ -726,6 +729,35 @@ mod tests {
                 1
             );
         }
+    }
+
+    #[test]
+    fn schema_v5_adds_digest_bound_tool_approval_and_event_ledgers() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        apply_set(&mut conn, "2026-08-08T00:00:00Z", &MIGRATIONS[..4], 4).unwrap();
+        apply(&mut conn, "2026-08-08T00:00:01Z").unwrap();
+        for table in ["tool_approvals", "tool_approval_events"] {
+            assert_eq!(
+                conn.query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
+                    [table],
+                    |row| row.get::<_, i64>(0)
+                )
+                .unwrap(),
+                1
+            );
+        }
+        assert!(
+            conn.execute(
+                "INSERT INTO tool_approvals(
+                    call_id, tool_id, call_digest, state, created_at_ms,
+                    expires_at_ms, updated_at_ms
+                 ) VALUES ('call', 'tool', ?1, 'approved', 1, 2, 1)",
+                ["a".repeat(64)]
+            )
+            .is_err(),
+            "approved state requires a durable decision id"
+        );
     }
 
     #[test]
