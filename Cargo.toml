@@ -64,6 +64,9 @@ abi-compute = { path = "../abi/crates/abi-compute", optional = true }
 # (Unix flock / Windows LockFileEx).
 fs4 = "0.13"
 
+[dev-dependencies]
+ed25519-dalek = "3"
+
 # SIGPIPE reset only — already in the tree transitively, so this costs no extra
 # build. Unix-gated: Windows has no SIGPIPE.
 [target.'cfg(unix)'.dependencies]
@@ -92,7 +95,7 @@ personal-edition = []
 # placement or performance claim — see `accelerator-kernel-execution-metal` in
 # src/claims/registry.rs. check.sh gates it explicitly, or `src/accel.rs` rots
 # behind the default gate.
-accel = ["dep:abi-gpu", "dep:abi-compute"]
+accel = ["dep:abi-gpu", "dep:abi-compute", "abi-model-runtime/metal"]
 
 [profile.release]
 lto = true

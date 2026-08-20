@@ -260,6 +260,36 @@ fn protocol_v3_safe_inventory_keeps_mcp_read_only_and_approval_lifecycle_narrow(
 }
 
 #[test]
+fn protocol_v3_model_lifecycle_claim_keeps_selection_startup_owned_and_evidence_narrow() {
+    let claim = CLAIMS
+        .iter()
+        .find(|claim| claim.id == "daemon-protocol-v3-model-lifecycle")
+        .expect("protocol-v3 model lifecycle claim");
+    assert_eq!(claim.status, Status::Current);
+    for required in [
+        "owner-only startup document",
+        "Ed25519 publisher-signed",
+        "license-acceptance ledger",
+        "external storage",
+        "without fallback",
+        "download_models",
+        "manage_models",
+        "globally single-use operation ID",
+        "requests cannot select paths, URLs, trust keys, principals, devices, executables, environment, or a substitute model",
+        "resumable hash verification and atomic publication",
+        "Schema v7",
+        "4,096 durable operations",
+        "reopens as failed",
+        "loaded-with-no-inference-evidence",
+        "no registry URL, storage path, principal",
+        "No prompt-inference command",
+        "real external HTTPS download evidence",
+    ] {
+        assert!(claim.note.contains(required), "missing `{required}`");
+    }
+}
+
+#[test]
 fn legacy_conversation_migration_claim_stays_metadata_only() {
     let claim = CLAIMS
         .iter()

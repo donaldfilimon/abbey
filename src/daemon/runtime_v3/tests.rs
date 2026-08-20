@@ -49,6 +49,7 @@ fn manifest_models_negotiate_reads_and_append_after_route_entries() {
         manifest_models.clone(),
         store(),
         memory_route(),
+        None,
     )
     .unwrap();
     let V3Event::Models(models) = authority
@@ -63,9 +64,14 @@ fn manifest_models_negotiate_reads_and_append_after_route_entries() {
     assert_eq!(models.records[1].state, V3OperationState::NotDownloaded);
 
     // Manifest-derived inventory alone grants read_models with no ABI route.
-    let authority =
-        V3RuntimeAuthority::from_provider_routes([], manifest_models, store(), memory_route())
-            .unwrap();
+    let authority = V3RuntimeAuthority::from_provider_routes(
+        [],
+        manifest_models,
+        store(),
+        memory_route(),
+        None,
+    )
+    .unwrap();
     let requested = V3CapabilitySet::from_sorted(vec![V3Capability::ReadModels]).unwrap();
     let V3Event::Negotiated(negotiated) = authority
         .handle(V3Command::Negotiate(V3GrantRequest {
@@ -90,9 +96,14 @@ fn manifest_models_negotiate_reads_and_append_after_route_entries() {
 #[test]
 fn negotiates_only_startup_bound_abi_model_reads() {
     let route = abi_route();
-    let authority =
-        V3RuntimeAuthority::from_provider_routes([&route], Vec::new(), store(), memory_route())
-            .unwrap();
+    let authority = V3RuntimeAuthority::from_provider_routes(
+        [&route],
+        Vec::new(),
+        store(),
+        memory_route(),
+        None,
+    )
+    .unwrap();
     let requested =
         V3CapabilitySet::from_sorted(vec![V3Capability::ReadModels, V3Capability::PollEvents])
             .unwrap();
@@ -145,6 +156,7 @@ fn no_abi_route_still_negotiates_safe_tools_and_canonical_claim_reads() {
         Vec::new(),
         Arc::clone(&store),
         memory_route(),
+        None,
     )
     .unwrap();
     let V3Event::Negotiated(negotiated) = authority
@@ -329,6 +341,7 @@ fn mutating_safe_tool_only_persists_an_exact_pending_approval() {
         Vec::new(),
         Arc::clone(&store),
         memory_route(),
+        None,
     )
     .unwrap();
     let invalid = V3ToolCall {
@@ -392,6 +405,7 @@ fn exact_pending_decisions_are_durable_without_implicit_execution() {
         Vec::new(),
         Arc::clone(&store),
         memory_route(),
+        None,
     )
     .unwrap();
     let pending = |call_id: &str, record_id: &str| V3ToolCall {
@@ -568,6 +582,7 @@ fn exact_tool_cancellation_is_durable_without_consumption_or_execution() {
         Vec::new(),
         Arc::clone(&store),
         memory_route(),
+        None,
     )
     .unwrap();
     let pending = |call_id: &str| V3ToolCall {
@@ -717,6 +732,7 @@ fn persisted_authorization_rejects_duplicate_call_ids_after_reopen() {
             Vec::new(),
             Arc::clone(&store),
             memory_route(),
+            None,
         )
         .unwrap();
         assert!(matches!(
@@ -748,6 +764,7 @@ fn persisted_authorization_rejects_duplicate_call_ids_after_reopen() {
             Vec::new(),
             Arc::clone(&store),
             memory_route(),
+            None,
         )
         .unwrap();
         assert_eq!(

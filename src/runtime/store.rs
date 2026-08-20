@@ -19,6 +19,7 @@ const MAX_EVENT_PAYLOAD_BYTES: usize = 16 * 1024;
 
 mod audit;
 mod identity;
+mod model_operation;
 #[cfg(unix)]
 mod private;
 mod projection;
@@ -28,6 +29,9 @@ mod tool_execution;
 
 pub use audit::{AuditEvent, AuditMetadata, NewAuditEvent};
 use audit::{row_to_audit, validate_audit_label};
+pub use model_operation::{
+    ModelOperationKind, ModelOperationRecord, ModelOperationState, NewModelOperation,
+};
 use projection::{project_run_event, project_run_snapshot, validate_event_snapshot};
 pub use records::{ConversationBackend, NewRun, NewRunEvent, RunEvent, RunRecord};
 pub use tool_approval::{
@@ -67,6 +71,12 @@ pub enum StoreError {
     ToolExecutionNotFound(String),
     #[error("tool execution transition conflicts with durable state")]
     ToolExecutionConflict,
+    #[error("model operation was not found: {0}")]
+    ModelOperationNotFound(String),
+    #[error("model operation transition conflicts with durable state")]
+    ModelOperationConflict,
+    #[error("model operation ledger reached its bounded capacity")]
+    ModelOperationCapacity,
     #[error("runtime database contains invalid data: {0}")]
     CorruptData(&'static str),
     #[error(transparent)]
@@ -83,6 +93,7 @@ pub struct RuntimeStore {
     conn: Mutex<Connection>,
     recovered_runs: usize,
     recovered_tool_executions: usize,
+    recovered_model_operations: usize,
     legacy_imported: bool,
 }
 
@@ -161,10 +172,16 @@ impl RuntimeStore {
         } else {
             0
         };
+        let recovered_model_operations = if recover_interrupted {
+            model_operation::recover_incomplete_on(&mut conn, epoch_ms()?)?
+        } else {
+            0
+        };
         Ok(Self {
             conn: Mutex::new(conn),
             recovered_runs,
             recovered_tool_executions,
+            recovered_model_operations,
             legacy_imported,
         })
     }
@@ -178,6 +195,12 @@ impl RuntimeStore {
     #[must_use]
     pub const fn recovered_tool_executions(&self) -> usize {
         self.recovered_tool_executions
+    }
+
+    /// Number of queued or running model operations failed during this open.
+    #[must_use]
+    pub const fn recovered_model_operations(&self) -> usize {
+        self.recovered_model_operations
     }
 
     /// Whether this open committed a new legacy metadata snapshot.

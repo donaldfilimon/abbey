@@ -21,6 +21,7 @@ mod safe {
             Vec::new(),
             Arc::clone(&runtime),
             MemoryEffectRoute::new(root.clone(), "sqlite".to_owned()),
+            None,
         )
         .unwrap();
         (root, runtime, authority)
@@ -174,6 +175,7 @@ mod safe {
             Vec::new(),
             Arc::clone(&runtime),
             MemoryEffectRoute::new(root.clone(), "invalid".to_owned()),
+            None,
         )
         .unwrap();
         let call = V3ToolCall {

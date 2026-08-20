@@ -178,7 +178,7 @@ fn legacy_metadata_backup_and_schema_v2_import_are_exact_and_idempotent() {
                 row.get::<_, i64>(0)
             })
             .unwrap(),
-            6
+            crate::runtime::migrations::CURRENT_SCHEMA_VERSION
         );
         assert_eq!(
             conn.query_row(
