@@ -716,6 +716,7 @@ const fn v3_state_label(state: V3OperationState) -> &'static str {
         V3OperationState::Failed => "failed",
         V3OperationState::Denied => "denied",
         V3OperationState::Cancelled => "cancelled",
+        V3OperationState::NotDownloaded => "not_downloaded",
     }
 }
 
