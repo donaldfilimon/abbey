@@ -50,7 +50,8 @@ the shared `capture.rs` (`run_print` / `capture_chat`) rather than calling the
 executor ad hoc: `print` (`commands.rs`), `commit` (`actions::run_commit`), and
 `voice ask` (`voice.rs`). None reach `run_agent`, so they skip `hybrid_run`
 entirely — no persona/role wrap, no prefs injection, and **no `route.jsonl`
-entry** (verified: `abbey print …` leaves the route log unchanged where
+entry** (enforced by `print_bypasses_the_route_log_where_ask_appends` in
+`tests/cli_surface.rs`: `abbey print …` leaves the route log unchanged where
 `abbey ask …` appends a row). That is deliberate for single-shot piping and
 spoken replies, but it means the routing audit does not see them. New bypasses
 must go through `capture.rs` and be added to this list — its caller set *is*
