@@ -63,7 +63,11 @@ pub fn render(sources: &[Source]) -> Result<String> {
     out.push_str(GENERATED_BANNER);
 
     for source in sources {
-        write!(out, "\n// ---------------------------------------------------------------------------\n// {}\n// ---------------------------------------------------------------------------\n", source.label)?;
+        write!(
+            out,
+            "\n// ---------------------------------------------------------------------------\n// {}\n// ---------------------------------------------------------------------------\n",
+            source.label
+        )?;
         for item in &source.file.items {
             match item {
                 syn::Item::Struct(item) if is_serde(&item.attrs) => {
@@ -280,13 +284,12 @@ fn ts_type(ty: &syn::Type, known: &BTreeSet<String>) -> Result<String> {
                 // implementation, so there is no derive for `is_serde` to
                 // discover. Keep this mapping explicit and fail closed for
                 // every other unknown application type.
+                ("String" | "str" | "PathBuf" | "char" | "IdempotencyKey", 0) => {
+                    Ok("string".into())
+                }
                 (
-                    "String" | "str" | "PathBuf" | "char" | "IdempotencyKey",
-                    0,
-                ) => Ok("string".into()),
-                (
-                    "u8" | "u16" | "u32" | "u64" | "usize" | "i8" | "i16" | "i32" | "i64"
-                    | "isize" | "f32" | "f64" | "NonZeroU32" | "NonZeroUsize",
+                    "u8" | "u16" | "u32" | "u64" | "usize" | "i8" | "i16" | "i32" | "i64" | "isize"
+                    | "f32" | "f64" | "NonZeroU32" | "NonZeroUsize",
                     0,
                 ) => Ok("number".into()),
                 ("bool", 0) => Ok("boolean".into()),
@@ -457,10 +460,7 @@ fn render_enum(item: &syn::ItemEnum, known: &BTreeSet<String>) -> Result<String>
                     .iter()
                     .map(|field| ts_type(&field.ty, known))
                     .collect::<Result<Vec<_>>>()?;
-                format!(
-                    "{{ {tag}: \"{wire}\"; {content}: [{}] }}",
-                    parts.join(", ")
-                )
+                format!("{{ {tag}: \"{wire}\"; {content}: [{}] }}", parts.join(", "))
             }
             syn::Fields::Named(fields) => {
                 let inner = render_named_fields(&fields.named, &container, known, "      ")?;
@@ -477,10 +477,7 @@ fn variant_wire_name(variant: &syn::Variant, container: &SerdeAttrs) -> Result<S
     let attrs = serde_attrs(&variant.attrs)?;
     match attrs.rename {
         Some(rename) => Ok(rename),
-        None => apply_case(
-            &variant.ident.to_string(),
-            container.rename_all.as_deref(),
-        ),
+        None => apply_case(&variant.ident.to_string(), container.rename_all.as_deref()),
     }
 }
 

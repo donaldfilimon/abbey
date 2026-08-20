@@ -9,14 +9,14 @@ Executable workflow ledger: **26 goals (23 done, 1 in_progress, 1 proposed, 1 bl
 
 ## Toolchain
 
-- Rust **nightly** (`rust-toolchain.toml`), edition **2024**
+- Rust **nightly-2026-08-19** (`rustc 1.100.0-nightly`), edition **2024**
 - Components: `rustfmt`, `clippy`
-- Pin: whatever `rustup show` reports for this directory
+- Pin: exact dated channel in `rust-toolchain.toml`; Rust has no edition 2026
 
 ## Release gate
 
 ```bash
-./check.sh          # fmt + clippy -D warnings + test, for BOTH feature sets
+./check.sh          # all four build modes; see below
 ./install.sh        # Unix/macOS → ~/.local/bin/abbey + abbeyd
 .\install.ps1       # Windows → %LOCALAPPDATA%\abbey\bin\abbey.exe
 abbey doctor        # build stamp + persona/role/memory/os honesty
@@ -33,8 +33,11 @@ proved by `tools/tests/test_install_ps1_editions.py` parsing the script, not by
 running it — no PowerShell runtime exists on the development machine, so Windows
 packaging is unproven (ledger row `edition-windows-install-naming`, Partial).
 
-`check.sh` runs clippy/test twice: default features, then `--features wdbx`. A bare
-`cargo test` never compiles `src/memory/wdbx.rs`, so it can pass while that code is broken.
+`check.sh` runs clippy, tests, and warning-denied private-item rustdoc for four explicit
+build modes: default, `--features wdbx`, `--features personal-edition`, and
+`--features accel`. A bare `cargo test` never compiles those feature-gated surfaces, so
+it can pass while they are broken. The gate also validates claims/docs synchronization,
+installer syntax and accelerator layout, and source-file size limits.
 
 `check.sh` is the production bar. Do not ship if it fails.
 
@@ -50,8 +53,9 @@ out `abbey` and `donaldfilimon/abi` (public) into sibling paths, reproducing the
 layout `../abi` expects. Any CI rewrite that drops the second checkout will fail
 immediately, and not for an obvious reason.
 
-The toolchain comes from `rust-toolchain.toml` (nightly + rustfmt + clippy);
-nightly also satisfies `../abi`'s `rust-version = 1.99`. CI runs `check.sh`
+The toolchain comes from `rust-toolchain.toml`
+(`nightly-2026-08-19` + rustfmt + clippy); that compiler also satisfies
+`../abi`'s `rust-version = 1.99`. CI runs `check.sh`
 rather than a bare `cargo build && cargo test` so the `wdbx` feature set is
 actually compiled and tested.
 

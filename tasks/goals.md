@@ -739,6 +739,20 @@ committing weights. A loaded provider remains process state, not a global/defaul
 and no prompt inference, production Gemma, live publisher endpoint, CLI/desktop, Windows,
 remote MCP, training, or worker authority is claimed by this review unit.
 
+**2026-08-20 maintenance baseline:** Abbey now pins the exact
+`nightly-2026-08-19` toolchain (`rustc 1.100.0-nightly`) while retaining Rust's
+current edition 2024; there is no Rust edition 2026. Root and desktop Rust locks
+were refreshed to the highest Rust-1.99-compatible releases, including the
+`h2` 0.4.15 -> 0.4.17 security fix. The Bun lock moved the desktop to Vite 8,
+TypeScript 7, and React plugin 6; manifest floors now match the already-resolved
+Tauri 2.11 and React 19 releases. Root `./check.sh` and `desktop/check.sh` pass.
+Root RustSec reports no vulnerabilities; its warning-denied scan carries two
+named unmaintained-crate exceptions: bincode through syntect and paste through
+the sibling ABI Candle/tokenizers graph. The latest Tauri Linux target still
+resolves GTK3/glib 0.18.5, so its target-specific unsoundness advisory remains
+an explicit upstream residual rather than a suppressed or locally vendored
+claim.
+
 Manifest-derived presence inventory is also Current: an independently edition-scoped
 `*_MODEL_MANIFEST_DIR` projects bounded `abi-models` identities through `read_models` from
 size-checked artifact presence under `ABI_MODELS_DIR`, and malformed bound manifests refuse

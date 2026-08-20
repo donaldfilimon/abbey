@@ -7,7 +7,10 @@ cd "$repo_root"
 if command -v cargo-audit >/dev/null 2>&1; then
     echo "dependency-scan: RUN cargo-audit ($(cargo-audit --version))"
     echo "dependency-scan: scoped exception RUSTSEC-2025-0141 (bincode 1.3.3 via syntect's compiled syntax/theme data)"
-    exec cargo audit --deny warnings --ignore RUSTSEC-2025-0141
+    echo "dependency-scan: scoped exception RUSTSEC-2024-0436 (paste 1.0.15 via sibling ABI's current Candle/tokenizers graph)"
+    exec cargo audit --deny warnings \
+        --ignore RUSTSEC-2025-0141 \
+        --ignore RUSTSEC-2024-0436
 fi
 
 if command -v cargo-deny >/dev/null 2>&1; then

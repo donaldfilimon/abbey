@@ -89,7 +89,7 @@ prerequisite or proof · **Out of scope** = explicitly excluded.
    whole life — `DurableStore` has no cross-process locking, and concurrent WAL
    appends corrupt the store irrecoverably.
 4. **Self-learn:** `train_candidate` requires provenance; no silent deletes in reflect.
-5. **Tooling:** Rust nightly via `rust-toolchain.toml`; gate with `./check.sh`.
+5. **Tooling:** exact Rust nightly-2026-08-19 via `rust-toolchain.toml`, edition 2024; gate with `./check.sh`.
 
 ## Feature matrix (Current)
 
@@ -100,7 +100,7 @@ prerequisite or proof · **Out of scope** = explicitly excluded.
 - Unique `ABBEY_BUILD_STAMP`; 7-tab TUI (Memory tab previews the 3-D map)
 - `/init` project scan → AGENTS.md
 - In-process `abi-wdbx` `DurableStore` memory backend — **behind `--features wdbx`, off by
-  default**; `check.sh` gates both feature sets
+  default**; `check.sh` gates this mode explicitly
 - Numerical kernel execution on Metal (`abbey accel verify`, `src/accel/`) — **behind
   `--features accel`, off by default**, gated by `check.sh`. `dot`/`cosine`/`top_k` run
   through `abi-gpu`'s `MetalAccelerator`, and every natively produced value is checked

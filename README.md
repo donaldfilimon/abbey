@@ -35,7 +35,8 @@ cargo build --release
 # by a parser test — no Windows host has run it (Partial, see docs/claims.md).
 ```
 
-Requires **Rust nightly** (`rust-toolchain.toml`). Generation commands require an
+Requires the exact **Rust nightly-2026-08-19** toolchain (`rustc 1.100.0-nightly`)
+from `rust-toolchain.toml`, using Rust edition 2024. Generation commands require an
 executor; local verbs (claims, memory/inventory, os, doctor, mesh, daemon-client,
 installer probes) run with none installed. `cursor-agent` is the preferred default;
 when it is absent the unchosen default falls back to the first installed of `grok`,

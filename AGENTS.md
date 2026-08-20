@@ -68,10 +68,10 @@ Guidance for AI coding agents in this repository.
 
 - Name: `abbey`
 - Purpose: Hybrid coding-agent CLI/TUI — personas, Max/Gemma roles, parallel lanes, OS control, skills/plugins inventory, self-learn — backed by pluggable executors (**cursor-agent** preferred; `grok`/`fm`/`abi`/`claude` alternates; none hard-required)
-- Stack: Rust nightly, edition 2024, `ratatui`, `clap`, path-dep `abi-ai`
+- Stack: Rust nightly-2026-08-19 (`rustc 1.100.0-nightly`), edition 2024, `ratatui`, `clap`, path-dep `abi-ai`
 - Root: `/Users/donaldfilimon/abbey`
 - Install: `./install.sh` → `~/.local/bin/abbey` + Unix `abbeyd`
-- Gate: `./check.sh` (fmt + clippy -D warnings + test + file-size)
+- Gate: `./check.sh` (toolchain + four-mode fmt/clippy/test/rustdoc + claims/installer/file-size)
 
 ## Spec
 
@@ -146,15 +146,15 @@ The generated canonical table above is authoritative; `abbey claims manifest` ex
 
 ## Gotchas
 
-- Toolchain: `rust-toolchain.toml` nightly + edition 2024. **`../abi` requires
+- Toolchain: `rust-toolchain.toml` pins nightly-2026-08-19 + edition 2024. **`../abi` requires
   `rust-version = 1.99`.** A Homebrew-installed `rustc`/`cargo` on PATH shadows rustup's
-  nightly (rustup's shims live in `~/.cargo/bin` and may be missing entirely), so the gate
+  pinned nightly (rustup's shims live in `~/.cargo/bin` and may be missing entirely), so the gate
   can fail with "rustc 1.97.1 is not supported by the following packages" while rustup's
   nightly is perfectly new enough. `check.sh` now detects this and prints the remedy
-  (`brew unlink rust` / `rustup default nightly`)
+  (`brew unlink rust` / `rustup toolchain install nightly-2026-08-19 --component rustfmt clippy`)
 - `abi-ai` path-dep expects sibling `../abi`; `--features wdbx` also needs `../abi/crates/abi-wdbx`
-- Default `cargo clippy`/`cargo test` never compile the `wdbx` module — use `./check.sh`,
-  which runs both feature sets, or gated code rots unnoticed
+- Default `cargo clippy`/`cargo test` never compile the gated modes — use `./check.sh`,
+  which checks default, `wdbx`, `personal-edition`, and `accel`, or gated code rots unnoticed
 - Git helpers need a real repo history
 - OS execute always needs `--confirm`
 - `abi` on this machine is often a **shell alias**, not a binary — both the WDBX CLI

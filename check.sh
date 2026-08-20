@@ -1,13 +1,13 @@
 #!/bin/sh
-# Abbey production gate — fmt + clippy + tests
+# Abbey production gate — toolchain, fmt, clippy/tests/rustdoc, claims, installer.
 set -eu
 cd "$(dirname "$0")"
 
-# Toolchain guard. `rust-toolchain.toml` pins nightly, but a real (non-shim)
+# Toolchain guard. `rust-toolchain.toml` pins an exact nightly, but a real (non-shim)
 # cargo earlier on PATH — Homebrew's `rust` formula is the usual culprit —
 # silently wins and can be older than the sibling ../abi crates' rust-version.
 # Cargo already detects that; what it does not print is the remedy. Probe with
-# a cheap metadata resolve rather than comparing version strings, so this does
+# a cheap unit-graph check rather than comparing version strings, so this does
 # not hardcode a version that rots the next time ../abi bumps.
 # `cargo check` is the probe because the rust-version gate fires during unit-graph
 # construction, before any compilation — so in the failing case it returns
@@ -19,24 +19,24 @@ if ! probe=$(cargo check --quiet 2>&1 >/dev/null); then
     printf '%s\n' "$probe" >&2
     printf '\ncheck.sh: the active toolchain is too old for this workspace.\n\n' >&2
     printf '  active cargo : %s (%s)\n' "$(command -v cargo)" "$(cargo --version 2>&1)" >&2
-    printf '  Abbey pins   : nightly (rust-toolchain.toml)\n' >&2
+    printf '  Abbey pins   : nightly-2026-08-19 (rust-toolchain.toml)\n' >&2
     cat >&2 <<'MSG'
 
 This is usually PATH shadowing, not a missing toolchain: rustup may already
-have a new-enough nightly while a Homebrew-installed rustc/cargo appears first
+have the pinned nightly while a Homebrew-installed rustc/cargo appears first
 on PATH (rustup's shims live in ~/.cargo/bin and may be absent entirely).
 
 Check and fix:
-  rustup run nightly rustc --version     # is rustup's nightly new enough?
+  rustup run nightly-2026-08-19 rustc --version
   command -v -a cargo                    # which cargo actually wins?
   brew unlink rust                       # let rustup's shims take over
-  rustup default nightly                 # (re)install shims if missing
+  rustup toolchain install nightly-2026-08-19 --component rustfmt clippy
 
 MSG
     exit 1
   fi
   printf '%s\n' "$probe" >&2
-  echo "check.sh: cargo metadata failed (see above)" >&2
+  echo "check.sh: cargo check failed (see above)" >&2
   exit 1
 fi
 echo "ok ($(cargo --version))"
