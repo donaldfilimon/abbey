@@ -37,10 +37,62 @@ fn abi_route() -> ProviderRoute {
 }
 
 #[test]
+fn manifest_models_negotiate_reads_and_append_after_route_entries() {
+    let manifest_models = vec![V3EntityRecord {
+        id: "abi-model:tiny".to_owned(),
+        label: "local model tiny example/tiny@0123456789ab (not downloaded)".to_owned(),
+        state: V3OperationState::NotDownloaded,
+    }];
+    let route = abi_route();
+    let authority = V3RuntimeAuthority::from_provider_routes(
+        [&route],
+        manifest_models.clone(),
+        store(),
+        memory_route(),
+    )
+    .unwrap();
+    let V3Event::Models(models) = authority
+        .handle(V3Command::ListModels(V3PageQuery::default()))
+        .unwrap()
+    else {
+        panic!("expected model inventory");
+    };
+    assert_eq!(models.through, 2);
+    assert_eq!(models.records[0].id, "abi-local:local");
+    assert_eq!(models.records[1].id, "abi-model:tiny");
+    assert_eq!(models.records[1].state, V3OperationState::NotDownloaded);
+
+    // Manifest-derived inventory alone grants read_models with no ABI route.
+    let authority =
+        V3RuntimeAuthority::from_provider_routes([], manifest_models, store(), memory_route())
+            .unwrap();
+    let requested = V3CapabilitySet::from_sorted(vec![V3Capability::ReadModels]).unwrap();
+    let V3Event::Negotiated(negotiated) = authority
+        .handle(V3Command::Negotiate(V3GrantRequest {
+            supported_versions: vec![3],
+            requested,
+        }))
+        .unwrap()
+    else {
+        panic!("expected v3 negotiation");
+    };
+    assert_eq!(negotiated.granted.as_slice(), &[V3Capability::ReadModels]);
+    let V3Event::Models(models) = authority
+        .handle(V3Command::ListModels(V3PageQuery::default()))
+        .unwrap()
+    else {
+        panic!("expected model inventory");
+    };
+    assert_eq!(models.records.len(), 1);
+    assert_eq!(models.records[0].id, "abi-model:tiny");
+}
+
+#[test]
 fn negotiates_only_startup_bound_abi_model_reads() {
     let route = abi_route();
     let authority =
-        V3RuntimeAuthority::from_provider_routes([&route], store(), memory_route()).unwrap();
+        V3RuntimeAuthority::from_provider_routes([&route], Vec::new(), store(), memory_route())
+            .unwrap();
     let requested =
         V3CapabilitySet::from_sorted(vec![V3Capability::ReadModels, V3Capability::PollEvents])
             .unwrap();
@@ -88,8 +140,13 @@ fn negotiates_only_startup_bound_abi_model_reads() {
 #[test]
 fn no_abi_route_still_negotiates_safe_tools_and_canonical_claim_reads() {
     let store = store();
-    let authority =
-        V3RuntimeAuthority::from_provider_routes([], Arc::clone(&store), memory_route()).unwrap();
+    let authority = V3RuntimeAuthority::from_provider_routes(
+        [],
+        Vec::new(),
+        Arc::clone(&store),
+        memory_route(),
+    )
+    .unwrap();
     let V3Event::Negotiated(negotiated) = authority
         .handle(V3Command::Negotiate(V3GrantRequest {
             supported_versions: vec![3],
@@ -267,8 +324,13 @@ fn no_abi_route_still_negotiates_safe_tools_and_canonical_claim_reads() {
 #[test]
 fn mutating_safe_tool_only_persists_an_exact_pending_approval() {
     let store = store();
-    let authority =
-        V3RuntimeAuthority::from_provider_routes([], Arc::clone(&store), memory_route()).unwrap();
+    let authority = V3RuntimeAuthority::from_provider_routes(
+        [],
+        Vec::new(),
+        Arc::clone(&store),
+        memory_route(),
+    )
+    .unwrap();
     let invalid = V3ToolCall {
         tool_id: tool_catalog::MEMORY_MARK_OBSOLETE_TOOL_ID.into(),
         call_id: "pending-invalid".into(),
@@ -325,8 +387,13 @@ fn mutating_safe_tool_only_persists_an_exact_pending_approval() {
 #[test]
 fn exact_pending_decisions_are_durable_without_implicit_execution() {
     let store = store();
-    let authority =
-        V3RuntimeAuthority::from_provider_routes([], Arc::clone(&store), memory_route()).unwrap();
+    let authority = V3RuntimeAuthority::from_provider_routes(
+        [],
+        Vec::new(),
+        Arc::clone(&store),
+        memory_route(),
+    )
+    .unwrap();
     let pending = |call_id: &str, record_id: &str| V3ToolCall {
         tool_id: tool_catalog::MEMORY_MARK_OBSOLETE_TOOL_ID.into(),
         call_id: call_id.into(),
@@ -496,8 +563,13 @@ fn exact_pending_decisions_are_durable_without_implicit_execution() {
 #[test]
 fn exact_tool_cancellation_is_durable_without_consumption_or_execution() {
     let store = store();
-    let authority =
-        V3RuntimeAuthority::from_provider_routes([], Arc::clone(&store), memory_route()).unwrap();
+    let authority = V3RuntimeAuthority::from_provider_routes(
+        [],
+        Vec::new(),
+        Arc::clone(&store),
+        memory_route(),
+    )
+    .unwrap();
     let pending = |call_id: &str| V3ToolCall {
         tool_id: tool_catalog::MEMORY_MARK_OBSOLETE_TOOL_ID.into(),
         call_id: call_id.into(),
@@ -640,9 +712,13 @@ fn persisted_authorization_rejects_duplicate_call_ids_after_reopen() {
     let database = root.join("runtime.sqlite");
     {
         let store = Arc::new(RuntimeStore::open(&database).unwrap());
-        let authority =
-            V3RuntimeAuthority::from_provider_routes([], Arc::clone(&store), memory_route())
-                .unwrap();
+        let authority = V3RuntimeAuthority::from_provider_routes(
+            [],
+            Vec::new(),
+            Arc::clone(&store),
+            memory_route(),
+        )
+        .unwrap();
         assert!(matches!(
             authority
                 .handle(V3Command::InvokeTool(V3ToolCall {
@@ -667,9 +743,13 @@ fn persisted_authorization_rejects_duplicate_call_ids_after_reopen() {
     }
     {
         let store = Arc::new(RuntimeStore::open(&database).unwrap());
-        let authority =
-            V3RuntimeAuthority::from_provider_routes([], Arc::clone(&store), memory_route())
-                .unwrap();
+        let authority = V3RuntimeAuthority::from_provider_routes(
+            [],
+            Vec::new(),
+            Arc::clone(&store),
+            memory_route(),
+        )
+        .unwrap();
         assert_eq!(
             authority
                 .handle(V3Command::InvokeTool(V3ToolCall {

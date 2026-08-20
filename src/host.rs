@@ -66,6 +66,13 @@ fn is_executable(path: &Path) -> bool {
     path.is_file()
 }
 
+/// Hermetic-test hook: candidate probing deliberately reaches outside HOME
+/// and PATH (that is its job), which makes "no executor installed" impossible
+/// to stage on a machine that really has one under /opt/homebrew or /usr/bin.
+/// Debug builds only; release resolution is never filtered.
+#[cfg(debug_assertions)]
+const TEST_HOME_AGENTS_ONLY_ENV: &str = "ABBEY_TEST_HOME_AGENTS_ONLY";
+
 /// Well-known locations for the active backend binary (before PATH).
 pub fn agent_candidate_paths(backend: &str, home: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
@@ -117,6 +124,10 @@ pub fn agent_candidate_paths(backend: &str, home: &Path) -> Vec<PathBuf> {
                 }
             }
         }
+    }
+    #[cfg(debug_assertions)]
+    if std::env::var_os(TEST_HOME_AGENTS_ONLY_ENV).is_some() {
+        out.retain(|path| path.starts_with(home));
     }
     out
 }
