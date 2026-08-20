@@ -42,12 +42,13 @@ fn route() -> Result<Route, IpcError> {
     }
     match DaemonConfig::from_env() {
         Ok(config) => Ok(Route::Daemon(Box::new(DaemonClient::new(config)))),
-        Err(error) => Err(IpcError::new(IpcErrorKind::Configuration, error.to_string())
-            .with_remedy(format!(
+        Err(error) => Err(
+            IpcError::new(IpcErrorKind::Configuration, error.to_string()).with_remedy(format!(
                 "set exactly one of {} or {}, and keep any token file owner-only",
                 ACTIVE.daemon_bearer_env(),
                 ACTIVE.daemon_bearer_file_env()
-            ))),
+            )),
+        ),
     }
 }
 
@@ -211,7 +212,10 @@ mod tests {
         let status = status().expect("in-process status");
         assert_eq!(status.protocol_version, abbey::app_core::APP_PROTOCOL_V1);
         assert_eq!(status.schema_version, abbey::app_core::APP_SCHEMA_V1);
-        assert_eq!(status.capabilities, abbey::app_core::CapabilitySet::standard());
+        assert_eq!(
+            status.capabilities,
+            abbey::app_core::CapabilitySet::standard()
+        );
         assert!(status.run_routes.is_empty());
     }
 
@@ -232,7 +236,12 @@ mod tests {
         let rendered = serde_json::to_string(&page).expect("serialize page");
         assert!(!rendered.contains("\"cwd\""), "{rendered}");
         for entry in &page.entries {
-            assert!(entry.workspace.as_deref().is_none_or(|w| w.starts_with("ws-")));
+            assert!(
+                entry
+                    .workspace
+                    .as_deref()
+                    .is_none_or(|w| w.starts_with("ws-"))
+            );
             for field in [&entry.persona, &entry.role, &entry.model, &entry.reason] {
                 assert!(
                     !field.split_whitespace().any(|token| token.starts_with('/')),

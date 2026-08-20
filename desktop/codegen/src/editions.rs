@@ -87,8 +87,8 @@ pub fn patch_tauri_config(existing: &str, edition: Edition) -> Result<String> {
         );
     }
 
-    let mut rendered = serde_json::to_string_pretty(&root)
-        .context("cannot re-serialize the tauri config")?;
+    let mut rendered =
+        serde_json::to_string_pretty(&root).context("cannot re-serialize the tauri config")?;
     rendered.push('\n');
     Ok(rendered)
 }
