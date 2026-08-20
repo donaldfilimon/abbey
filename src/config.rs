@@ -100,7 +100,7 @@ fn default_memory_backend() -> String {
     "sqlite".into()
 }
 fn default_max_model() -> String {
-    "fable".into()
+    "opus".into()
 }
 fn default_gemma_model() -> String {
     "composer".into()
@@ -259,7 +259,8 @@ language = "en"
 # abi_bin = "/path/to/abi"
 
 [roles]
-max = "fable"
+# Alternatives for max: "sol" (gpt-5.6-sol-high), "fable" (claude-fable-5-thinking-high)
+max = "opus"
 gemma = "composer"
 "#
 }
@@ -364,7 +365,7 @@ mod tests {
     #[test]
     fn parse_default_shape() {
         let cfg = parse_toml_lite(default_toml_text()).unwrap();
-        assert_eq!(cfg.roles.max, "fable");
+        assert_eq!(cfg.roles.max, "opus");
         assert_eq!(cfg.roles.gemma, "composer");
         assert_eq!(cfg.memory_backend, "sqlite");
         assert_eq!(cfg.embeddings.provider, "none");

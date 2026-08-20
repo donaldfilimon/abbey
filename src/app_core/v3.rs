@@ -447,6 +447,7 @@ pub enum V3OperationState {
     Failed,
     Denied,
     Cancelled,
+    NotDownloaded,
 }
 
 /// Sanitized record used by inventory and metadata pages.

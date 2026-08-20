@@ -249,11 +249,15 @@ legacy downgrade occurs. The personal daemon and MCP retain only the three read-
 Negotiation may also always grant `read_claims_by_id`; `ClaimById`
 projects one exact stable-ID match from Abbey's canonical claim registry and returns
 `not_found` for a missing or non-exact ID. There is no fuzzy claim search. When daemon
-startup binds an ABI-local fixed provider,
-negotiation may additionally grant `read_models`, and `ListModels` returns bounded
-fixed-watermark inventory derived from the same startup-owned `ModelProvider` object used
-by protocol-v2 execution. Without that provider, model authority remains denied while the
-canonical claim read remains available. A non-negotiation request missing its exact grant
+startup binds an ABI-local fixed provider or a local model manifest directory
+(`ABBEY_MODEL_MANIFEST_DIR`), negotiation may additionally grant `read_models`, and
+`ListModels` returns bounded fixed-watermark inventory: route-derived entries come from the
+same startup-owned `ModelProvider` object used by protocol-v2 execution, and
+manifest-derived entries project `abi-models` registry identities as `available` or
+`not_downloaded` from size-checked artifact presence under the startup-resolved storage
+root — never digest verification, license resolution, download, load, or inference. A
+malformed manifest directory refuses daemon startup. Without either source, model
+authority remains denied while the canonical claim read remains available. A non-negotiation request missing its exact grant
 is rejected before dispatch; echoing an unsupported grant cannot manufacture daemon
 authority. There is no fuzzy claim search or served v3 inference command, download,
 load/unload, approval decision, cancellation, approved-call execution, personal-shell tool,

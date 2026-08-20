@@ -82,7 +82,7 @@ pub struct Cli {
     #[arg(long = "approve-mcps", global = true)]
     pub approve_mcps: bool,
 
-    /// Thinking effort alias → `-m fable-thinking-<level>` (Cursor model id)
+    /// Thinking effort alias → `-m opus-thinking-<level>` (Cursor model id)
     #[arg(long = "thinking", global = true, value_name = "LEVEL")]
     pub thinking: Option<String>,
 

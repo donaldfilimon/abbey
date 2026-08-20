@@ -38,6 +38,10 @@ impl Harness {
     }
 
     fn start_with_abi(bind_abi: bool) -> Self {
+        Self::start_with_options(bind_abi, false)
+    }
+
+    fn start_with_options(bind_abi: bool, bind_model_manifests: bool) -> Self {
         let root = PathBuf::from("/tmp").join(format!(
             "abbey-dcli-{}-{}",
             std::process::id(),
@@ -63,6 +67,15 @@ impl Harness {
             .env("ABBEY_MEMORY_BACKEND", "sqlite");
         if bind_abi {
             daemon.env(edition::ACTIVE.scoped_env("ABI_BIN"), &abi_provider);
+        }
+        if bind_model_manifests {
+            write_model_manifest_fixture(&root);
+            daemon
+                .env(
+                    edition::ACTIVE.scoped_env("MODEL_MANIFEST_DIR"),
+                    root.join("manifests"),
+                )
+                .env("ABI_MODELS_DIR", root.join("models-storage"));
         }
         let child = daemon.spawn().expect("start abbeyd");
 
@@ -237,6 +250,53 @@ fn protocol_v3_negotiation_and_model_inventory_round_trip_through_real_binaries(
             !output.status.success(),
             "--limit {rejected} must be rejected"
         );
+    }
+}
+
+#[test]
+fn protocol_v3_manifest_model_presence_round_trips_through_real_binaries() {
+    // No ABI provider binary: the startup-owned manifest directory alone must
+    // negotiate read_models and serve size-checked presence states.
+    let harness = Harness::start_with_options(false, true);
+
+    let negotiation = harness.abbey(BEARER, &["daemon", "negotiate", "--json"]);
+    assert_success(&negotiation, "daemon protocol-v3 negotiation");
+    let V3Event::Negotiated(negotiated) =
+        serde_json::from_slice::<V3Event>(&negotiation.stdout).unwrap()
+    else {
+        panic!("daemon negotiate returned the wrong event");
+    };
+    assert_eq!(negotiated.granted.as_slice(), &[V3Capability::ReadModels]);
+
+    let models = harness.abbey(BEARER, &["daemon", "models", "--json"]);
+    assert_success(&models, "daemon protocol-v3 manifest model inventory");
+    let json_text = String::from_utf8(models.stdout).unwrap();
+    let V3Event::Models(page) = serde_json::from_str::<V3Event>(&json_text).unwrap() else {
+        panic!("daemon models returned the wrong event");
+    };
+    assert_eq!(page.records.len(), 2);
+    assert_eq!(page.records[0].id, "abi-model:downloaded");
+    assert_eq!(page.records[0].state, V3OperationState::Available);
+    assert!(page.records[0].label.contains("artifacts present"));
+    assert_eq!(page.records[1].id, "abi-model:missing");
+    assert_eq!(page.records[1].state, V3OperationState::NotDownloaded);
+    assert!(page.records[1].label.contains("not downloaded"));
+
+    let human = harness.abbey(BEARER, &["daemon", "models"]);
+    assert_success(&human, "daemon protocol-v3 manifest model inventory text");
+    let human = String::from_utf8(human.stdout).unwrap();
+    assert!(human.contains("abbeyd models: 2 record(s)"), "{human}");
+    assert!(
+        human.contains("[available] abi-model:downloaded"),
+        "{human}"
+    );
+    assert!(
+        human.contains("[not_downloaded] abi-model:missing"),
+        "{human}"
+    );
+    for private in [BEARER, path_text(&harness.root), path_text(&harness.socket)] {
+        assert!(!json_text.contains(private), "model JSON leaked {private}");
+        assert!(!human.contains(private), "model text leaked {private}");
     }
 }
 
@@ -715,6 +775,59 @@ fn authentication_failure_does_not_disclose_local_secrets() {
     assert!(conflicting_stderr.contains("cannot both be set"));
     assert!(!conflicting_stderr.contains(BEARER));
     assert!(!conflicting_stderr.contains(wrong_bearer));
+}
+
+const MANIFEST_REVISION: &str = "0123456789abcdef0123456789abcdef01234567";
+const MANIFEST_DIGEST: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+/// Write two model manifests plus the storage bytes for exactly one of them,
+/// so presence splits `available` from `not_downloaded` deterministically.
+fn write_model_manifest_fixture(root: &Path) {
+    let manifests = root.join("manifests");
+    std::fs::create_dir_all(&manifests).expect("create model manifest fixture directory");
+    for id in ["downloaded", "missing"] {
+        let manifest = format!(
+            r#"{{
+                "id": "{id}",
+                "repository": "example/{id}",
+                "revision": "{MANIFEST_REVISION}",
+                "architecture": "llama",
+                "license": "apache-2.0",
+                "license_sha256": "{MANIFEST_DIGEST}",
+                "modalities": ["text"],
+                "tensor_format": "gguf",
+                "quantizations": ["q4_k_m"],
+                "context": {{ "max_context_tokens": 4096, "max_output_tokens": 1024 }},
+                "artifacts": [
+                    {{
+                        "path": "weights.gguf",
+                        "kind": "weights",
+                        "sha256": "{MANIFEST_DIGEST}",
+                        "size_bytes": 8,
+                        "url": "https://example.invalid/{MANIFEST_REVISION}/weights.gguf"
+                    }},
+                    {{
+                        "path": "tokenizer.json",
+                        "kind": "tokenizer",
+                        "sha256": "{MANIFEST_DIGEST}",
+                        "size_bytes": 4,
+                        "url": "https://example.invalid/{MANIFEST_REVISION}/tokenizer.json"
+                    }}
+                ]
+            }}"#
+        );
+        std::fs::write(manifests.join(format!("{id}.json")), manifest)
+            .expect("write model manifest fixture");
+    }
+    let downloaded = root
+        .join("models-storage")
+        .join("example__downloaded")
+        .join(MANIFEST_REVISION);
+    std::fs::create_dir_all(&downloaded).expect("create model storage fixture directory");
+    std::fs::write(downloaded.join("weights.gguf"), b"12345678")
+        .expect("write present weights fixture");
+    std::fs::write(downloaded.join("tokenizer.json"), b"abcd")
+        .expect("write present tokenizer fixture");
 }
 
 fn assert_success(output: &std::process::Output, operation: &str) {

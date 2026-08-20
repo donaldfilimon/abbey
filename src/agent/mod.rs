@@ -132,6 +132,10 @@ pub enum AgentBackend {
     /// deterministic persona-template locally by default, Anthropic live
     /// transport when a `claude-*`/`live` model is requested (abi credentials).
     Abi,
+    /// Claude Code CLI (`claude`) — Anthropic's agent, no cursor-agent
+    /// involved. Headless via `--print`; continuity via Claude's own sessions
+    /// (`--session-id` mint, `--resume` thereafter, tracked by a local marker).
+    Claude,
 }
 
 impl AgentBackend {
@@ -142,6 +146,7 @@ impl AgentBackend {
             "grok" | "grok-build" | "xai" => Some(Self::Grok),
             "fm" | "apple" | "foundation" | "on-device" => Some(Self::Fm),
             "abi" | "abi-cli" => Some(Self::Abi),
+            "claude" | "claude-code" => Some(Self::Claude),
             _ => None,
         }
     }
@@ -180,7 +185,7 @@ impl AgentBackend {
             // cursor-agent instead, with no way to tell.
             eprintln!(
                 "abbey: config `backend = {configured:?}` is not one of \
-                 cursor|grok|fm|abi — using cursor-agent"
+                 cursor|grok|fm|abi|claude — using cursor-agent"
             );
             Self::Cursor
         })
@@ -194,6 +199,7 @@ impl AgentBackend {
     pub fn transcript_subdir(self) -> &'static str {
         match self {
             Self::Abi => "abi",
+            Self::Claude => "claude",
             _ => "fm",
         }
     }
@@ -204,6 +210,7 @@ impl AgentBackend {
             Self::Grok => "grok",
             Self::Fm => "fm",
             Self::Abi => "abi",
+            Self::Claude => "claude",
         }
     }
 
@@ -216,9 +223,11 @@ impl AgentBackend {
         matches!(self, Self::Fm)
     }
 
-    /// Account / session-list / MCP surface — `fm` and `abi` have none of these.
+    /// Account / session-list / MCP surface — `fm` and `abi` have none of
+    /// these; `claude` has its own but speaks none of cursor-agent's verbs
+    /// (`status`/`ls`/`models`), so passthrough would hand it garbage.
     pub fn supports_account_surface(self) -> bool {
-        !matches!(self, Self::Fm | Self::Abi)
+        !matches!(self, Self::Fm | Self::Abi | Self::Claude)
     }
 
     /// Server-side chat sessions (`create-chat` / `--resume <id>`).
@@ -238,7 +247,8 @@ impl AgentBackend {
             Self::Cursor => Self::Grok,
             Self::Grok => Self::Fm,
             Self::Fm => Self::Abi,
-            Self::Abi => Self::Cursor,
+            Self::Abi => Self::Claude,
+            Self::Claude => Self::Cursor,
         }
     }
 }
@@ -299,6 +309,7 @@ pub fn resolve_agent_for(backend: AgentBackend) -> Result<PathBuf> {
         AgentBackend::Cursor => "cursor",
         AgentBackend::Fm => "fm",
         AgentBackend::Abi => "abi",
+        AgentBackend::Claude => "claude",
     };
     let candidates = crate::host::agent_candidate_paths(key, &home);
     for c in &candidates {
@@ -344,6 +355,16 @@ pub fn resolve_agent_for(backend: AgentBackend) -> Result<PathBuf> {
                 "`abi` not found — ABBEY_BACKEND=abi needs a real `abi` binary (a shell \
                  alias will not do). Build it with `cargo build -p abi-cli` in ../abi, \
                  then set ABBEY_ABI_BIN or `abi_bin` in config.toml."
+            );
+        }
+        AgentBackend::Claude => {
+            if let Some(path) = which_bin("claude") {
+                return Ok(path);
+            }
+            bail!(
+                "`claude` not found — the claude backend needs the Claude Code CLI \
+                 on PATH (https://claude.com/claude-code). Unset ABBEY_BACKEND=claude \
+                 or change config `backend` to use another executor."
             );
         }
     }
@@ -410,6 +431,20 @@ impl AgentConfig {
     pub fn transcript_path(&self, chat_id: &str) -> Option<PathBuf> {
         let dir = self.transcript_dir.as_ref()?;
         Some(dir.join(format!("{chat_id}.transcript")))
+    }
+
+    /// Record that a Claude session id has been established server-side, so
+    /// the next turn resumes it (`--resume`) instead of re-minting it
+    /// (`--session-id`). Presence-only marker; best-effort like the abi
+    /// transcript — Claude keeps the conversation itself.
+    pub fn touch_claude_session_marker(&self, chat_id: &str) {
+        let Some(path) = self.transcript_path(chat_id) else {
+            return;
+        };
+        if let Some(dir) = path.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        let _ = std::fs::write(&path, "claude session established\n");
     }
 
     /// Record one abi turn so the next run can carry bounded context.
@@ -502,6 +537,14 @@ impl AgentConfig {
                  live      Anthropic live transport with abi's default model\n"
                     .into(),
             );
+        }
+        if self.backend == AgentBackend::Claude {
+            return Ok("opus      Claude Opus (Abbey's default Max binding)\n\
+                 sonnet    Claude Sonnet (Abbey's Gemma binding)\n\
+                 haiku     Claude Haiku\n\
+                 fable     Claude Fable (plan-gated)\n\
+                 claude-*  any full Claude catalog id, passed through\n"
+                .into());
         }
         let out = Command::new(&self.agent_path).arg("models").output()?;
         Ok(String::from_utf8_lossy(&out.stdout).into_owned())
@@ -625,6 +668,12 @@ fn run_once(
         {
             cfg.append_abi_transcript(id, prompt_and_rest, &out);
         }
+        if cfg.backend == AgentBackend::Claude
+            && st.success()
+            && let Some(id) = resume_id.filter(|i| !i.is_empty())
+        {
+            cfg.touch_claude_session_marker(id);
+        }
         if let Some(path) = &cfg.cot_path {
             if let Err(e) = crate::surfaces::save_cot(path, &out) {
                 eprintln!("abbey: cot save failed: {e:#}");
@@ -640,6 +689,12 @@ fn run_once(
         return Ok(st.code().unwrap_or(1));
     }
     let st = cfg.run_interactive(resume_id, prompt_and_rest)?;
+    if cfg.backend == AgentBackend::Claude
+        && st.success()
+        && let Some(id) = resume_id.filter(|i| !i.is_empty())
+    {
+        cfg.touch_claude_session_marker(id);
+    }
     Ok(st.code().unwrap_or(1))
 }
 

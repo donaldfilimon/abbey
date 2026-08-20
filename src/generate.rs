@@ -185,7 +185,7 @@ pub fn run_reason(
         bail!("usage: abbey reason [--thinking LEVEL] <task…>");
     }
     let level = thinking_level.unwrap_or("xhigh");
-    cfg.model = resolve_model(&format!("fable-thinking-{level}"));
+    cfg.model = resolve_model(&format!("opus-thinking-{level}"));
     cfg.print = true;
     cfg.force_capture = true;
     cfg.cot_path = Some(crate::surfaces::cot_path(state));

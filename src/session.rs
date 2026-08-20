@@ -21,7 +21,7 @@ pub fn apply_global_flags(cli: &Cli, state: &AbbeyState, cfg: &mut AgentConfig) 
     // (bounded context prefix; `abi complete` itself is a stateless one-shot).
     cfg.transcript_dir = Some(state.state_dir.join(cfg.backend.transcript_subdir()));
     if cfg.backend == AgentBackend::Abi {
-        // Do not expand through cursor aliases: `fable` → claude-*-thinking-*
+        // Do not expand through cursor aliases: `opus` → claude-*-thinking-*
         // would look like an explicit Anthropic live request under abi.
         // Also skip `read_model()` (which itself resolve_models) so a persisted
         // bare `claude-*` catalog id survives as live, not as a thinking binding.
@@ -37,7 +37,7 @@ pub fn apply_global_flags(cli: &Cli, state: &AbbeyState, cfg: &mut AgentConfig) 
             cfg.model = abi_normalize_model(&state.read_model_raw());
         }
     } else if let Some(level) = &cli.thinking {
-        cfg.model = resolve_model(&format!("fable-thinking-{level}"));
+        cfg.model = resolve_model(&format!("opus-thinking-{level}"));
     } else if let Some(m) = &cli.model {
         cfg.model = resolve_model(m);
     } else {

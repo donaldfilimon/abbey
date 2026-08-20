@@ -27,6 +27,9 @@ pub fn backend_doctor_line(backend: AgentBackend) -> String {
              opt into Anthropic transport (ABBEY_BACKEND=abi)"
                 .into()
         }
+        AgentBackend::Claude => {
+            "backend:   claude — Claude Code CLI, no cursor-agent (ABBEY_BACKEND=claude)".into()
+        }
     }
 }
 
@@ -38,7 +41,10 @@ pub fn roles_doctor_line(backend: AgentBackend) -> String {
             backend.label()
         )
     } else {
-        "roles:      Max→technical · Gemma→visual (cursor-agent bindings)".into()
+        format!(
+            "roles:      Max→technical · Gemma→visual (model bindings via {})",
+            backend.label()
+        )
     }
 }
 
