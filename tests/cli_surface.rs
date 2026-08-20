@@ -237,34 +237,42 @@ fn invalidate_hides_from_search_but_keeps_the_record() {
 /// hand; this encodes it, so a new bypass that starts routing (or a routed
 /// verb that stops logging) fails the gate instead of drifting silently.
 #[cfg(unix)]
-#[test]
-fn print_bypasses_the_route_log_where_ask_appends() {
+fn write_stub_agent(s: &Scratch) -> PathBuf {
     use std::os::unix::fs::PermissionsExt as _;
-
-    let s = Scratch::new("route-bypass");
-    // A stub agent stands in for cursor-agent: the invariant under test is
-    // Abbey's own routing bookkeeping, not the backend.
+    // A stub agent stands in for cursor-agent: what these tests pin is Abbey's
+    // own bookkeeping and output, never the backend's.
     let agent = s.0.join("stub-agent");
     std::fs::write(&agent, "#!/bin/sh\necho stub-reply\n").expect("write stub agent");
     let mut permissions = std::fs::metadata(&agent).expect("stat stub").permissions();
     permissions.set_mode(0o700);
     std::fs::set_permissions(&agent, permissions).expect("chmod stub");
+    agent
+}
 
-    let run_stubbed = |args: &[&str]| {
-        let out = Command::new(BIN)
-            .args(args)
-            .env(abbey::edition::ACTIVE.state_dir_env(), &s.0)
-            .env("ABBEY_AGENT", &agent)
-            .env("ABBEY_BACKEND", "cursor")
-            .env_remove("CURSOR_AGENT_CHAT_ID")
-            .output()
-            .expect("spawn abbey");
-        (
-            out.status.code().unwrap_or(-1),
-            String::from_utf8_lossy(&out.stdout).into_owned(),
-            String::from_utf8_lossy(&out.stderr).into_owned(),
-        )
-    };
+/// Like [`run`], but with `ABBEY_AGENT` pointing at the scratch stub so agent
+/// verbs execute deterministically without a real backend on the host.
+#[cfg(unix)]
+fn run_stubbed(s: &Scratch, agent: &PathBuf, args: &[&str]) -> (i32, String, String) {
+    let out = Command::new(BIN)
+        .args(args)
+        .env(abbey::edition::ACTIVE.state_dir_env(), &s.0)
+        .env("ABBEY_AGENT", agent)
+        .env("ABBEY_BACKEND", "cursor")
+        .env_remove("CURSOR_AGENT_CHAT_ID")
+        .output()
+        .expect("spawn abbey");
+    (
+        out.status.code().unwrap_or(-1),
+        String::from_utf8_lossy(&out.stdout).into_owned(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+    )
+}
+
+#[cfg(unix)]
+#[test]
+fn print_bypasses_the_route_log_where_ask_appends() {
+    let s = Scratch::new("route-bypass");
+    let agent = write_stub_agent(&s);
     let route_rows = || {
         std::fs::read_to_string(s.0.join("route.jsonl"))
             .map(|t| t.lines().count())
@@ -274,13 +282,13 @@ fn print_bypasses_the_route_log_where_ask_appends() {
     assert_eq!(route_rows(), 0, "scratch state must start unrouted");
 
     // `ask` goes through the canonical path: the routing audit sees it.
-    let (code, _, err) = run_stubbed(&["ask", "hello"]);
+    let (code, _, err) = run_stubbed(&s, &agent, &["ask", "hello"]);
     assert_eq!(code, 0, "stubbed ask should succeed: {err}");
     let after_ask = route_rows();
     assert!(after_ask >= 1, "ask must append a route record");
 
     // `print` is a capture bypass: same prompt, no new route record.
-    let (code, out, err) = run_stubbed(&["print", "hello"]);
+    let (code, out, err) = run_stubbed(&s, &agent, &["print", "hello"]);
     assert_eq!(code, 0, "stubbed print should succeed: {err}");
     assert!(
         out.contains("stub-reply"),
@@ -291,6 +299,83 @@ fn print_bypasses_the_route_log_where_ask_appends() {
         after_ask,
         "print must leave the route log unchanged"
     );
+}
+
+/// `abbey doctor` is the honesty instrument: it must report the state it is
+/// actually running against, and exit 0. A doctor that silently misreports
+/// would undercut the claims discipline everywhere else in the repo.
+#[cfg(unix)]
+#[test]
+fn doctor_reports_the_real_state_it_runs_against() {
+    let s = Scratch::new("doctor");
+    let agent = write_stub_agent(&s);
+    let (code, out, err) = run_stubbed(&s, &agent, &["doctor"]);
+    assert_eq!(code, 0, "doctor should exit 0: {err}");
+
+    for field in ["agent:", "model:", "chat:", "state:", "backend:", "parity:"] {
+        assert!(
+            out.contains(field),
+            "doctor output missing `{field}`: {out}"
+        );
+    }
+    // The paths reported must be the scratch state this process was given —
+    // not the developer's real state dir.
+    let scratch = s.0.to_string_lossy();
+    assert!(
+        out.contains(scratch.as_ref()),
+        "doctor must report the state dir it was pointed at: {out}"
+    );
+    // The stub agent proves which executable would run.
+    assert!(
+        out.contains("stub-agent"),
+        "doctor must name the resolved agent path: {out}"
+    );
+}
+
+/// Every catalog entry that is safe to invoke headlessly must be wired in
+/// `dispatch_slash`. The dispatcher has an explicit "registered … but not
+/// wired yet" arm, which means catalog↔dispatch drift is a real failure mode;
+/// this pins the read-only/local subset (agent-run and repo-mutating verbs are
+/// deliberately not executed here).
+#[cfg(unix)]
+#[test]
+fn registered_local_slash_commands_are_wired() {
+    let s = Scratch::new("slash-wired");
+    let agent = write_stub_agent(&s);
+    for cmd in [
+        "/help",
+        "/doctor",
+        "/debug",
+        "/claims",
+        "/platform",
+        "/runtime",
+        "/vision",
+        "/oos",
+        "/model",
+        "/status",
+        "/routes",
+        "/skills",
+        "/plugins",
+        "/allowlist",
+        "/cost",
+        "/permissions",
+        "/config",
+        "/mcp",
+        "/acp",
+        "/memory",
+        "/compact",
+        "/daemon",
+    ] {
+        let (_, _, err) = run_stubbed(&s, &agent, &[cmd]);
+        assert!(
+            !err.contains("unknown slash"),
+            "{cmd} fell through to the unknown-command arm: {err}"
+        );
+        assert!(
+            !err.contains("not wired yet"),
+            "{cmd} is in the catalog but not dispatched: {err}"
+        );
+    }
 }
 
 #[test]

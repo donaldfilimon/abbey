@@ -148,4 +148,16 @@ case "$(uname -s 2>/dev/null || echo unknown)" in
     ;;
 esac
 
+# Soft coverage report — opt-in only (it re-runs the default suite
+# instrumented, roughly doubling test time) and never a hard gate.
+if [ "${ABBEY_COVERAGE:-0}" = "1" ]; then
+  if command -v cargo-llvm-cov >/dev/null 2>&1; then
+    echo "== cargo llvm-cov (soft, default features) =="
+    cargo llvm-cov --summary-only \
+      || echo "WARN: coverage run failed (llvm-tools missing?) — not a hard gate"
+  else
+    echo "== skip coverage (cargo-llvm-cov not installed; cargo install cargo-llvm-cov) =="
+  fi
+fi
+
 echo "check.sh: OK"
