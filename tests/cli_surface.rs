@@ -231,6 +231,68 @@ fn invalidate_hides_from_search_but_keeps_the_record() {
     assert!(shown.contains("\"obsolete\": true"), "got: {shown}");
 }
 
+/// The capture-bypass inventory (`print`, `commit`, `voice ask`) deliberately
+/// skips `hybrid_run` — no persona wrap and, load-bearing for the routing
+/// audit, **no `route.jsonl` entry**. CLAUDE.md documents this as verified by
+/// hand; this encodes it, so a new bypass that starts routing (or a routed
+/// verb that stops logging) fails the gate instead of drifting silently.
+#[cfg(unix)]
+#[test]
+fn print_bypasses_the_route_log_where_ask_appends() {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let s = Scratch::new("route-bypass");
+    // A stub agent stands in for cursor-agent: the invariant under test is
+    // Abbey's own routing bookkeeping, not the backend.
+    let agent = s.0.join("stub-agent");
+    std::fs::write(&agent, "#!/bin/sh\necho stub-reply\n").expect("write stub agent");
+    let mut permissions = std::fs::metadata(&agent).expect("stat stub").permissions();
+    permissions.set_mode(0o700);
+    std::fs::set_permissions(&agent, permissions).expect("chmod stub");
+
+    let run_stubbed = |args: &[&str]| {
+        let out = Command::new(BIN)
+            .args(args)
+            .env(abbey::edition::ACTIVE.state_dir_env(), &s.0)
+            .env("ABBEY_AGENT", &agent)
+            .env("ABBEY_BACKEND", "cursor")
+            .env_remove("CURSOR_AGENT_CHAT_ID")
+            .output()
+            .expect("spawn abbey");
+        (
+            out.status.code().unwrap_or(-1),
+            String::from_utf8_lossy(&out.stdout).into_owned(),
+            String::from_utf8_lossy(&out.stderr).into_owned(),
+        )
+    };
+    let route_rows = || {
+        std::fs::read_to_string(s.0.join("route.jsonl"))
+            .map(|t| t.lines().count())
+            .unwrap_or(0)
+    };
+
+    assert_eq!(route_rows(), 0, "scratch state must start unrouted");
+
+    // `ask` goes through the canonical path: the routing audit sees it.
+    let (code, _, err) = run_stubbed(&["ask", "hello"]);
+    assert_eq!(code, 0, "stubbed ask should succeed: {err}");
+    let after_ask = route_rows();
+    assert!(after_ask >= 1, "ask must append a route record");
+
+    // `print` is a capture bypass: same prompt, no new route record.
+    let (code, out, err) = run_stubbed(&["print", "hello"]);
+    assert_eq!(code, 0, "stubbed print should succeed: {err}");
+    assert!(
+        out.contains("stub-reply"),
+        "print should emit capture: {out}"
+    );
+    assert_eq!(
+        route_rows(),
+        after_ask,
+        "print must leave the route log unchanged"
+    );
+}
+
 #[test]
 fn closing_a_pipe_early_is_not_an_error() {
     // Rust sets SIGPIPE to SIG_IGN before main, which turns a closed reader into
