@@ -503,7 +503,9 @@ fn backend_source() -> String {
         .and_then(|c| c.backend.clone())
     {
         Some(v) => format!("config backend={v}"),
-        None => "default".into(),
+        // "default" — or the auto-fallback note when cursor-agent is not
+        // installed and another executor was picked up instead.
+        None => agent::AgentBackend::from_env_source().into(),
     }
 }
 
@@ -517,8 +519,15 @@ pub fn cmd_doctor(state: &AbbeyState, cfg: &AgentConfig) -> Result<i32> {
     for line in crate::edition::identity_lines(&state.state_dir) {
         let _ = output::println(line);
     }
+    let agent_path = if cfg.agent_path.as_os_str().is_empty() {
+        // Honest, not broken: local verbs (this one included) need no
+        // executor; only generation does, and it says so when attempted.
+        "(none found — generation needs cursor-agent, grok, fm, or abi)".to_string()
+    } else {
+        cfg.agent_path.display().to_string()
+    };
     let lines = [
-        format!("agent:     {}", cfg.agent_path.display()),
+        format!("agent:     {agent_path}"),
         format!("agent ver: {}", cfg.agent_version()),
         format!("model:     {}", cfg.model),
         format!("chat:      {chat}"),

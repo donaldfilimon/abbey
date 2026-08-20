@@ -402,3 +402,110 @@ fn closing_a_pipe_early_is_not_an_error() {
         "closing the pipe should not panic: {err}"
     );
 }
+
+/// Run abbey in a fully isolated environment: cleared env, a scratch HOME (so
+/// no real install candidates resolve), and a caller-chosen PATH. This is how
+/// "a machine with no executor installed" is simulated deterministically even
+/// on developer hosts that have cursor-agent.
+#[cfg(unix)]
+fn run_isolated(s: &Scratch, path: &std::path::Path, args: &[&str]) -> (i32, String, String) {
+    let out = Command::new(BIN)
+        .args(args)
+        .env_clear()
+        .env(abbey::edition::ACTIVE.state_dir_env(), &s.0)
+        .env("HOME", &s.0)
+        .env("PATH", path)
+        .output()
+        .expect("spawn abbey");
+    (
+        out.status.code().unwrap_or(-1),
+        String::from_utf8_lossy(&out.stdout).into_owned(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+    )
+}
+
+/// cursor-agent (or any executor) is preferred, never required: every local
+/// verb must work on a machine where no backend binary exists at all.
+#[cfg(unix)]
+#[test]
+fn local_verbs_need_no_executor_backend() {
+    let s = Scratch::new("no-backend");
+    let empty = s.0.join("empty-path");
+    std::fs::create_dir_all(&empty).unwrap();
+
+    for (args, want) in [
+        (&["claims"][..], 0),
+        (&["claims", "refuse", "lora"][..], 2),
+        (&["allowlist"][..], 0),
+        (&["model"][..], 0),
+        (&["doctor"][..], 0),
+        (&["edition", "--name"][..], 0),
+    ] {
+        let (code, _, err) = run_isolated(&s, &empty, args);
+        assert_eq!(code, want, "{args:?} must not need an executor: {err}");
+        assert!(
+            !err.contains("not found"),
+            "{args:?} must not complain about a missing executor: {err}"
+        );
+    }
+
+    // Doctor stays honest about the absence instead of erroring or lying.
+    let (_, out, _) = run_isolated(&s, &empty, &["doctor"]);
+    assert!(
+        out.contains("none found"),
+        "doctor should report the missing executor plainly: {out}"
+    );
+}
+
+/// Generation is the one thing that really needs an executor — and the
+/// failure must arrive at spawn time with the full remedy list, not as an
+/// eager startup error that also breaks local verbs.
+#[cfg(unix)]
+#[test]
+fn generation_without_any_backend_fails_with_guidance() {
+    let s = Scratch::new("no-backend-gen");
+    let empty = s.0.join("empty-path");
+    std::fs::create_dir_all(&empty).unwrap();
+
+    let (code, _, err) = run_isolated(&s, &empty, &["print", "hi"]);
+    assert_ne!(code, 0, "generation cannot succeed with no executor");
+    assert!(
+        err.contains("not found") && err.contains("ABBEY_BACKEND"),
+        "the error must name the remedies: {err}"
+    );
+}
+
+/// With cursor-agent absent but another executor installed, the unchosen
+/// default falls back to it — the machine works out of the box, and doctor
+/// says the choice was automatic.
+#[cfg(unix)]
+#[test]
+fn default_backend_falls_back_to_an_installed_executor() {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let s = Scratch::new("fallback");
+    let bin = s.0.join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let abi = bin.join("abi");
+    std::fs::write(&abi, "#!/bin/sh\necho fallback-serves\n").unwrap();
+    let mut permissions = std::fs::metadata(&abi).unwrap().permissions();
+    permissions.set_mode(0o700);
+    std::fs::set_permissions(&abi, permissions).unwrap();
+
+    let (code, out, err) = run_isolated(&s, &bin, &["print", "hi"]);
+    assert_eq!(
+        code, 0,
+        "the installed abi stub should serve the run: {err}"
+    );
+    assert!(
+        out.contains("fallback-serves"),
+        "output should come from the fallback executor: {out}"
+    );
+
+    let (code, out, _) = run_isolated(&s, &bin, &["doctor"]);
+    assert_eq!(code, 0);
+    assert!(
+        out.contains("abi (from auto"),
+        "doctor must show the automatic backend choice: {out}"
+    );
+}

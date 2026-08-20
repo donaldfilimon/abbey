@@ -29,8 +29,13 @@ fn real_main() -> Result<i32> {
     let cli = Cli::parse();
     let state = AbbeyState::load()?;
     let mut cfg = AgentConfig::default();
-    if command_needs_executor(&cli) {
-        cfg = cfg.with_resolved_agent()?;
+    // Best-effort only: a resolved path improves doctor/TUI display, but no
+    // command fails here. Verbs that actually execute a backend resolve at
+    // spawn time (`AgentConfig::exec_path`), so every local verb — claims,
+    // memory, os, routes, the installer probes — works on a machine with no
+    // executor installed. That is exactly when installs and audits happen.
+    if let Ok(resolved) = cfg.clone().with_resolved_agent() {
+        cfg = resolved;
     }
 
     apply_global_flags(&cli, &state, &mut cfg)?;
@@ -65,70 +70,10 @@ fn real_main() -> Result<i32> {
     crate::commands::run_cli(cli, state, cfg)
 }
 
-/// Local inventory/index/proof commands do not execute the selected model
-/// backend and therefore must remain usable when that backend is unavailable.
-fn command_needs_executor(cli: &Cli) -> bool {
-    !matches!(
-        &cli.command,
-        Some(
-            Commands::Memory { .. }
-                | Commands::Mesh { .. }
-                | Commands::Daemon { .. }
-                | Commands::Agents
-                | Commands::Skills { .. }
-                | Commands::Plugins { .. }
-                | Commands::Mcp { .. }
-                | Commands::Acp { .. }
-                // Both are installer probes. `edition` reports compile-time
-                // identity and `completion` renders a clap-generated script;
-                // neither runs a model. They must work on a machine that has
-                // no backend yet, because that is exactly when an install
-                // happens — install.sh/install.ps1 derive the installed names
-                // from `edition --name`, and requiring an executor there made
-                // a backend-less install abort before writing anything.
-                | Commands::Edition { .. }
-                | Commands::Completion { .. }
-        )
-    )
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn local_control_plane_commands_do_not_resolve_the_model_executor() {
-        for args in [
-            &["abbey", "mcp", "status"][..],
-            &["abbey", "plugins"][..],
-            &["abbey", "memory", "embed", "status"][..],
-            &["abbey", "mesh", "status"][..],
-            &["abbey", "daemon", "status"][..],
-            &["abbey", "daemon", "claims", "--status", "current"][..],
-            &["abbey", "daemon", "claims", "--status", "partial"][..],
-            &["abbey", "daemon", "claims", "--status", "proposed"][..],
-            &["abbey", "daemon", "claims", "--status", "blocked"][..],
-            &["abbey", "daemon", "claims", "--status", "oos"][..],
-            &["abbey", "daemon", "claims", "--status", "out-of-scope"][..],
-            // Installer probes. Both installers derive the names they install
-            // from `edition --name`/`--daemon-name` and then render a shell
-            // completion. An install happens precisely when no backend exists
-            // yet, so requiring an executor here aborted the whole install on
-            // a fresh machine before anything was written.
-            &["abbey", "edition"][..],
-            &["abbey", "edition", "--name"][..],
-            &["abbey", "edition", "--daemon-name"][..],
-            &["abbey", "completion", "powershell"][..],
-            &["abbey", "completion", "bash"][..],
-        ] {
-            let cli = Cli::try_parse_from(args).unwrap();
-            assert!(!command_needs_executor(&cli), "args={args:?}");
-        }
-    }
-
-    #[test]
-    fn generation_still_requires_the_selected_executor() {
-        let cli = Cli::try_parse_from(["abbey", "print", "hello"]).unwrap();
-        assert!(command_needs_executor(&cli));
-    }
-}
+// The old `command_needs_executor` allowlist lived here. It is gone on
+// purpose: startup resolution is best-effort for *every* command and the hard
+// requirement moved to spawn time, so the classification (and the drift risk
+// of forgetting to exempt a new local verb) no longer exists. The guarantees
+// are pinned at process level in `tests/cli_surface.rs`:
+// `local_verbs_need_no_executor_backend` and
+// `generation_without_any_backend_fails_with_guidance`.
