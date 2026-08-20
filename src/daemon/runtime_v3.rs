@@ -1,9 +1,10 @@
 //! Minimal daemon-owned authority for the first served protocol-v3 slice.
 //!
 //! Only bounded safe tool inventory/invocation, one default-edition exact-call
-//! memory mutation plus approve/deny/cancel transitions, startup-bound ABI-local
-//! model inventory, exact stable-ID claim reads, and one sanitized summary-only
-//! memory space are representable here. Training, worker, and polling grants
+//! memory mutation plus approve/deny/cancel transitions, startup-bound fixed-route
+//! model inventory, optional signed local-model download/load/unload/status,
+//! exact stable-ID claim reads, and one sanitized summary-only memory space are
+//! representable here. Prompt inference, training, worker, and polling grants
 //! remain absent.
 
 use std::collections::HashSet;
@@ -32,9 +33,11 @@ use crate::runtime::{
 use super::server::HandlerFailure;
 
 mod memory_reads;
+pub(super) mod model_lifecycle;
 mod tool_catalog;
 
 use memory_reads::MemoryAuthority;
+use model_lifecycle::ModelLifecycleAuthority;
 use tool_catalog::{BoundTool, ToolRoute};
 
 #[cfg(debug_assertions)]
@@ -47,6 +50,7 @@ pub(super) struct V3RuntimeAuthority {
     grants: V3CapabilitySet,
     tools: Vec<BoundTool>,
     models: Vec<V3EntityRecord>,
+    model_lifecycle: Option<ModelLifecycleAuthority>,
     store: Arc<RuntimeStore>,
     memory: MemoryAuthority,
     used_tool_call_ids: Mutex<HashSet<String>>,
@@ -59,8 +63,9 @@ impl V3RuntimeAuthority {
         routes: impl IntoIterator<Item = &'a ProviderRoute>,
         store: Arc<RuntimeStore>,
         memory: MemoryEffectRoute,
+        model_lifecycle: Option<ModelLifecycleAuthority>,
     ) -> Result<Self, HandlerFailure> {
-        let models = routes
+        let mut models = routes
             .into_iter()
             .filter(|provider| provider.backend() == BackendSelection::Abi)
             .map(|provider| V3EntityRecord {
@@ -69,6 +74,11 @@ impl V3RuntimeAuthority {
                 state: V3OperationState::Available,
             })
             .collect::<Vec<_>>();
+        if let Some(authority) = &model_lifecycle {
+            models.extend(authority.inventory());
+            models.sort_by(|left, right| left.id.cmp(&right.id));
+            models.dedup_by(|left, right| left.id == right.id);
+        }
         let tools = tool_catalog::build().map_err(|()| internal_failure())?;
         let used_tool_call_ids = store
             .audit_events_for_run(None)
@@ -102,12 +112,17 @@ impl V3RuntimeAuthority {
         if !models.is_empty() {
             available.push(V3Capability::ReadModels);
         }
+        if model_lifecycle.is_some() {
+            available.push(V3Capability::DownloadModels);
+            available.push(V3Capability::ManageModels);
+        }
         available.push(V3Capability::ReadClaimsById);
         let grants = V3CapabilitySet::from_sorted(available).map_err(|_| internal_failure())?;
         Ok(Self {
             grants,
             tools,
             models,
+            model_lifecycle,
             store,
             memory,
             used_tool_call_ids: Mutex::new(used_tool_call_ids),
@@ -184,6 +199,11 @@ impl V3RuntimeAuthority {
                     records: self.models.iter().skip(skip).take(take).cloned().collect(),
                 }))
             }
+            V3Command::DownloadModel(action) => self.model_authority()?.download(action),
+            V3Command::ModelDownloadStatus(query) => self.model_authority()?.download_status(query),
+            V3Command::LoadModel(action) => self.model_authority()?.load(action),
+            V3Command::UnloadModel(action) => self.model_authority()?.unload(action),
+            V3Command::InferenceStatus(query) => self.model_authority()?.inference_status(query),
             V3Command::ClaimById(query) => {
                 let claim = crate::claims::CLAIMS
                     .iter()
@@ -200,6 +220,12 @@ impl V3RuntimeAuthority {
             }
             _ => Err(capability_denied_failure()),
         }
+    }
+
+    fn model_authority(&self) -> Result<&ModelLifecycleAuthority, HandlerFailure> {
+        self.model_lifecycle
+            .as_ref()
+            .ok_or_else(capability_denied_failure)
     }
 
     /// Validate every echoed grant against startup authority and the command.

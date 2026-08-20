@@ -14,6 +14,7 @@ pub struct RuntimeDaemonConfig {
     memory_backend: String,
     abi_binary: Option<PathBuf>,
     foundation_models_binary: Option<PathBuf>,
+    model_runtime_config: Option<PathBuf>,
     manager: RunManagerConfig,
     delegated: DelegatedLimits,
 }
@@ -27,6 +28,7 @@ impl RuntimeDaemonConfig {
             memory_backend: "sqlite".to_owned(),
             abi_binary: None,
             foundation_models_binary: None,
+            model_runtime_config: None,
             manager: RunManagerConfig::default(),
             delegated: DelegatedLimits::default(),
         }
@@ -52,6 +54,9 @@ impl RuntimeDaemonConfig {
             if let Some(path) = std::env::var_os(edition.scoped_env("ABI_BIN")) {
                 config.abi_binary = Some(PathBuf::from(path));
             }
+            if let Some(path) = std::env::var_os(edition.scoped_env("MODEL_RUNTIME_CONFIG")) {
+                config.model_runtime_config = Some(PathBuf::from(path));
+            }
             let foundation_models = PathBuf::from("/usr/bin/fm");
             if foundation_models.is_file() {
                 config.foundation_models_binary = Some(foundation_models);
@@ -69,6 +74,13 @@ impl RuntimeDaemonConfig {
     #[must_use]
     pub fn bind_foundation_models(mut self, executable: impl Into<PathBuf>) -> Self {
         self.foundation_models_binary = Some(executable.into());
+        self
+    }
+
+    /// Bind one owner-only, startup-read local-model authority document.
+    #[must_use]
+    pub fn bind_model_runtime_config(mut self, path: impl Into<PathBuf>) -> Self {
+        self.model_runtime_config = Some(path.into());
         self
     }
 
@@ -108,6 +120,7 @@ impl RuntimeDaemonConfig {
             memory_backend: self.memory_backend,
             abi_binary: self.abi_binary,
             foundation_models_binary: self.foundation_models_binary,
+            model_runtime_config: self.model_runtime_config,
             manager: self.manager,
             delegated: self.delegated,
         }
@@ -126,6 +139,10 @@ impl fmt::Debug for RuntimeDaemonConfig {
                 "foundation_models_binary",
                 &self.foundation_models_binary.as_ref().map(|_| "[BOUND]"),
             )
+            .field(
+                "model_runtime_config",
+                &self.model_runtime_config.as_ref().map(|_| "[BOUND]"),
+            )
             .field("manager", &self.manager)
             .field("delegated", &self.delegated)
             .finish()
@@ -138,6 +155,7 @@ pub(crate) struct RuntimeConfigParts {
     pub memory_backend: String,
     pub abi_binary: Option<PathBuf>,
     pub foundation_models_binary: Option<PathBuf>,
+    pub model_runtime_config: Option<PathBuf>,
     pub manager: RunManagerConfig,
     pub delegated: DelegatedLimits,
 }
@@ -164,6 +182,8 @@ pub enum RuntimeConfigError {
     ProviderBinding,
     #[error("daemon runtime route declaration is invalid")]
     Routes,
+    #[error("daemon model runtime authority is invalid")]
+    ModelRuntime,
     #[error("daemon runtime database could not be opened")]
     Store,
     #[error("daemon legacy conversation metadata could not be safely retained")]
@@ -262,7 +282,8 @@ mod tests {
     fn debug_redacts_every_authority_path() {
         let config = RuntimeDaemonConfig::new("/secret/state", "/secret/workspace")
             .bind_abi_local("/secret/abi")
-            .bind_foundation_models("/secret/fm");
+            .bind_foundation_models("/secret/fm")
+            .bind_model_runtime_config("/secret/models.json");
         let rendered = format!("{config:?}");
         assert!(!rendered.contains("/secret"));
         assert!(rendered.contains("[REDACTED]"));

@@ -15,6 +15,7 @@ use crate::runtime::{
 };
 
 use super::runtime_config::{RuntimeConfigError, RuntimeDaemonConfig, open_private_store};
+use super::runtime_v3::model_lifecycle::ModelLifecycleAuthority;
 use super::runtime_v3::{MemoryEffectRoute, V3RuntimeAuthority};
 use super::server::{DaemonHandler, HandlerFailure};
 
@@ -89,10 +90,19 @@ impl RuntimeHandler {
                 .map(|provider| route(provider.backend()))
                 .collect::<Vec<_>>();
             let memory = MemoryEffectRoute::new(parts.state_root.clone(), parts.memory_backend);
+            let model_lifecycle = parts
+                .model_runtime_config
+                .as_deref()
+                .map(|path| {
+                    ModelLifecycleAuthority::open(path, &parts.workspace, Arc::clone(&store))
+                })
+                .transpose()
+                .map_err(|_| RuntimeConfigError::ModelRuntime)?;
             let v3 = V3RuntimeAuthority::from_provider_routes(
                 executor.routes(),
                 Arc::clone(&store),
                 memory,
+                model_lifecycle,
             )
             .map_err(|_| RuntimeConfigError::Routes)?;
             let context =
@@ -259,10 +269,13 @@ fn map_store_error(error: StoreError) -> HandlerFailure {
         | StoreError::TerminalRun { .. }
         | StoreError::ToolApprovalConflict
         | StoreError::ToolApprovalDigestMismatch
-        | StoreError::ToolExecutionConflict => invalid_command_failure(),
+        | StoreError::ToolExecutionConflict
+        | StoreError::ModelOperationConflict
+        | StoreError::ModelOperationCapacity => invalid_command_failure(),
         StoreError::ToolApprovalNotFound(_) | StoreError::ToolExecutionNotFound(_) => {
             not_found_failure()
         }
+        StoreError::ModelOperationNotFound(_) => not_found_failure(),
         StoreError::CorruptData(_)
         | StoreError::Migration(_)
         | StoreError::Database(_)

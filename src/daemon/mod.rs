@@ -5,16 +5,18 @@
 //! durable run submission, status, cancellation, and sanitized paged lifecycle
 //! events for startup-bound fixed local providers. Protocol v3 is a separate
 //! authenticated envelope and currently negotiates daemon-local safe tool
-//! inventory, bounded ABI-local model inventory when that provider is
-//! configured, exact stable-ID reads from Abbey's canonical claims registry,
+//! inventory, bounded startup-owned model inventory when a fixed provider or
+//! signed lifecycle registry is configured, exact stable-ID reads from Abbey's canonical claims registry,
 //! and one summary-only memory space with opaque record IDs. The default safe
 //! daemon can persist, decide, cancel, and execute
 //! one digest-bound request to mark a memory record obsolete; execution needs
 //! an identical explicit resubmission after approval and records prepared
 //! intent before the effect. Requests never choose a program, argument recipe,
 //! environment, workspace, or memory backend; raw memory payloads and source
-//! metadata, shell, automations, live subscriptions, and non-Unix transports
-//! remain unavailable.
+//! metadata, shell, prompt inference, automations, live subscriptions, and
+//! non-Unix transports remain unavailable. A separately configured signed
+//! registry can serve exact durable download/load/unload/status operations
+//! without becoming a global model route or changing MCP.
 
 mod client;
 mod config;

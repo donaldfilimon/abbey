@@ -40,7 +40,7 @@ fn abi_route() -> ProviderRoute {
 fn negotiates_only_startup_bound_abi_model_reads() {
     let route = abi_route();
     let authority =
-        V3RuntimeAuthority::from_provider_routes([&route], store(), memory_route()).unwrap();
+        V3RuntimeAuthority::from_provider_routes([&route], store(), memory_route(), None).unwrap();
     let requested =
         V3CapabilitySet::from_sorted(vec![V3Capability::ReadModels, V3Capability::PollEvents])
             .unwrap();
@@ -89,7 +89,8 @@ fn negotiates_only_startup_bound_abi_model_reads() {
 fn no_abi_route_still_negotiates_safe_tools_and_canonical_claim_reads() {
     let store = store();
     let authority =
-        V3RuntimeAuthority::from_provider_routes([], Arc::clone(&store), memory_route()).unwrap();
+        V3RuntimeAuthority::from_provider_routes([], Arc::clone(&store), memory_route(), None)
+            .unwrap();
     let V3Event::Negotiated(negotiated) = authority
         .handle(V3Command::Negotiate(V3GrantRequest {
             supported_versions: vec![3],
@@ -268,7 +269,8 @@ fn no_abi_route_still_negotiates_safe_tools_and_canonical_claim_reads() {
 fn mutating_safe_tool_only_persists_an_exact_pending_approval() {
     let store = store();
     let authority =
-        V3RuntimeAuthority::from_provider_routes([], Arc::clone(&store), memory_route()).unwrap();
+        V3RuntimeAuthority::from_provider_routes([], Arc::clone(&store), memory_route(), None)
+            .unwrap();
     let invalid = V3ToolCall {
         tool_id: tool_catalog::MEMORY_MARK_OBSOLETE_TOOL_ID.into(),
         call_id: "pending-invalid".into(),
@@ -326,7 +328,8 @@ fn mutating_safe_tool_only_persists_an_exact_pending_approval() {
 fn exact_pending_decisions_are_durable_without_implicit_execution() {
     let store = store();
     let authority =
-        V3RuntimeAuthority::from_provider_routes([], Arc::clone(&store), memory_route()).unwrap();
+        V3RuntimeAuthority::from_provider_routes([], Arc::clone(&store), memory_route(), None)
+            .unwrap();
     let pending = |call_id: &str, record_id: &str| V3ToolCall {
         tool_id: tool_catalog::MEMORY_MARK_OBSOLETE_TOOL_ID.into(),
         call_id: call_id.into(),
@@ -497,7 +500,8 @@ fn exact_pending_decisions_are_durable_without_implicit_execution() {
 fn exact_tool_cancellation_is_durable_without_consumption_or_execution() {
     let store = store();
     let authority =
-        V3RuntimeAuthority::from_provider_routes([], Arc::clone(&store), memory_route()).unwrap();
+        V3RuntimeAuthority::from_provider_routes([], Arc::clone(&store), memory_route(), None)
+            .unwrap();
     let pending = |call_id: &str| V3ToolCall {
         tool_id: tool_catalog::MEMORY_MARK_OBSOLETE_TOOL_ID.into(),
         call_id: call_id.into(),
@@ -641,7 +645,7 @@ fn persisted_authorization_rejects_duplicate_call_ids_after_reopen() {
     {
         let store = Arc::new(RuntimeStore::open(&database).unwrap());
         let authority =
-            V3RuntimeAuthority::from_provider_routes([], Arc::clone(&store), memory_route())
+            V3RuntimeAuthority::from_provider_routes([], Arc::clone(&store), memory_route(), None)
                 .unwrap();
         assert!(matches!(
             authority
@@ -668,7 +672,7 @@ fn persisted_authorization_rejects_duplicate_call_ids_after_reopen() {
     {
         let store = Arc::new(RuntimeStore::open(&database).unwrap());
         let authority =
-            V3RuntimeAuthority::from_provider_routes([], Arc::clone(&store), memory_route())
+            V3RuntimeAuthority::from_provider_routes([], Arc::clone(&store), memory_route(), None)
                 .unwrap();
         assert_eq!(
             authority

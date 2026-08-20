@@ -249,16 +249,52 @@ legacy downgrade occurs. The personal daemon and MCP retain only the three read-
 Negotiation may also always grant `read_claims_by_id`; `ClaimById`
 projects one exact stable-ID match from Abbey's canonical claim registry and returns
 `not_found` for a missing or non-exact ID. There is no fuzzy claim search. When daemon
-startup binds an ABI-local fixed provider,
-negotiation may additionally grant `read_models`, and `ListModels` returns bounded
-fixed-watermark inventory derived from the same startup-owned `ModelProvider` object used
-by protocol-v2 execution. Without that provider, model authority remains denied while the
-canonical claim read remains available. A non-negotiation request missing its exact grant
-is rejected before dispatch; echoing an unsupported grant cannot manufacture daemon
-authority. There is no fuzzy claim search or served v3 inference command, download,
-load/unload, approval decision, cancellation, approved-call execution, personal-shell tool,
-daemon-owned memory execution, training, worker, polling, CLI invocation presentation,
-desktop, remote, or Windows authority yet.
+startup binds an ABI-local fixed provider, negotiation may additionally grant `read_models`,
+and `ListModels` returns bounded fixed-watermark inventory derived from the same
+startup-owned `ModelProvider` object used by protocol-v2 execution. A separately configured
+signed local-model authority can also supply inventory and the model lifecycle described
+below. Without either startup authority, model grants remain denied while the canonical
+claim read remains available. A non-negotiation request missing its exact grant is rejected
+before dispatch; echoing an unsupported grant cannot manufacture daemon authority. There is
+no fuzzy claim search, served prompt-inference command, personal-shell tool, training,
+worker, polling, CLI lifecycle presentation, desktop, remote, or Windows authority yet.
+
+### Signed local-model lifecycle
+
+The optional edition-scoped `*_MODEL_RUNTIME_CONFIG` variable names one owner-only regular
+JSON file read exactly once at daemon startup. That document contains only startup-owned
+authority: an absolute signed-registry path, explicit publisher public keys, an absolute
+license-acceptance ledger, an absolute external storage root, one accepting principal, one
+exact device (`cpu`, `metal`, or `cuda`), and an artifact-size ceiling. The whole document
+fails closed if its version, permissions, signature chain, manifest validation, paths,
+principal, device, storage containment, or bound is invalid. Requests cannot override any
+of those values.
+
+With that authority open, v3 may grant `read_models`, `download_models`, and
+`manage_models`. `DownloadModel`, `LoadModel`, and `UnloadModel` select only an exact
+manifest ID, immutable revision, and globally single-use operation ID. The daemon checks
+the exact principal's acceptance before admitting download or load and serializes all three
+lifecycle actions per model revision. ABI owns HTTPS range validation, redirect refusal,
+resumable partial state, maximum-size enforcement, SHA-256 verification, atomic
+publication, artifact re-verification, tokenizer/tensor loading, and exact device
+initialization. Abbey never substitutes a model or device and does not turn a loaded model
+into a protocol-v2 or global default route.
+
+Schema v7 persists at most 4,096 operation records with monotonic state and bounded
+0–10,000 progress. Operation IDs never become reusable. Any queued or running record found
+at daemon reopen becomes failed; no ambiguous download/load is silently replayed. Terminal
+records remain queryable after restart, while the in-memory loaded provider deliberately
+does not pretend to survive and must be loaded again. `InferenceStatus` can read a
+load/unload operation or report that an exact model is loaded but has no inference evidence
+as `available` with zero progress. There is no prompt-inference command in this slice.
+
+`V3DaemonSession` provides correlated one-shot methods for download, download status,
+load, unload, and inference status. Audit rows retain bounded model/revision/operation,
+kind, progress, requested device, and no-fallback evidence. Registry URLs, storage paths,
+the accepting principal, license text, artifact bytes, tokenizer bytes, and credentials do
+not enter those rows. The generated real-process fixture uses scratch prepublished artifacts
+to prove the production daemon path offline; it is not live HTTPS publisher evidence or a
+production model-quality claim.
 
 `DaemonClient::negotiate_v3` sends one strict negotiation request and returns a typed
 `V3DaemonSession`. The session keeps the validated daemon-returned grants private; its tool,
@@ -306,8 +342,9 @@ run state; audit events record bounded operational facts. Neither is a transcrip
 ## Claim boundary
 
 The Current product surface is exact v1 read compatibility, authenticated protocol-v2
-fixed-recipe local run control, and authenticated protocol-v3 ABI-local model inventory on
-Unix. The other protocol-v3 command families remain unserved contracts. A real scratch-daemon test proves idempotent single
+fixed-recipe local run control, and authenticated protocol-v3 safe tools, memory reads,
+stable claims, startup-owned model inventory, and signed local-model lifecycle control on
+Unix. Training, workers, polling, and prompt inference remain unserved contracts. A real scratch-daemon test proves idempotent single
 launch, terminal persistence, cancellation and descendant death, fixed-watermark paging,
 restart/reopen, and absence of bearer, prompt, provider-output, and executable-path
 disclosure. A second real process proof covers the shared CLI/TUI-slash command grammar,
@@ -316,6 +353,6 @@ not an interactive-terminal or desktop proof. A separate real scratch startup/re
 proof covers the canonical legacy-metadata backup/import boundary, including unchanged
 transcript/route/memory/WDBX canaries and absence of raw identifiers or cwd values in
 SQLite and output. Tool dispatch, automations, approvals,
-live subscriptions, daemon-owned memory, the desktop run bridge, Windows named pipes/Job
-Objects, model registry lifecycle, and full provider-neutral tool ownership remain separate incomplete or Proposed
+live subscriptions, the desktop run bridge, Windows named pipes/Job Objects, production
+model architectures/weights, and full provider-neutral tool ownership remain separate incomplete or Proposed
 evidence slices.

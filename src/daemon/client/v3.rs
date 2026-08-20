@@ -1,9 +1,9 @@
 //! Typed protocol-v3 session reads over the shared bounded daemon transport.
 
 use crate::app_core::{
-    V3Action, V3Capability, V3Command, V3EntityPage, V3Event, V3PageQuery, V3ResourceQuery,
-    V3SearchRequest, V3StableClaim, V3ToolApprovalState, V3ToolApprovalStatus, V3ToolCall,
-    V3ToolDecision, V3ToolInvocation, V3ToolPage, V3ToolResult,
+    V3Action, V3Capability, V3Command, V3EntityPage, V3Event, V3ModelAction, V3OperationStatus,
+    V3PageQuery, V3ResourceQuery, V3SearchRequest, V3StableClaim, V3ToolApprovalState,
+    V3ToolApprovalStatus, V3ToolCall, V3ToolDecision, V3ToolInvocation, V3ToolPage, V3ToolResult,
 };
 
 use super::{ClientError, V3DaemonSession};
@@ -389,6 +389,160 @@ impl V3DaemonSession {
     #[cfg(not(unix))]
     pub fn list_models(&self, _query: V3PageQuery) -> Result<V3EntityPage, ClientError> {
         Err(ClientError::UnsupportedPlatform)
+    }
+
+    /// Start one exact immutable-revision model download, sending it once.
+    #[cfg(unix)]
+    pub fn download_model(&self, action: V3ModelAction) -> Result<V3OperationStatus, ClientError> {
+        self.model_action(
+            V3Capability::DownloadModels,
+            V3Command::DownloadModel(action.clone()),
+            &action,
+        )
+    }
+
+    /// Windows remains fail-closed until the named-pipe transport lands.
+    #[cfg(not(unix))]
+    pub fn download_model(&self, _action: V3ModelAction) -> Result<V3OperationStatus, ClientError> {
+        Err(ClientError::UnsupportedPlatform)
+    }
+
+    /// Read one exact durable download operation without retry or replay.
+    #[cfg(unix)]
+    pub fn model_download_status(
+        &self,
+        query: V3ResourceQuery,
+    ) -> Result<V3OperationStatus, ClientError> {
+        self.model_status_query(
+            V3Capability::ReadModels,
+            V3Command::ModelDownloadStatus(query.clone()),
+            &query,
+        )
+    }
+
+    /// Windows remains fail-closed until the named-pipe transport lands.
+    #[cfg(not(unix))]
+    pub fn model_download_status(
+        &self,
+        _query: V3ResourceQuery,
+    ) -> Result<V3OperationStatus, ClientError> {
+        Err(ClientError::UnsupportedPlatform)
+    }
+
+    /// Start one exact model load under startup-owned device policy.
+    #[cfg(unix)]
+    pub fn load_model(&self, action: V3ModelAction) -> Result<V3OperationStatus, ClientError> {
+        self.model_action(
+            V3Capability::ManageModels,
+            V3Command::LoadModel(action.clone()),
+            &action,
+        )
+    }
+
+    /// Windows remains fail-closed until the named-pipe transport lands.
+    #[cfg(not(unix))]
+    pub fn load_model(&self, _action: V3ModelAction) -> Result<V3OperationStatus, ClientError> {
+        Err(ClientError::UnsupportedPlatform)
+    }
+
+    /// Unload one exact model revision without selecting another model.
+    #[cfg(unix)]
+    pub fn unload_model(&self, action: V3ModelAction) -> Result<V3OperationStatus, ClientError> {
+        self.model_action(
+            V3Capability::ManageModels,
+            V3Command::UnloadModel(action.clone()),
+            &action,
+        )
+    }
+
+    /// Windows remains fail-closed until the named-pipe transport lands.
+    #[cfg(not(unix))]
+    pub fn unload_model(&self, _action: V3ModelAction) -> Result<V3OperationStatus, ClientError> {
+        Err(ClientError::UnsupportedPlatform)
+    }
+
+    /// Read a load/unload operation or exact loaded-model inference evidence.
+    #[cfg(unix)]
+    pub fn inference_status(
+        &self,
+        query: V3ResourceQuery,
+    ) -> Result<V3OperationStatus, ClientError> {
+        self.model_status_query(
+            V3Capability::ReadModels,
+            V3Command::InferenceStatus(query.clone()),
+            &query,
+        )
+    }
+
+    /// Windows remains fail-closed until the named-pipe transport lands.
+    #[cfg(not(unix))]
+    pub fn inference_status(
+        &self,
+        _query: V3ResourceQuery,
+    ) -> Result<V3OperationStatus, ClientError> {
+        Err(ClientError::UnsupportedPlatform)
+    }
+
+    #[cfg(unix)]
+    fn model_action(
+        &self,
+        capability: V3Capability,
+        command: V3Command,
+        action: &V3ModelAction,
+    ) -> Result<V3OperationStatus, ClientError> {
+        action
+            .validate()
+            .map_err(|_| ClientError::InvalidV3Request)?;
+        self.require(capability)?;
+        let event = super::unix::request_v3(
+            &self.client.config,
+            self.negotiation.granted.clone(),
+            command,
+        )?;
+        let V3Event::ModelStatus(status) = event else {
+            return Err(ClientError::UnexpectedV3Event {
+                expected: "model status",
+                received: super::v3_event_name(&event),
+            });
+        };
+        status
+            .validate()
+            .map_err(|_| ClientError::InvalidV3Response)?;
+        if status.operation_id != action.operation_id || status.resource_id != action.model_id {
+            return Err(ClientError::InvalidV3Response);
+        }
+        Ok(status)
+    }
+
+    #[cfg(unix)]
+    fn model_status_query(
+        &self,
+        capability: V3Capability,
+        command: V3Command,
+        query: &V3ResourceQuery,
+    ) -> Result<V3OperationStatus, ClientError> {
+        query
+            .validate()
+            .map_err(|_| ClientError::InvalidV3Request)?;
+        self.require(capability)?;
+        let event = super::unix::request_v3(
+            &self.client.config,
+            self.negotiation.granted.clone(),
+            command,
+        )?;
+        let V3Event::ModelStatus(status) = event else {
+            return Err(ClientError::UnexpectedV3Event {
+                expected: "model status",
+                received: super::v3_event_name(&event),
+            });
+        };
+        status
+            .validate()
+            .map_err(|_| ClientError::InvalidV3Response)?;
+        if status.operation_id != query.resource_id && status.resource_id != query.resource_id {
+            return Err(ClientError::InvalidV3Response);
+        }
+        Ok(status)
     }
 
     /// Read one canonical Abbey claim by its exact stable identifier.
