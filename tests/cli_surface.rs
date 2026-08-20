@@ -231,6 +231,153 @@ fn invalidate_hides_from_search_but_keeps_the_record() {
     assert!(shown.contains("\"obsolete\": true"), "got: {shown}");
 }
 
+/// The capture-bypass inventory (`print`, `commit`, `voice ask`) deliberately
+/// skips `hybrid_run` — no persona wrap and, load-bearing for the routing
+/// audit, **no `route.jsonl` entry**. CLAUDE.md documents this as verified by
+/// hand; this encodes it, so a new bypass that starts routing (or a routed
+/// verb that stops logging) fails the gate instead of drifting silently.
+#[cfg(unix)]
+fn write_stub_agent(s: &Scratch) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt as _;
+    // A stub agent stands in for cursor-agent: what these tests pin is Abbey's
+    // own bookkeeping and output, never the backend's.
+    let agent = s.0.join("stub-agent");
+    std::fs::write(&agent, "#!/bin/sh\necho stub-reply\n").expect("write stub agent");
+    let mut permissions = std::fs::metadata(&agent).expect("stat stub").permissions();
+    permissions.set_mode(0o700);
+    std::fs::set_permissions(&agent, permissions).expect("chmod stub");
+    agent
+}
+
+/// Like [`run`], but with `ABBEY_AGENT` pointing at the scratch stub so agent
+/// verbs execute deterministically without a real backend on the host.
+#[cfg(unix)]
+fn run_stubbed(s: &Scratch, agent: &PathBuf, args: &[&str]) -> (i32, String, String) {
+    let out = Command::new(BIN)
+        .args(args)
+        .env(abbey::edition::ACTIVE.state_dir_env(), &s.0)
+        .env("ABBEY_AGENT", agent)
+        .env("ABBEY_BACKEND", "cursor")
+        .env_remove("CURSOR_AGENT_CHAT_ID")
+        .output()
+        .expect("spawn abbey");
+    (
+        out.status.code().unwrap_or(-1),
+        String::from_utf8_lossy(&out.stdout).into_owned(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+    )
+}
+
+#[cfg(unix)]
+#[test]
+fn print_bypasses_the_route_log_where_ask_appends() {
+    let s = Scratch::new("route-bypass");
+    let agent = write_stub_agent(&s);
+    let route_rows = || {
+        std::fs::read_to_string(s.0.join("route.jsonl"))
+            .map(|t| t.lines().count())
+            .unwrap_or(0)
+    };
+
+    assert_eq!(route_rows(), 0, "scratch state must start unrouted");
+
+    // `ask` goes through the canonical path: the routing audit sees it.
+    let (code, _, err) = run_stubbed(&s, &agent, &["ask", "hello"]);
+    assert_eq!(code, 0, "stubbed ask should succeed: {err}");
+    let after_ask = route_rows();
+    assert!(after_ask >= 1, "ask must append a route record");
+
+    // `print` is a capture bypass: same prompt, no new route record.
+    let (code, out, err) = run_stubbed(&s, &agent, &["print", "hello"]);
+    assert_eq!(code, 0, "stubbed print should succeed: {err}");
+    assert!(
+        out.contains("stub-reply"),
+        "print should emit capture: {out}"
+    );
+    assert_eq!(
+        route_rows(),
+        after_ask,
+        "print must leave the route log unchanged"
+    );
+}
+
+/// `abbey doctor` is the honesty instrument: it must report the state it is
+/// actually running against, and exit 0. A doctor that silently misreports
+/// would undercut the claims discipline everywhere else in the repo.
+#[cfg(unix)]
+#[test]
+fn doctor_reports_the_real_state_it_runs_against() {
+    let s = Scratch::new("doctor");
+    let agent = write_stub_agent(&s);
+    let (code, out, err) = run_stubbed(&s, &agent, &["doctor"]);
+    assert_eq!(code, 0, "doctor should exit 0: {err}");
+
+    for field in ["agent:", "model:", "chat:", "state:", "backend:", "parity:"] {
+        assert!(
+            out.contains(field),
+            "doctor output missing `{field}`: {out}"
+        );
+    }
+    // The paths reported must be the scratch state this process was given —
+    // not the developer's real state dir.
+    let scratch = s.0.to_string_lossy();
+    assert!(
+        out.contains(scratch.as_ref()),
+        "doctor must report the state dir it was pointed at: {out}"
+    );
+    // The stub agent proves which executable would run.
+    assert!(
+        out.contains("stub-agent"),
+        "doctor must name the resolved agent path: {out}"
+    );
+}
+
+/// Every catalog entry that is safe to invoke headlessly must be wired in
+/// `dispatch_slash`. The dispatcher has an explicit "registered … but not
+/// wired yet" arm, which means catalog↔dispatch drift is a real failure mode;
+/// this pins the read-only/local subset (agent-run and repo-mutating verbs are
+/// deliberately not executed here).
+#[cfg(unix)]
+#[test]
+fn registered_local_slash_commands_are_wired() {
+    let s = Scratch::new("slash-wired");
+    let agent = write_stub_agent(&s);
+    for cmd in [
+        "/help",
+        "/doctor",
+        "/debug",
+        "/claims",
+        "/platform",
+        "/runtime",
+        "/vision",
+        "/oos",
+        "/model",
+        "/status",
+        "/routes",
+        "/skills",
+        "/plugins",
+        "/allowlist",
+        "/cost",
+        "/permissions",
+        "/config",
+        "/mcp",
+        "/acp",
+        "/memory",
+        "/compact",
+        "/daemon",
+    ] {
+        let (_, _, err) = run_stubbed(&s, &agent, &[cmd]);
+        assert!(
+            !err.contains("unknown slash"),
+            "{cmd} fell through to the unknown-command arm: {err}"
+        );
+        assert!(
+            !err.contains("not wired yet"),
+            "{cmd} is in the catalog but not dispatched: {err}"
+        );
+    }
+}
+
 #[test]
 fn closing_a_pipe_early_is_not_an_error() {
     // Rust sets SIGPIPE to SIG_IGN before main, which turns a closed reader into
@@ -253,5 +400,115 @@ fn closing_a_pipe_early_is_not_an_error() {
     assert!(
         !err.contains("panicked"),
         "closing the pipe should not panic: {err}"
+    );
+}
+
+/// Run abbey in a fully isolated environment: cleared env, a scratch HOME (so
+/// no real install candidates resolve), and a caller-chosen PATH. This is how
+/// "a machine with no executor installed" is simulated deterministically even
+/// on developer hosts that have cursor-agent.
+#[cfg(unix)]
+fn run_isolated(s: &Scratch, path: &std::path::Path, args: &[&str]) -> (i32, String, String) {
+    let out = Command::new(BIN)
+        .args(args)
+        .env_clear()
+        .env(abbey::edition::ACTIVE.state_dir_env(), &s.0)
+        .env("HOME", &s.0)
+        .env("PATH", path)
+        // Absolute candidate probing (/opt/homebrew, /usr/bin) would find a
+        // real grok/fm on the host and defeat the "no executor" staging.
+        .env("ABBEY_TEST_HOME_AGENTS_ONLY", "1")
+        .output()
+        .expect("spawn abbey");
+    (
+        out.status.code().unwrap_or(-1),
+        String::from_utf8_lossy(&out.stdout).into_owned(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+    )
+}
+
+/// cursor-agent (or any executor) is preferred, never required: every local
+/// verb must work on a machine where no backend binary exists at all.
+#[cfg(unix)]
+#[test]
+fn local_verbs_need_no_executor_backend() {
+    let s = Scratch::new("no-backend");
+    let empty = s.0.join("empty-path");
+    std::fs::create_dir_all(&empty).unwrap();
+
+    for (args, want) in [
+        (&["claims"][..], 0),
+        (&["claims", "refuse", "lora"][..], 2),
+        (&["allowlist"][..], 0),
+        (&["model"][..], 0),
+        (&["doctor"][..], 0),
+        (&["edition", "--name"][..], 0),
+    ] {
+        let (code, _, err) = run_isolated(&s, &empty, args);
+        assert_eq!(code, want, "{args:?} must not need an executor: {err}");
+        assert!(
+            !err.contains("not found"),
+            "{args:?} must not complain about a missing executor: {err}"
+        );
+    }
+
+    // Doctor stays honest about the absence instead of erroring or lying.
+    let (_, out, _) = run_isolated(&s, &empty, &["doctor"]);
+    assert!(
+        out.contains("none found"),
+        "doctor should report the missing executor plainly: {out}"
+    );
+}
+
+/// Generation is the one thing that really needs an executor — and the
+/// failure must arrive at spawn time with the full remedy list, not as an
+/// eager startup error that also breaks local verbs.
+#[cfg(unix)]
+#[test]
+fn generation_without_any_backend_fails_with_guidance() {
+    let s = Scratch::new("no-backend-gen");
+    let empty = s.0.join("empty-path");
+    std::fs::create_dir_all(&empty).unwrap();
+
+    let (code, _, err) = run_isolated(&s, &empty, &["print", "hi"]);
+    assert_ne!(code, 0, "generation cannot succeed with no executor");
+    assert!(
+        err.contains("not found") && err.contains("ABBEY_BACKEND"),
+        "the error must name the remedies: {err}"
+    );
+}
+
+/// With cursor-agent absent but another executor installed, the unchosen
+/// default falls back to it — the machine works out of the box, and doctor
+/// says the choice was automatic.
+#[cfg(unix)]
+#[test]
+fn default_backend_falls_back_to_an_installed_executor() {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let s = Scratch::new("fallback");
+    let bin = s.0.join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let abi = bin.join("abi");
+    std::fs::write(&abi, "#!/bin/sh\necho fallback-serves\n").unwrap();
+    let mut permissions = std::fs::metadata(&abi).unwrap().permissions();
+    permissions.set_mode(0o700);
+    std::fs::set_permissions(&abi, permissions).unwrap();
+
+    let (code, out, err) = run_isolated(&s, &bin, &["print", "hi"]);
+    assert_eq!(
+        code, 0,
+        "the installed abi stub should serve the run: {err}"
+    );
+    assert!(
+        out.contains("fallback-serves"),
+        "output should come from the fallback executor: {out}"
+    );
+
+    let (code, out, _) = run_isolated(&s, &bin, &["doctor"]);
+    assert_eq!(code, 0);
+    assert!(
+        out.contains("abi (from auto"),
+        "doctor must show the automatic backend choice: {out}"
     );
 }

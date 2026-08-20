@@ -124,3 +124,47 @@ pub fn fork_prompt(extra: &[String]) -> Vec<String> {
     p.extend(extra.iter().cloned());
     p
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn run_specs_encode_the_surface_contracts() {
+        // Every CLI/slash surface funnels through one of these constructors;
+        // a drifted binding here silently reroutes a whole verb.
+        assert!(!RunSpec::resume().fresh);
+        assert!(RunSpec::fresh().fresh);
+
+        assert_eq!(RunSpec::max().role, Some(WorkerRole::Max));
+        assert_eq!(RunSpec::gemma().role, Some(WorkerRole::Gemma));
+
+        let ask = RunSpec::ask();
+        assert_eq!(ask.mode, Some("ask"));
+        assert_eq!(ask.role, Some(WorkerRole::Gemma));
+
+        let plan = RunSpec::plan();
+        assert_eq!(plan.mode, Some("plan"));
+        assert_eq!(plan.role, Some(WorkerRole::Max));
+
+        let looped = RunSpec::hybrid_loop();
+        assert!(looped.hybrid_loop);
+        assert!(
+            looped.print,
+            "hybrid loop stages are captured, not streamed"
+        );
+        assert!(!looped.fresh);
+    }
+
+    #[test]
+    fn fork_prompt_keeps_the_context_note_first() {
+        let extra = vec!["and fix the tests".to_string()];
+        let p = fork_prompt(&extra);
+        assert_eq!(p.len(), 2);
+        assert!(p[0].contains("Prior chat was cleared"));
+        assert_eq!(p[1], "and fix the tests");
+
+        let bare = fork_prompt(&[]);
+        assert_eq!(bare.len(), 1, "no extra args still forks with the note");
+    }
+}

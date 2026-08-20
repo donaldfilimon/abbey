@@ -191,7 +191,7 @@ pub fn run_acp_peer(name: &str) -> Result<i32> {
 /// Compatibility entry point used by current command dispatch.
 ///
 /// `cfg` intentionally does not gate local status/paths: those are filesystem
-/// reads and remain valid under `fm` and `abi`. Provider management is selected
+/// reads and remain valid under `fm`, `abi`, and `claude`. Provider management is selected
 /// from the arguments, never inferred from the active generation backend.
 pub fn dispatch_mcp(_cfg: &AgentConfig, cwd: &Path, args: &[String]) -> Result<i32> {
     if args.is_empty() {
@@ -223,7 +223,7 @@ pub fn dispatch_mcp(_cfg: &AgentConfig, cwd: &Path, args: &[String]) -> Result<i
                                               # unauthenticated: no TLS, no OAuth 2.1/PKCE;\n\
                                               # a non-loopback --host is a hard error\n\
                    abbey mcp tools            # describe the safe registry + limits\n\n\
-                 Local inventory (works under cursor/grok/fm/abi backends):\n\
+                 Local inventory (works under cursor/grok/fm/abi/claude backends):\n\
                    abbey mcp status\n\
                    abbey mcp paths\n\
                    abbey mcp view codex\n\n\

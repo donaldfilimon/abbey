@@ -1,10 +1,9 @@
-
 use super::*;
 use abi_models::{Chunk, ModelManifest, Sha256Digest};
 use ed25519_dalek::{Signer as _, SigningKey};
 use sha2::{Digest as _, Sha256};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Barrier;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 const MODEL_ID: &str = "fixture-bigram";
@@ -25,12 +24,7 @@ struct BlockingTransport {
 }
 
 impl ChunkTransport for BlockingTransport {
-    fn fetch(
-        &self,
-        url: &str,
-        offset: u64,
-        max_len: u64,
-    ) -> Result<Chunk, abi_models::ModelError> {
+    fn fetch(&self, url: &str, offset: u64, max_len: u64) -> Result<Chunk, abi_models::ModelError> {
         if self.first.swap(false, Ordering::AcqRel) {
             self.entered.wait();
             self.release.wait();
@@ -62,6 +56,7 @@ struct Fixture {
     root: PathBuf,
     authority: ModelLifecycleAuthority,
     store: Arc<RuntimeStore>,
+    bodies: Arc<BTreeMap<String, Vec<u8>>>,
 }
 
 impl Drop for Fixture {
@@ -120,11 +115,12 @@ fn fixture(accepted: bool) -> Fixture {
     if accepted {
         ledger.accept(&manifest, PRINCIPAL).unwrap();
     }
+    let bodies = Arc::new(BTreeMap::from([
+        (weights_url, weights),
+        (tokenizer_url, tokenizer),
+    ]));
     let transport = FakeTransport {
-        bodies: Arc::new(BTreeMap::from([
-            (weights_url, weights),
-            (tokenizer_url, tokenizer),
-        ])),
+        bodies: Arc::clone(&bodies),
     };
     let store = Arc::new(RuntimeStore::open(&root.join("runtime.sqlite")).unwrap());
     let authority = ModelLifecycleAuthority::from_parts(
@@ -143,7 +139,57 @@ fn fixture(accepted: bool) -> Fixture {
         root,
         authority,
         store,
+        bodies,
     }
+}
+
+#[test]
+fn manifest_presence_and_signed_lifecycle_catalogs_coexist() {
+    let fixture = fixture(false);
+    let manifest_models = vec![V3EntityRecord {
+        id: "abi-model:presence-only".to_owned(),
+        label: "local model presence-only fixture@0123456789ab (not downloaded)".to_owned(),
+        state: V3OperationState::NotDownloaded,
+    }];
+    let authority = super::super::V3RuntimeAuthority::from_provider_routes(
+        [],
+        manifest_models,
+        Arc::clone(&fixture.store),
+        super::super::MemoryEffectRoute::new(fixture.root.clone(), "sqlite".to_owned()),
+        Some(fixture.authority.clone()),
+    )
+    .unwrap();
+
+    let V3Event::Models(models) = authority
+        .handle(crate::app_core::V3Command::ListModels(
+            crate::app_core::V3PageQuery::default(),
+        ))
+        .unwrap()
+    else {
+        panic!("expected combined model catalog");
+    };
+    assert_eq!(models.records.len(), 2);
+    assert_eq!(models.records[0].id, "abi-model:presence-only");
+    assert_eq!(models.records[1].id, MODEL_ID);
+
+    let requested = crate::app_core::V3CapabilitySet::from_sorted(vec![
+        crate::app_core::V3Capability::ReadModels,
+        crate::app_core::V3Capability::DownloadModels,
+        crate::app_core::V3Capability::ManageModels,
+    ])
+    .unwrap();
+    let V3Event::Negotiated(negotiated) = authority
+        .handle(crate::app_core::V3Command::Negotiate(
+            crate::app_core::V3GrantRequest {
+                supported_versions: vec![3],
+                requested: requested.clone(),
+            },
+        ))
+        .unwrap()
+    else {
+        panic!("expected combined lifecycle negotiation");
+    };
+    assert_eq!(negotiated.granted, requested);
 }
 
 #[test]
@@ -237,23 +283,19 @@ fn one_model_revision_cannot_download_and_load_concurrently() {
     let mut fixture = fixture(true);
     let entered = Arc::new(Barrier::new(2));
     let release = Arc::new(Barrier::new(2));
+    let bodies = Arc::clone(&fixture.bodies);
     Arc::get_mut(&mut fixture.authority.inner)
         .expect("fixture authority is uniquely owned")
         .transport = Arc::new(BlockingTransport {
-        inner: FakeTransport {
-            bodies: Arc::clone(
-                &fixture
-                    .authority
-                    .inner
-                    .transport
-                    .as_any_fixture_bodies(),
-            ),
-        },
+        inner: FakeTransport { bodies },
         first: Arc::new(AtomicBool::new(true)),
         entered: Arc::clone(&entered),
         release: Arc::clone(&release),
     });
-    fixture.authority.download(action("blocked-download")).unwrap();
+    fixture
+        .authority
+        .download(action("blocked-download"))
+        .unwrap();
     entered.wait();
     assert_eq!(
         fixture

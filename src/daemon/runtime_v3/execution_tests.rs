@@ -18,6 +18,7 @@ mod safe {
         let runtime = Arc::new(RuntimeStore::open(&root.join("runtime.sqlite")).unwrap());
         let authority = V3RuntimeAuthority::from_provider_routes(
             [],
+            Vec::new(),
             Arc::clone(&runtime),
             MemoryEffectRoute::new(root.clone(), "sqlite".to_owned()),
             None,
@@ -171,6 +172,7 @@ mod safe {
         memory.store(record).unwrap();
         let authority = V3RuntimeAuthority::from_provider_routes(
             [],
+            Vec::new(),
             Arc::clone(&runtime),
             MemoryEffectRoute::new(root.clone(), "invalid".to_owned()),
             None,

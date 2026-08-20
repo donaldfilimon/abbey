@@ -139,6 +139,7 @@ fn scoped_variable_namespaces_are_disjoint_and_cover_state_files() {
         "CHAT_FILE",
         "MODEL_FILE",
         "HISTORY_FILE",
+        "MODEL_MANIFEST_DIR",
         "MODEL_RUNTIME_CONFIG",
         "EMBEDDING_API_KEY",
     ] {

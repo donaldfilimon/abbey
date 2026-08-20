@@ -66,6 +66,13 @@ fn is_executable(path: &Path) -> bool {
     path.is_file()
 }
 
+/// Hermetic-test hook: candidate probing deliberately reaches outside HOME
+/// and PATH (that is its job), which makes "no executor installed" impossible
+/// to stage on a machine that really has one under /opt/homebrew or /usr/bin.
+/// Debug builds only; release resolution is never filtered.
+#[cfg(debug_assertions)]
+const TEST_HOME_AGENTS_ONLY_ENV: &str = "ABBEY_TEST_HOME_AGENTS_ONLY";
+
 /// Well-known locations for the active backend binary (before PATH).
 pub fn agent_candidate_paths(backend: &str, home: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
@@ -102,6 +109,20 @@ pub fn agent_candidate_paths(backend: &str, home: &Path) -> Vec<PathBuf> {
                 }
             }
         }
+        "claude" => {
+            // Keep this arm explicit: falling through to the cursor default
+            // can resolve cursor-agent for a requested Claude backend.
+            out.push(home.join(".local/bin/claude"));
+            out.push(home.join(".claude/local/claude"));
+            out.push(PathBuf::from("/opt/homebrew/bin/claude"));
+            #[cfg(windows)]
+            {
+                out.push(home.join(".local\\bin\\claude.exe"));
+                if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+                    out.push(PathBuf::from(local).join("claude\\claude.exe"));
+                }
+            }
+        }
         // cursor (default)
         _ => {
             out.push(home.join(".local/bin/cursor-agent"));
@@ -117,6 +138,10 @@ pub fn agent_candidate_paths(backend: &str, home: &Path) -> Vec<PathBuf> {
                 }
             }
         }
+    }
+    #[cfg(debug_assertions)]
+    if std::env::var_os(TEST_HOME_AGENTS_ONLY_ENV).is_some() {
+        out.retain(|path| path.starts_with(home));
     }
     out
 }
@@ -246,5 +271,23 @@ mod tests {
                 "abi backend must not fall through to cursor paths: {s}"
             );
         }
+    }
+
+    #[test]
+    fn claude_candidates_never_include_cursor_agent() {
+        let home = PathBuf::from("/tmp/home");
+        let paths = agent_candidate_paths("claude", &home);
+        assert!(
+            paths
+                .iter()
+                .any(|p| p.ends_with("claude") || p.ends_with("claude.exe")),
+            "expected a claude candidate, got {paths:?}"
+        );
+        assert!(
+            paths
+                .iter()
+                .all(|p| !p.to_string_lossy().contains("cursor-agent")),
+            "claude backend must not fall through to cursor paths: {paths:?}"
+        );
     }
 }

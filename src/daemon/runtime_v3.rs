@@ -33,6 +33,7 @@ use crate::runtime::{
 use super::server::HandlerFailure;
 
 mod memory_reads;
+pub(super) mod model_inventory;
 pub(super) mod model_lifecycle;
 mod tool_catalog;
 
@@ -58,13 +59,17 @@ pub(super) struct V3RuntimeAuthority {
 
 impl V3RuntimeAuthority {
     /// Derive v3 authority from the same startup-owned provider objects used
-    /// by execution. Foundation Models is deliberately not granted yet.
+    /// by execution, plus the startup-owned manifest-derived model inventory.
+    /// Foundation Models is deliberately not granted yet.
     pub(super) fn from_provider_routes<'a>(
         routes: impl IntoIterator<Item = &'a ProviderRoute>,
+        manifest_models: Vec<V3EntityRecord>,
         store: Arc<RuntimeStore>,
         memory: MemoryEffectRoute,
         model_lifecycle: Option<ModelLifecycleAuthority>,
     ) -> Result<Self, HandlerFailure> {
+        // Route-derived entries keep the first inventory positions so existing
+        // fixed-watermark pages over provider routes remain byte-stable.
         let mut models = routes
             .into_iter()
             .filter(|provider| provider.backend() == BackendSelection::Abi)
@@ -74,11 +79,12 @@ impl V3RuntimeAuthority {
                 state: V3OperationState::Available,
             })
             .collect::<Vec<_>>();
+        models.extend(manifest_models);
         if let Some(authority) = &model_lifecycle {
             models.extend(authority.inventory());
-            models.sort_by(|left, right| left.id.cmp(&right.id));
-            models.dedup_by(|left, right| left.id == right.id);
         }
+        let mut seen = HashSet::with_capacity(models.len());
+        models.retain(|model| seen.insert(model.id.clone()));
         let tools = tool_catalog::build().map_err(|()| internal_failure())?;
         let used_tool_call_ids = store
             .audit_events_for_run(None)

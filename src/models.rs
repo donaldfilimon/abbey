@@ -36,6 +36,8 @@ pub fn resolve_model(raw: &str) -> String {
         "opus-thinking-max" | "opus-max-thinking" | "opus-max" => {
             "claude-opus-5-thinking-max".into()
         }
+        "opus-thinking-low" => "claude-opus-5-thinking-low".into(),
+        "opus-thinking-medium" => "claude-opus-5-thinking-medium".into(),
         "opus-low" => "claude-opus-5-low".into(),
         "opus-medium" => "claude-opus-5-medium".into(),
         "opus-high" => "claude-opus-5-high".into(),
@@ -71,7 +73,7 @@ pub fn resolve_model(raw: &str) -> String {
         "composer" | "composer2" | "composer-2.5" => "composer-2.5".into(),
         "composer-fast" => "composer-2.5-fast".into(),
         "kimi" | "kimi-k3" | "k3" => "kimi-k3-high".into(),
-        "max" | "qwen" | "qwen3" | "qwen-3.5" => "claude-fable-5-thinking-high".into(),
+        "max" | "qwen" | "qwen3" | "qwen-3.5" => "claude-opus-5-thinking-high".into(),
         "gemma" | "gemma4" | "gemma-4" => "composer-2.5".into(),
 
         other => {
@@ -109,7 +111,7 @@ pub fn alias_table() -> &'static [(&'static str, &'static str)] {
         ("codex-high", "gpt-5.3-codex-high"),
         ("grok", "cursor-grok-4.5-high"),
         ("grok-fast", "cursor-grok-4.5-high-fast"),
-        ("max", "claude-fable-5-thinking-high"),
+        ("max", "claude-opus-5-thinking-high"),
         ("gemma", "composer-2.5"),
         ("composer", "composer-2.5"),
         ("kimi", "kimi-k3-high"),
@@ -125,7 +127,12 @@ mod tests {
         assert_eq!(resolve_model("Fable"), "claude-fable-5-thinking-high");
         assert_eq!(resolve_model("opus"), "claude-opus-5-thinking-high");
         assert_eq!(resolve_model("auto"), "auto");
-        assert_eq!(resolve_model("max"), "claude-fable-5-thinking-high");
+        assert_eq!(resolve_model("max"), "claude-opus-5-thinking-high");
+        assert_eq!(resolve_model("sol"), "gpt-5.6-sol-high");
+        assert_eq!(
+            resolve_model("opus-thinking-low"),
+            "claude-opus-5-thinking-low"
+        );
         assert_eq!(resolve_model("gemma"), "composer-2.5");
         assert_eq!(resolve_model("claude-opus-5-high"), "claude-opus-5-high");
     }

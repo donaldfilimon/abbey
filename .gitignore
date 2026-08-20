@@ -5,3 +5,4 @@ Cargo.lock.bak
 /.claude/
 # Local Semgrep Guardian OAuth/session state. Never commit credentials or locks.
 /.semgrep/
+__pycache__/

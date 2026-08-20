@@ -309,3 +309,135 @@ fn read_readme_blurb(root: &Path) -> Option<String> {
     }
     None
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fixture(tag: &str, files: &[(&str, &str)]) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "abbey-init-{tag}-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        for (name, body) in files {
+            fs::write(dir.join(name), body).unwrap();
+        }
+        dir
+    }
+
+    #[test]
+    fn rust_projects_report_name_toolchain_pin_and_commands() {
+        let root = fixture(
+            "rust",
+            &[
+                (
+                    "Cargo.toml",
+                    "[package]\nname = \"widget\"\ndescription = \"A widget.\"\nedition = \"2024\"\n",
+                ),
+                (
+                    "rust-toolchain.toml",
+                    "[toolchain]\nchannel = \"nightly\"\n",
+                ),
+            ],
+        );
+        let probe = ProjectProbe::scan(&root).unwrap();
+        assert_eq!(
+            probe.name, "widget",
+            "name comes from Cargo.toml, not the dir"
+        );
+        assert_eq!(probe.description.as_deref(), Some("A widget."));
+        assert!(probe.languages.contains(&"Rust"));
+        assert!(probe.build.iter().any(|c| c.contains("cargo build")));
+        assert!(probe.test.iter().any(|c| c.contains("cargo test")));
+        assert!(probe.lint.iter().any(|c| c.contains("clippy")));
+        assert!(
+            probe.gotchas.iter().any(|g| g.contains("rust-toolchain")),
+            "a pinned toolchain must surface as a gotcha: {:?}",
+            probe.gotchas
+        );
+        assert!(
+            probe.gotchas.iter().any(|g| g.contains("edition 2024")),
+            "edition 2024 needs its compiler-support gotcha: {:?}",
+            probe.gotchas
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn node_projects_follow_the_lockfile_package_manager() {
+        let root = fixture(
+            "node",
+            &[
+                (
+                    "package.json",
+                    r#"{"name":"web","scripts":{"build":"x","test":"y","lint":"z"}}"#,
+                ),
+                ("pnpm-lock.yaml", ""),
+            ],
+        );
+        let probe = ProjectProbe::scan(&root).unwrap();
+        assert!(probe.languages.contains(&"JavaScript/TypeScript"));
+        assert!(probe.build.contains(&"pnpm run build".to_string()));
+        assert!(probe.test.contains(&"pnpm test".to_string()));
+        assert!(probe.lint.contains(&"pnpm run lint".to_string()));
+        assert!(
+            probe.gotchas.iter().any(|g| g.contains("`pnpm`")),
+            "the detected package manager must be named: {:?}",
+            probe.gotchas
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn python_prefers_pyproject_over_requirements() {
+        let root = fixture("py", &[("pyproject.toml", "[project]\nname = \"tool\"\n")]);
+        let probe = ProjectProbe::scan(&root).unwrap();
+        assert!(probe.languages.contains(&"Python"));
+        assert!(probe.build.contains(&"pip install -e .".to_string()));
+        assert!(probe.test.contains(&"pytest".to_string()));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn an_empty_dir_probes_honestly_instead_of_guessing() {
+        let root = fixture("empty", &[]);
+        let probe = ProjectProbe::scan(&root).unwrap();
+        assert_eq!(
+            probe.languages,
+            vec!["unspecified"],
+            "no evidence claims 'unspecified', never a guessed stack"
+        );
+        assert!(
+            probe.gotchas.iter().any(|g| g.contains("by hand")),
+            "the fallback must tell the author to fill commands in: {:?}",
+            probe.gotchas
+        );
+        assert!(probe.package_files.is_empty());
+        let dir_name = root.file_name().unwrap().to_str().unwrap().to_string();
+        assert_eq!(probe.name, dir_name, "name falls back to the directory");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn multi_language_repos_report_every_detected_stack() {
+        let root = fixture(
+            "multi",
+            &[
+                ("Cargo.toml", "[package]\nname = \"dual\"\n"),
+                ("go.mod", "module dual\n"),
+                ("Makefile", "all:\n\ttrue\n"),
+            ],
+        );
+        let probe = ProjectProbe::scan(&root).unwrap();
+        assert!(probe.languages.contains(&"Rust"));
+        assert!(probe.languages.contains(&"Go"));
+        // Make must not clobber the language-specific commands already found.
+        assert!(probe.build.iter().any(|c| c.contains("cargo build")));
+        assert!(probe.build.iter().any(|c| c == "go build ./..."));
+        assert!(!probe.build.contains(&"make".to_string()));
+        let _ = fs::remove_dir_all(&root);
+    }
+}

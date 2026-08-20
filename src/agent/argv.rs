@@ -96,6 +96,59 @@ pub fn abi_transport(requested: &str) -> AbiTransport {
     AbiTransport::Local
 }
 
+/// Strip cursor-agent's thinking/effort decorations off a `claude-*` id so it
+/// becomes a catalog id the Claude Code CLI accepts:
+/// `claude-opus-5-thinking-high` → `claude-opus-5`.
+fn claude_strip_cursor_binding(lower: &str) -> String {
+    let mut s = lower;
+    loop {
+        let mut stripped = false;
+        for suf in [
+            "-fast",
+            "-high",
+            "-xhigh",
+            "-medium",
+            "-low",
+            "-max",
+            "-thinking",
+        ] {
+            if let Some(rest) = s.strip_suffix(suf) {
+                s = rest;
+                stripped = true;
+            }
+        }
+        if !stripped {
+            break;
+        }
+    }
+    s.to_string()
+}
+
+/// Map an Abbey model/alias onto the Claude Code CLI's vocabulary.
+///
+/// `None` means omit `--model` entirely and let the user's Claude plan pick
+/// its own default — that is what keeps `auto` working on plans that reject
+/// named models. Foreign executors' ids (gpt/sol/kimi/grok/composer bindings)
+/// cannot be served by Claude Code, so they clamp to Abbey's flagship default
+/// (`opus`) rather than reaching claude as an id it will reject.
+pub fn claude_model(requested: &str) -> Option<String> {
+    let t = requested.trim();
+    let lower = t.to_ascii_lowercase();
+    match lower.as_str() {
+        "" | "auto" | "smart" | "default" => None,
+        "opus" | "opus5" | "opus-5" | "max" => Some("opus".into()),
+        "sonnet" | "sonnet5" | "sonnet-5" => Some("sonnet".into()),
+        "haiku" => Some("haiku".into()),
+        "fable" | "fable5" | "fable-5" => Some("fable".into()),
+        // Gemma role bindings are conversational/visual — Sonnet's lane.
+        "gemma" | "gemma4" | "gemma-4" | "composer" | "composer2" | "composer-2.5" => {
+            Some("sonnet".into())
+        }
+        s if s.starts_with("claude-") => Some(claude_strip_cursor_binding(s)),
+        _ => Some("opus".into()),
+    }
+}
+
 /// How much transcript tail rides into an abi turn as context.
 pub const ABI_CONTEXT_TAIL_BYTES: usize = 8 * 1024;
 
@@ -287,12 +340,76 @@ impl AgentConfig {
         args
     }
 
+    /// `claude` (Claude Code CLI) argv. Built from scratch like the `fm`/`abi`
+    /// grammars: claude shares almost none of cursor-agent's flags, and a
+    /// leaked `--trust`/`--auto-review` would abort every invocation.
+    ///
+    /// Continuity is Claude's own session store: the first turn mints Abbey's
+    /// chat id as the session (`--session-id`), and once a run has succeeded
+    /// (marker file — see `touch_claude_session_marker`) later turns
+    /// `--resume` it. `extra_args` are cursor-shaped and never forwarded.
+    fn build_args_claude(
+        &self,
+        resume_id: Option<&str>,
+        prompt_and_rest: &[String],
+    ) -> Vec<String> {
+        let prompts = clamp_prompt_args(prompt_and_rest);
+        let mut args: Vec<String> = Vec::new();
+        if let Some(m) = claude_model(&self.model) {
+            args.push("--model".into());
+            args.push(m);
+        }
+        if self.print {
+            args.push("--print".into());
+            if let Some(fmt) = &self.output_format {
+                args.push("--output-format".into());
+                args.push(fmt.clone());
+            }
+        }
+        // One permission mode: Abbey's explicit --force (always-approve) wins;
+        // otherwise plan mode maps onto claude's own plan permission mode.
+        if self.force {
+            args.push("--permission-mode".into());
+            args.push("bypassPermissions".into());
+        } else if self.mode.as_deref() == Some("plan") {
+            args.push("--permission-mode".into());
+            args.push("plan".into());
+        }
+        if let Some(mode) = &self.mode {
+            // ask has no claude flag; the note rides as an appended system prompt.
+            args.push("--append-system-prompt".into());
+            args.push(match mode.as_str() {
+                "ask" => "Answer the question. Do not modify files.".into(),
+                "plan" => "Produce a plan only. Do not write the implementation.".into(),
+                other => format!("Mode: {other}."),
+            });
+        }
+        for d in &self.add_dirs {
+            args.push("--add-dir".into());
+            args.push(d.display().to_string());
+        }
+        if let Some(id) = resume_id.filter(|i| !i.is_empty()) {
+            let established = self.transcript_path(id).is_some_and(|p| p.is_file());
+            if established {
+                args.push("--resume".into());
+            } else {
+                args.push("--session-id".into());
+            }
+            args.push(id.to_string());
+        }
+        args.extend(prompts);
+        args
+    }
+
     pub fn build_args(&self, resume_id: Option<&str>, prompt_and_rest: &[String]) -> Vec<String> {
         if self.backend == AgentBackend::Fm {
             return self.build_args_fm(resume_id, prompt_and_rest);
         }
         if self.backend == AgentBackend::Abi {
             return self.build_args_abi(resume_id, prompt_and_rest);
+        }
+        if self.backend == AgentBackend::Claude {
+            return self.build_args_claude(resume_id, prompt_and_rest);
         }
         let prompts = clamp_prompt_args(prompt_and_rest);
         let mut args = Vec::new();
@@ -642,6 +759,129 @@ mod tests {
         // No --instructions flag exists on abi; the note is input text.
         assert!(argv[dashdash + 1].contains("Do not modify files"));
         assert_eq!(argv.last().unwrap(), "q");
+    }
+
+    #[test]
+    fn claude_argv_never_leaks_cursor_or_fm_flags() {
+        let mut cfg = maximal_cursor_config();
+        cfg.backend = AgentBackend::Claude;
+        let argv = cfg.build_args(None, &["hello".into()]);
+        let allowed = [
+            "--model",
+            "--print",
+            "--output-format",
+            "--permission-mode",
+            "--append-system-prompt",
+            "--add-dir",
+            "--resume",
+            "--session-id",
+        ];
+        for a in &argv {
+            if a.starts_with("--") {
+                assert!(
+                    allowed.contains(&a.as_str()),
+                    "leaked non-claude flag {a:?} into argv {argv:?}"
+                );
+            }
+        }
+        for banned in [
+            "--auto-review",
+            "--trust",
+            "--force",
+            "--mode",
+            "--worktree",
+            "--workspace",
+            "--sandbox",
+            "--debug",
+            "--max-turns",
+            "--instructions",
+            "--no-stream",
+            "--save-transcript",
+            "--live",
+        ] {
+            assert!(!argv.contains(&banned.to_string()), "{banned} leaked");
+        }
+        // Cursor thinking binding collapses to a real catalog id.
+        let m = argv.iter().position(|a| a == "--model").unwrap();
+        assert_eq!(argv[m + 1], "claude-fable-5");
+        // --force (always-approve) becomes claude's bypassPermissions and wins
+        // over plan mode — exactly one permission mode is emitted.
+        let pm = argv.iter().position(|a| a == "--permission-mode").unwrap();
+        assert_eq!(argv[pm + 1], "bypassPermissions");
+        assert_eq!(argv.iter().filter(|a| *a == "--permission-mode").count(), 1);
+        assert_eq!(argv.last().unwrap(), "hello");
+    }
+
+    #[test]
+    fn claude_model_vocabulary_clamp() {
+        // Abbey's flagship default and role aliases.
+        assert_eq!(claude_model("opus").as_deref(), Some("opus"));
+        assert_eq!(claude_model("max").as_deref(), Some("opus"));
+        assert_eq!(claude_model("gemma").as_deref(), Some("sonnet"));
+        assert_eq!(claude_model("composer-2.5").as_deref(), Some("sonnet"));
+        // auto must stay claude's own plan default — plans that reject named
+        // models only work when --model is omitted entirely.
+        assert_eq!(claude_model("auto"), None);
+        assert_eq!(claude_model(""), None);
+        // Cursor bindings collapse to catalog ids; bare ids pass through.
+        assert_eq!(
+            claude_model("claude-opus-5-thinking-high").as_deref(),
+            Some("claude-opus-5")
+        );
+        assert_eq!(
+            claude_model("claude-opus-5").as_deref(),
+            Some("claude-opus-5")
+        );
+        // Foreign executors' ids clamp to the flagship default.
+        assert_eq!(claude_model("gpt-5.6-sol-high").as_deref(), Some("opus"));
+        assert_eq!(
+            claude_model("cursor-grok-4.5-high").as_deref(),
+            Some("opus")
+        );
+        assert_eq!(claude_model("kimi-k3-high").as_deref(), Some("opus"));
+    }
+
+    #[test]
+    fn claude_session_mints_then_resumes() {
+        let dir = std::env::temp_dir().join(format!("abbey-claude-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut cfg = maximal_cursor_config();
+        cfg.backend = AgentBackend::Claude;
+        cfg.force = false;
+        cfg.mode = None;
+        cfg.transcript_dir = Some(dir.clone());
+
+        // No marker yet: the id is minted as a fresh claude session.
+        let argv = cfg.build_args(Some("chat-7"), &["hi".into()]);
+        let s = argv.iter().position(|a| a == "--session-id").unwrap();
+        assert_eq!(argv[s + 1], "chat-7");
+        assert!(!argv.contains(&"--resume".to_string()));
+
+        // After a successful run recorded the marker, later turns resume.
+        cfg.touch_claude_session_marker("chat-7");
+        let argv = cfg.build_args(Some("chat-7"), &["hi".into()]);
+        let r = argv.iter().position(|a| a == "--resume").unwrap();
+        assert_eq!(argv[r + 1], "chat-7");
+        assert!(!argv.contains(&"--session-id".to_string()));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn claude_plan_mode_maps_to_permission_mode() {
+        let mut cfg = maximal_cursor_config();
+        cfg.backend = AgentBackend::Claude;
+        cfg.force = false;
+        cfg.mode = Some("plan".into());
+        let argv = cfg.build_args(None, &["q".into()]);
+        let pm = argv.iter().position(|a| a == "--permission-mode").unwrap();
+        assert_eq!(argv[pm + 1], "plan");
+        let sp = argv
+            .iter()
+            .position(|a| a == "--append-system-prompt")
+            .unwrap();
+        assert!(argv[sp + 1].contains("plan only"));
     }
 
     #[test]

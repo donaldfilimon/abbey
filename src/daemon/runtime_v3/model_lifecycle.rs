@@ -349,15 +349,15 @@ impl ModelLifecycleAuthority {
     fn run_download(inner: Arc<Inner>, action: V3ModelAction, active: ActiveKey) {
         let authority = Self { inner };
         let result = authority.download_all(&action);
-        authority.finish_background(&action.operation_id, result);
         authority.release_active(&active);
+        authority.finish_background(&action.operation_id, result);
     }
 
     fn run_load(inner: Arc<Inner>, action: V3ModelAction, active: ActiveKey) {
         let authority = Self { inner };
         let result = authority.load_exact(&action);
-        authority.finish_background(&action.operation_id, result);
         authority.release_active(&active);
+        authority.finish_background(&action.operation_id, result);
     }
 
     fn download_all(&self, action: &V3ModelAction) -> Result<(), ()> {

@@ -249,14 +249,18 @@ legacy downgrade occurs. The personal daemon and MCP retain only the three read-
 Negotiation may also always grant `read_claims_by_id`; `ClaimById`
 projects one exact stable-ID match from Abbey's canonical claim registry and returns
 `not_found` for a missing or non-exact ID. There is no fuzzy claim search. When daemon
-startup binds an ABI-local fixed provider, negotiation may additionally grant `read_models`,
-and `ListModels` returns bounded fixed-watermark inventory derived from the same
-startup-owned `ModelProvider` object used by protocol-v2 execution. A separately configured
-signed local-model authority can also supply inventory and the model lifecycle described
-below. Without either startup authority, model grants remain denied while the canonical
-claim read remains available. A non-negotiation request missing its exact grant is rejected
-before dispatch; echoing an unsupported grant cannot manufacture daemon authority. There is
-no fuzzy claim search, served prompt-inference command, personal-shell tool, training,
+startup binds an ABI-local fixed provider, an edition-scoped `*_MODEL_MANIFEST_DIR`, or the
+signed lifecycle authority below, negotiation may additionally grant `read_models`.
+`ListModels` returns one bounded fixed-watermark catalog in startup order: route-derived
+entries from the same `ModelProvider` objects used by protocol-v2 execution, then
+manifest-derived `abi-models` identities, then signed-lifecycle identities. Duplicate IDs
+keep the first startup source. Manifest-only entries report `available` or `not_downloaded`
+from exact-size artifact presence under `ABI_MODELS_DIR`; they do not imply digest
+verification, license resolution, download, load, or inference. A malformed bound manifest
+directory refuses daemon startup. Without any model source, model grants remain denied while
+the canonical claim read remains available. A non-negotiation request missing its exact
+grant is rejected before dispatch; echoing an unsupported grant cannot manufacture daemon
+authority. There is no served prompt-inference command, personal-shell tool, training,
 worker, polling, CLI lifecycle presentation, desktop, remote, or Windows authority yet.
 
 ### Signed local-model lifecycle

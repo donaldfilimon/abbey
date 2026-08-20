@@ -209,7 +209,7 @@ pub fn route_decision(input: &str, override_role: Option<WorkerRole>) -> RouteDe
 /// aliases**, not in-process Qwen/Gemma checkpoints.
 pub fn default_model_for_role(role: WorkerRole) -> &'static str {
     match role {
-        WorkerRole::Max | WorkerRole::Auto => "fable",
+        WorkerRole::Max | WorkerRole::Auto => "opus",
         WorkerRole::Gemma => "composer",
     }
 }

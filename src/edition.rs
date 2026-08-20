@@ -117,6 +117,7 @@ const SCOPED_ENV_SUFFIXES: &[&str] = &[
     "CHAT_FILE",
     "MODEL_FILE",
     "HISTORY_FILE",
+    "MODEL_MANIFEST_DIR",
     "MODEL_RUNTIME_CONFIG",
     "EMBEDDING_API_KEY",
 ];

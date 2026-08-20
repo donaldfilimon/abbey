@@ -478,9 +478,11 @@ def workflow_summary(goals_text: str, todo_text: str) -> str:
     status_text = ", ".join(
         f"{statuses[status]} {status}" for status in status_order if statuses[status]
     )
+    goal_noun = "goal" if len(goals) == 1 else "goals"
+    todo_noun = "todo" if open_items == 1 else "todos"
     return (
-        f"{len(goals)} goals ({status_text}) · "
-        f"{checked} checked / {open_items} open todos"
+        f"{len(goals)} {goal_noun} ({status_text}) · "
+        f"{checked} checked / {open_items} open {todo_noun}"
     )
 
 
