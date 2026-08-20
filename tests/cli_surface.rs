@@ -415,6 +415,9 @@ fn run_isolated(s: &Scratch, path: &std::path::Path, args: &[&str]) -> (i32, Str
         .env(abbey::edition::ACTIVE.state_dir_env(), &s.0)
         .env("HOME", &s.0)
         .env("PATH", path)
+        // Absolute candidate probing (/opt/homebrew, /usr/bin) would find a
+        // real grok/fm on the host and defeat the "no executor" staging.
+        .env("ABBEY_TEST_HOME_AGENTS_ONLY", "1")
         .output()
         .expect("spawn abbey");
     (
