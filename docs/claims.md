@@ -2,13 +2,13 @@
 
 This file is generated from `src/claims.rs` by `tools/check_claims_sync.py --write`. Do not edit it by hand.
 
-Schema: `1` · Digest: `8be75339d471bed4bfd0b6e2c5ab3dc6b9532e57115ffb862e88417a458e2db0` · 34 Current · 2 Partial · 8 Proposed · 1 Blocked · 5 Out of scope.
+Schema: `1` · Digest: `3600f9675212cc31483bac94378fcd980a8fc2615b5f5816935d8d36ae291b10` · 34 Current · 2 Partial · 8 Proposed · 1 Blocked · 5 Out of scope.
 
 Workflow ledger: 26 goals (23 done, 1 in_progress, 1 proposed, 1 blocked) · 159 checked / 22 open todos. Goal evidence remains canonical in [`tasks/goals.md`](../tasks/goals.md).
 
 | Stable ID | Status | Capability | Implementation evidence | Automated tests | Local/live evidence | External evidence required | Next action | Blocker owner |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `backend-cursor-agent` | Current | cursor-agent backend (CLI/TUI) | src/agent/mod.rs; src/agent/argv.rs; src/session.rs | src/agent/argv.rs::tests::cursor_backend_argv_is_unchanged_by_the_fm_split | not_required: the bounded source surface and deterministic automated gate are the required proof | not_required: vendor-account execution is outside the default-backend wiring claim | keep cursor-agent argv and TUI routing covered when backend selection changes | — |
+| `backend-cursor-agent` | Current | cursor-agent backend (CLI/TUI) | src/agent/mod.rs; src/agent/argv.rs; src/session.rs | src/agent/argv.rs::tests::cursor_backend_argv_is_unchanged_by_the_fm_split; tests/cli_surface.rs::local_verbs_need_no_executor_backend; tests/cli_surface.rs::default_backend_falls_back_to_an_installed_executor | not_required: the bounded source surface and deterministic automated gate are the required proof | not_required: vendor-account execution is outside the default-backend wiring claim | keep cursor-agent argv and TUI routing covered when backend selection changes | — |
 | `surface-parity-grok-codex-claude` | Partial | Grok/Codex/Claude surface parity | src/slash.rs; src/agent/argv.rs; src/surfaces.rs | src/slash.rs::tests::lookup_is_case_insensitive; tests/cli_surface.rs | required: complete and run the compatibility UX acceptance matrix | not_required: the claim is bounded to local product behavior | close the documented compatibility gaps without claiming vendor-runtime equivalence | — |
 | `personas-abbey-aviva-abi` | Current | Persona Abbey/Aviva/Abi | src/persona.rs | src/persona.rs::tests::parse_names; src/persona.rs::tests::explicit_aviva_wins | not_required: the bounded source surface and deterministic automated gate are the required proof | not_required: the claim is bounded to local product behavior | preserve persona contract parity with the pinned abi-ai dependency | — |
 | `role-bindings-max-gemma` | Current | Max/Gemma role bindings | src/roles.rs; src/models.rs | src/roles.rs::tests::code_selects_max; src/roles.rs::tests::image_selects_gemma | not_required: the bounded source surface and deterministic automated gate are the required proof | not_required: the claim is bounded to local product behavior | keep role bindings explicit and separate from local-weight claims | — |
