@@ -59,7 +59,7 @@ const BUILTIN: &[PaletteItem] = &[
     PaletteItem {
         id: "backend",
         label: "Cycle backend",
-        detail: "cursor → grok → fm → abi (skips unresolvable)",
+        detail: "cursor → grok → fm → abi → claude (skips unresolvable)",
         action: PaletteAction::CycleBackend,
     },
     PaletteItem {
@@ -125,7 +125,7 @@ pub fn help_lines() -> Vec<&'static str> {
         "  1-7            jump to tab",
         "  Ctrl-K         command palette",
         "  Ctrl-T         cycle theme (ink / violet / mono)",
-        "  Ctrl-B         cycle backend (cursor / grok / fm / abi)",
+        "  Ctrl-B         cycle backend (cursor / grok / fm / abi / claude)",
         "  F1 / ?         help (empty prompt)",
         "  /              filter lists (panel focus)",
         "  ↑↓             history (prompt) · move (panel)",

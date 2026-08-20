@@ -17,8 +17,8 @@ use anyhow::{Result, bail};
 
 pub fn apply_global_flags(cli: &Cli, state: &AbbeyState, cfg: &mut AgentConfig) -> Result<()> {
     // `fm` and `abi` keep conversations in transcript files under the state
-    // dir — `fm` natively (--resume/--save-transcript), `abi` Abbey-side
-    // (bounded context prefix; `abi complete` itself is a stateless one-shot).
+    // dir; Claude stores its transcript itself and Abbey keeps only a local
+    // marker that distinguishes a new session id from one safe to resume.
     cfg.transcript_dir = Some(state.state_dir.join(cfg.backend.transcript_subdir()));
     if cfg.backend == AgentBackend::Abi {
         // Do not expand through cursor aliases: `opus` → claude-*-thinking-*
@@ -329,4 +329,205 @@ pub fn hybrid_loop_run(
 
 pub fn compact_history(state: &AbbeyState, keep: usize) -> Result<usize> {
     state.compact_history(keep)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::resolve_model;
+    use clap::Parser as _;
+    use std::sync::Mutex;
+
+    // `Cli` reads `ABBEY_MODEL` through clap and `maybe_inject_role_model`
+    // reads it directly, so every test that parses flags or exercises
+    // injection serializes here and runs with the variable cleared.
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    struct EnvGuard {
+        original: Option<std::ffi::OsString>,
+    }
+
+    impl EnvGuard {
+        #[allow(unsafe_code)]
+        fn clear_abbey_model() -> Self {
+            let original = std::env::var_os("ABBEY_MODEL");
+            // SAFETY: callers hold ENV_LOCK for the guard's whole life, and the
+            // original value is restored on drop.
+            unsafe { std::env::remove_var("ABBEY_MODEL") };
+            Self { original }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        #[allow(unsafe_code)]
+        fn drop(&mut self) {
+            if let Some(value) = self.original.take() {
+                // SAFETY: still under the caller's ENV_LOCK.
+                unsafe { std::env::set_var("ABBEY_MODEL", value) };
+            }
+        }
+    }
+
+    fn scratch_state(tag: &str) -> AbbeyState {
+        let dir = std::env::temp_dir().join(format!(
+            "abbey-session-{tag}-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("by-cwd")).unwrap();
+        AbbeyState {
+            state_dir: dir.clone(),
+            chat_file: dir.join("chat-id"),
+            model_file: dir.join("model"),
+            history_file: dir.join("history.log"),
+            cwd_dir: dir.join("by-cwd"),
+            per_cwd: false,
+            cwd: dir,
+        }
+    }
+
+    fn parse(args: &[&str]) -> Cli {
+        Cli::parse_from(args)
+    }
+
+    #[test]
+    fn transcript_dir_follows_the_live_backend_not_the_process_env() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let _env = EnvGuard::clear_abbey_model();
+        let state = scratch_state("transcripts");
+        let cli = parse(&["abbey"]);
+
+        // The same flags applied to two configs land each backend's turns in
+        // its own transcript directory — the invariant behind the Ctrl-B
+        // switch (a cached `from_env()` here silently killed abi continuity).
+        let mut abi = AgentConfig {
+            backend: AgentBackend::Abi,
+            ..AgentConfig::default()
+        };
+        apply_global_flags(&cli, &state, &mut abi).unwrap();
+        assert_eq!(
+            abi.transcript_dir.as_deref(),
+            Some(state.state_dir.join("abi").as_path())
+        );
+
+        let mut fm = AgentConfig {
+            backend: AgentBackend::Fm,
+            ..AgentConfig::default()
+        };
+        apply_global_flags(&cli, &state, &mut fm).unwrap();
+        assert_eq!(
+            fm.transcript_dir.as_deref(),
+            Some(state.state_dir.join("fm").as_path())
+        );
+
+        let mut claude = AgentConfig {
+            backend: AgentBackend::Claude,
+            ..AgentConfig::default()
+        };
+        apply_global_flags(&cli, &state, &mut claude).unwrap();
+        assert_eq!(
+            claude.transcript_dir.as_deref(),
+            Some(state.state_dir.join("claude").as_path())
+        );
+    }
+
+    #[test]
+    fn thinking_is_a_cursor_alias_that_stays_local_under_abi() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let _env = EnvGuard::clear_abbey_model();
+        let state = scratch_state("thinking");
+        let cli = parse(&["abbey", "--thinking", "high"]);
+
+        let mut cursor = AgentConfig {
+            backend: AgentBackend::Cursor,
+            ..AgentConfig::default()
+        };
+        apply_global_flags(&cli, &state, &mut cursor).unwrap();
+        assert_eq!(cursor.model, resolve_model("opus-thinking-high"));
+
+        // Under abi the alias would read as an explicit Anthropic live request;
+        // it must collapse to the local persona-template instead.
+        let mut abi = AgentConfig {
+            backend: AgentBackend::Abi,
+            ..AgentConfig::default()
+        };
+        apply_global_flags(&cli, &state, &mut abi).unwrap();
+        assert_eq!(abi.model, "local");
+    }
+
+    #[test]
+    fn sandbox_normalizes_and_output_format_implies_print() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let _env = EnvGuard::clear_abbey_model();
+        let state = scratch_state("flags");
+
+        for (given, stored) in [
+            ("on", "enabled"),
+            ("enable", "enabled"),
+            ("off", "disabled"),
+            ("disable", "disabled"),
+            ("permissive", "permissive"),
+        ] {
+            let cli = parse(&["abbey", "--sandbox", given]);
+            let mut cfg = AgentConfig::default();
+            apply_global_flags(&cli, &state, &mut cfg).unwrap();
+            assert_eq!(cfg.sandbox.as_deref(), Some(stored), "sandbox {given}");
+        }
+
+        let cli = parse(&["abbey", "--output-format", "json"]);
+        let mut cfg = AgentConfig::default();
+        apply_global_flags(&cli, &state, &mut cfg).unwrap();
+        assert!(cfg.print, "--output-format must imply print mode");
+        assert_eq!(cfg.output_format.as_deref(), Some("json"));
+
+        let cli = parse(&["abbey", "--max-turns", "5"]);
+        let mut cfg = AgentConfig::default();
+        apply_global_flags(&cli, &state, &mut cfg).unwrap();
+        assert!(
+            cfg.extra_args
+                .windows(2)
+                .any(|w| w[0] == "--max-turns" && w[1] == "5"),
+            "extra_args: {:?}",
+            cfg.extra_args
+        );
+    }
+
+    #[test]
+    fn role_model_injection_never_fires_under_fm_or_abi() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let _env = EnvGuard::clear_abbey_model();
+        let state = scratch_state("inject");
+
+        // Injection on cursor turns the persisted default into the role alias…
+        let mut cursor = AgentConfig {
+            backend: AgentBackend::Cursor,
+            model: state.read_model(),
+            ..AgentConfig::default()
+        };
+        maybe_inject_role_model(&mut cursor, &state, "max");
+        assert_eq!(cursor.model, resolve_model("max"));
+
+        // …but an explicitly chosen model is never overridden…
+        let mut chosen = AgentConfig {
+            backend: AgentBackend::Cursor,
+            model: "explicit-model".into(),
+            ..AgentConfig::default()
+        };
+        maybe_inject_role_model(&mut chosen, &state, "max");
+        assert_eq!(chosen.model, "explicit-model");
+
+        // …and fm/abi never inject: a cursor id there would silently turn a
+        // local run into a live-transport request.
+        for backend in [AgentBackend::Fm, AgentBackend::Abi] {
+            let mut cfg = AgentConfig {
+                backend,
+                model: state.read_model(),
+                ..AgentConfig::default()
+            };
+            let before = cfg.model.clone();
+            maybe_inject_role_model(&mut cfg, &state, "max");
+            assert_eq!(cfg.model, before, "{backend:?} must not inject");
+        }
+    }
 }

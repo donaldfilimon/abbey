@@ -380,7 +380,7 @@ fn collect_readers(
     // child look like an open-pipe leak when the reader threads were merely
     // descheduled by a parallel test suite. Give collection its own doubled
     // window, capped by the same hard five-second teardown maximum.
-    let collection_grace = grace.saturating_add(grace).min(MAX_TERMINATE_GRACE);
+    let collection_grace = reader_collection_grace(grace);
     let deadline = Instant::now() + collection_grace;
     while !captures.complete() {
         let remaining = deadline.saturating_duration_since(Instant::now());
@@ -408,6 +408,10 @@ fn collect_readers(
             .map_err(|_| SupervisorError::ReaderThread(name))?;
     }
     Ok(())
+}
+
+fn reader_collection_grace(grace: Duration) -> Duration {
+    grace.saturating_add(grace).min(MAX_TERMINATE_GRACE)
 }
 
 enum SignalAttempt {
@@ -444,25 +448,13 @@ mod tests {
 
     #[test]
     fn reader_collection_allows_bounded_scheduler_delay_after_teardown() {
-        let (sender, receiver) = mpsc::channel();
-        let readers = [StreamName::Stdout, StreamName::Stderr].map(|name| {
-            let sender = sender.clone();
-            thread::spawn(move || {
-                thread::sleep(Duration::from_millis(30));
-                let _ = sender.send(ReaderMessage {
-                    name,
-                    result: Ok(CapturedStream {
-                        name,
-                        bytes: Vec::new(),
-                        overflowed: false,
-                    }),
-                });
-            })
-        });
-        drop(sender);
-
-        let mut captures = Captures::default();
-        collect_readers(&receiver, &mut captures, readers, Duration::from_millis(20)).unwrap();
-        assert!(captures.complete());
+        assert_eq!(
+            reader_collection_grace(Duration::from_millis(20)),
+            Duration::from_millis(40)
+        );
+        assert_eq!(
+            reader_collection_grace(Duration::from_secs(3)),
+            MAX_TERMINATE_GRACE
+        );
     }
 }

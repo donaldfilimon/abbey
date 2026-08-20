@@ -568,3 +568,7 @@ impl App {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "keys_tests.rs"]
+mod tests;

@@ -448,4 +448,54 @@ mod tests {
         assert!(parse_jobs_value(Some("many")).is_err());
         assert_eq!(parse_jobs_value(Some("3")).unwrap(), 3);
     }
+
+    #[test]
+    fn catalog_names_are_unique_lowercase_and_lookupable() {
+        let mut seen = std::collections::HashSet::new();
+        for cmd in SLASH_CATALOG {
+            assert!(
+                seen.insert(cmd.name),
+                "duplicate catalog entry /{}",
+                cmd.name
+            );
+            assert_eq!(
+                cmd.name,
+                cmd.name.to_ascii_lowercase(),
+                "case-insensitive lookup lowercases its input, so a non-lowercase \
+                 catalog name would be unreachable"
+            );
+            assert!(!cmd.help.is_empty(), "/{} has no help text", cmd.name);
+            assert!(lookup(cmd.name).is_some(), "/{} not lookupable", cmd.name);
+        }
+    }
+
+    #[test]
+    fn parse_slash_round_trips_every_catalog_entry() {
+        for cmd in SLASH_CATALOG {
+            assert_eq!(
+                parse_slash(&format!("/{} arg", cmd.name)),
+                Some((cmd.name, "arg")),
+                "/{} does not parse back to itself",
+                cmd.name
+            );
+        }
+    }
+
+    #[test]
+    fn help_text_names_every_catalog_entry() {
+        let help = help_text();
+        for cmd in SLASH_CATALOG {
+            assert!(
+                help.contains(&format!("/{}", cmd.name)),
+                "/{} missing from /help output",
+                cmd.name
+            );
+        }
+    }
+
+    #[test]
+    fn a_bare_slash_is_help() {
+        assert_eq!(parse_slash("/"), Some(("help", "")));
+        assert_eq!(parse_slash("  /  "), Some(("help", "")));
+    }
 }

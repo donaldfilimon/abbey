@@ -17,7 +17,7 @@ pub struct AbbeyConfig {
     pub memory_backend: String,
     #[serde(default)]
     pub abi_bin: Option<PathBuf>,
-    /// Default executor backend (`cursor` | `grok` | `fm` | `abi`).
+    /// Default executor backend (`cursor` | `grok` | `fm` | `abi` | `claude`).
     /// Precedence: `ABBEY_BACKEND` env > this key > cursor.
     #[serde(default)]
     pub backend: Option<String>,
@@ -249,9 +249,9 @@ model = "text-embedding-3-small"
 dimension = 1536
 language = "en"
 
-# Default executor backend: "cursor" (default) | "grok" | "fm" | "abi".
-# ABBEY_BACKEND overrides this. "abi" runs every surface through the sibling
-# `abi complete` CLI with no cursor-agent installed.
+# Default executor backend: "cursor" (default) | "grok" | "fm" | "abi" | "claude".
+# ABBEY_BACKEND overrides this. "abi" and "claude" each run through their own
+# CLI and argv grammar with no cursor-agent installed.
 # backend = "abi"
 
 # Path to a real `abi` binary (a shell alias will not do). Required by the abi
