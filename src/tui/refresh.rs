@@ -27,6 +27,9 @@ pub fn backend_doctor_line(backend: AgentBackend) -> String {
              opt into Anthropic transport (ABBEY_BACKEND=abi)"
                 .into()
         }
+        AgentBackend::Claude => {
+            "backend:   claude — Claude Code CLI, no cursor-agent (ABBEY_BACKEND=claude)".into()
+        }
     }
 }
 
@@ -38,7 +41,10 @@ pub fn roles_doctor_line(backend: AgentBackend) -> String {
             backend.label()
         )
     } else {
-        "roles:      Max→technical · Gemma→visual (cursor-agent bindings)".into()
+        format!(
+            "roles:      Max→technical · Gemma→visual (model bindings via {})",
+            backend.label()
+        )
     }
 }
 
@@ -209,11 +215,17 @@ mod tests {
         assert!(backend_doctor_line(AgentBackend::Fm).contains("on-device"));
         let abi = backend_doctor_line(AgentBackend::Abi);
         assert!(abi.contains("abi complete") && abi.contains("ABBEY_BACKEND=abi"));
+        let claude = backend_doctor_line(AgentBackend::Claude);
+        assert!(claude.contains("Claude Code") && claude.contains("ABBEY_BACKEND=claude"));
     }
 
     #[test]
     fn roles_line_claims_bindings_only_under_cursor_model_ids() {
-        for b in [AgentBackend::Cursor, AgentBackend::Grok] {
+        for b in [
+            AgentBackend::Cursor,
+            AgentBackend::Grok,
+            AgentBackend::Claude,
+        ] {
             assert!(roles_doctor_line(b).contains("bindings"));
         }
         for b in [AgentBackend::Fm, AgentBackend::Abi] {

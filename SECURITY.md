@@ -23,7 +23,7 @@ lands on `main` and the advisory is published from this repository.
 ## Scope worth knowing before you report
 
 Abbey's threat model is shaped by what it actually does — it is a local CLI/TUI
-that shells out to an executor (`cursor-agent`, `grok`, `fm`, or `abi`), not a
+that shells out to an executor (`cursor-agent`, `grok`, `fm`, `abi`, or `claude`), not a
 network service:
 
 - **It executes local processes by design.** Prompts are passed to the

@@ -522,7 +522,7 @@ pub fn cmd_doctor(state: &AbbeyState, cfg: &AgentConfig) -> Result<i32> {
     let agent_path = if cfg.agent_path.as_os_str().is_empty() {
         // Honest, not broken: local verbs (this one included) need no
         // executor; only generation does, and it says so when attempted.
-        "(none found — generation needs cursor-agent, grok, fm, or abi)".to_string()
+        "(none found — generation needs cursor-agent, grok, fm, abi, or claude)".to_string()
     } else {
         cfg.agent_path.display().to_string()
     };

@@ -230,7 +230,7 @@ pub fn dispatch_slash(input: &str, state: &AbbeyState, cfg: &mut AgentConfig) ->
                 return Ok(0);
             }
             let level = rest.split_whitespace().next().unwrap_or(rest);
-            let m = resolve_model(&format!("fable-thinking-{level}"));
+            let m = resolve_model(&format!("opus-thinking-{level}"));
             state.save_model(&m)?;
             cfg.model = m.clone();
             println!("{m}");

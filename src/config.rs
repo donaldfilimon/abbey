@@ -17,7 +17,7 @@ pub struct AbbeyConfig {
     pub memory_backend: String,
     #[serde(default)]
     pub abi_bin: Option<PathBuf>,
-    /// Default executor backend (`cursor` | `grok` | `fm` | `abi`).
+    /// Default executor backend (`cursor` | `grok` | `fm` | `abi` | `claude`).
     /// Precedence: `ABBEY_BACKEND` env > this key > cursor.
     #[serde(default)]
     pub backend: Option<String>,
@@ -100,7 +100,7 @@ fn default_memory_backend() -> String {
     "sqlite".into()
 }
 fn default_max_model() -> String {
-    "fable".into()
+    "opus".into()
 }
 fn default_gemma_model() -> String {
     "composer".into()
@@ -249,9 +249,9 @@ model = "text-embedding-3-small"
 dimension = 1536
 language = "en"
 
-# Default executor backend: "cursor" (default) | "grok" | "fm" | "abi".
-# ABBEY_BACKEND overrides this. "abi" runs every surface through the sibling
-# `abi complete` CLI with no cursor-agent installed.
+# Default executor backend: "cursor" (default) | "grok" | "fm" | "abi" | "claude".
+# ABBEY_BACKEND overrides this. "abi" and "claude" each run through their own
+# CLI and argv grammar with no cursor-agent installed.
 # backend = "abi"
 
 # Path to a real `abi` binary (a shell alias will not do). Required by the abi
@@ -259,7 +259,8 @@ language = "en"
 # abi_bin = "/path/to/abi"
 
 [roles]
-max = "fable"
+# Alternatives for max: "sol" (gpt-5.6-sol-high), "fable" (claude-fable-5-thinking-high)
+max = "opus"
 gemma = "composer"
 "#
 }
@@ -364,7 +365,7 @@ mod tests {
     #[test]
     fn parse_default_shape() {
         let cfg = parse_toml_lite(default_toml_text()).unwrap();
-        assert_eq!(cfg.roles.max, "fable");
+        assert_eq!(cfg.roles.max, "opus");
         assert_eq!(cfg.roles.gemma, "composer");
         assert_eq!(cfg.memory_backend, "sqlite");
         assert_eq!(cfg.embeddings.provider, "none");

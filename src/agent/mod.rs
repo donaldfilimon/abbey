@@ -198,6 +198,18 @@ impl AgentConfig {
         Some(dir.join(format!("{chat_id}.transcript")))
     }
 
+    /// Record that Claude accepted this session id. Claude owns the actual
+    /// transcript; this presence-only marker selects `--resume` on later turns.
+    pub fn touch_claude_session_marker(&self, chat_id: &str) {
+        let Some(path) = self.transcript_path(chat_id) else {
+            return;
+        };
+        if let Some(dir) = path.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        let _ = std::fs::write(&path, "claude session established\n");
+    }
+
     /// Record one abi turn so the next run can carry bounded context.
     /// Best-effort: a failed write must not fail the run that produced it.
     pub fn append_abi_transcript(&self, chat_id: &str, prompt: &[String], output: &str) {
@@ -290,6 +302,14 @@ impl AgentConfig {
                  live      Anthropic live transport with abi's default model\n"
                     .into(),
             );
+        }
+        if self.backend == AgentBackend::Claude {
+            return Ok("opus      Claude Opus (Abbey's default Max binding)\n\
+                 sonnet    Claude Sonnet (Abbey's Gemma binding)\n\
+                 haiku     Claude Haiku\n\
+                 fable     Claude Fable (plan-gated)\n\
+                 claude-*  full Claude catalog id, passed through\n"
+                .into());
         }
         let out = Command::new(self.exec_path()?).arg("models").output()?;
         Ok(String::from_utf8_lossy(&out.stdout).into_owned())
@@ -413,6 +433,12 @@ fn run_once(
         {
             cfg.append_abi_transcript(id, prompt_and_rest, &out);
         }
+        if cfg.backend == AgentBackend::Claude
+            && st.success()
+            && let Some(id) = resume_id.filter(|i| !i.is_empty())
+        {
+            cfg.touch_claude_session_marker(id);
+        }
         if let Some(path) = &cfg.cot_path {
             if let Err(e) = crate::surfaces::save_cot(path, &out) {
                 eprintln!("abbey: cot save failed: {e:#}");
@@ -428,6 +454,12 @@ fn run_once(
         return Ok(st.code().unwrap_or(1));
     }
     let st = cfg.run_interactive(resume_id, prompt_and_rest)?;
+    if cfg.backend == AgentBackend::Claude
+        && st.success()
+        && let Some(id) = resume_id.filter(|i| !i.is_empty())
+    {
+        cfg.touch_claude_session_marker(id);
+    }
     Ok(st.code().unwrap_or(1))
 }
 
@@ -447,9 +479,10 @@ mod tests {
     }
 
     #[test]
-    fn fm_and_abi_refuse_account_surface() {
+    fn non_cursor_account_grammars_refuse_cursor_account_surface() {
         assert!(!AgentBackend::Fm.supports_account_surface());
         assert!(!AgentBackend::Abi.supports_account_surface());
+        assert!(!AgentBackend::Claude.supports_account_surface());
         assert!(AgentBackend::Cursor.supports_account_surface());
         assert!(AgentBackend::Grok.supports_account_surface());
     }
@@ -460,6 +493,7 @@ mod tests {
         assert!(AgentBackend::Grok.has_server_sessions());
         assert!(!AgentBackend::Fm.has_server_sessions());
         assert!(!AgentBackend::Abi.has_server_sessions());
+        assert!(!AgentBackend::Claude.has_server_sessions());
     }
 
     /// The `CURSOR_AGENT_CHAT_ID` guard in `AbbeyState::read_chat_for` keys off
@@ -470,7 +504,7 @@ mod tests {
     /// makes the switch safe, in both directions.
     #[test]
     fn cursor_chat_env_is_honoured_per_backend_not_per_process() {
-        for switched_to in [AgentBackend::Fm, AgentBackend::Abi] {
+        for switched_to in [AgentBackend::Fm, AgentBackend::Abi, AgentBackend::Claude] {
             assert!(
                 !switched_to.has_server_sessions(),
                 "{switched_to:?} must not adopt CURSOR_AGENT_CHAT_ID"
@@ -485,9 +519,10 @@ mod tests {
     }
 
     #[test]
-    fn transcript_subdir_separates_abi_from_fm() {
+    fn transcript_subdirs_separate_local_and_claude_continuity() {
         assert_eq!(AgentBackend::Abi.transcript_subdir(), "abi");
         assert_eq!(AgentBackend::Fm.transcript_subdir(), "fm");
+        assert_eq!(AgentBackend::Claude.transcript_subdir(), "claude");
         // A mid-session switch must not land abi turns in fm's directory.
         assert_ne!(
             AgentBackend::Abi.transcript_subdir(),
@@ -499,7 +534,7 @@ mod tests {
     fn backend_cycle_visits_all_and_wraps() {
         let mut b = AgentBackend::Cursor;
         let mut seen = Vec::new();
-        for _ in 0..4 {
+        for _ in 0..5 {
             b = b.cycle_next();
             seen.push(b);
         }
@@ -508,6 +543,7 @@ mod tests {
             AgentBackend::Grok,
             AgentBackend::Fm,
             AgentBackend::Abi,
+            AgentBackend::Claude,
             AgentBackend::Cursor,
         ] {
             assert!(seen.contains(&expect), "{expect:?} missing from cycle");

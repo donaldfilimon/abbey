@@ -128,10 +128,11 @@ impl App {
     /// are skipped with no state change; if nothing else resolves the current
     /// backend stays and the status line says so. Chat ids are per-backend
     /// artifacts — the next run under a server backend simply resumes or
-    /// mints as usual, and `fm`/`abi` mint locally.
+    /// mints as usual; `fm`/`abi` mint locally and Claude uses its own store.
     pub fn cycle_backend(&mut self) {
         let mut next = self.cfg.backend;
-        for _ in 0..3 {
+        // Five backends means at most four alternatives before wrapping.
+        for _ in 0..4 {
             next = next.cycle_next();
             let Ok(path) = crate::agent::resolve_agent_for(next) else {
                 continue;

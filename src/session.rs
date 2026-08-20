@@ -17,11 +17,11 @@ use anyhow::{Result, bail};
 
 pub fn apply_global_flags(cli: &Cli, state: &AbbeyState, cfg: &mut AgentConfig) -> Result<()> {
     // `fm` and `abi` keep conversations in transcript files under the state
-    // dir — `fm` natively (--resume/--save-transcript), `abi` Abbey-side
-    // (bounded context prefix; `abi complete` itself is a stateless one-shot).
+    // dir; Claude stores its transcript itself and Abbey keeps only a local
+    // marker that distinguishes a new session id from one safe to resume.
     cfg.transcript_dir = Some(state.state_dir.join(cfg.backend.transcript_subdir()));
     if cfg.backend == AgentBackend::Abi {
-        // Do not expand through cursor aliases: `fable` → claude-*-thinking-*
+        // Do not expand through cursor aliases: `opus` → claude-*-thinking-*
         // would look like an explicit Anthropic live request under abi.
         // Also skip `read_model()` (which itself resolve_models) so a persisted
         // bare `claude-*` catalog id survives as live, not as a thinking binding.
@@ -37,7 +37,7 @@ pub fn apply_global_flags(cli: &Cli, state: &AbbeyState, cfg: &mut AgentConfig) 
             cfg.model = abi_normalize_model(&state.read_model_raw());
         }
     } else if let Some(level) = &cli.thinking {
-        cfg.model = resolve_model(&format!("fable-thinking-{level}"));
+        cfg.model = resolve_model(&format!("opus-thinking-{level}"));
     } else if let Some(m) = &cli.model {
         cfg.model = resolve_model(m);
     } else {
@@ -420,6 +420,16 @@ mod tests {
             fm.transcript_dir.as_deref(),
             Some(state.state_dir.join("fm").as_path())
         );
+
+        let mut claude = AgentConfig {
+            backend: AgentBackend::Claude,
+            ..AgentConfig::default()
+        };
+        apply_global_flags(&cli, &state, &mut claude).unwrap();
+        assert_eq!(
+            claude.transcript_dir.as_deref(),
+            Some(state.state_dir.join("claude").as_path())
+        );
     }
 
     #[test]
@@ -434,7 +444,7 @@ mod tests {
             ..AgentConfig::default()
         };
         apply_global_flags(&cli, &state, &mut cursor).unwrap();
-        assert_eq!(cursor.model, resolve_model("fable-thinking-high"));
+        assert_eq!(cursor.model, resolve_model("opus-thinking-high"));
 
         // Under abi the alias would read as an explicit Anthropic live request;
         // it must collapse to the local persona-template instead.

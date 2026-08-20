@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 
 use crate::host::which_bin;
 
-/// Backend preference: `cursor` (default), `grok`, or auto path via `ABBEY_AGENT`.
+/// Backend preference, or auto path via `ABBEY_AGENT`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AgentBackend {
     Cursor,
@@ -21,6 +21,8 @@ pub enum AgentBackend {
     /// deterministic persona-template locally by default, Anthropic live
     /// transport when a `claude-*`/`live` model is requested (abi credentials).
     Abi,
+    /// Claude Code CLI (`claude`) with its own session store and argv grammar.
+    Claude,
 }
 
 impl AgentBackend {
@@ -31,6 +33,7 @@ impl AgentBackend {
             "grok" | "grok-build" | "xai" => Some(Self::Grok),
             "fm" | "apple" | "foundation" | "on-device" => Some(Self::Fm),
             "abi" | "abi-cli" => Some(Self::Abi),
+            "claude" | "claude-code" => Some(Self::Claude),
             _ => None,
         }
     }
@@ -82,7 +85,7 @@ impl AgentBackend {
             // cursor-agent instead, with no way to tell.
             eprintln!(
                 "abbey: config `backend = {configured:?}` is not one of \
-                 cursor|grok|fm|abi — using cursor-agent"
+                 cursor|grok|fm|abi|claude — using cursor-agent"
             );
             Self::Cursor
         });
@@ -111,7 +114,7 @@ impl AgentBackend {
         if resolves(Self::Cursor) {
             return (Self::Cursor, "default");
         }
-        for candidate in [Self::Grok, Self::Fm, Self::Abi] {
+        for candidate in [Self::Grok, Self::Fm, Self::Abi, Self::Claude] {
             if resolves(candidate) {
                 return (candidate, "auto — cursor-agent not installed");
             }
@@ -129,6 +132,7 @@ impl AgentBackend {
     pub fn transcript_subdir(self) -> &'static str {
         match self {
             Self::Abi => "abi",
+            Self::Claude => "claude",
             _ => "fm",
         }
     }
@@ -139,6 +143,7 @@ impl AgentBackend {
             Self::Grok => "grok",
             Self::Fm => "fm",
             Self::Abi => "abi",
+            Self::Claude => "claude",
         }
     }
 
@@ -151,9 +156,10 @@ impl AgentBackend {
         matches!(self, Self::Fm)
     }
 
-    /// Account / session-list / MCP surface — `fm` and `abi` have none of these.
+    /// Account / session-list / MCP surface. Claude has its own commands, but
+    /// does not accept cursor-agent's account verbs.
     pub fn supports_account_surface(self) -> bool {
-        !matches!(self, Self::Fm | Self::Abi)
+        !matches!(self, Self::Fm | Self::Abi | Self::Claude)
     }
 
     /// Server-side chat sessions (`create-chat` / `--resume <id>`).
@@ -173,7 +179,8 @@ impl AgentBackend {
             Self::Cursor => Self::Grok,
             Self::Grok => Self::Fm,
             Self::Fm => Self::Abi,
-            Self::Abi => Self::Cursor,
+            Self::Abi => Self::Claude,
+            Self::Claude => Self::Cursor,
         }
     }
 }
@@ -234,6 +241,7 @@ pub fn resolve_agent_for(backend: AgentBackend) -> Result<PathBuf> {
         AgentBackend::Cursor => "cursor",
         AgentBackend::Fm => "fm",
         AgentBackend::Abi => "abi",
+        AgentBackend::Claude => "claude",
     };
     let candidates = crate::host::agent_candidate_paths(key, &home);
     for c in &candidates {
@@ -281,10 +289,21 @@ pub fn resolve_agent_for(backend: AgentBackend) -> Result<PathBuf> {
                  then set ABBEY_ABI_BIN or `abi_bin` in config.toml."
             );
         }
+        AgentBackend::Claude => {
+            if let Some(path) = which_bin("claude") {
+                return Ok(path);
+            }
+            bail!(
+                "`claude` not found — ABBEY_BACKEND=claude needs the Claude Code CLI on \
+                 PATH. Install it from https://claude.com/claude-code, or select another \
+                 backend."
+            );
+        }
     }
     bail!(
         "{} not found — generation needs an executor backend. Install any of \
-         cursor-agent, grok, fm, or abi (ABBEY_BACKEND=cursor|grok|fm|abi picks \
+         cursor-agent, grok, fm, abi, or claude \
+         (ABBEY_BACKEND=cursor|grok|fm|abi|claude picks \
          one explicitly, ABBEY_AGENT points at a binary directly); local verbs \
          work without one",
         backend.label()
@@ -320,10 +339,23 @@ mod tests {
         });
         assert_eq!(b, AgentBackend::Grok, "cycle order breaks the tie");
 
+        let (b, src) = AgentBackend::pick_default_backend(&|b| matches!(b, AgentBackend::Claude));
+        assert_eq!(b, AgentBackend::Claude);
+        assert!(src.starts_with("auto"));
+
         // Nothing installed: stay on cursor so the spawn-time error names the
         // preferred install first — never a panic, never a random pick.
         let (b, src) = AgentBackend::pick_default_backend(&|_| false);
         assert_eq!(b, AgentBackend::Cursor);
         assert_eq!(src, "default");
+    }
+
+    #[test]
+    fn claude_backend_aliases_parse() {
+        assert_eq!(AgentBackend::parse("claude"), Some(AgentBackend::Claude));
+        assert_eq!(
+            AgentBackend::parse("Claude-Code"),
+            Some(AgentBackend::Claude)
+        );
     }
 }
