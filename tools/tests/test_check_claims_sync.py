@@ -204,7 +204,11 @@ Body.
         self.assertEqual(parsed[0]["id"], "active")
         self.assertEqual(
             claims_sync.workflow_summary(goals, "- [x] done\n- [ ] open\n"),
-            "1 goals (1 in_progress) · 1 checked / 1 open todos",
+            "1 goal (1 in_progress) · 1 checked / 1 open todo",
+        )
+        self.assertEqual(
+            claims_sync.workflow_summary(goals, "- [x] done\n- [ ] open\n- [ ] more\n"),
+            "1 goal (1 in_progress) · 1 checked / 2 open todos",
         )
         with self.assertRaisesRegex(ValueError, "unknown status"):
             claims_sync.parse_goal_metadata(goals.replace("in_progress", "mystery"))
