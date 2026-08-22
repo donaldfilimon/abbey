@@ -380,18 +380,49 @@ fn approved_expansion_is_proposed() {
 }
 
 #[test]
-fn ci_proof_is_blocked_after_abi_dependency_resolution() {
+fn ci_proof_stays_blocked_without_linux_and_windows_execution() {
     let claim = lookup("self-hosted")
         .into_iter()
         .find(|c| c.status == Status::Blocked)
         .expect("blocked self-hosted CI claim");
+    assert!(claim.note.contains("public WDBX"));
+    assert!(claim.note.contains("macOS ARM64"));
+    assert!(claim.note.contains("Linux ARM64"));
+    assert!(claim.note.contains("Windows"));
+    assert!(claim.next_action.contains("Linux ARM64"));
+}
+
+#[test]
+fn program_1_host_claim_is_current_only_at_data_contract_level_c1() {
+    let claim = CLAIMS
+        .iter()
+        .find(|claim| claim.id == "program-1-abbey-contracts-host")
+        .expect("Program 1 host claim");
+    assert_eq!(claim.status, Status::Current);
+    for boundary in [
+        "C1",
+        "data-only",
+        "72e241e34967df318376bf68f4a0e2db13f5ebf17d1a219709731f1f470dbe8e",
+        "no production federation authority",
+        "no participant-consented live Discord evidence",
+    ] {
+        assert!(
+            claim.note.contains(boundary),
+            "missing boundary `{boundary}`"
+        );
+    }
     assert!(
         claim
-            .note
-            .contains("88c02fb550169e4cdb5e1df2bf6d1d13532e0e49")
+            .evidence
+            .implementation_refs
+            .contains(&"src/abbey_contracts.rs")
     );
-    assert!(claim.note.contains("Linux ARM64"));
-    assert!(claim.note.contains("repository variable"));
+    assert!(
+        claim
+            .evidence
+            .automated_test_refs
+            .contains(&"tests/abbey_contracts.rs")
+    );
 }
 
 #[test]

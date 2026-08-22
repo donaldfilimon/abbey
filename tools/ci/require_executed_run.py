@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Decide whether an Actions run is execution evidence.
 
-Phase 2's bar: "close the CI TODOs only after a run with actual jobs +
-successful steps; a zero-job `startup_failure` is infrastructure evidence,
-never source-test evidence". This module makes that rule executable so the
-distinction cannot be lost in a summary.
+The evidence bar is an exact-head completed run with an actually executed,
+successful qualifying gate and all of that gate's required steps. Linux ARM64,
+macOS ARM64, and the isolated hosted-fork gate are distinguishable narrower
+facts; none is silently promoted to cross-platform proof. A zero-job
+`startup_failure` is infrastructure evidence, never source-test evidence.
 """
 
 from __future__ import annotations
@@ -27,6 +28,21 @@ REQUIRED_PRIMARY_STEPS = {
     "Release install and provider inventory smoke",
     "ABI-backed local mesh proof",
     "Clean runner workspace",
+}
+MACOS_JOB = "gate (macOS ARM64 adjunct)"
+HOSTED_FORK_JOB = "gate (GitHub-hosted fork)"
+REQUIRED_HOSTED_FORK_STEPS = {
+    "Check out Abbey",
+    "Check out the verified ABI dependency",
+    "Check out the public WDBX substrate",
+    "Install pinned toolchains",
+    "Build the real ABI binary",
+    "Gate all portable Abbey modes",
+}
+QUALIFYING_JOBS = {
+    PRIMARY_JOB: REQUIRED_PRIMARY_STEPS,
+    MACOS_JOB: REQUIRED_PRIMARY_STEPS,
+    HOSTED_FORK_JOB: REQUIRED_HOSTED_FORK_STEPS,
 }
 
 def run_is_real_evidence(
@@ -77,9 +93,9 @@ def run_is_real_evidence(
             "real execution evidence, not a passing gate"
         )
 
-    primary = [job for job in executed if job.get("name") == PRIMARY_JOB]
-    if len(primary) != 1:
-        return False, f"expected exactly one executed {PRIMARY_JOB!r} job"
+    qualifying = [job for job in executed if job.get("name") in QUALIFYING_JOBS]
+    if not qualifying:
+        return False, "expected at least one executed qualifying Abbey gate job"
 
     successful_steps = 0
     for job in executed:
@@ -97,21 +113,27 @@ def run_is_real_evidence(
             return False, f"successful job {job.get('name')!r} contains failed steps"
         successful_steps += len(ran)
 
-    primary_step_names = {
-        str(step.get("name"))
-        for step in primary[0].get("steps", [])
-        if step.get("conclusion") == "success"
-    }
-    missing = sorted(REQUIRED_PRIMARY_STEPS - primary_step_names)
-    if missing:
-        return False, f"primary gate is missing successful required steps: {', '.join(missing)}"
+    for job in qualifying:
+        job_name = str(job.get("name"))
+        successful_step_names = {
+            str(step.get("name"))
+            for step in job.get("steps", [])
+            if step.get("conclusion") == "success"
+        }
+        missing = sorted(QUALIFYING_JOBS[job_name] - successful_step_names)
+        if missing:
+            return False, (
+                f"qualifying gate {job_name!r} is missing successful required steps: "
+                f"{', '.join(missing)}"
+            )
 
     if run.get("conclusion") != "success":
         return False, f"completed run did not succeed: conclusion is {run.get('conclusion')!r}"
 
+    names = ", ".join(str(job.get("name")) for job in qualifying)
     return True, (
         f"{len(executed)} job(s) executed and succeeded with "
-        f"{successful_steps} successful step(s)"
+        f"{successful_steps} successful step(s); qualifying gate(s): {names}"
     )
 
 

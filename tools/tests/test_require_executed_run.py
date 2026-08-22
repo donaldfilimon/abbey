@@ -64,6 +64,35 @@ class RunEvidence(unittest.TestCase):
         self.assertTrue(ok, reason)
         self.assertIn("1 job", reason)
 
+    def test_successful_macos_gate_is_narrow_execution_evidence(self) -> None:
+        run = {"status": "completed", "conclusion": "success"}
+        job = self.primary_job()
+        job["name"] = "gate (macOS ARM64 adjunct)"
+        ok, reason = self.evidence(run, [job])
+        self.assertTrue(ok, reason)
+        self.assertIn("macOS ARM64", reason)
+
+    def test_successful_hosted_fork_gate_is_narrow_execution_evidence(self) -> None:
+        run = {"status": "completed", "conclusion": "success"}
+        job = {
+            "name": "gate (GitHub-hosted fork)",
+            "conclusion": "success",
+            "steps": [
+                {"name": name, "conclusion": "success"}
+                for name in (
+                    "Check out Abbey",
+                    "Check out the verified ABI dependency",
+                    "Check out the public WDBX substrate",
+                    "Install pinned toolchains",
+                    "Build the real ABI binary",
+                    "Gate all portable Abbey modes",
+                )
+            ],
+        }
+        ok, reason = self.evidence(run, [job])
+        self.assertTrue(ok, reason)
+        self.assertIn("GitHub-hosted fork", reason)
+
     def test_skipped_jobs_do_not_count_as_execution(self) -> None:
         # A runner-availability guard that skips every job looks like a green
         # run but proves nothing about the gate.
@@ -171,7 +200,7 @@ class RunEvidence(unittest.TestCase):
         unrelated["name"] = "unrelated-success"
         ok, reason = self.evidence(run, [unrelated])
         self.assertFalse(ok)
-        self.assertIn("exactly one", reason)
+        self.assertIn("at least one", reason)
 
         incomplete = self.primary_job()
         incomplete["steps"].pop()
