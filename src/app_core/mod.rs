@@ -11,6 +11,9 @@ mod routes;
 mod run;
 mod service;
 mod v3;
+mod v3_model;
+#[cfg(test)]
+mod v3_model_tests;
 #[cfg(test)]
 mod v3_tests;
 mod v3_tool;
@@ -37,6 +40,10 @@ pub use v3::{
     V3EventRecord, V3GrantNegotiation, V3GrantRequest, V3Metric, V3MetricPage, V3MetricQuery,
     V3ModelAction, V3OperationState, V3OperationStatus, V3PageQuery, V3ResourceQuery,
     V3SearchRequest, V3StableClaim, V3TrainingStart,
+};
+pub use v3_model::{
+    MAX_V3_MODEL_OUTPUT_BYTES, MAX_V3_MODEL_OUTPUT_TOKENS, MAX_V3_MODEL_PROMPT_BYTES,
+    V3ModelDevice, V3ModelInferenceRequest, V3ModelInferenceResult,
 };
 pub use v3_tool::{
     V3ToolApprovalState, V3ToolApprovalStatus, V3ToolCall, V3ToolDecision, V3ToolDescriptor,

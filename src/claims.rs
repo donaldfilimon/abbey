@@ -31,7 +31,7 @@ impl Status {
     /// without restating per-status claim counts. Two branches can each add
     /// a claim and each bump such a literal consistently, so the textual
     /// merge succeeds while the literal silently goes stale.
-    pub const ALL: [Self; 5] = [
+    pub const CLASSIFYING: [Self; 5] = [
         Self::Current,
         Self::Partial,
         Self::Proposed,
@@ -313,10 +313,10 @@ pub fn print_claims(filter: Option<&str>) -> Result<i32> {
     let filter = filter.map(str::trim).filter(|s| !s.is_empty());
     match filter.map(str::to_ascii_lowercase).as_deref() {
         None | Some("all") => {
-            // Ordered by Status::ALL so this listing and the tests that
+            // Ordered by Status::CLASSIFYING so this listing and the tests that
             // partition the registry cannot disagree about which statuses
             // exist, and a new status appears here without a second edit.
-            for (index, status) in Status::ALL.iter().enumerate() {
+            for (index, status) in Status::CLASSIFYING.iter().enumerate() {
                 if index > 0 {
                     println!();
                 }

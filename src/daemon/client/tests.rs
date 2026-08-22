@@ -139,6 +139,9 @@ mod v3_cancellation_tests;
 #[path = "v3_memory_tests.rs"]
 mod v3_memory_tests;
 
+#[path = "v3_model_tests.rs"]
+mod v3_model_tests;
+
 #[test]
 fn rejects_cross_kind_and_approval_events() {
     let (config, thread, root) = fake_server(|request| {

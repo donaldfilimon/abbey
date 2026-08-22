@@ -703,6 +703,7 @@ const fn v3_capability_label(capability: &V3Capability) -> &'static str {
         V3Capability::CancelJobs => "cancel_jobs",
         V3Capability::ReadClaimsById => "read_claims_by_id",
         V3Capability::PollEvents => "poll_events",
+        V3Capability::InferModels => "infer_models",
     }
 }
 
