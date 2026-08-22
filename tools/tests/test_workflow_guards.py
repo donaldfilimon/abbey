@@ -129,6 +129,12 @@ class WorkflowGuards(unittest.TestCase):
                 body,
                 r"(?m)^ {6}- name: Clean runner workspace\n {8}if: always\(\)$",
             )
+            for checkout in ("abbey", "abi", "wdbx"):
+                self.assertIn(
+                    f'"$GITHUB_WORKSPACE/{checkout}"',
+                    body,
+                    f"self-hosted job {name!r} must clean the {checkout} checkout",
+                )
 
 
 class ForkSafety(unittest.TestCase):

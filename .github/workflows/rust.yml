@@ -126,6 +126,7 @@ jobs:
           for path in \
             "$GITHUB_WORKSPACE/abbey" \
             "$GITHUB_WORKSPACE/abi" \
+            "$GITHUB_WORKSPACE/wdbx" \
             "$RUNNER_TEMP/abbey-mesh-state" \
             "$RUNNER_TEMP/abbey-install-smoke"
           do
@@ -233,6 +234,7 @@ jobs:
           for path in \
             "$GITHUB_WORKSPACE/abbey" \
             "$GITHUB_WORKSPACE/abi" \
+            "$GITHUB_WORKSPACE/wdbx" \
             "$RUNNER_TEMP/abbey-mesh-state" \
             "$RUNNER_TEMP/abbey-install-smoke"
           do
