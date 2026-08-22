@@ -7,8 +7,8 @@
 //! command can be dispatched.
 
 use super::{
-    ClaimStatus, V3ToolApprovalStatus, V3ToolCall, V3ToolDecision, V3ToolPage, V3ToolResult,
-    ValidationError,
+    ClaimStatus, V3ModelInferenceRequest, V3ModelInferenceResult, V3ToolApprovalStatus, V3ToolCall,
+    V3ToolDecision, V3ToolPage, V3ToolResult, ValidationError,
 };
 use serde::{Deserialize, Serialize};
 
@@ -43,6 +43,7 @@ pub enum V3Capability {
     CancelJobs,
     ReadClaimsById,
     PollEvents,
+    InferModels,
 }
 
 /// Ordered, duplicate-free set of negotiated v3 grants.
@@ -343,6 +344,7 @@ pub enum V3Command {
     LoadModel(V3ModelAction),
     UnloadModel(V3ModelAction),
     InferenceStatus(V3ResourceQuery),
+    InferModel(V3ModelInferenceRequest),
     TrainingDatasetStatus(V3ResourceQuery),
     StartTraining(V3TrainingStart),
     TrainingStatus(V3ResourceQuery),
@@ -383,6 +385,7 @@ impl V3Command {
             }
             Self::DownloadModel(_) => V3Capability::DownloadModels,
             Self::LoadModel(_) | Self::UnloadModel(_) => V3Capability::ManageModels,
+            Self::InferModel(_) => V3Capability::InferModels,
             Self::TrainingDatasetStatus(_) | Self::TrainingStatus(_) | Self::TrainingMetrics(_) => {
                 V3Capability::ReadTraining
             }
@@ -417,6 +420,7 @@ impl V3Command {
                 action.validate()
             }
             Self::StartTraining(request) => request.validate(),
+            Self::InferModel(request) => request.validate(),
             Self::ReadMemoryMetadata(query)
             | Self::ModelDownloadStatus(query)
             | Self::InferenceStatus(query)
@@ -681,6 +685,7 @@ pub enum V3Event {
     MemoryMetadata(V3EntityRecord),
     Models(V3EntityPage),
     ModelStatus(V3OperationStatus),
+    ModelInference(V3ModelInferenceResult),
     TrainingDatasetStatus(V3EntityRecord),
     TrainingStatus(V3OperationStatus),
     TrainingMetrics(V3MetricPage),
@@ -712,6 +717,7 @@ impl V3Event {
             | Self::AdapterStatus(value)
             | Self::JobStatus(value) => value.validate(),
             Self::ToolApprovalStatus(value) => value.validate(),
+            Self::ModelInference(value) => value.validate(),
             Self::MemoryMetadata(value)
             | Self::TrainingDatasetStatus(value)
             | Self::WorkerHealth(value) => value.validate(),

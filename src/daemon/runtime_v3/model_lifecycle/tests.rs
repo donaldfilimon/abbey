@@ -1,4 +1,5 @@
 use super::*;
+use crate::app_core::{V3ModelDevice, V3ModelInferenceRequest};
 use abi_models::{Chunk, ModelManifest, Sha256Digest};
 use ed25519_dalek::{Signer as _, SigningKey};
 use sha2::{Digest as _, Sha256};
@@ -176,6 +177,7 @@ fn manifest_presence_and_signed_lifecycle_catalogs_coexist() {
         crate::app_core::V3Capability::ReadModels,
         crate::app_core::V3Capability::DownloadModels,
         crate::app_core::V3Capability::ManageModels,
+        crate::app_core::V3Capability::InferModels,
     ])
     .unwrap();
     let V3Event::Negotiated(negotiated) = authority
@@ -230,12 +232,36 @@ fn exact_accepted_model_downloads_loads_reports_and_unloads() {
     assert_eq!(inference.state, V3OperationState::Available);
     assert_eq!(inference.progress_basis_points, 0);
 
+    let request = V3ModelInferenceRequest::new(MODEL_ID, REVISION, "hello", 4).unwrap();
+    let V3Event::ModelInference(result) = fixture.authority.infer(request.clone()).unwrap() else {
+        panic!("expected exact model inference")
+    };
+    result.validate_for(&request).unwrap();
+    assert_eq!(result.output, "world again");
+    assert_eq!(result.requested_device, V3ModelDevice::Cpu);
+    assert_eq!(result.executed_device, V3ModelDevice::Cpu);
+    assert!(result.native_operations > 0);
+    assert!(!result.fallback_used);
+    assert!(!result.mixed_execution);
+
     let V3Event::ModelStatus(unloaded) = fixture.authority.unload(action("unload-1")).unwrap()
     else {
         panic!("expected unload status")
     };
     assert_eq!(unloaded.state, V3OperationState::Succeeded);
     assert_eq!(unloaded.progress_basis_points, 10_000);
+    assert_eq!(
+        fixture.authority.infer(request).unwrap_err().code(),
+        "not_found"
+    );
+    let audit = fixture.store.audit_events_for_run(None).unwrap();
+    let inference_audit = audit
+        .iter()
+        .find(|event| event.action == "v3_model_inference")
+        .unwrap();
+    let audit_json = serde_json::to_string(&inference_audit.metadata).unwrap();
+    assert!(!audit_json.contains("hello"));
+    assert!(!audit_json.contains("world again"));
     assert_eq!(
         fixture
             .store
@@ -265,6 +291,21 @@ fn unaccepted_revision_and_reused_operation_ids_fail_closed() {
     assert_eq!(
         fixture.authority.download(wrong).unwrap_err().code(),
         "invalid_command"
+    );
+    let mut wrong_inference = V3ModelInferenceRequest::new(MODEL_ID, REVISION, "hello", 4).unwrap();
+    wrong_inference.revision = "f".repeat(40);
+    wrong_inference.request_digest = wrong_inference.computed_digest();
+    assert_eq!(
+        fixture.authority.infer(wrong_inference).unwrap_err().code(),
+        "invalid_command"
+    );
+    assert_eq!(
+        fixture
+            .authority
+            .infer(V3ModelInferenceRequest::new(MODEL_ID, REVISION, "hello", 4).unwrap())
+            .unwrap_err()
+            .code(),
+        "not_found"
     );
     fixture.authority.download(action("single-use")).unwrap();
     assert_eq!(
@@ -310,6 +351,31 @@ fn one_model_revision_cannot_download_and_load_concurrently() {
         wait_for(&fixture.authority, "blocked-download", true).state,
         V3OperationState::Succeeded
     );
+}
+
+#[test]
+fn inference_uses_the_same_exact_revision_active_guard_as_lifecycle_actions() {
+    let fixture = fixture(true);
+    fixture
+        .authority
+        .download(action("prepare-download"))
+        .unwrap();
+    assert_eq!(
+        wait_for(&fixture.authority, "prepare-download", true).state,
+        V3OperationState::Succeeded
+    );
+    fixture.authority.load(action("prepare-load")).unwrap();
+    assert_eq!(
+        wait_for(&fixture.authority, "prepare-load", false).state,
+        V3OperationState::Succeeded
+    );
+    let held = fixture.authority.acquire_active(&action("held")).unwrap();
+    let request = V3ModelInferenceRequest::new(MODEL_ID, REVISION, "hello", 4).unwrap();
+    assert_eq!(
+        fixture.authority.infer(request).unwrap_err().code(),
+        "conflict"
+    );
+    fixture.authority.release_active(&held);
 }
 
 #[cfg(unix)]

@@ -627,6 +627,7 @@ fn v3_event_name(event: &V3Event) -> &'static str {
         V3Event::MemoryMetadata(_) => "memory metadata",
         V3Event::Models(_) => "model inventory",
         V3Event::ModelStatus(_) => "model status",
+        V3Event::ModelInference(_) => "model inference",
         V3Event::TrainingDatasetStatus(_) => "training dataset status",
         V3Event::TrainingStatus(_) => "training status",
         V3Event::TrainingMetrics(_) => "training metrics",

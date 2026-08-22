@@ -8,8 +8,8 @@ use std::process::{Child, Command};
 use std::time::{Duration, Instant};
 
 use abbey::app_core::{
-    V3Capability, V3CapabilitySet, V3ErrorCode, V3ModelAction, V3OperationState, V3PageQuery,
-    V3ResourceQuery,
+    V3Capability, V3CapabilitySet, V3ErrorCode, V3ModelAction, V3ModelDevice,
+    V3ModelInferenceRequest, V3OperationState, V3PageQuery, V3ResourceQuery,
 };
 use abbey::daemon::{BearerSecret, ClientError, DaemonClient, DaemonConfig, V3DaemonSession};
 use abbey::edition;
@@ -128,6 +128,7 @@ impl Harness {
             V3Capability::ReadModels,
             V3Capability::DownloadModels,
             V3Capability::ManageModels,
+            V3Capability::InferModels,
         ])
         .unwrap();
         DaemonClient::new(DaemonConfig::local(
@@ -156,7 +157,8 @@ fn real_daemon_downloads_loads_reports_unloads_and_reopens_exact_model_state() {
         &[
             V3Capability::ReadModels,
             V3Capability::DownloadModels,
-            V3Capability::ManageModels
+            V3Capability::ManageModels,
+            V3Capability::InferModels,
         ]
     );
     let models = session.list_models(V3PageQuery::default()).unwrap();
@@ -189,10 +191,25 @@ fn real_daemon_downloads_loads_reports_unloads_and_reopens_exact_model_state() {
         .unwrap();
     assert_eq!(readiness.state, V3OperationState::Available);
     assert_eq!(readiness.progress_basis_points, 0);
+    let inference_request = V3ModelInferenceRequest::new(MODEL_ID, REVISION, "hello", 4).unwrap();
+    let inference = session.infer_model(inference_request.clone()).unwrap();
+    assert_eq!(inference.output, "world again");
+    assert_eq!(inference.requested_device, V3ModelDevice::Cpu);
+    assert_eq!(inference.executed_device, V3ModelDevice::Cpu);
+    assert!(inference.native_operations > 0);
+    assert!(!inference.fallback_used);
+    assert!(!inference.mixed_execution);
     assert_eq!(
         session.unload_model(action("unload-real-1")).unwrap().state,
         V3OperationState::Succeeded
     );
+    assert!(matches!(
+        session.infer_model(inference_request.clone()),
+        Err(ClientError::DaemonV3 {
+            code: V3ErrorCode::NotFound,
+            ..
+        })
+    ));
     drop(session);
 
     harness.restart();
@@ -215,11 +232,20 @@ fn real_daemon_downloads_loads_reports_unloads_and_reopens_exact_model_state() {
             ..
         })
     ));
+    assert!(matches!(
+        reopened.infer_model(inference_request),
+        Err(ClientError::DaemonV3 {
+            code: V3ErrorCode::NotFound,
+            ..
+        })
+    ));
 
     let database = std::fs::read(harness.state.join("daemon/runtime.sqlite")).unwrap();
     let rendered = String::from_utf8_lossy(&database);
     assert!(!rendered.contains("models.example.invalid"));
     assert!(!rendered.contains(PRINCIPAL));
+    assert!(!rendered.contains("hello"));
+    assert!(!rendered.contains("world again"));
 }
 
 fn wait_for(

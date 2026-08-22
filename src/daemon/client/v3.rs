@@ -1,9 +1,10 @@
 //! Typed protocol-v3 session reads over the shared bounded daemon transport.
 
 use crate::app_core::{
-    V3Action, V3Capability, V3Command, V3EntityPage, V3Event, V3ModelAction, V3OperationStatus,
-    V3PageQuery, V3ResourceQuery, V3SearchRequest, V3StableClaim, V3ToolApprovalState,
-    V3ToolApprovalStatus, V3ToolCall, V3ToolDecision, V3ToolInvocation, V3ToolPage, V3ToolResult,
+    V3Action, V3Capability, V3Command, V3EntityPage, V3Event, V3ModelAction,
+    V3ModelInferenceRequest, V3ModelInferenceResult, V3OperationStatus, V3PageQuery,
+    V3ResourceQuery, V3SearchRequest, V3StableClaim, V3ToolApprovalState, V3ToolApprovalStatus,
+    V3ToolCall, V3ToolDecision, V3ToolInvocation, V3ToolPage, V3ToolResult,
 };
 
 use super::{ClientError, V3DaemonSession};
@@ -472,6 +473,42 @@ impl V3DaemonSession {
             V3Command::InferenceStatus(query.clone()),
             &query,
         )
+    }
+
+    /// Run one already-loaded exact model revision synchronously and send once.
+    #[cfg(unix)]
+    pub fn infer_model(
+        &self,
+        request: V3ModelInferenceRequest,
+    ) -> Result<V3ModelInferenceResult, ClientError> {
+        request
+            .validate()
+            .map_err(|_| ClientError::InvalidV3Request)?;
+        self.require(V3Capability::InferModels)?;
+        let event = super::unix::request_v3(
+            &self.client.config,
+            self.negotiation.granted.clone(),
+            V3Command::InferModel(request.clone()),
+        )?;
+        let V3Event::ModelInference(result) = event else {
+            return Err(ClientError::UnexpectedV3Event {
+                expected: "model inference",
+                received: super::v3_event_name(&event),
+            });
+        };
+        result
+            .validate_for(&request)
+            .map_err(|_| ClientError::InvalidV3Response)?;
+        Ok(result)
+    }
+
+    /// Windows remains fail-closed until the named-pipe transport lands.
+    #[cfg(not(unix))]
+    pub fn infer_model(
+        &self,
+        _request: V3ModelInferenceRequest,
+    ) -> Result<V3ModelInferenceResult, ClientError> {
+        Err(ClientError::UnsupportedPlatform)
     }
 
     /// Windows remains fail-closed until the named-pipe transport lands.

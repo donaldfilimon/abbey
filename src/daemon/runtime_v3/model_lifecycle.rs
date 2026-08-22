@@ -61,7 +61,7 @@ struct Inner {
     transport: Arc<dyn ChunkTransport + Send + Sync>,
     store: Arc<RuntimeStore>,
     active: Mutex<HashSet<ActiveKey>>,
-    loaded: Mutex<BTreeMap<ModelKey, LocalModelProvider>>,
+    loaded: Mutex<BTreeMap<ModelKey, Arc<LocalModelProvider>>>,
 }
 
 struct ModelRuntimeBinding {
@@ -404,7 +404,7 @@ impl ModelLifecycleAuthority {
             .loaded
             .lock()
             .map_err(|_| ())?
-            .insert(key, provider);
+            .insert(key, Arc::new(provider));
         Ok(())
     }
 
@@ -465,12 +465,20 @@ impl ModelLifecycleAuthority {
 
     fn validate_action(&self, action: &V3ModelAction) -> Result<(), HandlerFailure> {
         action.validate().map_err(|_| invalid_command_failure())?;
+        self.validate_model_revision(&action.model_id, &action.revision)
+    }
+
+    fn validate_model_revision(
+        &self,
+        model_id: &str,
+        revision: &str,
+    ) -> Result<(), HandlerFailure> {
         let manifest = self
             .inner
             .registry
-            .get(&action.model_id)
+            .get(model_id)
             .ok_or_else(not_found_failure)?;
-        if manifest.revision.as_str() != action.revision {
+        if manifest.revision.as_str() != revision {
             return Err(invalid_command_failure());
         }
         Ok(())
@@ -501,9 +509,13 @@ impl ModelLifecycleAuthority {
     }
 
     fn acquire_active(&self, action: &V3ModelAction) -> Result<ActiveKey, HandlerFailure> {
+        self.acquire_exact(&action.model_id, &action.revision)
+    }
+
+    fn acquire_exact(&self, model_id: &str, revision: &str) -> Result<ActiveKey, HandlerFailure> {
         let key = ActiveKey {
-            model_id: action.model_id.clone(),
-            revision: action.revision.clone(),
+            model_id: model_id.to_owned(),
+            revision: revision.to_owned(),
         };
         let mut active = self.inner.active.lock().map_err(|_| runtime_failure())?;
         if !active.insert(key.clone()) {
@@ -649,6 +661,8 @@ const fn runtime_failure() -> HandlerFailure {
         "model runtime operation is unavailable",
     )
 }
+
+mod model_inference;
 
 #[cfg(test)]
 #[path = "model_lifecycle/tests.rs"]

@@ -170,6 +170,7 @@ fn no_abi_route_still_negotiates_safe_tools_and_canonical_claim_reads() {
                 V3Capability::ReadMemory,
                 V3Capability::ReadModels,
                 V3Capability::ReadClaimsById,
+                V3Capability::InferModels,
             ])
             .unwrap(),
         }))

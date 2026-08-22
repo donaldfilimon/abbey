@@ -1,17 +1,17 @@
 use super::*;
 
 #[test]
-fn gate_has_all_five_statuses() {
+fn every_classifying_status_is_unique_and_carries_work() {
     // Derived from the registry on purpose. Hardcoded per-status totals
     // are a semantic-merge hazard: two branches each add one claim and
     // each bump the literal to the same value, so git merges the text
     // cleanly and the assertion silently stops describing the registry.
     // Everything below stays true no matter how many claims exist, and
     // still fails for the cases the test name promises to catch.
-    for (index, status) in Status::ALL.iter().enumerate() {
+    for (index, status) in Status::CLASSIFYING.iter().enumerate() {
         assert!(
-            !Status::ALL[..index].contains(status),
-            "{} is listed twice in Status::ALL",
+            !Status::CLASSIFYING[..index].contains(status),
+            "{} is listed twice in Status::CLASSIFYING",
             status.label()
         );
         assert!(
@@ -23,15 +23,15 @@ fn gate_has_all_five_statuses() {
 
     // An exact partition. This fails if a claim is unreachable through
     // by_status — which is what a new Status variant missing from
-    // Status::ALL looks like — or if by_status ever double-counts.
-    let classified: usize = Status::ALL
+    // Status::CLASSIFYING looks like — or if by_status ever double-counts.
+    let classified: usize = Status::CLASSIFYING
         .iter()
         .map(|status| by_status(*status).count())
         .sum();
     assert_eq!(
         classified,
         CLAIMS.len(),
-        "every claim must be reachable through exactly one Status::ALL entry"
+        "every claim must be reachable through exactly one Status::CLASSIFYING entry"
     );
 
     // The registry must also be well-formed, not merely countable.
@@ -282,10 +282,35 @@ fn protocol_v3_model_lifecycle_claim_keeps_selection_startup_owned_and_evidence_
         "reopens as failed",
         "loaded-with-no-inference-evidence",
         "no registry URL, storage path, principal",
-        "No prompt-inference command",
+        "claimed separately by daemon-protocol-v3-exact-model-inference",
         "real external HTTPS download evidence",
     ] {
         assert!(claim.note.contains(required), "missing `{required}`");
+    }
+}
+
+#[test]
+fn exact_model_inference_claim_is_fixture_bounded_and_surface_narrow() {
+    let claim = CLAIMS
+        .iter()
+        .find(|claim| claim.id == "daemon-protocol-v3-exact-model-inference")
+        .expect("exact-model inference claim");
+    assert_eq!(claim.status, Status::Current);
+    for boundary in [
+        "separately negotiates infer_models",
+        "already-loaded exact model ID and immutable revision",
+        "domain-separated SHA-256",
+        "1..=256 output tokens",
+        "32 KiB",
+        "positive native-operation evidence",
+        "false no-fallback/no-mixed-execution evidence",
+        "generated abi-bigram-v1 CPU-fixture-only",
+        "synchronous, non-durable",
+        "owner-only Unix",
+        "No CLI, desktop, MCP, Windows, remote, protocol-v2, default route",
+        "production weights, quality, performance, or residency claim",
+    ] {
+        assert!(claim.note.contains(boundary), "missing `{boundary}`");
     }
 }
 

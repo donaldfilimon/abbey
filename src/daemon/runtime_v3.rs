@@ -2,10 +2,9 @@
 //!
 //! Only bounded safe tool inventory/invocation, one default-edition exact-call
 //! memory mutation plus approve/deny/cancel transitions, startup-bound fixed-route
-//! model inventory, optional signed local-model download/load/unload/status,
+//! model inventory, optional signed local-model lifecycle and exact inference,
 //! exact stable-ID claim reads, and one sanitized summary-only memory space are
-//! representable here. Prompt inference, training, worker, and polling grants
-//! remain absent.
+//! representable here. Training, worker, and polling grants remain absent.
 
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
@@ -123,6 +122,9 @@ impl V3RuntimeAuthority {
             available.push(V3Capability::ManageModels);
         }
         available.push(V3Capability::ReadClaimsById);
+        if model_lifecycle.is_some() {
+            available.push(V3Capability::InferModels);
+        }
         let grants = V3CapabilitySet::from_sorted(available).map_err(|_| internal_failure())?;
         Ok(Self {
             grants,
@@ -210,6 +212,7 @@ impl V3RuntimeAuthority {
             V3Command::LoadModel(action) => self.model_authority()?.load(action),
             V3Command::UnloadModel(action) => self.model_authority()?.unload(action),
             V3Command::InferenceStatus(query) => self.model_authority()?.inference_status(query),
+            V3Command::InferModel(request) => self.model_authority()?.infer(request),
             V3Command::ClaimById(query) => {
                 let claim = crate::claims::CLAIMS
                     .iter()
