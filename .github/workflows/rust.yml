@@ -50,6 +50,23 @@ jobs:
           ref: ${{ env.ABI_REVISION }}
           path: abi
 
+      # Fail with a sentence someone can act on, rather than a bare 403 from
+      # actions/checkout. shell: bash is required, not stylistic: a runner whose
+      # default shell is not bash parses this as malformed and dies before the
+      # check runs, which is a mistake already made and fixed in abi (PR #800).
+      - name: Require the substrate credential
+        shell: bash
+        working-directory: .
+        run: |
+          if [ -z "${{ secrets.WDBX_CHECKOUT_TOKEN }}" ]; then
+            echo "::error::WDBX_CHECKOUT_TOKEN is not set. abbey consumes"\
+                 "abi-wdbx and abi-compute from the private"\
+                 "donaldfilimon/wdbx-substrate repository by relative path, and"\
+                 "also pulls abi-wdbx transitively through abi-worker and"\
+                 "abi-sea, so this gate cannot run without read access to it."
+            exit 1
+          fi
+
       - name: Check out the WDBX substrate as a sibling
         uses: actions/checkout@v4
         with:
@@ -157,6 +174,23 @@ jobs:
           repository: donaldfilimon/abi
           ref: ${{ env.ABI_REVISION }}
           path: abi
+
+      # Fail with a sentence someone can act on, rather than a bare 403 from
+      # actions/checkout. shell: bash is required, not stylistic: a runner whose
+      # default shell is not bash parses this as malformed and dies before the
+      # check runs, which is a mistake already made and fixed in abi (PR #800).
+      - name: Require the substrate credential
+        shell: bash
+        working-directory: .
+        run: |
+          if [ -z "${{ secrets.WDBX_CHECKOUT_TOKEN }}" ]; then
+            echo "::error::WDBX_CHECKOUT_TOKEN is not set. abbey consumes"\
+                 "abi-wdbx and abi-compute from the private"\
+                 "donaldfilimon/wdbx-substrate repository by relative path, and"\
+                 "also pulls abi-wdbx transitively through abi-worker and"\
+                 "abi-sea, so this gate cannot run without read access to it."
+            exit 1
+          fi
 
       - name: Check out the WDBX substrate as a sibling
         uses: actions/checkout@v4
