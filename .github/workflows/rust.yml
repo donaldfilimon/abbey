@@ -16,7 +16,13 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  ABI_REVISION: 88c02fb550169e4cdb5e1df2bf6d1d13532e0e49
+  ABI_REVISION: da49d96d425074d08e4375e6b1b57a2756fb561b
+  # WDBX was extracted from abi on 2026-08-22. abbey consumes abi-wdbx and
+  # abi-compute from it directly, and also transitively through abi-worker and
+  # abi-sea, so all three checkouts must be siblings or Cargo resolves two
+  # non-unifying copies of abi-wdbx. The repository is private, so a
+  # WDBX_CHECKOUT_TOKEN secret with read access is required.
+  WDBX_REVISION: f6c480652f73c1a16942ce8bc176adf32d73e1d1
 
 # Self-hosted jobs are restricted to trusted same-repository events. Fork code
 # must never run on machines that can reach local developer state or credentials.
@@ -43,6 +49,14 @@ jobs:
           repository: donaldfilimon/abi
           ref: ${{ env.ABI_REVISION }}
           path: abi
+
+      - name: Check out the WDBX substrate as a sibling
+        uses: actions/checkout@v4
+        with:
+          repository: donaldfilimon/wdbx-substrate
+          ref: ${{ env.WDBX_REVISION }}
+          token: ${{ secrets.WDBX_CHECKOUT_TOKEN }}
+          path: wdbx
 
       - name: Install pinned toolchain
         working-directory: abbey
@@ -143,6 +157,14 @@ jobs:
           repository: donaldfilimon/abi
           ref: ${{ env.ABI_REVISION }}
           path: abi
+
+      - name: Check out the WDBX substrate as a sibling
+        uses: actions/checkout@v4
+        with:
+          repository: donaldfilimon/wdbx-substrate
+          ref: ${{ env.WDBX_REVISION }}
+          token: ${{ secrets.WDBX_CHECKOUT_TOKEN }}
+          path: wdbx
 
       - name: Install pinned toolchain
         working-directory: abbey
