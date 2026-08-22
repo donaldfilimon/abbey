@@ -69,8 +69,9 @@ class WorkflowGuards(unittest.TestCase):
     def test_workflow_declares_jobs(self) -> None:
         self.assertTrue(self.jobs, "no jobs parsed out of rust.yml")
 
-    def test_every_job_runs_only_on_self_hosted_runners(self) -> None:
-        for name, body in self.jobs.items():
+    def test_trusted_jobs_run_only_on_self_hosted_runners(self) -> None:
+        for name in ("gate-linux", "gate-macos"):
+            body = self.jobs[name]
             self.assertIn(
                 "self-hosted",
                 job_field(body, "runs-on"),
@@ -78,7 +79,8 @@ class WorkflowGuards(unittest.TestCase):
             )
 
     def test_every_self_hosted_job_requires_same_repository(self) -> None:
-        for name, body in self.jobs.items():
+        for name in ("gate-linux", "gate-macos"):
+            body = self.jobs[name]
             self.assertIn(
                 "github.repository == 'donaldfilimon/abbey'",
                 job_field(body, "if"),
@@ -93,10 +95,11 @@ class WorkflowGuards(unittest.TestCase):
             "gate-linux": "vars.ABBEY_LINUX_ARM64_RUNNER == 'enabled'",
             "gate-macos": "vars.ABBEY_MACOS_ARM64_RUNNER == 'enabled'",
         }
-        self.assertEqual(set(self.jobs), set(expected))
-        for name, body in self.jobs.items():
+        self.assertEqual(set(self.jobs), {*expected, "gate-forks"})
+        for name, guard in expected.items():
+            body = self.jobs[name]
             self.assertIn(
-                expected[name],
+                guard,
                 job_field(body, "if"),
                 f"self-hosted job {name!r} needs its exact availability guard",
             )
@@ -110,7 +113,8 @@ class WorkflowGuards(unittest.TestCase):
             "ABI-backed local mesh proof",
             "Clean runner workspace",
         }
-        for name, body in self.jobs.items():
+        for name in ("gate-linux", "gate-macos"):
+            body = self.jobs[name]
             steps = set(re.findall(r"^ {6}- name: (.+)$", body, re.MULTILINE))
             self.assertFalse(required - steps, f"job {name!r} is missing required steps")
             for isolated in (
@@ -143,7 +147,8 @@ class ForkSafety(unittest.TestCase):
         )
 
     def test_pull_request_jobs_require_a_same_repo_head(self) -> None:
-        for name, body in self.jobs.items():
+        for name in ("gate-linux", "gate-macos"):
+            body = self.jobs[name]
             condition = job_field(body, "if")
             if "pull_request" not in condition:
                 continue
@@ -152,6 +157,43 @@ class ForkSafety(unittest.TestCase):
                 condition,
                 f"job {name!r} accepts pull_request without pinning the head repo",
             )
+
+    def test_fork_job_uses_a_hosted_runner_and_foreign_head_guard(self) -> None:
+        body = self.jobs["gate-forks"]
+        self.assertEqual(job_field(body, "runs-on"), "ubuntu-latest")
+        condition = job_field(body, "if")
+        self.assertIn("github.event_name == 'pull_request'", condition)
+        self.assertIn(
+            "github.event.pull_request.head.repo.full_name != github.repository",
+            condition,
+        )
+        self.assertNotIn("self-hosted", body)
+
+    def test_public_wdbx_checkout_never_uses_a_secret(self) -> None:
+        self.assertNotIn("WDBX_CHECKOUT_TOKEN", self.text)
+        self.assertNotRegex(self.text, r"(?m)^\s*token:\s*\$\{\{\s*secrets\.")
+        self.assertIn(
+            "WDBX_REVISION: f42b9789eabcf89f952df0a160a7b6837c5acb57",
+            self.text,
+        )
+        for name, body in self.jobs.items():
+            self.assertEqual(body.count("repository: donaldfilimon/wdbx"), 1, name)
+            self.assertIn("ref: ${{ env.WDBX_REVISION }}", body, name)
+            self.assertIn("path: wdbx", body, name)
+
+    def test_fork_job_runs_the_real_portable_gate(self) -> None:
+        body = self.jobs["gate-forks"]
+        steps = set(re.findall(r"^ {6}- name: (.+)$", body, re.MULTILINE))
+        self.assertTrue(
+            {
+                "Check out Abbey",
+                "Check out the verified ABI dependency",
+                "Check out the public WDBX substrate",
+                "Install pinned toolchains",
+                "Build the real ABI binary",
+                "Gate all portable Abbey modes",
+            }.issubset(steps)
+        )
 
     def test_no_job_widens_token_permissions(self) -> None:
         # Job-level `permissions:` fully overrides the workflow-level default

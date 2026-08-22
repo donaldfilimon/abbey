@@ -20,8 +20,8 @@ env:
   # WDBX was extracted from abi on 2026-08-22. abbey consumes abi-wdbx and
   # abi-compute from it directly, and also transitively through abi-worker and
   # abi-sea, so all three checkouts must be siblings or Cargo resolves two
-  # non-unifying copies of abi-wdbx. The repository is private, so a
-  # WDBX_CHECKOUT_TOKEN secret with read access is required.
+  # non-unifying copies of abi-wdbx. Public source removes the cross-repository
+  # credential requirement; the immutable pin remains mandatory.
   WDBX_REVISION: f42b9789eabcf89f952df0a160a7b6837c5acb57
 
 # Self-hosted jobs are restricted to trusted same-repository events. Fork code
@@ -50,29 +50,11 @@ jobs:
           ref: ${{ env.ABI_REVISION }}
           path: abi
 
-      # Fail with a sentence someone can act on, rather than a bare 403 from
-      # actions/checkout. shell: bash is required, not stylistic: a runner whose
-      # default shell is not bash parses this as malformed and dies before the
-      # check runs, which is a mistake already made and fixed in abi (PR #800).
-      - name: Require the substrate credential
-        shell: bash
-        working-directory: .
-        run: |
-          if [ -z "${{ secrets.WDBX_CHECKOUT_TOKEN }}" ]; then
-            echo "::error::WDBX_CHECKOUT_TOKEN is not set. abbey consumes"\
-                 "abi-wdbx and abi-compute from the private"\
-                 "donaldfilimon/wdbx repository by relative path, and"\
-                 "also pulls abi-wdbx transitively through abi-worker and"\
-                 "abi-sea, so this gate cannot run without read access to it."
-            exit 1
-          fi
-
-      - name: Check out the WDBX substrate as a sibling
+      - name: Check out the public WDBX substrate
         uses: actions/checkout@v4
         with:
           repository: donaldfilimon/wdbx
           ref: ${{ env.WDBX_REVISION }}
-          token: ${{ secrets.WDBX_CHECKOUT_TOKEN }}
           path: wdbx
 
       - name: Install pinned toolchain
@@ -175,29 +157,11 @@ jobs:
           ref: ${{ env.ABI_REVISION }}
           path: abi
 
-      # Fail with a sentence someone can act on, rather than a bare 403 from
-      # actions/checkout. shell: bash is required, not stylistic: a runner whose
-      # default shell is not bash parses this as malformed and dies before the
-      # check runs, which is a mistake already made and fixed in abi (PR #800).
-      - name: Require the substrate credential
-        shell: bash
-        working-directory: .
-        run: |
-          if [ -z "${{ secrets.WDBX_CHECKOUT_TOKEN }}" ]; then
-            echo "::error::WDBX_CHECKOUT_TOKEN is not set. abbey consumes"\
-                 "abi-wdbx and abi-compute from the private"\
-                 "donaldfilimon/wdbx repository by relative path, and"\
-                 "also pulls abi-wdbx transitively through abi-worker and"\
-                 "abi-sea, so this gate cannot run without read access to it."
-            exit 1
-          fi
-
-      - name: Check out the WDBX substrate as a sibling
+      - name: Check out the public WDBX substrate
         uses: actions/checkout@v4
         with:
           repository: donaldfilimon/wdbx
           ref: ${{ env.WDBX_REVISION }}
-          token: ${{ secrets.WDBX_CHECKOUT_TOKEN }}
           path: wdbx
 
       - name: Install pinned toolchain
@@ -276,3 +240,53 @@ jobs:
               find "$path" -depth -delete
             fi
           done
+
+  # Fork code runs only on GitHub-hosted infrastructure. This exercises the
+  # real portable Abbey gate against the same immutable ABI and WDBX revisions
+  # without exposing an owner machine, repository secret, or local state.
+  gate-forks:
+    name: gate (GitHub-hosted fork)
+    if: >
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out Abbey
+        uses: actions/checkout@v4
+        with:
+          path: abbey
+
+      - name: Check out the verified ABI dependency
+        uses: actions/checkout@v4
+        with:
+          repository: donaldfilimon/abi
+          ref: ${{ env.ABI_REVISION }}
+          path: abi
+
+      - name: Check out the public WDBX substrate
+        uses: actions/checkout@v4
+        with:
+          repository: donaldfilimon/wdbx
+          ref: ${{ env.WDBX_REVISION }}
+          path: wdbx
+
+      - name: Install pinned toolchains
+        working-directory: abbey
+        run: |
+          rustup show
+          rustup toolchain install nightly --profile minimal
+          rustup component add --toolchain nightly rustfmt clippy rust-src
+          rustup toolchain install nightly-2026-08-19 --profile minimal
+          rustup component add --toolchain nightly-2026-08-19 rustfmt clippy
+          rustc --version
+          cargo --version
+
+      - name: Build the real ABI binary
+        working-directory: abi
+        run: ./tools/cargo.sh build -p abi-cli
+
+      - name: Gate all portable Abbey modes
+        working-directory: abbey
+        env:
+          ABBEY_ABI_BIN: ${{ github.workspace }}/abi/target/debug/abi
+        run: ./check.sh

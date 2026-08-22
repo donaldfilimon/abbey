@@ -380,18 +380,16 @@ fn approved_expansion_is_proposed() {
 }
 
 #[test]
-fn ci_proof_is_blocked_after_abi_dependency_resolution() {
+fn ci_proof_stays_blocked_without_linux_and_windows_execution() {
     let claim = lookup("self-hosted")
         .into_iter()
         .find(|c| c.status == Status::Blocked)
         .expect("blocked self-hosted CI claim");
-    assert!(
-        claim
-            .note
-            .contains("88c02fb550169e4cdb5e1df2bf6d1d13532e0e49")
-    );
+    assert!(claim.note.contains("public WDBX"));
+    assert!(claim.note.contains("macOS ARM64"));
     assert!(claim.note.contains("Linux ARM64"));
-    assert!(claim.note.contains("repository variable"));
+    assert!(claim.note.contains("Windows"));
+    assert!(claim.next_action.contains("Linux ARM64"));
 }
 
 #[test]
