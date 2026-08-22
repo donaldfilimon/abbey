@@ -2,6 +2,7 @@
 
 pub mod embedding;
 pub mod map;
+mod migrate;
 pub mod semantic;
 pub mod similarity;
 mod sqlite;
@@ -14,6 +15,7 @@ use std::time::Duration;
 
 pub use embedding::build_embedder;
 pub use map::{coordinates, nearest, primary_topic};
+pub use migrate::{migrate, plan as migrate_plan};
 pub use semantic::{
     backfill_with_force as backfill_embeddings_with_force, embed_one_if_needed,
     search as search_semantic, status as embedding_status,
@@ -407,6 +409,14 @@ pub trait MemoryStore {
     }
     fn filter_with(&self, filter: &MemoryFilter, limit: usize)
     -> anyhow::Result<Vec<MemoryRecord>>;
+    /// Every record, **including obsolete ones**, oldest first.
+    ///
+    /// Every other read path filters `obsolete` out, which is right for recall
+    /// and wrong for migration: abbey never deletes, so an obsolete record is
+    /// retained provenance rather than garbage. A backend copy that dropped
+    /// them would turn `invalidate` into a delete at the one moment nobody is
+    /// watching. This is the only method that sees them.
+    fn all_records_including_obsolete(&self) -> anyhow::Result<Vec<MemoryRecord>>;
     fn promote(&self, id: &str, new_retention: &str) -> anyhow::Result<()>;
     /// Store `new_rec` and mark `old_id` obsolete, preserving both.
     fn supersede(&self, old_id: &str, new_rec: MemoryRecord) -> anyhow::Result<()>;

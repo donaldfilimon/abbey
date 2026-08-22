@@ -54,12 +54,12 @@ abi-agent-runtime = { path = "../abi/crates/abi-agent-runtime" }
 abi-model-runtime = { path = "../abi/crates/abi-model-runtime" }
 abi-models = { path = "../abi/crates/abi-models" }
 abi-worker = { path = "../abi/crates/abi-worker" }
-abi-wdbx = { path = "../abi/crates/abi-wdbx", optional = true }
+abi-wdbx = { path = "../wdbx/crates/abi-wdbx", optional = true }
 # Accelerator execution bridge (see `--features accel`). Two crates, because
 # abi-gpu re-exports its adapters but NOT the `Accelerator` trait or the
 # `CpuBackend` oracle they are written against — those live in abi-compute.
 abi-gpu = { path = "../abi/crates/abi-gpu", optional = true }
-abi-compute = { path = "../abi/crates/abi-compute", optional = true }
+abi-compute = { path = "../wdbx/crates/abi-compute", optional = true }
 # Cross-platform advisory lock for WDBX and canonical identity writes
 # (Unix flock / Windows LockFileEx).
 fs4 = "0.13"

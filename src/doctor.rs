@@ -321,6 +321,31 @@ pub fn cmd_memory_store(state: &AbbeyState, cmd: MemoryCmd) -> Result<i32> {
             }
             Ok(0)
         }
+        MemoryCmd::Migrate { from, to, dry_run } => {
+            if from.trim().eq_ignore_ascii_case(to.trim()) {
+                bail!("--from and --to name the same backend ({from}); nothing to migrate");
+            }
+            // open_backend_exact rejects an unknown or unavailable backend
+            // instead of substituting one, so a typo cannot land 171 records in
+            // a store the operator did not name.
+            let src = memory::open_backend_exact(&state.state_dir, &from)?;
+            let dst = memory::open_backend_exact(&state.state_dir, &to)?;
+            if dry_run {
+                let report = memory::migrate_plan(src.as_ref(), dst.as_ref())?;
+                println!("would migrate {} record(s) {from} -> {to}", report.migrated);
+                return Ok(0);
+            }
+            let report = memory::migrate(src.as_ref(), dst.as_ref())?;
+            println!(
+                "migrated {} record(s) {from} -> {to}, {} verified by read-back",
+                report.migrated, report.verified
+            );
+            eprintln!(
+                "abbey: the source store was NOT deleted. Set memory_backend = \"{to}\" in your \
+                 config to start using the destination."
+            );
+            Ok(0)
+        }
         MemoryCmd::Export { layer, filter } => {
             let filter = query_filter(filter, Some(layer))?;
             for r in mem.filter_with(&filter, 10_000)? {

@@ -240,6 +240,23 @@ impl MemoryStore for SqliteMemory {
         Ok(out)
     }
 
+    fn all_records_including_obsolete(&self) -> Result<Vec<MemoryRecord>> {
+        let conn = self.conn.lock().expect("sqlite lock");
+        let mut stmt = conn.prepare(
+            "SELECT id, source_type, source_ref, timestamp, origin, payload, summary,
+                    tags_json, embedding_ref, confidence, provenance, retention,
+                    supersedes, classification, obsolete, project
+             FROM memory
+             ORDER BY timestamp ASC",
+        )?;
+        let rows = stmt.query_map([], Self::row_to_rec)?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
+        }
+        Ok(out)
+    }
+
     fn filter_with(&self, filter: &MemoryFilter, limit: usize) -> Result<Vec<MemoryRecord>> {
         if limit == 0 {
             return Ok(Vec::new());

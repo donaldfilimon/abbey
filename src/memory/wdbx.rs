@@ -285,6 +285,12 @@ impl MemoryStore for WdbxMemory {
             .collect())
     }
 
+    fn all_records_including_obsolete(&self) -> Result<Vec<MemoryRecord>> {
+        let mut all = self.scan();
+        all.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
+        Ok(all)
+    }
+
     fn filter_with(&self, filter: &MemoryFilter, limit: usize) -> Result<Vec<MemoryRecord>> {
         Ok(self
             .scan()
