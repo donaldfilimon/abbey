@@ -646,6 +646,18 @@ pub enum MemoryCmd {
         #[command(flatten)]
         filter: MemoryFilterArgs,
     },
+    /// Copy every memory record between backends, obsolete ones included
+    Migrate {
+        /// Source backend (`sqlite` | `wdbx`)
+        #[arg(long)]
+        from: String,
+        /// Destination backend (`sqlite` | `wdbx`). Must be empty.
+        #[arg(long)]
+        to: String,
+        /// Report what would move and write nothing
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Export layer as JSONL (train_candidate requires provenance on records)
     Export {
         #[arg(long, default_value = "ltm")]
