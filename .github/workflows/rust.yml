@@ -165,9 +165,16 @@ jobs:
           ref: ${{ env.WDBX_REVISION }}
           path: wdbx
 
+      - name: Prefer system compiler and linker tools
+        run: |
+          for directory in /usr/bin /bin /usr/sbin /sbin; do
+            echo "$directory" >> "$GITHUB_PATH"
+          done
+
       - name: Install pinned toolchain
         working-directory: abbey
         run: |
+          test "$(command -v cc)" = /usr/bin/cc
           rustup show active-toolchain || rustup toolchain install
           rustc --version
           cargo --version

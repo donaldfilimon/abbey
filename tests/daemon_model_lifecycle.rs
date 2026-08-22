@@ -286,6 +286,13 @@ fn action(operation_id: &str) -> V3ModelAction {
 fn spawn_daemon(state: &Path, workspace: &Path, socket: &Path, config: &Path) -> Child {
     Command::new(ABBEYD_BIN)
         .current_dir(workspace)
+        // This fixture owns exactly one signed lifecycle catalog. Keep model
+        // providers and read-only manifest catalogs exported by the outer gate
+        // from silently extending that inventory.
+        .env_remove(edition::ACTIVE.scoped_env("ABI_BIN"))
+        .env_remove(edition::ACTIVE.scoped_env("MODEL_MANIFEST_DIR"))
+        .env_remove(edition::ACTIVE.scoped_env("MODEL_RUNTIME_CONFIG"))
+        .env_remove("ABI_MODELS_DIR")
         .env(edition::ACTIVE.state_dir_env(), state)
         .env(
             edition::ACTIVE.config_path_env(),

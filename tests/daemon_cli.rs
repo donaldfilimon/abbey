@@ -60,6 +60,15 @@ impl Harness {
         }
         let mut daemon = Command::new(ABBEYD_BIN);
         daemon
+            // The repository gate deliberately exports a real ABI provider for
+            // later smoke tests. Each daemon fixture must still opt into every
+            // environment-provided startup authority explicitly, or provider
+            // state from the parent process changes the negotiated capabilities
+            // and model inventory.
+            .env_remove(edition::ACTIVE.scoped_env("ABI_BIN"))
+            .env_remove(edition::ACTIVE.scoped_env("MODEL_MANIFEST_DIR"))
+            .env_remove(edition::ACTIVE.scoped_env("MODEL_RUNTIME_CONFIG"))
+            .env_remove("ABI_MODELS_DIR")
             .env(edition::ACTIVE.state_dir_env(), &root)
             .env(edition::ACTIVE.config_path_env(), root.join("config.toml"))
             .env(edition::ACTIVE.daemon_socket_env(), &socket)
