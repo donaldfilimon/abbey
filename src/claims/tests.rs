@@ -393,6 +393,39 @@ fn ci_proof_stays_blocked_without_linux_and_windows_execution() {
 }
 
 #[test]
+fn program_1_host_claim_is_current_only_at_data_contract_level_c1() {
+    let claim = CLAIMS
+        .iter()
+        .find(|claim| claim.id == "program-1-abbey-contracts-host")
+        .expect("Program 1 host claim");
+    assert_eq!(claim.status, Status::Current);
+    for boundary in [
+        "C1",
+        "data-only",
+        "72e241e34967df318376bf68f4a0e2db13f5ebf17d1a219709731f1f470dbe8e",
+        "no production federation authority",
+        "no participant-consented live Discord evidence",
+    ] {
+        assert!(
+            claim.note.contains(boundary),
+            "missing boundary `{boundary}`"
+        );
+    }
+    assert!(
+        claim
+            .evidence
+            .implementation_refs
+            .contains(&"src/abbey_contracts.rs")
+    );
+    assert!(
+        claim
+            .evidence
+            .automated_test_refs
+            .contains(&"tests/abbey_contracts.rs")
+    );
+}
+
+#[test]
 fn shipped_unrestricted_bypass_remains_out_of_scope() {
     let claim = lookup("allowlist bypass")
         .into_iter()
