@@ -5,6 +5,7 @@
 
 mod context;
 mod contracts;
+mod guild_intelligence;
 mod ids;
 mod policy;
 mod routes;
@@ -23,6 +24,12 @@ pub use contracts::{
     APP_PROTOCOL_V1, APP_PROTOCOL_VERSION, APP_SCHEMA_V1, APP_SCHEMA_VERSION, AppCapability,
     AppCommand, AppEvent, ApprovalKind, ApprovalRequest, CapabilitySet, ClaimRecord, ClaimStatus,
     ClaimsQuery, ClaimsSnapshot, Edition, RuntimeState, RuntimeStatus, ValidationError,
+};
+pub use guild_intelligence::{
+    Alternative, AssertionMetadata, AuditCoverage, Coverage, DesiredPermissionState,
+    DesiredStatePlan, EvidenceLevel, Finding, FindingCode, GuildIntelligenceError, GuildTwin,
+    ReadOperation, RecordingGuildSource, RedactedGuildStatus, ReplayArtifact,
+    RollbackPermissionState, TwinView, ViewKind,
 };
 pub use ids::{ConversationId, IdError, RunId};
 pub use policy::StandardPolicy;
