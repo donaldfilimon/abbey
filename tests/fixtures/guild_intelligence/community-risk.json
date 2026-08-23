@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "synthetic": true,
+  "observed_at_unix": 1787371200,
+  "guild_ref": "synthetic-guild-a",
+  "operator_ref": "synthetic-operator-a",
+  "operator_authority": "owner",
+  "owner_ref": "synthetic-operator-a",
+  "roles": [
+    {"ref_id":"role-everyone","position":0,"permissions":3072,"managed":false},
+    {"ref_id":"role-bot","position":10,"permissions":1024,"managed":true},
+    {"ref_id":"role-helper","position":5,"permissions":2048,"managed":false}
+  ],
+  "channels": [
+    {"ref_id":"channel-public","parent_ref":null,"kind":"text","overwrites":[]},
+    {"ref_id":"channel-staff","parent_ref":null,"kind":"text","overwrites":[
+      {"target":{"kind":"role","ref_id":"role-everyone"},"allow":0,"deny":1024},
+      {"target":{"kind":"role","ref_id":"role-bot"},"allow":1024,"deny":0}
+    ]}
+  ],
+  "active_threads":[{"ref_id":"thread-a","parent_ref":"channel-public"}],
+  "bot_self":{"ref_id":"synthetic-bot","role_refs":["role-bot"]},
+  "coverage":{"guild":true,"roles":true,"channels":true,"active_threads":true,"audit_log":"unavailable_by_policy"}
+}

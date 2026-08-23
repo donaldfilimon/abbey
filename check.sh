@@ -99,6 +99,9 @@ echo "== claims/docs synchronization =="
 python3 -m unittest discover -s tools/tests -p 'test_*.py'
 python3 tools/check_claims_sync.py
 
+echo "== Program 3 read-only boundary =="
+python3 tools/check_p3_readonly.py
+
 echo "== installer syntax and isolated accelerator layout =="
 sh -n install.sh tools/tests/smoke_accel_install.sh
 sh tools/tests/smoke_accel_install.sh
