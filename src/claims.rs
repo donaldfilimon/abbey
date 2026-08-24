@@ -13,7 +13,7 @@ mod registry;
 
 use registry::{Claim, EvidenceState};
 pub const CLAIMS: &[Claim] = registry::CLAIMS;
-pub const CLAIMS_SCHEMA_VERSION: u16 = 1;
+pub const CLAIMS_SCHEMA_VERSION: u16 = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Status {

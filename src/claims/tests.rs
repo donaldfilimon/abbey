@@ -688,3 +688,55 @@ fn no_lifecycle_state_may_carry_a_blocker_owner() {
         );
     }
 }
+
+#[test]
+fn every_status_key_is_accepted_by_the_manifest_consumer() {
+    // The Rust vocabulary and the Python sync tool's allowlist are two
+    // separate lists that must agree. They drifted once already: the four
+    // lifecycle states existed in Rust while tools/check_claims_sync.py
+    // still had a five-way allowlist that RAISES on anything else, so the
+    // gate stayed green only because no claim occupied a new state yet.
+    //
+    // This reads the `statuses = {...}` literal SPECIFICALLY rather than
+    // searching the whole file. A whole-file `contains` is vacuous here:
+    // every key also appears in two label dictionaries, so the naive
+    // version of this test passed with the allowlist deliberately broken.
+    let tool = std::fs::read_to_string("tools/check_claims_sync.py")
+        .expect("sync tool must be readable from the crate root");
+    let start = tool
+        .find("statuses = {")
+        .expect("sync tool must declare a `statuses` allowlist");
+    let end = start
+        + tool[start..]
+            .find('}')
+            .expect("`statuses` allowlist must be closed");
+    let allowlist = &tool[start..end];
+
+    for status in Status::every() {
+        let quoted = format!("\"{}\"", status.key());
+        assert!(
+            allowlist.contains(&quoted),
+            "check_claims_sync.py's status allowlist is missing {} — a claim \
+             entering that state would raise instead of generating docs",
+            status.key()
+        );
+    }
+}
+
+#[test]
+fn the_manifest_declares_the_schema_that_matches_its_vocabulary() {
+    // The manifest emits `status` per claim, so its value set is part of the
+    // contract. Growing that set without moving the schema version would
+    // leave generated docs asserting a schema they no longer describe.
+    let manifest = manifest_json().expect("manifest must serialize");
+    let parsed: serde_json::Value =
+        serde_json::from_str(&manifest).expect("manifest must be valid JSON");
+    assert_eq!(
+        parsed["schema_version"], CLAIMS_SCHEMA_VERSION,
+        "manifest must declare its own schema version"
+    );
+    assert_eq!(
+        CLAIMS_SCHEMA_VERSION, 2,
+        "schema 2 is the version that admits the lifecycle status vocabulary"
+    );
+}
