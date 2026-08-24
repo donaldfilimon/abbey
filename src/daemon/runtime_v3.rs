@@ -18,10 +18,9 @@ use serde_json::json;
 use sha2::{Digest, Sha256};
 
 use crate::app_core::{
-    APP_PROTOCOL_V3, APP_SCHEMA_V3, BackendSelection, ClaimStatus, V3Capability, V3CapabilitySet,
-    V3Command, V3EntityPage, V3EntityRecord, V3Event, V3GrantNegotiation, V3OperationState,
-    V3StableClaim, V3ToolApprovalState, V3ToolApprovalStatus, V3ToolDecision, V3ToolPage,
-    V3ToolResult,
+    APP_PROTOCOL_V3, APP_SCHEMA_V3, BackendSelection, V3Capability, V3CapabilitySet, V3Command,
+    V3EntityPage, V3EntityRecord, V3Event, V3GrantNegotiation, V3OperationState, V3StableClaim,
+    V3ToolApprovalState, V3ToolApprovalStatus, V3ToolDecision, V3ToolPage, V3ToolResult,
 };
 use crate::runtime::{
     AuditMetadata, MAX_TOOL_APPROVAL_TTL_MS, NewAuditEvent, NewToolApproval, ProviderRoute,
@@ -221,7 +220,7 @@ impl V3RuntimeAuthority {
                 let claim = V3StableClaim {
                     id: claim.id.to_owned(),
                     name: claim.name.to_owned(),
-                    status: claim_status(claim.status),
+                    status: claim.status.into(),
                     note: claim.note.to_owned(),
                 };
                 claim.validate().map_err(|_| internal_failure())?;
@@ -715,20 +714,6 @@ const fn not_found_failure() -> HandlerFailure {
 
 const fn internal_failure() -> HandlerFailure {
     HandlerFailure::new("runtime_unavailable", "runtime operation is unavailable")
-}
-
-const fn claim_status(status: crate::claims::Status) -> ClaimStatus {
-    match status {
-        crate::claims::Status::Current => ClaimStatus::Current,
-        crate::claims::Status::Partial => ClaimStatus::Partial,
-        crate::claims::Status::Proposed => ClaimStatus::Proposed,
-        crate::claims::Status::Blocked => ClaimStatus::Blocked,
-        crate::claims::Status::OutOfScope => ClaimStatus::OutOfScope,
-        crate::claims::Status::Failed => ClaimStatus::Failed,
-        crate::claims::Status::Revoked => ClaimStatus::Revoked,
-        crate::claims::Status::Superseded => ClaimStatus::Superseded,
-        crate::claims::Status::Expired => ClaimStatus::Expired,
-    }
 }
 
 #[cfg(test)]
