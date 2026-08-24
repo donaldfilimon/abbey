@@ -551,6 +551,10 @@ fn daemon_claim_status(status: DaemonClaimStatus) -> ClaimStatus {
         DaemonClaimStatus::Proposed => ClaimStatus::Proposed,
         DaemonClaimStatus::Blocked => ClaimStatus::Blocked,
         DaemonClaimStatus::OutOfScope => ClaimStatus::OutOfScope,
+        DaemonClaimStatus::Failed => ClaimStatus::Failed,
+        DaemonClaimStatus::Revoked => ClaimStatus::Revoked,
+        DaemonClaimStatus::Superseded => ClaimStatus::Superseded,
+        DaemonClaimStatus::Expired => ClaimStatus::Expired,
     }
 }
 
@@ -728,6 +732,10 @@ fn claim_status_label(status: ClaimStatus) -> &'static str {
         ClaimStatus::Proposed => "Proposed",
         ClaimStatus::Blocked => "Blocked",
         ClaimStatus::OutOfScope => "Out of scope",
+        ClaimStatus::Failed => "Failed",
+        ClaimStatus::Revoked => "Revoked",
+        ClaimStatus::Superseded => "Superseded",
+        ClaimStatus::Expired => "Expired",
     }
 }
 
