@@ -22,7 +22,7 @@ def fixture_manifest() -> dict[str, object]:
         "external_required": {"state": "not_required", "reason": "not required"},
     }
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "claims": [
             {
                 "id": "example-current",
@@ -104,6 +104,27 @@ class ClaimsSyncTests(unittest.TestCase):
             claims_sync.replace_desktop_summary(
                 f"# Desktop\n{claims_sync.DESKTOP_BEGIN}\n", summary
             )
+
+    def test_lifecycle_statuses_are_accepted_and_counted_only_when_present(self) -> None:
+        # Schema 2 added the four terminal lifecycle statuses. This tool used
+        # to reject anything outside a five-way allowlist, so a claim entering
+        # one of them raised instead of generating docs. Empty states are the
+        # case that needs a test: nothing else exercises them until the first
+        # real failure, which is the worst moment to find the tool breaks.
+        # (Unknown statuses are still rejected -- see the test below.)
+        manifest = fixture_manifest()
+        self.assertNotIn("Superseded", claims_sync.status_counts(manifest))
+
+        superseded = dict(manifest["claims"][0])
+        superseded["id"] = "example-superseded"
+        superseded["name"] = "Example superseded capability"
+        superseded["status"] = "superseded"
+        superseded["instead"] = "example-current"
+        manifest["claims"].append(superseded)
+
+        claims_sync.normalize_manifest(manifest)
+        self.assertIn("1 Superseded", claims_sync.status_counts(manifest))
+        self.assertEqual(claims_sync.status_label("superseded"), "Superseded")
 
     def test_manifest_requires_object_schema_and_unique_ids(self) -> None:
         manifest = fixture_manifest()

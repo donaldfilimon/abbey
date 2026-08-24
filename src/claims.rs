@@ -13,7 +13,7 @@ mod registry;
 
 use registry::{Claim, EvidenceState};
 pub const CLAIMS: &[Claim] = registry::CLAIMS;
-pub const CLAIMS_SCHEMA_VERSION: u16 = 1;
+pub const CLAIMS_SCHEMA_VERSION: u16 = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Status {
@@ -22,10 +22,19 @@ pub enum Status {
     Proposed,
     Blocked,
     OutOfScope,
+    /// Evidence was gathered for this claim and did not hold.
+    Failed,
+    /// The claim was withdrawn by decision rather than disproved.
+    Revoked,
+    /// A different claim now carries this capability; `instead` names it.
+    Superseded,
+    /// Evidence lapsed against the version or environment it was bound to.
+    Expired,
 }
 
 impl Status {
-    /// Every status the gate can classify a claim under.
+    /// Positional states: every claim is in exactly one of these, and each
+    /// must carry at least one claim.
     ///
     /// Kept in one place so tests can partition the registry by status
     /// without restating per-status claim counts. Two branches can each add
@@ -39,6 +48,26 @@ impl Status {
         Self::OutOfScope,
     ];
 
+    /// Terminal lifecycle states (constitution decision 68).
+    ///
+    /// Deliberately separate from [`Self::CLASSIFYING`]: these are
+    /// legitimately **empty** in a healthy registry, so the "every status
+    /// carries work" invariant must not be applied to them. A vocabulary
+    /// that only exists once something has already failed cannot be
+    /// introduced at the moment of failure — it has to be first-class
+    /// beforehand, which is what decision 68 requires.
+    pub const LIFECYCLE: [Self; 4] = [Self::Failed, Self::Revoked, Self::Superseded, Self::Expired];
+
+    /// The complete vocabulary, positional first. Registry partitioning uses
+    /// this, so a claim that moves into a lifecycle state stays reachable
+    /// through `by_status` rather than vanishing from every listing.
+    ///
+    /// Derived from the two constants above rather than restated, so a new
+    /// variant cannot be added to one and forgotten in the other.
+    pub fn every() -> impl Iterator<Item = Self> {
+        Self::CLASSIFYING.into_iter().chain(Self::LIFECYCLE)
+    }
+
     pub fn label(self) -> &'static str {
         match self {
             Self::Current => "Current",
@@ -46,6 +75,10 @@ impl Status {
             Self::Proposed => "Proposed",
             Self::Blocked => "Blocked",
             Self::OutOfScope => "Out of scope",
+            Self::Failed => "Failed",
+            Self::Revoked => "Revoked",
+            Self::Superseded => "Superseded",
+            Self::Expired => "Expired",
         }
     }
 
@@ -56,6 +89,10 @@ impl Status {
             Self::Proposed => "proposed",
             Self::Blocked => "blocked",
             Self::OutOfScope => "out_of_scope",
+            Self::Failed => "failed",
+            Self::Revoked => "revoked",
+            Self::Superseded => "superseded",
+            Self::Expired => "expired",
         }
     }
 }
@@ -183,6 +220,57 @@ fn validate_claims(claims: &[Claim]) -> Result<()> {
                 {
                     bail!("Blocked claim `{}` must identify a blocker owner", claim.id);
                 }
+            }
+            Status::Failed => {
+                // Something was built, or there would be nothing to fail.
+                require_built_evidence(claim, implementation_is_empty, tests_are_empty)?;
+                // Decision 63: evidence never auto-promotes. A claim whose
+                // proof failed must not still present that proof as verified.
+                if matches!(claim.evidence.local_live, EvidenceState::Verified(_)) {
+                    bail!(
+                        "Failed claim `{}` cannot present verified local evidence",
+                        claim.id
+                    );
+                }
+                require_no_blocker_owner(claim)?;
+            }
+            Status::Revoked => {
+                // Withdrawn by decision, so nobody is going to gather the
+                // outstanding proof. Leaving evidence Required would imply
+                // work that will never happen.
+                if is_required(claim.evidence.local_live)
+                    || is_required(claim.evidence.external_required)
+                {
+                    bail!(
+                        "Revoked claim `{}` cannot leave evidence outstanding",
+                        claim.id
+                    );
+                }
+                require_no_blocker_owner(claim)?;
+            }
+            Status::Superseded => {
+                // Decision 68 is only useful if a superseded claim says what
+                // replaced it; otherwise the capability silently disappears.
+                if claim.instead.is_none_or(|value| value.trim().is_empty()) {
+                    bail!(
+                        "Superseded claim `{}` must name the claim that replaced it",
+                        claim.id
+                    );
+                }
+                require_no_blocker_owner(claim)?;
+            }
+            Status::Expired => {
+                // It held once (decision 62 binds evidence to an exact
+                // version and environment), so implementation and tests
+                // exist — but the binding lapsed and re-proof is owed.
+                require_built_evidence(claim, implementation_is_empty, tests_are_empty)?;
+                if !is_required(claim.evidence.local_live) {
+                    bail!(
+                        "Expired claim `{}` must require fresh local proof",
+                        claim.id
+                    );
+                }
+                require_no_blocker_owner(claim)?;
             }
             Status::OutOfScope => {
                 require_built_evidence(claim, implementation_is_empty, tests_are_empty)?;
@@ -313,14 +401,20 @@ pub fn print_claims(filter: Option<&str>) -> Result<i32> {
     let filter = filter.map(str::trim).filter(|s| !s.is_empty());
     match filter.map(str::to_ascii_lowercase).as_deref() {
         None | Some("all") => {
-            // Ordered by Status::CLASSIFYING so this listing and the tests that
+            // Ordered by Status::every() so this listing and the tests that
             // partition the registry cannot disagree about which statuses
             // exist, and a new status appears here without a second edit.
-            for (index, status) in Status::CLASSIFYING.iter().enumerate() {
+            // Lifecycle sections are skipped while empty so a healthy
+            // registry does not print four blank headings, but a claim that
+            // moves into one becomes visible here without another edit.
+            for (index, status) in Status::every().enumerate() {
+                if Status::LIFECYCLE.contains(&status) && by_status(status).count() == 0 {
+                    continue;
+                }
                 if index > 0 {
                     println!();
                 }
-                print_section(*status);
+                print_section(status);
             }
             print_footer();
         }
@@ -338,11 +432,27 @@ pub fn print_claims(filter: Option<&str>) -> Result<i32> {
             print_section(Status::Blocked);
             print_footer();
         }
+        Some("failed" | "fail") => {
+            print_section(Status::Failed);
+            print_footer();
+        }
+        Some("revoked" | "revoke") => {
+            print_section(Status::Revoked);
+            print_footer();
+        }
+        Some("superseded" | "supersede") => {
+            print_section(Status::Superseded);
+            print_footer();
+        }
+        Some("expired" | "expire") => {
+            print_section(Status::Expired);
+            print_footer();
+        }
         Some(key) => {
             let hits = lookup(key);
             if hits.is_empty() {
                 bail!(
-                    "no claims matching `{key}` — try: abbey claims current|partial|proposed|blocked|oos"
+                    "no claims matching `{key}` — try: abbey claims current|partial|proposed|blocked|oos|failed|revoked|superseded|expired"
                 );
             }
             println!("abbey claims — matches for `{key}`\n");
@@ -362,6 +472,10 @@ fn print_section(status: Status) {
         Status::Proposed => "Proposed (designed — not claimed live)",
         Status::Blocked => "Blocked (implementation or proof needs an external prerequisite)",
         Status::OutOfScope => "Out of scope (explicitly deferred)",
+        Status::Failed => "Failed (evidence was gathered and did not hold)",
+        Status::Revoked => "Revoked (withdrawn by decision, not disproved)",
+        Status::Superseded => "Superseded (another claim now carries it)",
+        Status::Expired => "Expired (evidence lapsed against its version or environment)",
     };
     println!("abbey claims — {title}");
     for c in by_status(status) {
@@ -376,6 +490,10 @@ fn print_claim(c: &Claim) {
         Status::Proposed => "·",
         Status::Blocked => "!",
         Status::OutOfScope => "✗",
+        Status::Failed => "✗",
+        Status::Revoked => "✗",
+        Status::Superseded => "→",
+        Status::Expired => "⧖",
     };
     let _ = output::println(format!("  {mark} {}", c.name));
     let _ = output::println(format!("      {}", c.note));

@@ -766,6 +766,10 @@ pub enum DaemonClaimStatus {
     Blocked,
     #[value(name = "oos", alias = "out-of-scope", alias = "out_of_scope")]
     OutOfScope,
+    Failed,
+    Revoked,
+    Superseded,
+    Expired,
 }
 
 fn parse_mesh_nodes(value: &str) -> Result<usize, String> {

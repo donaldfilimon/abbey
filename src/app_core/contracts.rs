@@ -14,7 +14,7 @@ pub const APP_SCHEMA_V1: u16 = 1;
 /// Current command/event exchange protocol.
 pub const APP_PROTOCOL_VERSION: u16 = 2;
 /// Current serialized application-state schema.
-pub const APP_SCHEMA_VERSION: u16 = 2;
+pub const APP_SCHEMA_VERSION: u16 = 3;
 
 const MAX_CLAIMS_FILTER_BYTES: usize = 256;
 const MAX_APPROVAL_SUMMARY_BYTES: usize = 1_024;
@@ -266,6 +266,14 @@ pub enum ClaimStatus {
     Proposed,
     Blocked,
     OutOfScope,
+    /// Terminal lifecycle states (constitution decision 68). Adding these to
+    /// the wire vocabulary is why `APP_SCHEMA_VERSION` moved to 3: a schema-2
+    /// reader rejects them rather than silently reading a failed claim as
+    /// anything else.
+    Failed,
+    Revoked,
+    Superseded,
+    Expired,
 }
 
 /// Bounded, typed query over the canonical claims table.
