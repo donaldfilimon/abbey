@@ -160,6 +160,10 @@ fn claim_status(status: crate::claims::Status) -> ClaimStatus {
         crate::claims::Status::Proposed => ClaimStatus::Proposed,
         crate::claims::Status::Blocked => ClaimStatus::Blocked,
         crate::claims::Status::OutOfScope => ClaimStatus::OutOfScope,
+        crate::claims::Status::Failed => ClaimStatus::Failed,
+        crate::claims::Status::Revoked => ClaimStatus::Revoked,
+        crate::claims::Status::Superseded => ClaimStatus::Superseded,
+        crate::claims::Status::Expired => ClaimStatus::Expired,
     }
 }
 

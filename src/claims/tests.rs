@@ -21,17 +21,17 @@ fn every_classifying_status_is_unique_and_carries_work() {
         );
     }
 
-    // An exact partition. This fails if a claim is unreachable through
-    // by_status — which is what a new Status variant missing from
-    // Status::CLASSIFYING looks like — or if by_status ever double-counts.
-    let classified: usize = Status::CLASSIFYING
-        .iter()
-        .map(|status| by_status(*status).count())
+    // An exact partition over the WHOLE vocabulary, not just the positional
+    // states. Summing CLASSIFYING alone would still equal CLAIMS.len() while
+    // a superseded claim sat unreachable, so the partition has to be taken
+    // over Status::every() for this assertion to keep meaning what it says.
+    let classified: usize = Status::every()
+        .map(|status| by_status(status).count())
         .sum();
     assert_eq!(
         classified,
         CLAIMS.len(),
-        "every claim must be reachable through exactly one Status::CLASSIFYING entry"
+        "every claim must be reachable through exactly one status"
     );
 
     // The registry must also be well-formed, not merely countable.
@@ -520,4 +520,171 @@ fn manifest_is_ordered_machine_readable_claims_source() {
     assert!(rows[0]["next_action"].is_string());
     assert!(rows[0].get("blocker_owner").is_some());
     assert_eq!(rows.last().unwrap()["name"], CLAIMS.last().unwrap().name);
+}
+
+// --- Terminal lifecycle states (constitution decision 68) -----------------
+//
+// These states are legitimately EMPTY in a healthy registry, so they cannot
+// be proved against CLAIMS the way the positional states are. Synthetic
+// claims are the only way to pin their validation semantics, and pinning
+// them matters: a vocabulary that is only exercised once something has
+// already failed is a vocabulary nobody has tested.
+
+use super::registry::ClaimEvidence;
+
+fn lifecycle_claim(id: &'static str, status: Status) -> Claim {
+    Claim {
+        id,
+        name: "synthetic lifecycle fixture",
+        status,
+        note: "fixture used only to pin lifecycle validation semantics",
+        instead: None,
+        evidence: ClaimEvidence {
+            implementation_refs: &["src/claims.rs"],
+            automated_test_refs: &["src/claims/tests.rs"],
+            local_live: EvidenceState::NotRequired("fixture"),
+            external_required: EvidenceState::NotRequired("fixture"),
+        },
+        next_action: "fixture",
+        blocker_owner: None,
+    }
+}
+
+#[test]
+fn lifecycle_states_are_separate_from_the_positional_partition() {
+    // The "every status carries work" invariant must NOT reach the lifecycle
+    // states, or an honest registry with nothing failed cannot validate.
+    for status in Status::LIFECYCLE {
+        assert!(
+            !Status::CLASSIFYING.contains(&status),
+            "{} must not be a positional state",
+            status.label()
+        );
+        assert_eq!(
+            by_status(status).count(),
+            0,
+            "{} should be empty in a healthy registry",
+            status.label()
+        );
+    }
+    // ...yet every one of them must still be reachable as a status.
+    let every: Vec<_> = Status::every().collect();
+    assert_eq!(every.len(), 9);
+    for status in Status::LIFECYCLE {
+        assert!(every.contains(&status));
+    }
+}
+
+#[test]
+fn every_status_has_a_distinct_label_and_key() {
+    let labels: HashSet<_> = Status::every().map(Status::label).collect();
+    let keys: HashSet<_> = Status::every().map(Status::key).collect();
+    assert_eq!(labels.len(), 9, "labels must be distinct");
+    assert_eq!(keys.len(), 9, "wire keys must be distinct");
+}
+
+#[test]
+fn a_failed_claim_cannot_still_present_verified_local_evidence() {
+    // Decision 63: evidence never auto-promotes. The inverse matters just as
+    // much — evidence that stopped holding must not keep presenting itself.
+    let mut claim = lifecycle_claim("fixture-failed", Status::Failed);
+    claim.evidence.local_live = EvidenceState::Verified(&["src/claims.rs"]);
+    let err = validate_claims(&[claim]).expect_err("verified proof under Failed must be rejected");
+    assert!(
+        err.to_string()
+            .contains("cannot present verified local evidence")
+    );
+
+    // The honest shape passes.
+    let ok = lifecycle_claim("fixture-failed", Status::Failed);
+    validate_claims(&[ok]).expect("a failed claim with unverified evidence is valid");
+}
+
+#[test]
+fn a_failed_claim_still_requires_the_evidence_that_failed() {
+    let mut claim = lifecycle_claim("fixture-failed-bare", Status::Failed);
+    claim.evidence.implementation_refs = &[];
+    let err = validate_claims(&[claim]).expect_err("nothing was built, so nothing could fail");
+    assert!(
+        err.to_string()
+            .contains("requires implementation and automated-test evidence")
+    );
+}
+
+#[test]
+fn a_revoked_claim_cannot_leave_evidence_outstanding() {
+    // Withdrawn by decision means nobody is coming back for the proof;
+    // leaving it Required advertises work that will never happen.
+    let mut claim = lifecycle_claim("fixture-revoked", Status::Revoked);
+    claim.evidence.local_live = EvidenceState::Required(&["run the acceptance matrix"]);
+    let err = validate_claims(&[claim]).expect_err("outstanding proof under Revoked must fail");
+    assert!(
+        err.to_string()
+            .contains("cannot leave evidence outstanding")
+    );
+
+    let ok = lifecycle_claim("fixture-revoked", Status::Revoked);
+    validate_claims(&[ok]).expect("a revoked claim with settled evidence is valid");
+}
+
+#[test]
+fn a_superseded_claim_must_name_its_replacement() {
+    // Without this the capability silently disappears from the ledger, which
+    // is exactly the failure mode the claims gate exists to prevent.
+    let claim = lifecycle_claim("fixture-superseded", Status::Superseded);
+    assert!(claim.instead.is_none());
+    let err = validate_claims(&[claim]).expect_err("an unnamed replacement must be rejected");
+    assert!(
+        err.to_string()
+            .contains("must name the claim that replaced it")
+    );
+
+    let mut ok = lifecycle_claim("fixture-superseded", Status::Superseded);
+    ok.instead = Some("backend-cursor-agent");
+    validate_claims(&[ok]).expect("a superseded claim naming its replacement is valid");
+
+    // Whitespace is not a name.
+    let mut blank = lifecycle_claim("fixture-superseded", Status::Superseded);
+    blank.instead = Some("   ");
+    validate_claims(&[blank]).expect_err("a blank replacement must be rejected");
+}
+
+#[test]
+fn an_expired_claim_must_require_fresh_proof() {
+    // Decision 62 binds evidence to an exact version and environment. When
+    // that binding lapses the claim owes re-proof, not silence.
+    let claim = lifecycle_claim("fixture-expired", Status::Expired);
+    let err = validate_claims(&[claim]).expect_err("expired without re-proof must be rejected");
+    assert!(err.to_string().contains("must require fresh local proof"));
+
+    let mut ok = lifecycle_claim("fixture-expired", Status::Expired);
+    ok.evidence.local_live = EvidenceState::Required(&["re-run the gate on the current toolchain"]);
+    validate_claims(&[ok]).expect("an expired claim requiring re-proof is valid");
+}
+
+#[test]
+fn no_lifecycle_state_may_carry_a_blocker_owner() {
+    // blocker_owner means "an external party can unblock this". None of the
+    // terminal states are waiting on anyone, so carrying an owner would
+    // misreport a closed claim as actionable.
+    for status in Status::LIFECYCLE {
+        let mut claim = lifecycle_claim("fixture-owner", status);
+        claim.blocker_owner = Some("Donald");
+        match status {
+            Status::Superseded => claim.instead = Some("backend-cursor-agent"),
+            Status::Expired => {
+                claim.evidence.local_live = EvidenceState::Required(&["re-run the gate"]);
+            }
+            _ => {}
+        }
+        let err = match validate_claims(&[claim]) {
+            Ok(()) => panic!("{} must reject a blocker owner", status.label()),
+            Err(err) => err.to_string(),
+        };
+        assert!(
+            err.contains("cannot carry a blocker owner"),
+            "{} accepted a blocker owner: {err}",
+            status.label()
+        );
+    }
 }
