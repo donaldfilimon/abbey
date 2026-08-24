@@ -740,3 +740,57 @@ fn the_manifest_declares_the_schema_that_matches_its_vocabulary() {
         "schema 2 is the version that admits the lifecycle status vocabulary"
     );
 }
+
+#[test]
+fn every_status_is_reachable_through_its_own_filter_aliases() {
+    // The dispatcher is now a table lookup rather than one match arm per
+    // status, which trades nine near-identical arms for one risk: a new
+    // variant with no alias entry would silently become unfilterable and
+    // fall through to the keyword search. This makes that a test failure.
+    let mut seen: HashSet<&str> = HashSet::new();
+    for status in Status::every() {
+        let aliases = status.filter_aliases();
+        assert!(
+            !aliases.is_empty(),
+            "{} has no filter alias, so `abbey claims <token>` cannot select it",
+            status.label()
+        );
+        // Deliberately NOT asserting that the primary alias equals the wire
+        // key: `out_of_scope` is keyed that way for machines but its CLI
+        // token is the short `oos`, which the footer text and the original
+        // per-status arms both used. Pinning them equal would encode an
+        // invariant this CLI never had.
+        for alias in aliases {
+            assert_eq!(
+                Status::from_filter(alias),
+                Some(status),
+                "alias `{alias}` does not resolve back to {}",
+                status.label()
+            );
+            assert!(
+                seen.insert(alias),
+                "alias `{alias}` is claimed by two statuses"
+            );
+        }
+    }
+    // The help string is derived, so it must list every status exactly once.
+    let help = Status::filter_help();
+    assert_eq!(help.split('|').count(), 9);
+}
+
+#[test]
+fn status_round_trips_through_its_wire_projection() {
+    // Two `From` impls replaced three hand-written mappers. They must stay
+    // inverses: a drift here would silently relabel claims on the daemon
+    // surface rather than failing to compile.
+    use crate::app_core::ClaimStatus;
+    for status in Status::every() {
+        let wire = ClaimStatus::from(status);
+        assert_eq!(
+            Status::from(wire),
+            status,
+            "{} does not survive the wire round trip",
+            status.label()
+        );
+    }
+}

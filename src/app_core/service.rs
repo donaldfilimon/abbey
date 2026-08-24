@@ -81,7 +81,7 @@ fn claims_snapshot(query: &ClaimsQuery) -> ClaimsSnapshot {
         .filter(|claim| {
             query
                 .status
-                .is_none_or(|status| claim_status(claim.status) == status)
+                .is_none_or(|status| ClaimStatus::from(claim.status) == status)
         })
         .filter(|claim| {
             contains.as_ref().is_none_or(|needle| {
@@ -94,7 +94,7 @@ fn claims_snapshot(query: &ClaimsQuery) -> ClaimsSnapshot {
         })
         .map(|claim| ClaimRecord {
             name: claim.name.to_owned(),
-            status: claim_status(claim.status),
+            status: claim.status.into(),
             note: claim.note.to_owned(),
             instead: claim.instead.map(str::to_owned),
         })
@@ -150,20 +150,6 @@ const fn empty_route_audit_page(limit: u16) -> RouteAuditPage {
         entries: Vec::new(),
         returned: 0,
         limit,
-    }
-}
-
-fn claim_status(status: crate::claims::Status) -> ClaimStatus {
-    match status {
-        crate::claims::Status::Current => ClaimStatus::Current,
-        crate::claims::Status::Partial => ClaimStatus::Partial,
-        crate::claims::Status::Proposed => ClaimStatus::Proposed,
-        crate::claims::Status::Blocked => ClaimStatus::Blocked,
-        crate::claims::Status::OutOfScope => ClaimStatus::OutOfScope,
-        crate::claims::Status::Failed => ClaimStatus::Failed,
-        crate::claims::Status::Revoked => ClaimStatus::Revoked,
-        crate::claims::Status::Superseded => ClaimStatus::Superseded,
-        crate::claims::Status::Expired => ClaimStatus::Expired,
     }
 }
 
