@@ -11,6 +11,9 @@ use crate::app_core::{
 };
 
 use super::config::DaemonConfig;
+use super::federation::{
+    FederationErrorCode, FederationRequest, FederationResponse, validate_request,
+};
 use super::protocol::{
     CURRENT_PROTOCOL_VERSION, PROTOCOL_VERSION, RequestEnvelope, ResponseEnvelope,
     SUPPORTED_PROTOCOL_VERSIONS, V3RequestEnvelope, V3ResponseEnvelope,
@@ -55,6 +58,22 @@ pub trait DaemonHandler: Send + Sync + 'static {
             "capability_denied",
             "protocol-v3 authority is unavailable",
         ))
+    }
+
+    /// Whether this handler owns the separate contract-governed `abbey.v1`
+    /// federation surface.
+    fn supports_federation(&self) -> bool {
+        false
+    }
+
+    /// Handle one request only after exact contract, manifest, and parameter
+    /// digest validation has succeeded.
+    fn handle_federation(&self, _request: FederationRequest) -> FederationResponse {
+        FederationResponse::error(
+            "",
+            FederationErrorCode::CapabilityDisabled,
+            "abbey.v1 federation is unavailable",
+        )
     }
 }
 
@@ -266,6 +285,24 @@ fn dispatch_authenticated_v3<H: DaemonHandler>(
     }
 }
 
+fn dispatch_federation<H: DaemonHandler>(
+    request: FederationRequest,
+    handler: &H,
+) -> FederationResponse {
+    let request_id = request.request_id.clone();
+    if let Err(error) = validate_request(&request) {
+        return FederationResponse::error(request_id, error.code, error.message);
+    }
+    if !handler.supports_federation() {
+        return FederationResponse::error(
+            request_id,
+            FederationErrorCode::CapabilityDisabled,
+            "abbey.v1 federation is unavailable",
+        );
+    }
+    handler.handle_federation(request)
+}
+
 fn v3_error_code(code: &str) -> V3ErrorCode {
     match code {
         "capability_denied" => V3ErrorCode::CapabilityDenied,
@@ -330,17 +367,37 @@ mod tests {
 
     use super::*;
     use crate::app_core::{AppCommand, AppEvent, ClaimsQuery, RuntimeState};
-    use crate::daemon::ResponsePayload;
+    use crate::daemon::{FederationError, FederationPayload, ResponsePayload};
 
     const TEST_BEARER: &str = "0123456789abcdef0123456789abcdef";
 
     struct Handler;
 
-    impl ReadOnlyHandler for Handler {
-        fn handle(&self, command: AppCommand) -> Result<AppEvent, String> {
+    impl DaemonHandler for Handler {
+        fn supports_version(&self, version: u16) -> bool {
+            version == PROTOCOL_VERSION
+        }
+
+        fn handle_versioned(
+            &self,
+            _version: u16,
+            command: AppCommand,
+        ) -> Result<AppEvent, HandlerFailure> {
             AppService::default()
                 .handle(command)
-                .map_err(|error| error.to_string())
+                .map_err(|_| HandlerFailure::new("handler_failed", "request handling failed"))
+        }
+
+        fn supports_federation(&self) -> bool {
+            true
+        }
+
+        fn handle_federation(&self, request: FederationRequest) -> FederationResponse {
+            let request_id = request.request_id.clone();
+            match super::super::federation::FederationService.handle(request) {
+                Ok(result) => FederationResponse::ok(request_id, result),
+                Err(error) => FederationResponse::error(request_id, error.code, error.message),
+            }
         }
     }
 
@@ -429,8 +486,88 @@ mod tests {
         let harness = Harness::start();
         let malformed = harness.raw_frame(b"not-json", Some(8));
         assert_error(&malformed, "malformed_request");
-        let oversize = harness.raw_frame(&[], Some((64 * 1024 + 1) as u32));
+        let oversize = harness.raw_frame(
+            &[],
+            Some((crate::daemon::config::DEFAULT_MAX_FRAME_LEN + 1) as u32),
+        );
         assert_error(&oversize, "frame_too_large");
+        harness.stop();
+    }
+
+    #[test]
+    fn federation_requires_exact_digests_and_never_downgrades() {
+        let harness = Harness::start();
+        let client = crate::daemon::FederationClient::new(harness.socket.clone());
+        let client_response = client
+            .request(
+                super::super::federation::FederationMethod::Hello,
+                serde_json::json!({}),
+            )
+            .unwrap();
+        assert!(matches!(
+            client_response.payload,
+            FederationPayload::Ok { .. }
+        ));
+        let parameters = serde_json::json!({});
+        let mut request = FederationRequest {
+            service: super::super::federation::SERVICE.into(),
+            contract_major: super::super::federation::CONTRACT_MAJOR,
+            contract_revision: super::super::federation::CONTRACT_REVISION,
+            corpus_digest: super::super::federation::CORPUS_DIGEST.into(),
+            capability_manifest_digest: super::super::federation::capability_manifest_digest(),
+            request_id: "request_ref".into(),
+            method: super::super::federation::FederationMethod::GetStatus,
+            parameters_digest: super::super::federation::parameters_digest(&parameters),
+            parameters,
+        };
+        let accepted = harness.federation(&request);
+        assert!(matches!(accepted.payload, FederationPayload::Ok { .. }));
+
+        request.contract_revision -= 1;
+        let rejected = harness.federation(&request);
+        assert!(matches!(
+            rejected.payload,
+            FederationPayload::Error {
+                error: FederationError {
+                    code: FederationErrorCode::ContractMismatch,
+                    ..
+                }
+            }
+        ));
+        assert_eq!(rejected.service, super::super::federation::SERVICE);
+        harness.stop();
+    }
+
+    #[test]
+    fn federation_never_reflects_invalid_request_ids() {
+        let harness = Harness::start();
+        let parameters = serde_json::json!({});
+        for request_id in ["has space", "line\nbreak", "unicode-λ"] {
+            let response = harness.federation(&FederationRequest {
+                service: super::super::federation::SERVICE.into(),
+                contract_major: super::super::federation::CONTRACT_MAJOR,
+                contract_revision: super::super::federation::CONTRACT_REVISION,
+                corpus_digest: super::super::federation::CORPUS_DIGEST.into(),
+                capability_manifest_digest: super::super::federation::capability_manifest_digest(),
+                request_id: request_id.into(),
+                method: super::super::federation::FederationMethod::GetStatus,
+                parameters_digest: super::super::federation::parameters_digest(&parameters),
+                parameters: parameters.clone(),
+            });
+            assert!(matches!(
+                response.payload,
+                FederationPayload::Error {
+                    error: FederationError {
+                        code: FederationErrorCode::InvalidRequestId,
+                        ..
+                    }
+                }
+            ));
+            assert!(
+                response.request_id.is_empty(),
+                "invalid request id must not be reflected"
+            );
+        }
         harness.stop();
     }
 
@@ -565,6 +702,23 @@ mod tests {
         fn request(&self, request: RequestEnvelope) -> ResponseEnvelope {
             let bytes = serde_json::to_vec(&request).unwrap();
             self.raw_frame(&bytes, None)
+        }
+
+        fn federation(&self, request: &FederationRequest) -> FederationResponse {
+            let bytes = serde_json::to_vec(request).unwrap();
+            let mut stream = UnixStream::connect(&self.socket).unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(1)))
+                .unwrap();
+            stream
+                .write_all(&(bytes.len() as u32).to_be_bytes())
+                .unwrap();
+            stream.write_all(&bytes).unwrap();
+            let mut prefix = [0_u8; 4];
+            stream.read_exact(&mut prefix).unwrap();
+            let mut response = vec![0_u8; u32::from_be_bytes(prefix) as usize];
+            stream.read_exact(&mut response).unwrap();
+            serde_json::from_slice(&response).unwrap()
         }
 
         fn raw_frame(&self, bytes: &[u8], declared: Option<u32>) -> ResponseEnvelope {

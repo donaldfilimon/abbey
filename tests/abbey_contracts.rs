@@ -4,8 +4,8 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const ABI_REVISION: &str = "348754bdaaf59a40fbb858380f925e0aba95a23b";
-const AGGREGATE_DIGEST: &str = "72e241e34967df318376bf68f4a0e2db13f5ebf17d1a219709731f1f470dbe8e";
+const ABI_REVISION: &str = "63e6d6a79d0b8745a652803887d07665245ddb39";
+const AGGREGATE_DIGEST: &str = "3ffd487bdc497b7ce54b8c29978a3686dcbffdb66a85957a0ee4f99ba576cdfd";
 
 #[test]
 fn bundled_corpus_qualifies_exact_bytes_and_every_declared_fixture() {
@@ -13,10 +13,10 @@ fn bundled_corpus_qualifies_exact_bytes_and_every_declared_fixture() {
 
     assert_eq!(corpus.source_revision(), ABI_REVISION);
     assert_eq!(corpus.aggregate_digest(), AGGREGATE_DIGEST);
-    assert_eq!(corpus.artifact_count(), 81);
-    assert_eq!(corpus.total_bytes(), 88_328);
-    assert_eq!(corpus.fixtures().len(), 52);
-    assert_eq!(corpus.schema_count(), 27);
+    assert_eq!(corpus.artifact_count(), 113);
+    assert_eq!(corpus.total_bytes(), 133_200);
+    assert_eq!(corpus.fixtures().len(), 70);
+    assert_eq!(corpus.schema_count(), 40);
 
     let mut categories = BTreeSet::new();
     let mut outcomes = BTreeSet::new();

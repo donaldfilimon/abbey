@@ -407,8 +407,11 @@ fn run_responses_must_match_submission_identity_and_requested_page_limit() {
 
 #[test]
 fn rejects_oversized_truncated_and_malformed_responses() {
-    let (config, thread, root) =
-        fake_server(|_request| ((64 * 1024 + 1) as u32).to_be_bytes().to_vec());
+    let (config, thread, root) = fake_server(|_request| {
+        ((crate::daemon::config::DEFAULT_MAX_FRAME_LEN + 1) as u32)
+            .to_be_bytes()
+            .to_vec()
+    });
     assert!(matches!(
         DaemonClient::new(config).request(AppCommand::Status),
         Err(ClientError::ResponseTooLarge)

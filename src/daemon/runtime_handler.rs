@@ -18,6 +18,7 @@ use super::runtime_config::{RuntimeConfigError, RuntimeDaemonConfig, open_privat
 use super::runtime_v3::model_lifecycle::ModelLifecycleAuthority;
 use super::runtime_v3::{MemoryEffectRoute, V3RuntimeAuthority, model_inventory};
 use super::server::{DaemonHandler, HandlerFailure};
+use super::{FederationRequest, FederationResponse, FederationService};
 
 /// Authenticated v1/v2 lifecycle plus narrowly scoped v3 runtime authority.
 pub struct RuntimeHandler {
@@ -27,6 +28,7 @@ pub struct RuntimeHandler {
     manager: RunManager<ModelProviderExecutor, SystemClock>,
     routes: Vec<RunRouteCapability>,
     v3: V3RuntimeAuthority,
+    federation: FederationService,
 }
 impl RuntimeHandler {
     pub fn start(config: RuntimeDaemonConfig) -> Result<Self, RuntimeConfigError> {
@@ -123,6 +125,7 @@ impl RuntimeHandler {
                 manager,
                 routes,
                 v3,
+                federation: FederationService,
             })
         }
     }
@@ -227,6 +230,18 @@ impl DaemonHandler for RuntimeHandler {
 
     fn handle_v3(&self, command: V3Command) -> Result<V3Event, HandlerFailure> {
         self.v3.handle(command)
+    }
+
+    fn supports_federation(&self) -> bool {
+        true
+    }
+
+    fn handle_federation(&self, request: FederationRequest) -> FederationResponse {
+        let request_id = request.request_id.clone();
+        match self.federation.handle(request) {
+            Ok(result) => FederationResponse::ok(request_id, result),
+            Err(error) => FederationResponse::error(request_id, error.code, error.message),
+        }
     }
 }
 

@@ -20,6 +20,7 @@
 
 mod client;
 mod config;
+mod federation;
 mod protocol;
 mod runtime_config;
 mod runtime_handler;
@@ -28,6 +29,13 @@ mod server;
 
 pub use client::{ClientError, DaemonClient, V3DaemonSession};
 pub use config::{AuthenticatedRateLimit, BearerSecret, DaemonConfig};
+pub use federation::{
+    CONTRACT_MAJOR as FEDERATION_CONTRACT_MAJOR, CONTRACT_REVISION as FEDERATION_CONTRACT_REVISION,
+    CORPUS_DIGEST as FEDERATION_CORPUS_DIGEST, FederationClient, FederationClientError,
+    FederationError, FederationErrorCode, FederationMethod, FederationPayload, FederationRequest,
+    FederationResponse, FederationService, capability_manifest, capability_manifest_digest,
+    parameters_digest,
+};
 pub use protocol::{
     CURRENT_PROTOCOL_VERSION, PROTOCOL_VERSION, RequestEnvelope, ResponseEnvelope, ResponsePayload,
     SUPPORTED_PROTOCOL_VERSIONS, V3RequestEnvelope, V3ResponseEnvelope, V3ResponsePayload,

@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use thiserror::Error;
 
-pub const DEFAULT_MAX_FRAME_LEN: usize = 64 * 1024;
+pub const DEFAULT_MAX_FRAME_LEN: usize = super::federation::MAX_FRAME_BYTES;
 const MIN_BEARER_LEN: usize = 32;
 const MAX_BEARER_LEN: usize = 4096;
 const MAX_AUTHENTICATED_REQUESTS: u16 = 1_024;
