@@ -28,7 +28,7 @@ pub use contracts::{
 pub use guild_intelligence::{
     Alternative, AssertionMetadata, AuditCoverage, Coverage, DesiredPermissionState,
     DesiredStatePlan, EvidenceLevel, Finding, FindingCode, GuildIntelligenceError, GuildTwin,
-    ReadOperation, RecordingGuildSource, RedactedGuildStatus, ReplayArtifact,
+    PermissionCondition, ReadOperation, RecordingGuildSource, RedactedGuildStatus, ReplayArtifact,
     RollbackPermissionState, TwinView, ViewKind,
 };
 pub use ids::{ConversationId, IdError, RunId};

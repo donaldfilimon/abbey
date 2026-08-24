@@ -362,6 +362,8 @@ fn parse_proof(json: &[u8], requested_nodes: usize) -> Result<MeshProof> {
 mod tests {
     use super::*;
     #[cfg(unix)]
+    use std::sync::atomic::{AtomicU64, Ordering};
+    #[cfg(unix)]
     use std::thread;
     #[cfg(unix)]
     use std::time::Instant;
@@ -370,12 +372,12 @@ mod tests {
     fn write_fake_abi(tag: &str, script: &str) -> (PathBuf, PathBuf) {
         use std::os::unix::fs::PermissionsExt as _;
 
+        static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
         let dir = std::env::temp_dir().join(format!(
             "abbey-mesh-{tag}-{}-{}",
             std::process::id(),
-            std::thread::current().name().unwrap_or("test")
+            TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed)
         ));
-        let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let bin = dir.join("abi");
         std::fs::write(&bin, script).unwrap();
@@ -490,25 +492,49 @@ mod tests {
     fn local_demo_timeout_kills_descendants_holding_capture_pipes() {
         use nix::sys::signal::kill;
         use nix::unistd::Pid;
+        use std::sync::mpsc;
 
         let (dir, bin) = write_fake_abi(
             "descendant-timeout",
             "#!/bin/sh\nsleep 30 &\necho $! > \"$0.child\"\nwait\n",
         );
         let started = Instant::now();
-        // Parallel full-suite runs can briefly delay the shell before it writes
-        // the descendant PID. Keep the total two-second bar while allowing a
-        // bounded startup window that does not depend on scheduler speed.
-        let error = run_local_demo_with_bin_timeout(&bin, 3, Duration::from_millis(500))
-            .unwrap_err()
-            .to_string();
+        let child_path = PathBuf::from(format!("{}.child", bin.display()));
+        let (runner_started_tx, runner_started_rx) = mpsc::sync_channel(0);
+        let runner_bin = bin.clone();
+        let runner = thread::spawn(move || {
+            runner_started_tx.send(()).unwrap();
+            run_local_demo_with_bin_timeout(&runner_bin, 3, Duration::from_secs(1))
+        });
+        runner_started_rx.recv().unwrap();
+
+        let ready_deadline = Instant::now() + Duration::from_secs(1);
+        let descendant = loop {
+            match std::fs::read_to_string(&child_path) {
+                Ok(pid) => match pid.trim().parse::<i32>() {
+                    Ok(pid) => break pid,
+                    Err(_) if !runner.is_finished() && Instant::now() < ready_deadline => {
+                        thread::sleep(Duration::from_millis(10));
+                    }
+                    Err(error) => panic!(
+                        "descendant PID was not complete before the bounded timeout: {error}"
+                    ),
+                },
+                Err(error)
+                    if error.kind() == std::io::ErrorKind::NotFound
+                        && !runner.is_finished()
+                        && Instant::now() < ready_deadline =>
+                {
+                    thread::sleep(Duration::from_millis(10));
+                }
+                Err(error) => {
+                    panic!("descendant PID readiness failed before the bounded timeout: {error}")
+                }
+            }
+        };
+        let error = runner.join().unwrap().unwrap_err().to_string();
         assert!(error.contains("timed out"), "{error}");
         assert!(started.elapsed() < Duration::from_secs(2));
-        let descendant = std::fs::read_to_string(format!("{}.child", bin.display()))
-            .unwrap()
-            .trim()
-            .parse::<i32>()
-            .unwrap();
         let reaped_deadline = Instant::now() + Duration::from_secs(1);
         while kill(Pid::from_raw(descendant), None).is_ok() && Instant::now() < reaped_deadline {
             thread::sleep(Duration::from_millis(10));

@@ -86,7 +86,12 @@ impl GuildRecording {
             }
             let mut targets = BTreeSet::new();
             for overwrite in &channel.overwrites {
-                if !targets.insert(overwrite.target.sort_key()) {
+                let target_key = if overwrite.target.is_everyone(everyone_ref) {
+                    (0, everyone_ref)
+                } else {
+                    overwrite.target.sort_key()
+                };
+                if !targets.insert(target_key) {
                     return invalid("duplicate channel overwrite target");
                 }
                 match &overwrite.target {
