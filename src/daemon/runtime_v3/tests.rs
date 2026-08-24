@@ -4,7 +4,9 @@ use std::time::Duration;
 use abi_agent_runtime::{EchoProvider, RunBudget};
 
 use super::*;
-use crate::app_core::{APP_PROTOCOL_V1, V3GrantRequest, V3PageQuery, V3ResourceQuery, V3ToolCall};
+use crate::app_core::{
+    APP_PROTOCOL_V1, ClaimStatus, V3GrantRequest, V3PageQuery, V3ResourceQuery, V3ToolCall,
+};
 #[cfg(not(feature = "personal-edition"))]
 use crate::app_core::{V3Action, V3ToolDecision};
 

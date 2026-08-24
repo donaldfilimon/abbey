@@ -276,6 +276,46 @@ pub enum ClaimStatus {
     Expired,
 }
 
+// The registry owns `claims::Status`; `ClaimStatus` is its only projection onto
+// the protocol. Both directions live here, next to the wire type, so a new
+// variant is one compile error in one place. They replaced three hand-written
+// mappers — two of which (`app_core::service` and `daemon::runtime_v3`) had
+// drifted into byte-identical copies, and a third that restated the label
+// vocabulary already owned by `Status::label`.
+
+impl From<crate::claims::Status> for ClaimStatus {
+    fn from(status: crate::claims::Status) -> Self {
+        use crate::claims::Status;
+        match status {
+            Status::Current => Self::Current,
+            Status::Partial => Self::Partial,
+            Status::Proposed => Self::Proposed,
+            Status::Blocked => Self::Blocked,
+            Status::OutOfScope => Self::OutOfScope,
+            Status::Failed => Self::Failed,
+            Status::Revoked => Self::Revoked,
+            Status::Superseded => Self::Superseded,
+            Status::Expired => Self::Expired,
+        }
+    }
+}
+
+impl From<ClaimStatus> for crate::claims::Status {
+    fn from(status: ClaimStatus) -> Self {
+        match status {
+            ClaimStatus::Current => Self::Current,
+            ClaimStatus::Partial => Self::Partial,
+            ClaimStatus::Proposed => Self::Proposed,
+            ClaimStatus::Blocked => Self::Blocked,
+            ClaimStatus::OutOfScope => Self::OutOfScope,
+            ClaimStatus::Failed => Self::Failed,
+            ClaimStatus::Revoked => Self::Revoked,
+            ClaimStatus::Superseded => Self::Superseded,
+            ClaimStatus::Expired => Self::Expired,
+        }
+    }
+}
+
 /// Bounded, typed query over the canonical claims table.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]

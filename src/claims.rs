@@ -95,6 +95,47 @@ impl Status {
             Self::Expired => "expired",
         }
     }
+
+    /// CLI filter tokens accepted for this status, the one shown in help first.
+    ///
+    /// One table instead of one `print_claims` match arm per status. Adding a
+    /// variant now needs an entry here and nothing else: the dispatcher, the
+    /// help text, and the unknown-filter error all derive from this.
+    fn filter_aliases(self) -> &'static [&'static str] {
+        match self {
+            Self::Current => &["current", "shipped"],
+            Self::Partial => &["partial", "part"],
+            Self::Proposed => &["proposed", "prop", "roadmap"],
+            Self::Blocked => &["blocked", "block"],
+            Self::OutOfScope => &["oos", "out", "out-of-scope", "deferred"],
+            Self::Failed => &["failed", "fail"],
+            Self::Revoked => &["revoked", "revoke"],
+            Self::Superseded => &["superseded", "supersede"],
+            Self::Expired => &["expired", "expire"],
+        }
+    }
+
+    fn from_filter(token: &str) -> Option<Self> {
+        Self::every().find(|status| status.filter_aliases().contains(&token))
+    }
+
+    /// `current|partial|…`, derived so it cannot drift from what is accepted.
+    fn filter_help() -> String {
+        Self::every()
+            .map(|status| status.filter_aliases()[0])
+            .collect::<Vec<_>>()
+            .join("|")
+    }
+
+    /// Whether a single-status listing ends with the honesty footer.
+    ///
+    /// Preserves existing behaviour exactly: `current` and `partial` print no
+    /// footer while every other filter does. That asymmetry looks unintended —
+    /// the footer's own text names Partial — but changing it would alter CLI
+    /// output, so it is pinned here rather than silently "fixed".
+    fn prints_footer(self) -> bool {
+        !matches!(self, Self::Current | Self::Partial)
+    }
 }
 
 pub fn by_status(status: Status) -> impl Iterator<Item = &'static Claim> {
@@ -418,44 +459,25 @@ pub fn print_claims(filter: Option<&str>) -> Result<i32> {
             }
             print_footer();
         }
-        Some("current" | "shipped") => print_section(Status::Current),
-        Some("partial" | "part") => print_section(Status::Partial),
-        Some("proposed" | "prop" | "roadmap") => {
-            print_section(Status::Proposed);
-            print_footer();
-        }
-        Some("oos" | "out" | "out-of-scope" | "deferred") => {
-            print_section(Status::OutOfScope);
-            print_footer();
-        }
-        Some("blocked" | "block") => {
-            print_section(Status::Blocked);
-            print_footer();
-        }
-        Some("failed" | "fail") => {
-            print_section(Status::Failed);
-            print_footer();
-        }
-        Some("revoked" | "revoke") => {
-            print_section(Status::Revoked);
-            print_footer();
-        }
-        Some("superseded" | "supersede") => {
-            print_section(Status::Superseded);
-            print_footer();
-        }
-        Some("expired" | "expire") => {
-            print_section(Status::Expired);
-            print_footer();
-        }
-        Some(key) => {
-            let hits = lookup(key);
+        Some(token) => {
+            // One dispatcher for every status filter. The nine near-identical
+            // match arms this replaced differed only in which Status they
+            // named and whether they printed the footer.
+            if let Some(status) = Status::from_filter(token) {
+                print_section(status);
+                if status.prints_footer() {
+                    print_footer();
+                }
+                return Ok(0);
+            }
+            let hits = lookup(token);
             if hits.is_empty() {
                 bail!(
-                    "no claims matching `{key}` — try: abbey claims current|partial|proposed|blocked|oos|failed|revoked|superseded|expired"
+                    "no claims matching `{token}` — try: abbey claims {}",
+                    Status::filter_help()
                 );
             }
-            println!("abbey claims — matches for `{key}`\n");
+            println!("abbey claims — matches for `{token}`\n");
             for c in hits {
                 print_claim(c);
             }

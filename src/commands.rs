@@ -600,7 +600,7 @@ fn format_daemon_event(event: &AppEvent) -> Result<String> {
             for claim in &snapshot.claims {
                 rendered.push_str(&format!(
                     "  [{}] {}\n      {}\n",
-                    claim_status_label(claim.status),
+                    crate::claims::Status::from(claim.status).label(),
                     claim.name,
                     claim.note,
                 ));
@@ -722,20 +722,6 @@ const fn v3_state_label(state: V3OperationState) -> &'static str {
         V3OperationState::Denied => "denied",
         V3OperationState::Cancelled => "cancelled",
         V3OperationState::NotDownloaded => "not_downloaded",
-    }
-}
-
-fn claim_status_label(status: ClaimStatus) -> &'static str {
-    match status {
-        ClaimStatus::Current => "Current",
-        ClaimStatus::Partial => "Partial",
-        ClaimStatus::Proposed => "Proposed",
-        ClaimStatus::Blocked => "Blocked",
-        ClaimStatus::OutOfScope => "Out of scope",
-        ClaimStatus::Failed => "Failed",
-        ClaimStatus::Revoked => "Revoked",
-        ClaimStatus::Superseded => "Superseded",
-        ClaimStatus::Expired => "Expired",
     }
 }
 
