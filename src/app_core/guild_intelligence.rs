@@ -8,7 +8,13 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
+mod plan;
 mod validation;
+
+use plan::make_plan;
+pub use plan::{
+    DesiredPermissionState, DesiredStatePlan, PermissionCondition, RollbackPermissionState,
+};
 
 const SCHEMA_VERSION: u16 = 1;
 const MAX_OBJECTS: usize = 2_048;
@@ -40,7 +46,7 @@ pub enum ReadOperation {
     ReadSyntheticObservation,
 }
 
-/// A closed, in-memory source used for C1 synthetic replay evidence.
+/// A closed, in-memory source used for C2 closed synthetic replay evidence.
 #[derive(Debug, Clone)]
 pub struct RecordingGuildSource {
     recording: GuildRecording,
@@ -190,39 +196,11 @@ pub struct Alternative {
     pub reversible: bool,
 }
 
-/// Desired permission state; it has no execution behavior.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct DesiredPermissionState {
-    pub scope_ref: String,
-    pub subject_ref: String,
-    pub allow: u64,
-    pub deny: u64,
-}
-
-/// Before-state retained only as metadata for a rollback preview.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct RollbackPermissionState {
-    pub scope_ref: String,
-    pub subject_ref: String,
-    pub allow: u64,
-    pub deny: u64,
-}
-
-/// Non-executable desired-state plan from an explicit selection.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct DesiredStatePlan {
-    pub plan_digest: String,
-    pub source_observation_digest: String,
-    pub selected_option_id: String,
-    pub desired_states: Vec<DesiredPermissionState>,
-    pub rollback_preview: Vec<RollbackPermissionState>,
-}
-
 /// Local evidence vocabulary for the redacted status.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EvidenceLevel {
-    C1LocalSyntheticContract,
+    C2ClosedSyntheticReplay,
 }
 
 /// Fixed, identifier-free status projection.
@@ -417,7 +395,7 @@ fn analyze(
     };
     let status = RedactedGuildStatus {
         schema_version: SCHEMA_VERSION,
-        evidence_level: EvidenceLevel::C1LocalSyntheticContract,
+        evidence_level: EvidenceLevel::C2ClosedSyntheticReplay,
         source_kind: "synthetic_recording",
         authorization_basis: "synthetic_fixture_claim",
         read_only: true,
@@ -580,73 +558,6 @@ fn alternatives(findings: &[Finding]) -> Vec<Alternative> {
             reversible: true,
         },
     ]
-}
-
-fn make_plan(
-    recording: &GuildRecording,
-    observation_digest: &str,
-    alternatives: &[Alternative],
-    id: &str,
-) -> Result<DesiredStatePlan, GuildIntelligenceError> {
-    if !alternatives.iter().any(|item| item.id == id) {
-        return Err(GuildIntelligenceError::UnknownSelection);
-    }
-    let role = recording
-        .roles
-        .iter()
-        .find(|role| role.position == 0)
-        .ok_or_else(|| GuildIntelligenceError::InvalidRecording("everyone role missing".into()))?;
-    let (desired_states, rollback_preview) = match id {
-        "do-nothing" => (Vec::new(), Vec::new()),
-        "least-privilege" if role.permissions & SEND_MESSAGES != 0 => (
-            vec![DesiredPermissionState {
-                scope_ref: recording.guild_ref.clone(),
-                subject_ref: role.ref_id.clone(),
-                allow: role.permissions & !SEND_MESSAGES,
-                deny: 0,
-            }],
-            vec![RollbackPermissionState {
-                scope_ref: recording.guild_ref.clone(),
-                subject_ref: role.ref_id.clone(),
-                allow: role.permissions,
-                deny: 0,
-            }],
-        ),
-        "focused-overwrite" if role.permissions & SEND_MESSAGES != 0 => recording
-            .channels
-            .iter()
-            .map(|channel| {
-                let prior = channel
-                    .overwrites
-                    .iter()
-                    .find(|overwrite| overwrite.target.is_everyone(&role.ref_id));
-                (
-                    DesiredPermissionState {
-                        scope_ref: channel.ref_id.clone(),
-                        subject_ref: role.ref_id.clone(),
-                        allow: prior.map_or(0, |overwrite| overwrite.allow) & !SEND_MESSAGES,
-                        deny: prior
-                            .map_or(SEND_MESSAGES, |overwrite| overwrite.deny | SEND_MESSAGES),
-                    },
-                    RollbackPermissionState {
-                        scope_ref: channel.ref_id.clone(),
-                        subject_ref: role.ref_id.clone(),
-                        allow: prior.map_or(0, |overwrite| overwrite.allow),
-                        deny: prior.map_or(0, |overwrite| overwrite.deny),
-                    },
-                )
-            })
-            .unzip(),
-        _ => (Vec::new(), Vec::new()),
-    };
-    let plan_digest = digest(&(observation_digest, id, &desired_states, &rollback_preview))?;
-    Ok(DesiredStatePlan {
-        plan_digest,
-        source_observation_digest: observation_digest.into(),
-        selected_option_id: id.into(),
-        desired_states,
-        rollback_preview,
-    })
 }
 
 fn watermarks(recording: &GuildRecording) -> Result<Vec<ObjectWatermark>, GuildIntelligenceError> {
