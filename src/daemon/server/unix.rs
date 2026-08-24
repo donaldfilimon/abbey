@@ -82,6 +82,36 @@ fn handle_connection<H: DaemonHandler>(
     }
 
     let response = match read_frame(&mut stream, config.max_frame_len) {
+        Ok(bytes) if is_federation_candidate(&bytes) => {
+            let request_id = federation_request_id(&bytes);
+            match serde_json::from_slice::<serde_json::Value>(&bytes) {
+                Ok(value) if !super::super::federation::value_within_limits(&value, 1) => {
+                    WireResponse::Federation(FederationResponse::error(
+                        request_id,
+                        FederationErrorCode::LimitExceeded,
+                        "JSON container depth or collection count exceeds the abbey.v1 limit",
+                    ))
+                }
+                Ok(_) if !limiter.admit() => WireResponse::Federation(FederationResponse::error(
+                    request_id,
+                    FederationErrorCode::RateLimited,
+                    "local request rate limit exceeded",
+                )),
+                Ok(_) => match serde_json::from_slice::<FederationRequest>(&bytes) {
+                    Ok(request) => WireResponse::Federation(dispatch_federation(request, handler)),
+                    Err(_) => WireResponse::Federation(FederationResponse::error(
+                        request_id,
+                        FederationErrorCode::MalformedRequest,
+                        "request is not valid abbey.v1 JSON",
+                    )),
+                },
+                Err(_) => WireResponse::Federation(FederationResponse::error(
+                    request_id,
+                    FederationErrorCode::MalformedRequest,
+                    "request is not valid JSON",
+                )),
+            }
+        }
         Ok(bytes) => match authenticate_frame(&bytes, config) {
             FrameAuthentication::Authenticated {
                 response_version,
@@ -143,6 +173,7 @@ fn handle_connection<H: DaemonHandler>(
 pub(super) enum WireResponse {
     Legacy(ResponseEnvelope),
     V3(V3ResponseEnvelope),
+    Federation(FederationResponse),
 }
 
 impl WireResponse {
@@ -193,8 +224,29 @@ impl WireResponse {
                 crate::app_core::V3ErrorCode::ResponseTooLarge,
                 "handler response exceeds configured limit",
             )),
+            Self::Federation(response) => Self::Federation(FederationResponse::error(
+                response.request_id,
+                FederationErrorCode::Internal,
+                "handler response exceeds configured limit",
+            )),
         }
     }
+}
+
+fn is_federation_candidate(bytes: &[u8]) -> bool {
+    serde_json::from_slice::<serde_json::Value>(bytes)
+        .ok()
+        .and_then(|value| value.as_object().cloned())
+        .is_some_and(|object| object.contains_key("service"))
+}
+
+fn federation_request_id(bytes: &[u8]) -> String {
+    serde_json::from_slice::<serde_json::Value>(bytes)
+        .ok()
+        .and_then(|value| value.get("request_id").cloned())
+        .and_then(|value| value.as_str().map(str::to_owned))
+        .filter(|value| value.len() <= super::super::federation::MAX_IDENTIFIER_BYTES)
+        .unwrap_or_default()
 }
 
 enum FrameAuthentication {

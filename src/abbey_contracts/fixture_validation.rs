@@ -120,6 +120,34 @@ fn semantic_disposition(schema: &str, document: &Value) -> Option<FixtureDisposi
     {
         return Some(FixtureDisposition::SelfApproval);
     }
+    if schema.ends_with("/authorization/change-approval.schema.json") {
+        let requested_by = map
+            .get("requested_by")
+            .and_then(Value::as_object)
+            .and_then(|identity| identity.get("principal_id"));
+        let approved_by = map.get("approved_by").and_then(Value::as_object);
+        if requested_by == approved_by.and_then(|identity| identity.get("principal_id")) {
+            return Some(FixtureDisposition::SelfApproval);
+        }
+        let approver_kind = approved_by
+            .and_then(|identity| identity.get("kind"))
+            .and_then(Value::as_str);
+        if map.get("approval_level").and_then(Value::as_str) == Some("A3Admin")
+            && !matches!(approver_kind, Some("guild_administrator" | "guild_owner"))
+        {
+            return Some(FixtureDisposition::ApprovalInsufficient);
+        }
+    }
+    if schema.ends_with("/capability/change-set.schema.json")
+        && map
+            .get("proposed_by")
+            .and_then(Value::as_object)
+            .and_then(|identity| identity.get("kind"))
+            .and_then(Value::as_str)
+            != Some("service")
+    {
+        return Some(FixtureDisposition::ProposalAuthorityInvalid);
+    }
     if schema.ends_with("/authorization/policy-decision.schema.json")
         && map.get("reason_code").and_then(Value::as_str) == Some("dependency_unavailable")
         && map.get("decision").and_then(Value::as_str) != Some("deny")

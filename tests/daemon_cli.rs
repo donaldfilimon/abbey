@@ -7,7 +7,12 @@ use abbey::app_core::{
     V3ErrorCode, V3Event, V3OperationState, V3PageQuery, V3ResourceQuery, V3ToolCall,
     V3ToolDecision, V3ToolEffect, V3ToolInvocation,
 };
-use abbey::daemon::{BearerSecret, ClientError, DaemonClient, DaemonConfig};
+use abbey::daemon::{
+    BearerSecret, ClientError, DaemonClient, DaemonConfig, FEDERATION_CONTRACT_MAJOR,
+    FEDERATION_CONTRACT_REVISION, FEDERATION_CORPUS_DIGEST, FederationClient, FederationErrorCode,
+    FederationMethod, FederationPayload, FederationRequest, capability_manifest_digest,
+    parameters_digest,
+};
 use abbey::edition;
 use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Path, PathBuf};
@@ -203,6 +208,65 @@ fn status_and_filtered_claims_round_trip_through_real_binaries() {
     };
     assert_eq!(snapshot.matched, 1);
     assert_eq!(snapshot.claims[0].status, ClaimStatus::Proposed);
+}
+
+#[test]
+fn federation_contract_round_trips_through_the_real_daemon_without_downgrade() {
+    let harness = Harness::start();
+    let client = FederationClient::new(&harness.socket);
+
+    let hello = client
+        .request(FederationMethod::Hello, serde_json::json!({}))
+        .expect("real abbeyd must answer the strict abbey.v1 Hello request");
+    assert!(matches!(hello.payload, FederationPayload::Ok { .. }));
+    let hello_json = serde_json::to_string(&hello).unwrap();
+    assert!(hello_json.contains(FEDERATION_CORPUS_DIGEST));
+
+    let disabled = client
+        .request(FederationMethod::ExecuteChange, serde_json::json!({}))
+        .expect("disabled authority must return a typed abbey.v1 response");
+    assert!(matches!(
+        disabled.payload,
+        FederationPayload::Error {
+            error: abbey::daemon::FederationError {
+                code: FederationErrorCode::CapabilityDisabled,
+                ..
+            }
+        }
+    ));
+
+    let parameters = serde_json::json!({});
+    let stale = FederationRequest {
+        service: "abbey.v1".into(),
+        contract_major: FEDERATION_CONTRACT_MAJOR,
+        contract_revision: FEDERATION_CONTRACT_REVISION - 1,
+        corpus_digest: FEDERATION_CORPUS_DIGEST.into(),
+        capability_manifest_digest: capability_manifest_digest(),
+        request_id: "request_stale_real_daemon".into(),
+        method: FederationMethod::GetStatus,
+        parameters_digest: parameters_digest(&parameters),
+        parameters,
+    };
+    let rejected = client
+        .request_exact(&stale)
+        .expect("contract mismatch must stay within the strict abbey.v1 protocol");
+    assert!(matches!(
+        rejected.payload,
+        FederationPayload::Error {
+            error: abbey::daemon::FederationError {
+                code: FederationErrorCode::ContractMismatch,
+                ..
+            }
+        }
+    ));
+
+    let evidence = format!("{hello_json} {}", serde_json::to_string(&rejected).unwrap());
+    for private in [BEARER, path_text(&harness.root), path_text(&harness.socket)] {
+        assert!(
+            !evidence.contains(private),
+            "federation receipt leaked {private}"
+        );
+    }
 }
 
 #[test]

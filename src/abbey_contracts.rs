@@ -18,8 +18,8 @@ mod fixture_validation;
 use fixture_validation::validate_wire;
 
 const SOURCE_REPOSITORY: &str = "https://github.com/donaldfilimon/abi";
-const SOURCE_REVISION: &str = "348754bdaaf59a40fbb858380f925e0aba95a23b";
-const AGGREGATE_DIGEST: &str = "72e241e34967df318376bf68f4a0e2db13f5ebf17d1a219709731f1f470dbe8e";
+const SOURCE_REVISION: &str = "63e6d6a79d0b8745a652803887d07665245ddb39";
+const AGGREGATE_DIGEST: &str = "3ffd487bdc497b7ce54b8c29978a3686dcbffdb66a85957a0ee4f99ba576cdfd";
 const CORPUS_DOMAIN: &[u8] = b"abbey-contract-corpus-v1\0";
 const MAX_ARTIFACT_BYTES: u64 = 1024 * 1024;
 const MAX_CORPUS_BYTES: u64 = 16 * 1024 * 1024;
@@ -104,6 +104,8 @@ pub enum FixtureDisposition {
     CancellationMismatch,
     DegradedAuthority,
     SelfApproval,
+    ApprovalInsufficient,
+    ProposalAuthorityInvalid,
     ConsentOpenDenied,
     ConsentCloseRequired,
     MandatoryControlsMissing,
@@ -125,6 +127,8 @@ impl FixtureDisposition {
             Self::CancellationMismatch => "cancellation_mismatch",
             Self::DegradedAuthority => "degraded_authority",
             Self::SelfApproval => "self_approval",
+            Self::ApprovalInsufficient => "approval_insufficient",
+            Self::ProposalAuthorityInvalid => "proposal_authority_invalid",
             Self::ConsentOpenDenied => "consent_open_denied",
             Self::ConsentCloseRequired => "consent_close_required",
             Self::MandatoryControlsMissing => "mandatory_controls_missing",
@@ -363,8 +367,8 @@ fn qualify(root: &Path) -> Result<QualifiedCorpus, ContractMismatch> {
     )?;
     if lock.source_repository != SOURCE_REPOSITORY
         || lock.source_revision != SOURCE_REVISION
-        || lock.contract_major != 1
-        || lock.contract_revision != 1
+        || lock.contract_major != 2
+        || lock.contract_revision != 2
         || lock.aggregate_digest != AGGREGATE_DIGEST
     {
         return Err(ContractMismatch::MetadataInvalid {
