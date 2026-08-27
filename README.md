@@ -22,7 +22,7 @@ Docs: [identity](docs/identity.md) · [architecture](docs/architecture.md) · [p
 ## Install
 
 ```bash
-cd ~/abbey
+cd ~/dev/active/abbey
 ./install.sh
 # or:
 cargo build --release

@@ -1,6 +1,19 @@
 # Program 3 Synthetic C2 Closeout Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Historical and superseded progress record (2026-08-27).** This document
+> preserves the original pre-execution SDD checklist and its unchecked boxes;
+> it is not the current backlog and must not be replayed to infer unfinished
+> source work. The closed synthetic C2 slice is represented by the current
+> `program-3-guild-intelligence-synthetic` claim and the canonical
+> `tasks/goals.md` / `tasks/todo.md` ledgers. Authorized non-synthetic capture,
+> live Discord validation, persistence, approval, deployment, and effects
+> remain separate acceptance layers. Historical steps below are intentionally
+> not rewritten as though they were a live progress tracker.
+
+> **Original execution instruction, retained for provenance:** "For agentic
+> workers: REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development
+> (recommended) or superpowers:executing-plans to implement this plan
+> task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking."
 
 **Goal:** Close every synthetic Program 3 C1/C2 acceptance gap named by the approved focused specification while preserving a pure, non-executable, metadata-only boundary.
 

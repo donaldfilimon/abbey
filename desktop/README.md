@@ -241,6 +241,12 @@ Phase 7 in `tasks/todo.md` asks for more than this slice delivers:
   opened, so nothing here has been seen rendering.
 - **Not run on Ubuntu ARM64 or Win11 ARM.** `ClientError::UnsupportedPlatform`
   is surfaced honestly on Windows, where `abbeyd` has no named-pipe transport.
+- **The Linux desktop graph retains one upstream dependency advisory.** The
+  current Tauri 2.11.5 graph selects GTK 0.18.2 and `glib` 0.18.5; GitHub's
+  medium-severity `VariantStrIter` advisory requires `glib` 0.20 or newer.
+  That incompatible transitive upgrade is not available through the current
+  Tauri release, so the proposed desktop must not be described as
+  vulnerability-free or release-ready.
 - **Seven of the ten first-release views have no data source**, because the
   Tauri invoke allowlist exposes only status, claims, connection metadata, and
   bundle identity. Protocol-v2 run commands exist below that boundary but are

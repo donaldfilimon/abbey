@@ -355,7 +355,11 @@ export type ClaimStatus =
   | "partial"
   | "proposed"
   | "blocked"
-  | "out_of_scope";
+  | "out_of_scope"
+  | "failed"
+  | "revoked"
+  | "superseded"
+  | "expired";
 
 /**
  * Bounded, typed query over the canonical claims table.

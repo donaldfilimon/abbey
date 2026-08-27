@@ -175,10 +175,14 @@ h2 {
 .badge.proposed {
   color: var(--status-proposed);
 }
-.badge.blocked {
+.badge.blocked,
+.badge.failed,
+.badge.revoked {
   color: var(--status-blocked);
 }
-.badge.out_of_scope {
+.badge.out_of_scope,
+.badge.superseded,
+.badge.expired {
   color: var(--status-out_of_scope);
 }
 

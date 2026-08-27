@@ -73,7 +73,7 @@ Guidance for AI coding agents in this repository.
 - Name: `abbey`
 - Purpose: Hybrid coding-agent CLI/TUI — personas, Max/Gemma roles, parallel lanes, OS control, skills/plugins inventory, self-learn — backed by pluggable executors (**cursor-agent** preferred; `grok`/`fm`/`abi`/`claude` alternates; none hard-required)
 - Stack: Rust nightly-2026-08-19 (`rustc 1.100.0-nightly`), edition 2024, `ratatui`, `clap`, path-dep `abi-ai`
-- Root: `/Users/donaldfilimon/abbey`
+- Root: `/Users/donaldfilimon/dev/active/abbey`
 - Install: `./install.sh` → `~/.local/bin/abbey` + Unix `abbeyd`
 - Gate: `./check.sh` (toolchain + four-mode fmt/clippy/test/rustdoc + claims/installer/file-size)
 
@@ -156,7 +156,9 @@ The generated canonical table above is authoritative; `abbey claims manifest` ex
   can fail with "rustc 1.97.1 is not supported by the following packages" while rustup's
   nightly is perfectly new enough. `check.sh` now detects this and prints the remedy
   (`brew unlink rust` / `rustup toolchain install nightly-2026-08-19 --component rustfmt clippy`)
-- `abi-ai` path-dep expects sibling `../abi`; `--features wdbx` also needs `../abi/crates/abi-wdbx`
+- `abi-ai` path-dep expects sibling `../abi`; `--features wdbx` also needs the
+  extracted substrate at `../wdbx/crates/abi-wdbx`. The `abi`, `abbey`, and
+  `wdbx` checkouts must remain siblings.
 - Default `cargo clippy`/`cargo test` never compile the gated modes — use `./check.sh`,
   which checks default, `wdbx`, `personal-edition`, and `accel`, or gated code rots unnoticed
 - Git helpers need a real repo history
@@ -198,3 +200,14 @@ The generated canonical table above is authoritative; `abbey claims manifest` ex
 LoRA and the other approved expansion capabilities are **Proposed**, not Out of
 scope; that status authorizes roadmap work, not a Current claim or a successful
 command before implementation and evidence.
+
+<!-- machine-git-policy -->
+## Git workflow (machine policy, 2026-08-27)
+
+Work on the default branch in this canonical checkout. Do not create
+branches or worktrees by default; they are for tasks that genuinely need
+isolation, or when Donald asks. Any worktree or topic branch created here
+must be merged back into this checkout's default branch, the worktree
+removed, and the branch deleted, before pushing and before the task is
+called done. Full policy: `~/.claude/CLAUDE.md` (*Git discipline*).
+<!-- /machine-git-policy -->

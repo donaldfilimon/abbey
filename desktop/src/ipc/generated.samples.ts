@@ -48,7 +48,7 @@ export const statusV2EventFixture = {
   "type": "status",
   "payload": {
     "protocol_version": 2,
-    "schema_version": 2,
+    "schema_version": 3,
     "edition": "standard",
     "state": "ready",
     "version": "0.0.0-fixture",
