@@ -10,6 +10,10 @@ const STATUSES: readonly (ClaimStatus | "")[] = [
   "proposed",
   "blocked",
   "out_of_scope",
+  "failed",
+  "revoked",
+  "superseded",
+  "expired",
 ];
 
 const STATUS_LABEL: Record<ClaimStatus, string> = {
@@ -18,6 +22,10 @@ const STATUS_LABEL: Record<ClaimStatus, string> = {
   proposed: "proposed",
   blocked: "blocked",
   out_of_scope: "out of scope",
+  failed: "failed",
+  revoked: "revoked",
+  superseded: "superseded",
+  expired: "expired",
 };
 
 export function ClaimBadge({ status }: { status: ClaimStatus }) {
