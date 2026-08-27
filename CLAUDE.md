@@ -154,3 +154,14 @@ Personas (Abbey/Aviva/Abi) and Max/Gemma worker roles are defined in the sibling
 - [docs/runtime.md](docs/runtime.md) — protocol compatibility, durable runtime, delegated-execution, and evidence boundaries
 - [docs/claims.md](docs/claims.md) — generated claims evidence; refresh with `python3 tools/check_claims_sync.py --write`
 - [tasks/goals.md](tasks/goals.md) / [tasks/todo.md](tasks/todo.md) / [tasks/lessons.md](tasks/lessons.md) — active goals and backlog
+
+<!-- machine-git-policy -->
+## Git workflow (machine policy, 2026-08-27)
+
+Work on the default branch in this canonical checkout. Do not create
+branches or worktrees by default; they are for tasks that genuinely need
+isolation, or when Donald asks. Any worktree or topic branch created here
+must be merged back into this checkout's default branch, the worktree
+removed, and the branch deleted, before pushing and before the task is
+called done. Full policy: `~/.claude/CLAUDE.md` (*Git discipline*).
+<!-- /machine-git-policy -->
