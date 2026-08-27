@@ -339,6 +339,118 @@ mod tests {
         }
     }
 
+    /// Live `abbeyd` proof. Vacuous unless `ABBEY_DESKTOP_LIVE_DAEMON=1` is
+    /// exported by `desktop/scripts/prove-daemon-read.sh`, which starts an
+    /// owner-only scratch daemon and the matching bearer/socket/state env
+    /// before this process exists (`set_var` is denied here).
+    #[cfg(unix)]
+    #[test]
+    fn live_daemon_desktop_reads_status_and_run_lifecycle() {
+        if std::env::var_os("ABBEY_DESKTOP_LIVE_DAEMON").is_none() {
+            return;
+        }
+        assert!(
+            bearer_source().is_some(),
+            "live daemon proof requires a configured bearer"
+        );
+        let info = connection();
+        assert_eq!(info.source, ConnectionSource::Daemon);
+        assert!(info.bearer_configured);
+        assert!(info.socket_path.is_some(), "{info:?}");
+        assert!(
+            !info.detail.to_ascii_lowercase().contains("in-process"),
+            "daemon connection detail must not describe the in-process core: {}",
+            info.detail
+        );
+
+        let status = status().expect("desktop status through live abbeyd");
+        assert_eq!(
+            status.protocol_version,
+            abbey::app_core::APP_PROTOCOL_VERSION
+        );
+        assert!(
+            status
+                .capabilities
+                .contains(abbey::app_core::AppCapability::ReadRun)
+        );
+        assert!(
+            status
+                .capabilities
+                .contains(abbey::app_core::AppCapability::ReadRunEvents)
+        );
+        assert!(
+            !status
+                .capabilities
+                .contains(abbey::app_core::AppCapability::SubmitRun)
+                || !status.run_routes.is_empty(),
+            "submit advertised without a startup-bound route"
+        );
+
+        let config =
+            DaemonConfig::from_env().expect("daemon config from the same env the desktop uses");
+        let client = DaemonClient::new(config);
+        let submitted = client
+            .request(AppCommand::SubmitRun(abbey::app_core::RunRequest {
+                idempotency_key: abbey::app_core::IdempotencyKey::new(),
+                conversation_id: None,
+                mode: abbey::app_core::RunMode::Background,
+                backend: abbey::app_core::BackendSelection::Abi,
+                input: "desktop-live-proof".to_owned(),
+                labels: Vec::new(),
+            }))
+            .expect("setup submit through the daemon, not the desktop invoke surface");
+        let AppEvent::RunSubmitted(submission) = submitted else {
+            panic!("expected RunSubmitted, got {submitted:?}");
+        };
+        let run_id = submission.run.run_id.clone();
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        let snapshot = loop {
+            let snapshot = run_status(RunQuery {
+                run_id: run_id.clone(),
+            })
+            .expect("desktop run_status through live abbeyd");
+            if snapshot.state.is_terminal() {
+                break snapshot;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "run {} did not become terminal: {:?}",
+                snapshot.run_id,
+                snapshot.state
+            );
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        };
+        assert_eq!(snapshot.run_id, run_id);
+        assert_eq!(snapshot.state, abbey::app_core::RunState::Succeeded);
+        let encoded = serde_json::to_string(&snapshot).expect("serialize snapshot");
+        assert!(
+            !encoded.contains("desktop-live-proof"),
+            "run snapshot echoed prompt input: {encoded}"
+        );
+
+        let page = run_events(RunEventsQuery {
+            run_id: run_id.clone(),
+            after_sequence: 0,
+            through_sequence: None,
+            limit: 16,
+        })
+        .expect("desktop run_events through live abbeyd");
+        assert_eq!(page.run_id, run_id);
+        assert!(!page.events.is_empty(), "lifecycle page was empty");
+        let page_json = serde_json::to_string(&page).expect("serialize events");
+        assert!(
+            !page_json.contains("desktop-live-proof"),
+            "event page echoed prompt input: {page_json}"
+        );
+
+        let routes_page =
+            routes(RouteAuditQuery { limit: 5 }).expect("desktop routes through live abbeyd");
+        routes_page
+            .validate()
+            .expect("daemon route audit must be a valid sanitized page");
+    }
+
     #[test]
     fn connection_detail_never_contains_bearer_material() {
         let info = connection();

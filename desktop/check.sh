@@ -36,6 +36,9 @@ cargo test --quiet --locked -p abbey-desktop --features personal-edition
 # so the variable has to come from here. No daemon is started on purpose: the
 # test requires a configured bearer with nothing listening, and asserts the
 # desktop fails closed instead of answering from the in-process core.
+echo "== cargo test (live scratch abbeyd — desktop reads, no in-process fallback) =="
+./scripts/prove-daemon-read.sh
+
 echo "== cargo test (bearer configured — proves no silent fallback) =="
 ABBEYD_BEARER_TOKEN="$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')" \
   cargo test --quiet -p abbey-desktop a_configured_daemon_never_falls_back

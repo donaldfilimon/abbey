@@ -752,8 +752,11 @@ design subtask never promotes the parent capability to Current.
     `GetRun`/`RunEvents`. The Runs & trace view looks up one canonical run id
     and pages sanitized lifecycle events. Submit and cancel are not registered.
     In-process `AppService` still rejects both reads (`CapabilitySet::standard()`
-    has no `ReadRun`); a live bearer-configured `abbeyd` window remains unproven.
-    Root `./check.sh` is untouched: this stays on `desktop/check.sh`.
+    has no `ReadRun`). Process-level live proof: `desktop/scripts/prove-daemon-read.sh`
+    starts an owner-only scratch `abbeyd` and calls the shipped desktop backend
+    reads (status, run status/events) with a bearer; no-fallback on a dead
+    daemon remains a separate `desktop/check.sh` step. A windowed WebView against
+    live `abbeyd` is still unproven. Root `./check.sh` is untouched.
   - **Slice 1 built 2026-08-08 (`desktop/`, ledger row stays Proposed):** a Tauri 2 +
     React 19 + TypeScript client on bun/Vite, in its own cargo workspace so the root
     gate is untouched. It is a client of the *app core*, reaching `abbeyd` over the
@@ -771,10 +774,11 @@ design subtask never promotes the parent capability to Current.
     validated string-wire idempotency keys, and fixed-watermark lifecycle paging
     (verified negatively: a deliberately wrong `CapabilitySet`/tag produced five `tsc`
     errors plus a `codegen --check` failure).
-    — STILL PROPOSED: "client of `abbeyd`" is unproven at runtime. The daemon route is
-    implemented and unit-tested, but every read observed on this machine came from the
-    in-process core because no bearer is configured. No windowed run against a live
-    `abbeyd` exists.
+    — REAL (process-level, 2026-08-27): a bearer-configured desktop backend
+    reads status and protocol-v2 run status/events through a real scratch
+    `abbeyd` with no in-process fallback; a configured bearer with no listener
+    still fails closed. STILL PROPOSED: windowed WebView, packaging/signing,
+    and submit/cancel on the invoke surface.
   - First-release views: Chat, Runs/trace, Tools/approvals, Memory/semantic spaces,
     Models/downloads, Training/adapters, Cluster/workers, Routes/bindings,
     Doctor/settings

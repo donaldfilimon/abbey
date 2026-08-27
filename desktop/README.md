@@ -235,12 +235,12 @@ Phase 7 in `tasks/todo.md` asks for more than this slice delivers:
 - **Not packaged, signed, or notarized.** No `tauri build` bundle was produced.
   Apple Developer ID + notarization and Windows/Linux signing keys are
   owner-controlled release blockers; no credential was manufactured or embedded.
-- **Not run against a live `abbeyd`.** The daemon route is implemented and
-  tested, but no `abbeyd` was started. With a bearer exported and no listener,
-  the observed result was
-  `Transport: cannot connect to abbeyd at …/abbeyd.sock` — which proves the
-  no-silent-fallback invariant but is not a successful daemon read. Every
-  *successful* read observed on this machine came from the in-process core.
+- **Live `abbeyd` reads are process-level, not a window.**
+  `desktop/scripts/prove-daemon-read.sh` starts an owner-only scratch daemon
+  and drives the shipped desktop `status` / `run_status` / `run_events`
+  functions over that socket. A bearer with no listener still fails closed
+  (`a_configured_daemon_never_falls_back_to_the_in_process_core`). No WebView
+  is opened.
 - **No windowed runtime proof.** A real `abbey-desktop` binary links
   (`Mach-O 64-bit executable arm64`, macOS ARM64), but the window has never been
   opened, so nothing here has been seen rendering.
@@ -252,10 +252,10 @@ Phase 7 in `tasks/todo.md` asks for more than this slice delivers:
   That incompatible transitive upgrade is not available through the current
   Tauri release, so the proposed desktop must not be described as
   vulnerability-free or release-ready.
-- **Seven of the ten first-release views have no data source**, because the
-  Tauri invoke allowlist exposes only status, claims, connection metadata, and
-  bundle identity. Protocol-v2 run commands exist below that boundary but are
-  not wired into this UI.
+- **Six of the ten first-release views have no data source.** Doctor, Claims,
+  Routes, and Runs & trace are wired. Chat, Tools, Memory, Models, Training,
+  and Cluster stay placeholders. Submit and cancel are not on the invoke
+  surface.
 - **No per-edition capability manifest split.** Both editions ship the same
   `capabilities/default.json`; `CapabilitySet` is identical in both editions
   today, so there is nothing to differentiate yet.
