@@ -20,12 +20,16 @@ use abbey::edition::ACTIVE;
 
 use crate::ipc::{BearerSource, ConnectionInfo, ConnectionSource, IpcError, IpcErrorKind};
 
-enum Route {
+mod v3;
+
+pub use v3::{memory_metadata, memory_search, v3_grants};
+
+pub(crate) enum Route {
     Daemon(Box<DaemonClient>),
     InProcess(Box<AppService>),
 }
 
-fn bearer_source() -> Option<BearerSource> {
+pub(crate) fn bearer_source() -> Option<BearerSource> {
     let inline = std::env::var_os(ACTIVE.daemon_bearer_env()).is_some();
     let file = std::env::var_os(ACTIVE.daemon_bearer_file_env()).is_some();
     match (inline, file) {
@@ -36,7 +40,7 @@ fn bearer_source() -> Option<BearerSource> {
     }
 }
 
-fn route() -> Result<Route, IpcError> {
+pub(crate) fn route() -> Result<Route, IpcError> {
     if bearer_source().is_none() {
         return Ok(Route::InProcess(Box::new(AppService::default())));
     }
@@ -163,7 +167,7 @@ fn unexpected(expected: &str, event: &AppEvent) -> IpcError {
     )
 }
 
-fn from_client_error(error: ClientError) -> IpcError {
+pub(crate) fn from_client_error(error: ClientError) -> IpcError {
     // Every arm below maps a `ClientError` whose `Display` is an authored
     // string in `src/daemon/client.rs`. None of them interpolate the bearer.
     let (kind, remedy) = match &error {
@@ -179,15 +183,20 @@ fn from_client_error(error: ClientError) -> IpcError {
             IpcErrorKind::Transport,
             Some(format!("start the daemon: {}", ACTIVE.daemon_binary_name())),
         ),
-        ClientError::Daemon { .. } => (IpcErrorKind::Rejected, None),
+        ClientError::Daemon { .. }
+        | ClientError::DaemonV3 { .. }
+        | ClientError::V3CapabilityNotGranted { .. }
+        | ClientError::InvalidV3Request => (IpcErrorKind::Rejected, None),
         ClientError::ProtocolMismatch { .. }
         | ClientError::MalformedResponse
         | ClientError::RequestIdMismatch
         | ClientError::UnexpectedEvent { .. }
+        | ClientError::UnexpectedV3Event { .. }
         | ClientError::InvalidRuntimeStatus(_)
         | ClientError::InvalidClaimsSnapshot
         | ClientError::InvalidRouteAudit
-        | ClientError::InvalidRunResponse => (
+        | ClientError::InvalidRunResponse
+        | ClientError::InvalidV3Response => (
             IpcErrorKind::Protocol,
             Some(format!(
                 "the desktop client and {} were built from different revisions",

@@ -1,4 +1,4 @@
-// Typed wrappers over the seven enumerated Tauri commands.
+// Typed wrappers over the ten enumerated Tauri commands.
 //
 // Every type below comes from `./generated`, which is projected from Abbey's
 // Rust source. Nothing in this file declares a shape of its own.
@@ -17,6 +17,11 @@ import type {
   RunQuery,
   RunSnapshot,
   RuntimeStatus,
+  V3CapabilitySet,
+  V3EntityPage,
+  V3EntityRecord,
+  V3ResourceQuery,
+  V3SearchRequest,
 } from "./generated";
 
 /**
@@ -30,6 +35,9 @@ export const COMMANDS = [
   "app_routes",
   "app_run_status",
   "app_run_events",
+  "app_v3_grants",
+  "app_memory_search",
+  "app_memory_metadata",
   "app_connection",
   "app_bundle_identity",
 ] as const;
@@ -82,6 +90,18 @@ export function appRunStatus(query: RunQuery): Promise<RunSnapshot> {
 
 export function appRunEvents(query: RunEventsQuery): Promise<RunEventPage> {
   return invoke<RunEventPage>("app_run_events", { query });
+}
+
+export function appV3Grants(): Promise<V3CapabilitySet> {
+  return invoke<V3CapabilitySet>("app_v3_grants");
+}
+
+export function appMemorySearch(request: V3SearchRequest): Promise<V3EntityPage> {
+  return invoke<V3EntityPage>("app_memory_search", { request });
+}
+
+export function appMemoryMetadata(query: V3ResourceQuery): Promise<V3EntityRecord> {
+  return invoke<V3EntityRecord>("app_memory_metadata", { query });
 }
 
 export function appConnection(): Promise<ConnectionInfo> {

@@ -12,7 +12,7 @@
 //      capability is Current, the UI says Current — the missing piece is the
 //      contract, not the capability.
 
-import type { AppCapability } from "./ipc/generated";
+import type { AppCapability, V3Capability } from "./ipc/generated";
 
 export type SurfaceId =
   | "doctor"
@@ -44,16 +44,18 @@ export interface Surface {
   id: SurfaceId;
   label: string;
   blurb: string;
-  /** Capability `app_status` must report before this view holds real data. */
-  requires: AppCapability | null;
+  /** Capability `app_status` (v1/v2) or `app_v3_grants` must report. */
+  requires: AppCapability | V3Capability | null;
   unavailable?: UnavailableSurface;
 }
 
 const CONTRACT_SHAPE =
-  "The desktop exposes read-only Status, Claims, Routes, and protocol-v2 run " +
-  "status/events. In-process `CapabilitySet::standard()` grants `ReadStatus`, " +
-  "`ReadClaims`, and `ReadRoutes`. `ReadRun` and `ReadRunEvents` appear only " +
-  "on a protocol-v2 daemon. Submit and cancel stay off this invoke surface.";
+  "The desktop exposes read-only Status, Claims, Routes, protocol-v2 run " +
+  "status/events, and protocol-v3 memory summary search/metadata. In-process " +
+  "`CapabilitySet::standard()` grants `ReadStatus`, `ReadClaims`, and " +
+  "`ReadRoutes`. `ReadRun`/`ReadRunEvents` appear only on a protocol-v2 " +
+  "daemon. `ReadMemory` is a v3 grant, never an in-process store open. " +
+  "Submit, cancel, invoke, and obsolete stay off this invoke surface.";
 
 export const SURFACES: readonly Surface[] = [
   {
@@ -106,16 +108,8 @@ export const SURFACES: readonly Surface[] = [
   {
     id: "memory",
     label: "Memory",
-    blurb: "STM/LTM, self-learn, similarity search.",
-    requires: null,
-    unavailable: {
-      reason: "not_on_contract",
-      detail:
-        "Abbey's memory backends are not missing — they are not on this contract. " +
-        "`abbeyd` explicitly does not own memory, and no `AppCommand` reads it. See " +
-        "the ledger rows below for what memory actually ships today.",
-      ledgerFilter: "memory",
-    },
+    blurb: "Sanitized protocol-v3 summary search and metadata.",
+    requires: "read_memory",
   },
   {
     id: "models",

@@ -43,6 +43,10 @@ const SOURCES: &[(&str, &str)] = &[
         "desktop/src-tauri/src/ipc.rs",
         "desktop/src-tauri/src/ipc.rs — desktop transport envelope",
     ),
+    (
+        "desktop/src-tauri/src/v3_ipc.rs",
+        "desktop/src-tauri/src/v3_ipc.rs — protocol-v3 memory/grant wire (codegen)",
+    ),
 ];
 
 /// Tauri configs whose bundle identity is written from `abbey::edition`.

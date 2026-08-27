@@ -21,7 +21,8 @@ use abbey::app_core::{
     ClaimRecord, ClaimStatus, ClaimsQuery, ClaimsSnapshot, Edition, IdempotencyKey,
     RouteAuditEntry, RouteAuditPage, RouteAuditQuery, RunEventPage, RunEventRecord, RunId,
     RunLifecycleEvent, RunMode, RunQuery, RunRequest, RunRouteCapability, RunSnapshot, RunState,
-    RuntimeState, RuntimeStatus,
+    RuntimeState, RuntimeStatus, V3Capability, V3CapabilitySet, V3EntityPage, V3EntityRecord,
+    V3OperationState, V3PageQuery, V3SearchRequest,
 };
 use anyhow::{Context, Result};
 use std::fmt::Write as _;
@@ -43,6 +44,9 @@ import type {
   AppEvent,
   CapabilitySet,
   ClaimRecord,
+  V3CapabilitySet,
+  V3EntityPage,
+  V3SearchRequest,
 } from \"./generated\";
 ",
     );
@@ -227,17 +231,56 @@ import type {
         &CapabilitySet::standard(),
     )?;
 
+    emit(
+        &mut out,
+        "v3CapabilitySetFixture",
+        "V3CapabilitySet",
+        &V3CapabilitySet::from_sorted(vec![V3Capability::ReadMemory])
+            .expect("ReadMemory grant set"),
+    )?;
+    emit(
+        &mut out,
+        "v3SearchRequestFixture",
+        "V3SearchRequest",
+        &V3SearchRequest {
+            space_id: "memory-v1-summary".to_owned(),
+            query: "fixture".to_owned(),
+            page: V3PageQuery::default(),
+        },
+    )?;
+    emit(
+        &mut out,
+        "v3EntityPageFixture",
+        "V3EntityPage",
+        &V3EntityPage {
+            after: 0,
+            through: 1,
+            records: vec![V3EntityRecord {
+                id: "memory-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                    .to_owned(),
+                label: "fixture summary".to_owned(),
+                state: V3OperationState::Available,
+            }],
+        },
+    )?;
+
+    let mut desktop_caps = Vec::new();
+    for cap in [
+        AppCapability::ReadStatus,
+        AppCapability::ReadClaims,
+        AppCapability::ReadRoutes,
+        AppCapability::ReadRun,
+        AppCapability::ReadRunEvents,
+    ] {
+        desktop_caps.push(serde_json::to_value(cap)?);
+    }
+    desktop_caps.push(serde_json::to_value(V3Capability::ReadMemory)?);
+
     writeln!(
         out,
         "\n/** Capabilities consumed by the desktop's read-only Tauri bridge. */\nexport const DESKTOP_READ_CAPABILITIES = {} as const;\n\n/** Every capability protocol v2 can advertise when a run route is bound. */\nexport const ALL_APP_CAPABILITIES = {} as const;",
-        serde_json::to_string(&[
-            AppCapability::ReadStatus,
-            AppCapability::ReadClaims,
-            AppCapability::ReadRoutes,
-            AppCapability::ReadRun,
-            AppCapability::ReadRunEvents,
-        ])
-        .context("cannot serialize the desktop capability list")?,
+        serde_json::to_string(&desktop_caps)
+            .context("cannot serialize the desktop capability list")?,
         serde_json::to_string(CapabilitySet::runtime_v2().as_slice())
             .context("cannot serialize the protocol-v2 capability list")?
     )?;

@@ -475,3 +475,92 @@ export interface IpcError {
   message: string;
   remedy: string | null;
 }
+
+// ---------------------------------------------------------------------------
+// desktop/src-tauri/src/v3_ipc.rs — protocol-v3 memory/grant wire (codegen)
+// ---------------------------------------------------------------------------
+
+/**
+ * Individually negotiated protocol-v3 authority. Declaration order is the
+ * canonical serialized order.
+ */
+export type V3Capability =
+  | "list_tools"
+  | "invoke_tools"
+  | "decide_tool_approvals"
+  | "cancel_tools"
+  | "read_memory"
+  | "read_models"
+  | "download_models"
+  | "manage_models"
+  | "read_training"
+  | "manage_training"
+  | "read_workers"
+  | "cancel_jobs"
+  | "read_claims_by_id"
+  | "poll_events"
+  | "infer_models";
+
+/**
+ * Ordered grant set. Wire shape matches `abbey::app_core::V3CapabilitySet`.
+ */
+export interface V3CapabilitySet {
+  capabilities: Array<V3Capability>;
+}
+
+/**
+ * Fixed-watermark page request.
+ */
+export interface V3PageQuery {
+  after?: number;
+  through?: number | null;
+  limit?: number;
+}
+
+/**
+ * Read-only query for one opaque resource identifier.
+ */
+export interface V3ResourceQuery {
+  resource_id: string;
+}
+
+/**
+ * Bounded search within one explicitly selected memory space.
+ */
+export interface V3SearchRequest {
+  space_id: string;
+  query: string;
+  page: V3PageQuery;
+}
+
+/**
+ * Sanitized state for a bounded operation.
+ */
+export type V3OperationState =
+  | "available"
+  | "queued"
+  | "running"
+  | "input_required"
+  | "succeeded"
+  | "failed"
+  | "denied"
+  | "cancelled"
+  | "not_downloaded";
+
+/**
+ * Sanitized record used by inventory and metadata pages.
+ */
+export interface V3EntityRecord {
+  id: string;
+  label: string;
+  state: V3OperationState;
+}
+
+/**
+ * Fixed-watermark inventory page.
+ */
+export interface V3EntityPage {
+  after: number;
+  through: number;
+  records: Array<V3EntityRecord>;
+}

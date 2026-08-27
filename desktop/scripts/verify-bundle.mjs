@@ -116,7 +116,7 @@ const commandNames = new Set(
 );
 if (commandNames.size === 0) fail("generate_handler! enumerates no commands");
 for (const name of commandNames) {
-  if (!/^app_[a-z_]+$/.test(name)) {
+  if (!/^app_[a-z0-9_]+$/.test(name)) {
     fail(`generate_handler! entry \`${name}\` is not an app_ command`);
   }
 }

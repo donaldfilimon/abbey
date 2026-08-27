@@ -1,19 +1,17 @@
 //! The complete set of Tauri commands the Abbey desktop client exposes.
 //!
-//! Seven, all read-only, all enumerated in `main.rs`'s `generate_handler!`. The
+//! Ten, all read-only, all enumerated in `main.rs`'s `generate_handler!`. The
 //! webview can invoke nothing else: there is no `exec`, no submit, no cancel, no
-//! command-name parameter that resolves to a subprocess, and no plugin in
-//! `Cargo.toml` that would provide one.
+//! invoke, no obsolete, no command-name parameter that resolves to a subprocess,
+//! and no plugin in `Cargo.toml` that would provide one.
 //!
-//! Five of them (`app_status`, `app_claims`, `app_routes`, `app_run_status`,
-//! `app_run_events`) are application-core reads. `ReadStatus`/`ReadClaims`/
-//! `ReadRoutes` are what `CapabilitySet::standard()` grants; `ReadRun` and
-//! `ReadRunEvents` appear only on a protocol-v2 daemon. The other two describe
-//! the client itself and touch no Abbey state.
+//! Protocol v1/v2 reads use `AppCommand`. Protocol-v3 memory search/metadata
+//! use a separate session that requests `ReadMemory` only.
 
 use abbey::app_core::{
     ClaimsQuery, ClaimsSnapshot, RouteAuditPage, RouteAuditQuery, RunEventPage, RunEventsQuery,
-    RunQuery, RunSnapshot, RuntimeStatus,
+    RunQuery, RunSnapshot, RuntimeStatus, V3CapabilitySet, V3EntityPage, V3EntityRecord,
+    V3ResourceQuery, V3SearchRequest,
 };
 use abbey::edition::ACTIVE;
 
@@ -55,6 +53,25 @@ pub fn app_run_status(query: RunQuery) -> Result<RunSnapshot, IpcError> {
 #[tauri::command]
 pub fn app_run_events(query: RunEventsQuery) -> Result<RunEventPage, IpcError> {
     backend::run_events(query)
+}
+
+/// Negotiated protocol-v3 grants. The desktop requests `ReadMemory` only.
+/// No bearer → empty set. Never falls back to opening the memory store.
+#[tauri::command]
+pub fn app_v3_grants() -> Result<V3CapabilitySet, IpcError> {
+    backend::v3_grants()
+}
+
+/// `ReadMemory` search over sanitized summaries in `memory-v1-summary`.
+#[tauri::command]
+pub fn app_memory_search(request: V3SearchRequest) -> Result<V3EntityPage, IpcError> {
+    backend::memory_search(request)
+}
+
+/// `ReadMemory` metadata for one opaque domain-separated record id.
+#[tauri::command]
+pub fn app_memory_metadata(query: V3ResourceQuery) -> Result<V3EntityRecord, IpcError> {
+    backend::memory_metadata(query)
 }
 
 /// How this client reaches Abbey. No secret material; see `ipc::ConnectionInfo`.

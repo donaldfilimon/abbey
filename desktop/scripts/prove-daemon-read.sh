@@ -17,10 +17,12 @@ fi
 
 echo "GUI limit: no WebView is opened; process-level desktop backend reads against a real abbeyd are the accepted bar."
 
-echo "== build abbeyd =="
-(cd "$REPO_ROOT" && cargo build --quiet --bin abbeyd)
+echo "== build abbeyd and abbey =="
+(cd "$REPO_ROOT" && cargo build --quiet --bin abbeyd --bin abbey)
 ABBEYD="$REPO_ROOT/target/debug/abbeyd"
+ABBEY="$REPO_ROOT/target/debug/abbey"
 test -x "$ABBEYD"
+test -x "$ABBEY"
 
 SCRATCH="$(mktemp -d /tmp/abbey-desktop-live.XXXXXX)"
 chmod 700 "$SCRATCH"
@@ -75,15 +77,26 @@ while [ ! -S "$SOCKET" ]; do
 done
 echo "abbeyd ready pid=$DAEMON_PID socket=$SOCKET"
 
-echo "== cargo test live_daemon_desktop_reads_status_and_run_lifecycle =="
+echo "== seed sanitized memory summary =="
+ABBEY_STATE_DIR="$SCRATCH" \
+  ABBEY_CONFIG="$SCRATCH/config.toml" \
+  ABBEY_MEMORY_BACKEND=sqlite \
+  "$ABBEY" memory put "desktop-memory-proof canary" \
+    --payload RAW_PAYLOAD_CANARY \
+    --provenance RAW_PROVENANCE_CANARY \
+    --source-ref /private/source/canary \
+    >/dev/null
+
+echo "== cargo test live_daemon_desktop_reads =="
 LOG="$SCRATCH/cargo-test.log"
 set +e
 ABBEY_STATE_DIR="$SCRATCH" \
   ABBEY_CONFIG="$SCRATCH/config.toml" \
   ABBEYD_SOCKET_PATH="$SOCKET" \
   ABBEYD_BEARER_TOKEN="$BEARER" \
+  ABBEY_MEMORY_BACKEND=sqlite \
   ABBEY_DESKTOP_LIVE_DAEMON=1 \
-  cargo test --locked -p abbey-desktop live_daemon_desktop_reads -- --nocapture \
+  cargo test --locked -p abbey-desktop live_daemon_desktop -- --nocapture \
   >"$LOG" 2>&1
 status=$?
 set -e
@@ -92,8 +105,8 @@ if [ "$status" -ne 0 ]; then
   echo "live daemon desktop test failed" >&2
   exit "$status"
 fi
-if ! grep -q 'running 1 test' "$LOG" || ! grep -q 'test result: ok. 1 passed' "$LOG"; then
-  echo "live daemon desktop test did not run (vacuous cargo filter)" >&2
+if ! grep -q 'running 2 tests' "$LOG" || ! grep -q 'test result: ok. 2 passed' "$LOG"; then
+  echo "live daemon desktop tests did not both run (vacuous cargo filter)" >&2
   exit 1
 fi
 

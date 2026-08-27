@@ -10,6 +10,9 @@ import type {
   AppEvent,
   CapabilitySet,
   ClaimRecord,
+  V3CapabilitySet,
+  V3EntityPage,
+  V3SearchRequest,
 } from "./generated";
 
 export const statusCommandFixture = {
@@ -204,8 +207,36 @@ export const capabilitySetFixture = {
   ]
 } as const satisfies CapabilitySet;
 
+export const v3CapabilitySetFixture = {
+  "capabilities": [
+    "read_memory"
+  ]
+} as const satisfies V3CapabilitySet;
+
+export const v3SearchRequestFixture = {
+  "space_id": "memory-v1-summary",
+  "query": "fixture",
+  "page": {
+    "after": 0,
+    "through": null,
+    "limit": 32
+  }
+} as const satisfies V3SearchRequest;
+
+export const v3EntityPageFixture = {
+  "after": 0,
+  "through": 1,
+  "records": [
+    {
+      "id": "memory-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "label": "fixture summary",
+      "state": "available"
+    }
+  ]
+} as const satisfies V3EntityPage;
+
 /** Capabilities consumed by the desktop's read-only Tauri bridge. */
-export const DESKTOP_READ_CAPABILITIES = ["read_status","read_claims","read_routes","read_run","read_run_events"] as const;
+export const DESKTOP_READ_CAPABILITIES = ["read_status","read_claims","read_routes","read_run","read_run_events","read_memory"] as const;
 
 /** Every capability protocol v2 can advertise when a run route is bound. */
 export const ALL_APP_CAPABILITIES = ["read_status","read_claims","read_run","read_run_events","submit_run","cancel_run","read_routes"] as const;

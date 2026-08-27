@@ -7,6 +7,7 @@
 mod backend;
 mod commands;
 mod ipc;
+mod v3_ipc;
 
 use abbey::edition::ACTIVE;
 
@@ -40,6 +41,9 @@ fn main() {
             commands::app_routes,
             commands::app_run_status,
             commands::app_run_events,
+            commands::app_v3_grants,
+            commands::app_memory_search,
+            commands::app_memory_metadata,
             commands::app_connection,
             commands::app_bundle_identity,
         ])
@@ -108,7 +112,7 @@ mod tests {
     }
 
     #[test]
-    fn invoke_surface_reads_runs_without_submit_or_cancel() {
+    fn invoke_surface_reads_runs_and_memory_without_mutation() {
         const MAIN: &str = include_str!("main.rs");
         let handler = MAIN
             .split("generate_handler![")
@@ -116,10 +120,16 @@ mod tests {
             .and_then(|rest| rest.split(']').next())
             .expect("generate_handler block");
         assert!(handler.contains("commands::app_run_status"));
-        assert!(handler.contains("commands::app_run_events"));
+        assert!(handler.contains("commands::app_memory_search"));
+        assert!(handler.contains("commands::app_memory_metadata"));
+        assert!(handler.contains("commands::app_v3_grants"));
         let lower = handler.to_ascii_lowercase();
         assert!(!lower.contains("submit"));
         assert!(!lower.contains("cancel"));
+        assert!(!lower.contains("invoke"));
+        assert!(!lower.contains("obsolete"));
+        assert!(!lower.contains("approve"));
+        assert!(!lower.contains("infer"));
     }
 
     #[test]
