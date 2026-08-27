@@ -8,9 +8,10 @@ metadata. Submit and cancel remain unregistered: this window can inspect a
 durable run, not start or stop one.
 
 Ledger status: `desktop-tauri-react` is **Proposed**. Nothing here changes that.
-The client compiles, typechecks, and reads a real application core in-process,
-but it has not been packaged, signed, notarized, or run against a live `abbeyd`
-on this machine — see [Unmet bars](#unmet-bars).
+The client compiles, typechecks, and reads the linked application core when no
+bearer is set. With a bearer, process-level reads go through a real scratch
+`abbeyd` (`desktop/scripts/prove-daemon-read.sh`). It has not been packaged,
+signed, notarized, or opened as a window — see [Unmet bars](#unmet-bars).
 
 ## Layout
 
@@ -204,29 +205,33 @@ bun run tauri build --config src-tauri/tauri.personal.conf.json
 
 ## Views: real vs placeholder
 
-**Real** (backed by the three capabilities the desktop bridge consumes):
+**Real** (backed by live capabilities the desktop bridge consumes):
 
 - **Doctor** — runtime state, protocol/schema versions, build stamp, edition,
-  granted capabilities, connection route, bundle identity.
-- **Capabilities** — the canonical ledger with the core-validated filter.
-- **Routes** — a bounded sanitized route-audit tail with opaque workspace digests.
+  granted capabilities, connection route, bundle identity (`ReadStatus`).
+- **Capabilities** — the canonical ledger with the core-validated filter (`ReadClaims`).
+- **Routes** — a bounded sanitized route-audit tail with opaque workspace digests (`ReadRoutes`).
+- **Runs & trace** — one durable run snapshot and a fixed-watermark lifecycle
+  page (`ReadRun` / `ReadRunEvents`). In-process `CapabilitySet::standard()`
+  does not grant those; a protocol-v2 daemon does. Submit and cancel stay off
+  the invoke surface.
 
-**Placeholder** — Chat, Runs & trace, Tools & approvals, Memory, Models,
-Training, Cluster. These seven views render **no data at all**. Each states the
-contract-level reason and then shows the *live* ledger rows for a filter, so the
-UI never asserts a status it invented.
+**Placeholder** — Chat, Tools & approvals, Memory, Models, Training, Cluster.
+These six views render **no data at all**. Each states the contract-level
+reason and then shows the *live* ledger rows for a filter, so the UI never
+asserts a status it invented.
 
-The distinction matters and is preserved: memory, routing audit, the local mesh
-proof, and the role bindings are **Current** in Abbey — they are simply not on
-the desktop's read-only invoke surface. Only Training is marked
-`capability_not_implemented`. Calling the Current ones "Proposed" would be a
-fabricated claim in the opposite direction.
+The distinction matters and is preserved: memory, the local mesh proof, and
+the role bindings are **Current** in Abbey — they are simply not on this
+desktop invoke surface. Only Training is marked `capability_not_implemented`.
+Calling the Current ones "Proposed" would be a fabricated claim in the
+opposite direction.
 
-View availability for the three read surfaces is computed from the `CapabilitySet`
-returned by `app_status`, not from a hardcoded boolean. Additional protocol-v2
-capabilities are reported in Doctor, but they never auto-create a view or widen the
-five-command Tauri allowlist; each new desktop operation needs an explicit narrow
-invoke, reducer, UI, and evidence slice.
+View availability is computed from the `CapabilitySet` returned by
+`app_status`, not from a hardcoded boolean. Additional protocol-v2
+capabilities never auto-create a view or widen the seven-command Tauri
+allowlist; each new desktop operation needs an explicit narrow invoke, UI,
+and evidence slice.
 
 ## Unmet bars
 

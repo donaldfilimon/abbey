@@ -801,9 +801,10 @@ design subtask never promotes the parent capability to Current.
     — REAL and each independently checked: strict CSP (no `unsafe-inline`,
     `unsafe-eval`, or wildcard) asserted by a Rust test and by
     `desktop/scripts/verify-bundle.mjs`, which also scans the built `dist/` for remote
-    `src`/`href`, remote dynamic `import()`, `eval(`, and `new Function(`; exactly four
-    enumerated read-only commands (`app_status`, `app_claims`, `app_connection`,
-    `app_bundle_identity`) with no shell/fs/http/process/opener/dialog plugin in the
+    `src`/`href`, remote dynamic `import()`, `eval(`, and `new Function(`; exactly seven
+    enumerated read-only commands (`app_status`, `app_claims`, `app_routes`,
+    `app_run_status`, `app_run_events`, `app_connection`, `app_bundle_identity`)
+    with no shell/fs/http/process/opener/dialog plugin in the
     crate manifest and `core:default` as the only granted permission; no `invoke` call
     outside `src/ipc/client.ts`; the bearer is reported as a boolean plus a source
     *kind* and no IPC type has a field that can hold one. Bundle identities are

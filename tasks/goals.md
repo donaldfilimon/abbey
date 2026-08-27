@@ -942,13 +942,12 @@ capability expansion roadmap without reopening or replacing that section.
 - **Completed 2026-08-10 (Train 1.2 ledger and desktop synchronization):** the
   historical Phase 2 implementation plan's twenty repo-side steps are recorded as
   complete without closing its separate live-runner evidence item. The claims/docs
-  generator now derives the desktop summary from the five-command Rust invoke registry,
-  matching TypeScript command list, three generated read capabilities, and ten-view
+  generator now derives the desktop summary from the enumerated Rust invoke registry,
+  matching TypeScript command list, generated read capabilities, and ten-view
   surface catalogue; it fails on cross-language mismatch, invalid or duplicate stable
-  IDs, capability mismatches, count drift, or stale generated prose. The current split
-  is three available views and seven unavailable views. Slice 2 later added
-  protocol-v2 run status/events reads; the generated desktop inventory is the
-  live count.
+  IDs, capability mismatches, count drift, or stale generated prose. The live split
+  is seven commands, five read capabilities, four available views, and six
+  unavailable views (generated inventory is the live count).
 - **Hardened 2026-08-10 (Train 1.3 conversation recovery isolation; historical
   flake remains open):** a deliberately shared-state red control reproduced the exact
   missing-pending-marker symptom when a sibling recovered the same committed journal.
@@ -1072,12 +1071,18 @@ capability expansion roadmap without reopening or replacing that section.
   tests, and re-checked at startup. Exactly five enumerated read-only commands exist;
   no shell/fs/http/process plugin is in the manifest; the CSP forbids inline, eval, and
   wildcards; and the bearer crosses IPC only as a boolean plus a source kind.
-  **Why the ledger row stays Proposed:** three views (Doctor, Capabilities, Routes) are real
-  because they consume the three capabilities exposed through the desktop's read-only
-  Tauri bridge. Protocol v2 can advertise bounded run capabilities, and Doctor reports
-  them honestly, but no desktop invoke or run UI consumes them; the other seven views
-  render no data and say why. There is also **no packaged runtime proof** — no
-  `tauri build`, no signing or notarization, no Ubuntu/Windows run, and no observed
-  read against a live `abbeyd`, since every read on this machine came from the
-  in-process core. `desktop-tauri-react` requires packaged runtime evidence, which
-  does not exist.
+  **Why the ledger row stays Proposed:** at that slice boundary three views
+  (Doctor, Capabilities, Routes) were real; protocol-v2 run capabilities were
+  advertised but unused; seven views rendered no data. There was no packaged
+  runtime proof and no live-`abbeyd` read — every successful read came from the
+  in-process core. `desktop-tauri-react` still requires packaged runtime
+  evidence.
+- **Built 2026-08-27 (Phase 7 slice 2 — run reads and process-level abbeyd
+  proof; ledger row unchanged at Proposed):** seven enumerated read-only
+  commands (`app_status`, `app_claims`, `app_routes`, `app_run_status`,
+  `app_run_events`, `app_connection`, `app_bundle_identity`). Runs & trace
+  consumes `ReadRun`/`ReadRunEvents` when a protocol-v2 daemon grants them.
+  Submit and cancel stay unregistered. `desktop/scripts/prove-daemon-read.sh`
+  starts an owner-only scratch `abbeyd` and drives the shipped desktop backend
+  reads; a bearer with no listener still fails closed. Packaged, signed, and
+  windowed runtime proof remains absent.

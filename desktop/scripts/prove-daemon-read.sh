@@ -43,6 +43,16 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+# Parent-process ABI/model/bearer-file leftovers must not change negotiated
+# capabilities. Unset rather than `env -u` so macOS /bin/env is enough.
+unset ABBEYD_BEARER_TOKEN_FILE
+unset ABBEY_PERSONAL_BEARER_TOKEN
+unset ABBEY_PERSONAL_BEARER_TOKEN_FILE
+unset ABBEY_MODEL_MANIFEST_DIR
+unset ABBEY_MODEL_RUNTIME_CONFIG
+unset ABI_MODELS_DIR
+unset ABBEY_PERSONAL_ABI_BIN
+
 echo "== start scratch abbeyd =="
 ABBEY_STATE_DIR="$SCRATCH" \
   ABBEY_CONFIG="$SCRATCH/config.toml" \
