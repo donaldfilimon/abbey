@@ -46,6 +46,20 @@ UUID-scoped failure has not recurred and therefore is not causally attributed.
       does **not** identify a specific cause such as billing — do not record one
       without evidence. Owner action: check Actions spending limits / payment state
       for the account owning `donaldfilimon/abbey`.
+      **2026-08-27 re-verified — the symptom above is stale; the item stays open for a
+      different reason.** Hosted runs no longer produce `startup_failure` at 0s with zero
+      jobs. Runs `33069897239`, `33067560632`, and `33065344081` all conclude `success`,
+      and job-level inspection of `33069897239` (head `1352ca4`) shows all three jobs
+      scheduled and evaluated: `gate (macOS ARM64 adjunct)` completed `success`,
+      `gate (Linux ARM64)` completed `skipped`, `gate (GitHub-hosted fork)` completed
+      `skipped`. Scheduling therefore works, and the account/organization-level
+      billing-or-quota hypothesis recorded above is **no longer supported by evidence** —
+      do not carry it forward as the blocker. What is still true, and is now the actual
+      open item: **no GitHub-hosted job has ever executed.** The only job that ran is on
+      the self-hosted macOS ARM64 runner; the `ubuntu-latest` fork job has only ever
+      skipped, because its `if:` correctly excludes same-repository events and no real
+      fork PR has been opened. Runner registration and CI execution remain different
+      facts (`tasks/lessons.md`), and a self-hosted success is not hosted-runner proof.
 - [ ] **Blocked on runner provisioning:** provision/register Linux ARM64, enable
       its explicitly gated repository variable, and obtain a real `./check.sh`
       job; retain Windows runtime proof as a separate open evidence item.
