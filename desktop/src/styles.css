@@ -185,6 +185,20 @@ h2 {
 .badge.expired {
   color: var(--status-out_of_scope);
 }
+.badge.succeeded {
+  color: var(--status-current);
+}
+.badge.failed,
+.badge.cancelled,
+.badge.interrupted {
+  color: var(--status-blocked);
+}
+.badge.queued,
+.badge.starting,
+.badge.running,
+.badge.cancel_requested {
+  color: var(--status-proposed);
+}
 
 .filters {
   display: flex;

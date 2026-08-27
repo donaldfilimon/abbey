@@ -20,7 +20,8 @@ use abbey::app_core::{
     AppCommand, AppEvent, ApprovalKind, ApprovalRequest, BackendSelection, CapabilitySet,
     ClaimRecord, ClaimStatus, ClaimsQuery, ClaimsSnapshot, Edition, IdempotencyKey,
     RouteAuditEntry, RouteAuditPage, RouteAuditQuery, RunEventPage, RunEventRecord, RunId,
-    RunLifecycleEvent, RunMode, RunRequest, RunRouteCapability, RuntimeState, RuntimeStatus,
+    RunLifecycleEvent, RunMode, RunQuery, RunRequest, RunRouteCapability, RunSnapshot, RunState,
+    RuntimeState, RuntimeStatus,
 };
 use anyhow::{Context, Result};
 use std::fmt::Write as _;
@@ -131,6 +132,29 @@ import type {
     )?;
     emit(
         &mut out,
+        "getRunCommandFixture",
+        "AppCommand",
+        &AppCommand::GetRun(RunQuery {
+            run_id: fixed_run_id.clone(),
+        }),
+    )?;
+    emit(
+        &mut out,
+        "runStatusEventFixture",
+        "AppEvent",
+        &AppEvent::RunStatus(RunSnapshot {
+            run_id: fixed_run_id.clone(),
+            conversation_id: None,
+            idempotency_key: "fixture-run-key".parse::<IdempotencyKey>()?,
+            state: RunState::Queued,
+            created_at: "2026-08-08T00:00:00Z".to_owned(),
+            updated_at: "2026-08-08T00:00:00Z".to_owned(),
+            failure: None,
+            event_count: 1,
+        }),
+    )?;
+    emit(
+        &mut out,
         "submitRunCommandFixture",
         "AppCommand",
         &AppCommand::SubmitRun(RunRequest {
@@ -210,6 +234,8 @@ import type {
             AppCapability::ReadStatus,
             AppCapability::ReadClaims,
             AppCapability::ReadRoutes,
+            AppCapability::ReadRun,
+            AppCapability::ReadRunEvents,
         ])
         .context("cannot serialize the desktop capability list")?,
         serde_json::to_string(CapabilitySet::runtime_v2().as_slice())

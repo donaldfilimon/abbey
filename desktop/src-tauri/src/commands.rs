@@ -1,17 +1,19 @@
 //! The complete set of Tauri commands the Abbey desktop client exposes.
 //!
-//! Five, all read-only, all enumerated in `main.rs`'s `generate_handler!`. The
-//! webview can invoke nothing else: there is no `exec`, no `run`, no
+//! Seven, all read-only, all enumerated in `main.rs`'s `generate_handler!`. The
+//! webview can invoke nothing else: there is no `exec`, no submit, no cancel, no
 //! command-name parameter that resolves to a subprocess, and no plugin in
 //! `Cargo.toml` that would provide one.
 //!
-//! Three of them (`app_status`, `app_claims`, `app_routes`) are exactly the
-//! three capabilities `abbey::app_core::CapabilitySet::standard()` grants —
-//! `ReadStatus`, `ReadClaims`, and `ReadRoutes`. The other two describe the
-//! client itself and touch no Abbey state.
+//! Five of them (`app_status`, `app_claims`, `app_routes`, `app_run_status`,
+//! `app_run_events`) are application-core reads. `ReadStatus`/`ReadClaims`/
+//! `ReadRoutes` are what `CapabilitySet::standard()` grants; `ReadRun` and
+//! `ReadRunEvents` appear only on a protocol-v2 daemon. The other two describe
+//! the client itself and touch no Abbey state.
 
 use abbey::app_core::{
-    ClaimsQuery, ClaimsSnapshot, RouteAuditPage, RouteAuditQuery, RuntimeStatus,
+    ClaimsQuery, ClaimsSnapshot, RouteAuditPage, RouteAuditQuery, RunEventPage, RunEventsQuery,
+    RunQuery, RunSnapshot, RuntimeStatus,
 };
 use abbey::edition::ACTIVE;
 
@@ -38,6 +40,21 @@ pub fn app_claims(query: ClaimsQuery) -> Result<ClaimsSnapshot, IpcError> {
 #[tauri::command]
 pub fn app_routes(query: RouteAuditQuery) -> Result<RouteAuditPage, IpcError> {
     backend::routes(query)
+}
+
+/// `ReadRun` — one durable run snapshot. User input and provider output are
+/// not on the type; submit and cancel are different commands and are not
+/// registered here.
+#[tauri::command]
+pub fn app_run_status(query: RunQuery) -> Result<RunSnapshot, IpcError> {
+    backend::run_status(query)
+}
+
+/// `ReadRunEvents` — a bounded, snapshot-consistent page of sanitized
+/// lifecycle events for one run. This is not a live subscription.
+#[tauri::command]
+pub fn app_run_events(query: RunEventsQuery) -> Result<RunEventPage, IpcError> {
+    backend::run_events(query)
 }
 
 /// How this client reaches Abbey. No secret material; see `ipc::ConnectionInfo`.

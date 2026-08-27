@@ -101,6 +101,27 @@ export const approvalEventFixture = {
   }
 } as const satisfies AppEvent;
 
+export const getRunCommandFixture = {
+  "type": "get_run",
+  "payload": {
+    "run_id": "0f6a6f1e-4b2e-4a29-9a6c-2f4d5c0a7b31"
+  }
+} as const satisfies AppCommand;
+
+export const runStatusEventFixture = {
+  "type": "run_status",
+  "payload": {
+    "run_id": "0f6a6f1e-4b2e-4a29-9a6c-2f4d5c0a7b31",
+    "conversation_id": null,
+    "idempotency_key": "fixture-run-key",
+    "state": "queued",
+    "created_at": "2026-08-08T00:00:00Z",
+    "updated_at": "2026-08-08T00:00:00Z",
+    "failure": null,
+    "event_count": 1
+  }
+} as const satisfies AppEvent;
+
 export const submitRunCommandFixture = {
   "type": "submit_run",
   "payload": {
@@ -184,7 +205,7 @@ export const capabilitySetFixture = {
 } as const satisfies CapabilitySet;
 
 /** Capabilities consumed by the desktop's read-only Tauri bridge. */
-export const DESKTOP_READ_CAPABILITIES = ["read_status","read_claims","read_routes"] as const;
+export const DESKTOP_READ_CAPABILITIES = ["read_status","read_claims","read_routes","read_run","read_run_events"] as const;
 
 /** Every capability protocol v2 can advertise when a run route is bound. */
 export const ALL_APP_CAPABILITIES = ["read_status","read_claims","read_run","read_run_events","submit_run","cancel_run","read_routes"] as const;

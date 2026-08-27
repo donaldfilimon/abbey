@@ -50,10 +50,10 @@ export interface Surface {
 }
 
 const CONTRACT_SHAPE =
-  "The desktop exposes only `Status` and `Claims`, and its in-process " +
-  "`CapabilitySet::standard()` grants exactly `ReadStatus` and `ReadClaims`. " +
-  "Abbey's protocol-v2 app core also defines bounded run lifecycle commands, " +
-  "but this desktop invoke surface does not dispatch them yet.";
+  "The desktop exposes read-only Status, Claims, Routes, and protocol-v2 run " +
+  "status/events. In-process `CapabilitySet::standard()` grants `ReadStatus`, " +
+  "`ReadClaims`, and `ReadRoutes`. `ReadRun` and `ReadRunEvents` appear only " +
+  "on a protocol-v2 daemon. Submit and cancel stay off this invoke surface.";
 
 export const SURFACES: readonly Surface[] = [
   {
@@ -85,17 +85,8 @@ export const SURFACES: readonly Surface[] = [
   {
     id: "runs",
     label: "Runs & trace",
-    blurb: "Run lifecycle, events, failures.",
-    requires: null,
-    unavailable: {
-      reason: "not_on_contract",
-      detail:
-        "Protocol v2 defines bounded submit, status, cancel, and fixed-watermark " +
-        "lifecycle-page commands for startup-bound ABI/Foundation Models routes. " +
-        "The desktop's four read-only Tauri commands do not expose those operations " +
-        "yet, and lifecycle paging is not a live output subscription.",
-      ledgerFilter: "provider-neutral",
-    },
+    blurb: "Sanitized protocol-v2 run lifecycle and fixed-watermark events.",
+    requires: "read_run",
   },
   {
     id: "tools",

@@ -1,4 +1,4 @@
-// Typed wrappers over the five enumerated Tauri commands.
+// Typed wrappers over the seven enumerated Tauri commands.
 //
 // Every type below comes from `./generated`, which is projected from Abbey's
 // Rust source. Nothing in this file declares a shape of its own.
@@ -12,6 +12,10 @@ import type {
   IpcError,
   RouteAuditPage,
   RouteAuditQuery,
+  RunEventPage,
+  RunEventsQuery,
+  RunQuery,
+  RunSnapshot,
   RuntimeStatus,
 } from "./generated";
 
@@ -24,6 +28,8 @@ export const COMMANDS = [
   "app_status",
   "app_claims",
   "app_routes",
+  "app_run_status",
+  "app_run_events",
   "app_connection",
   "app_bundle_identity",
 ] as const;
@@ -68,6 +74,14 @@ export function appClaims(query: ClaimsQuery): Promise<ClaimsSnapshot> {
 
 export function appRoutes(query: RouteAuditQuery): Promise<RouteAuditPage> {
   return invoke<RouteAuditPage>("app_routes", { query });
+}
+
+export function appRunStatus(query: RunQuery): Promise<RunSnapshot> {
+  return invoke<RunSnapshot>("app_run_status", { query });
+}
+
+export function appRunEvents(query: RunEventsQuery): Promise<RunEventPage> {
+  return invoke<RunEventPage>("app_run_events", { query });
 }
 
 export function appConnection(): Promise<ConnectionInfo> {

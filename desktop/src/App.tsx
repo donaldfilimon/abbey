@@ -16,6 +16,7 @@ import { ClaimsView } from "./views/ClaimsView";
 import { DoctorView } from "./views/DoctorView";
 import { ErrorCard } from "./views/ErrorCard";
 import { RoutesView } from "./views/RoutesView";
+import { RunsView } from "./views/RunsView";
 import { UnavailableView } from "./views/UnavailableView";
 
 interface Bootstrap {
@@ -103,6 +104,7 @@ export function App() {
         )}
         {boot !== null && surface.id === "claims" && surfaceIsAvailable && <ClaimsView />}
         {boot !== null && surface.id === "routes" && surfaceIsAvailable && <RoutesView />}
+        {boot !== null && surface.id === "runs" && surfaceIsAvailable && <RunsView />}
         {boot !== null && surface.requires !== null && !surfaceIsAvailable && (
           <>
             <h1>{surface.label}</h1>

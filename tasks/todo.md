@@ -163,6 +163,9 @@ the parent capability to Current.
       precedence and override vectors; unknown-target and semantic-duplicate refusal; and
       stale, read-only `synthetic_fixture_claim` status. This remains closed local evidence
       only and adds no live, persistence, approval, execution, deployment, or effect claim.
+
+### Remaining live Discord work (blocked — requires authorization and consent)
+
 - [ ] **Authorized non-synthetic recording capture:** define a separately reviewed
       read-only Discord metadata adapter with explicit manager authorization, participant
       consent rules, least-privilege scopes, bounded freshness and contradiction handling,
@@ -744,6 +747,13 @@ design subtask never promotes the parent capability to Current.
     supplied and labeled estimates otherwise
     — STILL PROPOSED; unchanged by this slice.
 - [ ] **Phase 7 — Tauri 2 React/TypeScript desktop product:**
+  - **Slice 2 built 2026-08-27 (ledger row stays Proposed):** the desktop invoke
+    surface now includes `app_run_status` and `app_run_events` over protocol-v2
+    `GetRun`/`RunEvents`. The Runs & trace view looks up one canonical run id
+    and pages sanitized lifecycle events. Submit and cancel are not registered.
+    In-process `AppService` still rejects both reads (`CapabilitySet::standard()`
+    has no `ReadRun`); a live bearer-configured `abbeyd` window remains unproven.
+    Root `./check.sh` is untouched: this stays on `desktop/check.sh`.
   - **Slice 1 built 2026-08-08 (`desktop/`, ledger row stays Proposed):** a Tauri 2 +
     React 19 + TypeScript client on bun/Vite, in its own cargo workspace so the root
     gate is untouched. It is a client of the *app core*, reaching `abbeyd` over the
@@ -768,18 +778,19 @@ design subtask never promotes the parent capability to Current.
   - First-release views: Chat, Runs/trace, Tools/approvals, Memory/semantic spaces,
     Models/downloads, Training/adapters, Cluster/workers, Routes/bindings,
     Doctor/settings
-    — REAL: Doctor/settings and a Claims/capability browser. Those are exactly what
-    `CapabilitySet::standard()` grants (`ReadStatus` + `ReadClaims`), and view
-    availability is computed from the live capability set, not a hardcoded boolean.
-    — STILL PROPOSED: the other eight render **no data at all**. Protocol v2 has bounded
-    submit/status/cancel/event-page commands, but the Tauri invoke allowlist remains the
-    four read-only status/claims/connection/identity commands and exposes no run UI.
-    Each unavailable view states that client boundary and then shows the *live* ledger
-    rows for a filter, so the UI never asserts a status it invented — memory, routes,
-    role bindings, and the local mesh proof are Current in Abbey and the placeholders
-    say so instead of mislabelling them Proposed. Only Training is marked
-    capability-not-implemented. No mock product data exists anywhere in the window;
-    generated serde fixtures are compile-time contract checks only.
+    — REAL: Doctor/settings, a Claims/capability browser, Routes (when
+    `ReadRoutes` is granted, including in-process `CapabilitySet::standard()`),
+    and Runs & trace (`app_run_status` / `app_run_events`) when the live
+    capability set includes `ReadRun`. Availability is computed from that set,
+    not a hardcoded boolean. Submit and cancel are not registered.
+    — STILL PROPOSED: Chat, Tools, Memory, Models, Training, and Cluster render
+    no data. Protocol v2 still defines submit/cancel, but those stay off the
+    Tauri invoke allowlist. Each unavailable view states that client boundary
+    and then shows the *live* ledger rows for a filter, so the UI never asserts
+    a status it invented. Only Training is marked capability-not-implemented.
+    No mock product data exists anywhere in the window; generated serde
+    fixtures are compile-time contract checks only. In-process run reads are
+    rejected; a windowed live-`abbeyd` proof remains separate.
   - Security: strict CSP, no remote JS/eval, no generic execute-shell invoke, narrow
     Rust commands, secrets never echoed to frontend logs/state; safe vs personal
     editions get different bundle identities and capability manifests

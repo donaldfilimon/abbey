@@ -38,6 +38,8 @@ fn main() {
             commands::app_status,
             commands::app_claims,
             commands::app_routes,
+            commands::app_run_status,
+            commands::app_run_events,
             commands::app_connection,
             commands::app_bundle_identity,
         ])
@@ -103,6 +105,21 @@ mod tests {
         assert!(!csp.contains("unsafe-inline"));
         assert!(!csp.contains("unsafe-eval"));
         assert!(!csp.contains("http://") || csp.contains("http://ipc.localhost"));
+    }
+
+    #[test]
+    fn invoke_surface_reads_runs_without_submit_or_cancel() {
+        const MAIN: &str = include_str!("main.rs");
+        let handler = MAIN
+            .split("generate_handler![")
+            .nth(1)
+            .and_then(|rest| rest.split(']').next())
+            .expect("generate_handler block");
+        assert!(handler.contains("commands::app_run_status"));
+        assert!(handler.contains("commands::app_run_events"));
+        let lower = handler.to_ascii_lowercase();
+        assert!(!lower.contains("submit"));
+        assert!(!lower.contains("cancel"));
     }
 
     #[test]

@@ -13,7 +13,7 @@
 
 use abbey::app_core::{
     AppCommand, AppEvent, AppService, AppServiceError, ClaimsQuery, ClaimsSnapshot, RouteAuditPage,
-    RouteAuditQuery, RuntimeStatus,
+    RouteAuditQuery, RunEventPage, RunEventsQuery, RunQuery, RunSnapshot, RuntimeStatus,
 };
 use abbey::daemon::{ClientError, DaemonClient, DaemonConfig};
 use abbey::edition::ACTIVE;
@@ -63,7 +63,8 @@ pub fn connection() -> ConnectionInfo {
             bearer_source: None,
             detail: format!(
                 "No {} or {} is set, so no abbeyd is configured for the {} edition. \
-                 Status and claims are read from the application core linked into this app.",
+                 Status, claims, and the routing audit are read from the application core \
+                 linked into this app. Protocol-v2 run reads stay daemon-only.",
                 ACTIVE.daemon_bearer_env(),
                 ACTIVE.daemon_bearer_file_env(),
                 ACTIVE.slug()
@@ -121,6 +122,20 @@ pub fn routes(query: RouteAuditQuery) -> Result<RouteAuditPage, IpcError> {
     match dispatch(AppCommand::ReadRoutes(query))? {
         AppEvent::RouteAudit(page) => Ok(page),
         other => Err(unexpected("route_audit", &other)),
+    }
+}
+
+pub fn run_status(query: RunQuery) -> Result<RunSnapshot, IpcError> {
+    match dispatch(AppCommand::GetRun(query))? {
+        AppEvent::RunStatus(snapshot) => Ok(snapshot),
+        other => Err(unexpected("run_status", &other)),
+    }
+}
+
+pub fn run_events(query: RunEventsQuery) -> Result<RunEventPage, IpcError> {
+    match dispatch(AppCommand::RunEvents(query))? {
+        AppEvent::RunEvents(page) => Ok(page),
+        other => Err(unexpected("run_events", &other)),
     }
 }
 
@@ -276,6 +291,52 @@ mod tests {
             ),
             "expected a daemon failure, received {error:?} (bearer source {source:?})"
         );
+    }
+
+    #[test]
+    fn in_process_run_reads_are_rejected_and_do_not_execute() {
+        if bearer_source().is_some() {
+            return;
+        }
+        let run_id = "0f6a6f1e-4b2e-4a29-9a6c-2f4d5c0a7b31"
+            .parse::<abbey::app_core::RunId>()
+            .expect("fixture run id");
+        let status_error = run_status(RunQuery {
+            run_id: run_id.clone(),
+        })
+        .expect_err("in-process GetRun is not permitted");
+        assert_eq!(status_error.kind, IpcErrorKind::Rejected);
+        let events_error = run_events(RunEventsQuery {
+            run_id,
+            after_sequence: 0,
+            through_sequence: None,
+            limit: 16,
+        })
+        .expect_err("in-process RunEvents is not permitted");
+        assert_eq!(events_error.kind, IpcErrorKind::Rejected);
+    }
+
+    #[test]
+    fn a_run_snapshot_never_carries_prompt_or_provider_output() {
+        let rendered = serde_json::to_string(&abbey::app_core::RunSnapshot {
+            run_id: "0f6a6f1e-4b2e-4a29-9a6c-2f4d5c0a7b31"
+                .parse()
+                .expect("fixture run id"),
+            conversation_id: None,
+            idempotency_key: "fixture-run-key".parse().expect("fixture key"),
+            state: abbey::app_core::RunState::Queued,
+            created_at: "2026-08-08T00:00:00Z".to_owned(),
+            updated_at: "2026-08-08T00:00:00Z".to_owned(),
+            failure: None,
+            event_count: 1,
+        })
+        .expect("serialize snapshot");
+        for forbidden in ["input", "prompt", "output", "stdout", "provider"] {
+            assert!(
+                !rendered.contains(forbidden),
+                "run snapshot leaked {forbidden}: {rendered}"
+            );
+        }
     }
 
     #[test]
