@@ -1,4 +1,4 @@
-// Typed wrappers over the eleven enumerated Tauri commands.
+// Typed wrappers over the twelve enumerated Tauri commands.
 //
 // Every type below comes from `./generated`, which is projected from Abbey's
 // Rust source. Nothing in this file declares a shape of its own.
@@ -23,6 +23,7 @@ import type {
   V3PageQuery,
   V3ResourceQuery,
   V3SearchRequest,
+  V3StableClaim,
 } from "./generated";
 
 /**
@@ -40,6 +41,7 @@ export const COMMANDS = [
   "app_memory_search",
   "app_memory_metadata",
   "app_models_list",
+  "app_claim_by_id",
   "app_connection",
   "app_bundle_identity",
 ] as const;
@@ -113,6 +115,14 @@ export function appMemoryMetadata(query: V3ResourceQuery): Promise<V3EntityRecor
  */
 export function appModelsList(query: V3PageQuery): Promise<V3EntityPage> {
   return invoke<V3EntityPage>("app_models_list", { query });
+}
+
+/**
+ * `ReadClaimsById` — one canonical claim by exact stable ID. Distinct from
+ * `appClaims`, which filters the protocol-v1 ledger snapshot.
+ */
+export function appClaimById(query: V3ResourceQuery): Promise<V3StableClaim> {
+  return invoke<V3StableClaim>("app_claim_by_id", { query });
 }
 
 export function appConnection(): Promise<ConnectionInfo> {

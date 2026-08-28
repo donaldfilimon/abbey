@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { appClaims, toIpcError } from "../ipc/client";
-import type { ClaimRecord, ClaimStatus, ClaimsQuery, IpcError } from "../ipc/generated";
+import { appClaimById, appClaims, toIpcError } from "../ipc/client";
+import type {
+  ClaimRecord,
+  ClaimStatus,
+  ClaimsQuery,
+  IpcError,
+  V3StableClaim,
+} from "../ipc/generated";
 import { ErrorCard } from "./ErrorCard";
 
 const STATUSES: readonly (ClaimStatus | "")[] = [
@@ -27,6 +33,104 @@ const STATUS_LABEL: Record<ClaimStatus, string> = {
   superseded: "superseded",
   expired: "expired",
 };
+
+/**
+ * Exact-ID lookup over protocol-v3 `ReadClaimsById`.
+ *
+ * Deliberately part of the Claims surface rather than its own SurfaceId: it is
+ * a lookup refinement of the same ledger, not a second concept. The Claims
+ * surface itself gates on the protocol-v1 `read_claims` capability, so this
+ * section carries its own v3 gate — a daemon may serve the ledger snapshot
+ * while this process holds no v3 session at all (no configured bearer), in
+ * which case the section explains itself instead of failing on every keystroke.
+ */
+export function StableClaimLookup({ granted }: { granted: boolean }) {
+  const [draft, setDraft] = useState("");
+  const [claim, setClaim] = useState<V3StableClaim | null>(null);
+  const [error, setError] = useState<IpcError | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  if (!granted) {
+    return (
+      <div className="card muted">
+        <strong>Exact-ID lookup unavailable</strong>
+        <p className="claim-note">
+          This process did not negotiate <code>read_claims_by_id</code>, which
+          requires a configured <code>abbeyd</code>. The ledger above is a
+          protocol-v1 read and is unaffected.
+        </p>
+      </div>
+    );
+  }
+
+  function lookup() {
+    const resourceId = draft.trim();
+    if (resourceId === "") return;
+    setLoading(true);
+    setError(null);
+    setClaim(null);
+    appClaimById({ resource_id: resourceId })
+      .then(setClaim)
+      .catch((thrown: unknown) => {
+        setError(toIpcError(thrown));
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+  }
+
+  return (
+    <div className="card">
+      <h2>Exact-ID lookup</h2>
+      <p className="claim-note">
+        Resolves one canonical claim by stable ID over{" "}
+        <code>app_claim_by_id</code>. A non-exact ID reports not found rather
+        than a fuzzy match.
+      </p>
+      <div className="filters">
+        <label>
+          Claim ID{" "}
+          <input
+            type="search"
+            spellCheck={false}
+            autoComplete="off"
+            placeholder="stable claim id"
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") lookup();
+            }}
+          />
+        </label>
+        <button
+          type="button"
+          className="nav-button"
+          disabled={draft.trim() === "" || loading}
+          onClick={lookup}
+        >
+          {loading ? "looking up…" : "Look up"}
+        </button>
+      </div>
+      {error !== null && <ErrorCard error={error} />}
+      {claim !== null && (
+        <dl className="kv">
+          <dt>id</dt>
+          <dd>
+            <code>{claim.id}</code>
+          </dd>
+          <dt>name</dt>
+          <dd>{claim.name}</dd>
+          <dt>status</dt>
+          <dd>
+            <ClaimBadge status={claim.status} />
+          </dd>
+          <dt>note</dt>
+          <dd>{claim.note}</dd>
+        </dl>
+      )}
+    </div>
+  );
+}
 
 export function ClaimBadge({ status }: { status: ClaimStatus }) {
   return <span className={`badge ${status}`}>{STATUS_LABEL[status]}</span>;
@@ -81,7 +185,7 @@ export function useClaims(query: ClaimsQuery): {
   return { claims, matched, error };
 }
 
-export function ClaimsView() {
+export function ClaimsView({ claimByIdGranted }: { claimByIdGranted: boolean }) {
   const [status, setStatus] = useState<ClaimStatus | "">("");
   const [contains, setContains] = useState("");
   const trimmed = contains.trim();
@@ -143,6 +247,8 @@ export function ClaimsView() {
           ))}
         </div>
       )}
+
+      <StableClaimLookup granted={claimByIdGranted} />
     </>
   );
 }

@@ -123,7 +123,11 @@ export function App() {
             identity={boot.identity}
           />
         )}
-        {boot !== null && surface.id === "claims" && surfaceIsAvailable && <ClaimsView />}
+        {boot !== null && surface.id === "claims" && surfaceIsAvailable && (
+          <ClaimsView
+            claimByIdGranted={boot.v3Grants.includes("read_claims_by_id")}
+          />
+        )}
         {boot !== null && surface.id === "routes" && surfaceIsAvailable && <RoutesView />}
         {boot !== null && surface.id === "runs" && surfaceIsAvailable && <RunsView />}
         {boot !== null && surface.id === "memory" && surfaceIsAvailable && <MemoryView />}

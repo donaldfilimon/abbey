@@ -1,24 +1,26 @@
 //! Protocol-v3 desktop reads. Separate from v1/v2 `AppCommand` routing.
 //!
-//! The desktop requests **exactly** [`V3Capability::ReadMemory`] and
-//! [`V3Capability::ReadModels`], both read-only. No mutating model grant
-//! (`DownloadModels`, `ManageModels`) is ever requested, so download, load,
-//! and unload remain unreachable from the webview by construction rather than
-//! by UI convention.
+//! The desktop requests **exactly** [`V3Capability::ReadMemory`],
+//! [`V3Capability::ReadModels`], and [`V3Capability::ReadClaimsById`] — all
+//! three read-only. No mutating grant (`DownloadModels`, `ManageModels`,
+//! `InvokeTools`, …) is ever requested, so mutation remains unreachable from
+//! the webview by construction rather than by UI convention.
 //!
-//! Requesting both in one negotiation is safe and deliberate:
+//! Requesting all three in one negotiation is safe and deliberate:
 //! `V3GrantNegotiation::validate_for` rejects only grants that were *not*
-//! requested, so a daemon without model authority configured answers with
-//! `ReadMemory` alone and negotiation still succeeds. Model authority is
-//! edition-scoped and owner-only, so that subset is the expected case, not an
-//! error — the Models surface simply stays ungranted and renders unavailable.
+//! requested, so a daemon that cannot serve one of them answers with the
+//! others and negotiation still succeeds. `ReadModels` is edition-scoped and
+//! owner-only, so its absence is the expected case rather than an error and
+//! the Models surface simply renders unavailable. `ReadClaimsById` is granted
+//! unconditionally at daemon startup, so it is the one grant expected to be
+//! present whenever a daemon is reachable at all.
 //!
 //! In-process `AppService` is not a memory or model backend: no bearer means
 //! deny-all grants and rejected reads, never a silent SQLite open.
 
 use abbey::app_core::{
     V3Capability, V3CapabilitySet, V3EntityPage, V3EntityRecord, V3PageQuery, V3ResourceQuery,
-    V3SearchRequest,
+    V3SearchRequest, V3StableClaim,
 };
 use abbey::daemon::V3DaemonSession;
 
@@ -41,8 +43,9 @@ fn v3_read_session() -> Result<V3DaemonSession, IpcError> {
             let requested = V3CapabilitySet::from_sorted(vec![
                 V3Capability::ReadMemory,
                 V3Capability::ReadModels,
+                V3Capability::ReadClaimsById,
             ])
-            .expect("read-only ReadMemory + ReadModels grant pair is canonical");
+            .expect("read-only ReadMemory + ReadModels + ReadClaimsById set is canonical");
             client.negotiate_v3(requested).map_err(from_client_error)
         }
     }
@@ -83,6 +86,18 @@ pub fn models_list(query: V3PageQuery) -> Result<V3EntityPage, IpcError> {
         .map_err(from_client_error)
 }
 
+/// `ReadClaimsById` — one canonical claim looked up by exact stable ID.
+///
+/// Distinct from the protocol-v1 `app_claims` ledger read: that one filters a
+/// snapshot, this one resolves a single stable identifier and reports
+/// `not_found` for anything else. The daemon grants this unconditionally at
+/// startup, unlike `ReadModels`.
+pub fn claim_by_id(query: V3ResourceQuery) -> Result<V3StableClaim, IpcError> {
+    v3_read_session()?
+        .claim_by_id(query)
+        .map_err(from_client_error)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -114,6 +129,11 @@ mod tests {
         let models_error = models_list(V3PageQuery::default())
             .expect_err("in-process model inventory is not permitted");
         assert_eq!(models_error.kind, IpcErrorKind::Rejected);
+        let claim_error = claim_by_id(V3ResourceQuery {
+            resource_id: "claim-does-not-matter".to_owned(),
+        })
+        .expect_err("in-process claim lookup is not permitted");
+        assert_eq!(claim_error.kind, IpcErrorKind::Rejected);
     }
 
     /// The negotiated request must stay read-only. If a later change adds a
@@ -124,8 +144,9 @@ mod tests {
         let requested = V3CapabilitySet::from_sorted(vec![
             V3Capability::ReadMemory,
             V3Capability::ReadModels,
+            V3Capability::ReadClaimsById,
         ])
-        .expect("canonical read-only pair");
+        .expect("canonical read-only set");
         for forbidden in [
             V3Capability::DownloadModels,
             V3Capability::ManageModels,
@@ -140,11 +161,18 @@ mod tests {
         }
     }
 
-    /// Live proof. Vacuous unless `ABBEY_DESKTOP_LIVE_DAEMON=1` is exported by
+    /// Live proof of every v3 read this process negotiates. Vacuous unless
+    /// `ABBEY_DESKTOP_LIVE_DAEMON=1` is exported by
     /// `desktop/scripts/prove-daemon-read.sh` after seeding memory.
+    ///
+    /// Covers memory search/metadata and exact-ID claim lookup. `ReadModels`
+    /// is deliberately NOT exercised here: the scratch daemon configures no
+    /// model authority, so it is never granted and a read would correctly be
+    /// refused. That gap is stated in `tasks/goals.md` rather than papered
+    /// over with an assertion that would pass for the wrong reason.
     #[cfg(unix)]
     #[test]
-    fn live_daemon_desktop_memory_reads() {
+    fn live_daemon_desktop_v3_reads() {
         if std::env::var_os("ABBEY_DESKTOP_LIVE_DAEMON").is_none() {
             return;
         }
@@ -153,12 +181,23 @@ mod tests {
             grants.contains(V3Capability::ReadMemory),
             "expected ReadMemory, granted {grants:?}"
         );
+        // Unlike `ReadModels`, the daemon grants this one unconditionally at
+        // startup, so a reachable daemon must always produce it.
+        assert!(
+            grants.contains(V3Capability::ReadClaimsById),
+            "expected ReadClaimsById to be unconditionally granted, granted {grants:?}"
+        );
         // `ReadModels` is edition-scoped and owner-only, so the daemon may
         // grant it or not. Both are valid; what must never appear is a
         // capability this process did not request — especially a mutating one.
         for granted in grants.as_slice() {
             assert!(
-                matches!(granted, V3Capability::ReadMemory | V3Capability::ReadModels),
+                matches!(
+                    granted,
+                    V3Capability::ReadMemory
+                        | V3Capability::ReadModels
+                        | V3Capability::ReadClaimsById
+                ),
                 "live daemon granted unrequested capability {granted:?}"
             );
         }
@@ -186,6 +225,23 @@ mod tests {
         })
         .expect("desktop memory metadata through live abbeyd");
         assert_eq!(metadata, *record);
+
+        // Exact-ID claim lookup through the same live session. This is real
+        // evidence that the desktop path resolves a canonical claim, not just
+        // that the grant was negotiated. `ci-self-hosted-linux-proof` is the
+        // same stable ID pinned by `tests/daemon_cli.rs`.
+        let claim = claim_by_id(V3ResourceQuery {
+            resource_id: "ci-self-hosted-linux-proof".to_owned(),
+        })
+        .expect("desktop stable-claim lookup through live abbeyd");
+        assert_eq!(claim.id, "ci-self-hosted-linux-proof");
+        // A non-exact ID must report not found rather than fuzzy-matching the
+        // prefix above.
+        let missing = claim_by_id(V3ResourceQuery {
+            resource_id: "ci-self-hosted-linux".to_owned(),
+        })
+        .expect_err("a non-exact stable id must not resolve");
+        assert_eq!(missing.kind, IpcErrorKind::Rejected);
 
         let rendered = serde_json::to_string(&(page, metadata)).expect("serialize memory page");
         for private in [

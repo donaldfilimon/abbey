@@ -1,4 +1,4 @@
-//! Serde-identical protocol-v3 memory/grant types for desktop codegen.
+//! Serde-identical protocol-v3 memory/grant/claim types for desktop codegen.
 #![allow(dead_code)] // projected by codegen; runtime commands use `abbey::app_core` types
 
 //!
@@ -8,6 +8,7 @@
 //! Keep field names, tags, and `V3Capability` declaration order in lockstep
 //! with `src/app_core/v3.rs`.
 
+use abbey::app_core::ClaimStatus;
 use serde::{Deserialize, Serialize};
 
 /// Individually negotiated protocol-v3 authority. Declaration order is the
@@ -105,6 +106,22 @@ pub struct V3EntityPage {
     pub after: u64,
     pub through: u64,
     pub records: Vec<V3EntityRecord>,
+}
+
+/// Exact-identifier claim lookup result.
+///
+/// Distinct from the protocol-v1 `ClaimsSnapshot`/`ClaimsQuery` pair that the
+/// Claims view already renders: this is a single canonical record fetched by
+/// stable ID through `ReadClaimsById`, not a filtered ledger page. `status`
+/// reuses the `ClaimStatus` already projected from `src/app_core/contracts.rs`
+/// rather than redeclaring it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct V3StableClaim {
+    pub id: String,
+    pub name: String,
+    pub status: ClaimStatus,
+    pub note: String,
 }
 
 #[cfg(test)]

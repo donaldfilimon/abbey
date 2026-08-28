@@ -564,3 +564,19 @@ export interface V3EntityPage {
   through: number;
   records: Array<V3EntityRecord>;
 }
+
+/**
+ * Exact-identifier claim lookup result.
+ * 
+ * Distinct from the protocol-v1 `ClaimsSnapshot`/`ClaimsQuery` pair that the
+ * Claims view already renders: this is a single canonical record fetched by
+ * stable ID through `ReadClaimsById`, not a filtered ledger page. `status`
+ * reuses the `ClaimStatus` already projected from `src/app_core/contracts.rs`
+ * rather than redeclaring it.
+ */
+export interface V3StableClaim {
+  id: string;
+  name: string;
+  status: ClaimStatus;
+  note: string;
+}

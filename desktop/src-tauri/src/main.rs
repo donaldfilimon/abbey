@@ -45,6 +45,7 @@ fn main() {
             commands::app_memory_search,
             commands::app_memory_metadata,
             commands::app_models_list,
+            commands::app_claim_by_id,
             commands::app_connection,
             commands::app_bundle_identity,
         ])
@@ -123,6 +124,7 @@ mod tests {
         assert!(handler.contains("commands::app_run_status"));
         assert!(handler.contains("commands::app_memory_search"));
         assert!(handler.contains("commands::app_models_list"));
+        assert!(handler.contains("commands::app_claim_by_id"));
         assert!(handler.contains("commands::app_memory_metadata"));
         assert!(handler.contains("commands::app_v3_grants"));
         let lower = handler.to_ascii_lowercase();

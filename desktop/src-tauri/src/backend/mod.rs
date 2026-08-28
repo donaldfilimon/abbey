@@ -22,7 +22,7 @@ use crate::ipc::{BearerSource, ConnectionInfo, ConnectionSource, IpcError, IpcEr
 
 mod v3;
 
-pub use v3::{memory_metadata, memory_search, models_list, v3_grants};
+pub use v3::{claim_by_id, memory_metadata, memory_search, models_list, v3_grants};
 
 pub(crate) enum Route {
     Daemon(Box<DaemonClient>),

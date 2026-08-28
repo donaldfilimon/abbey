@@ -1,19 +1,20 @@
 //! The complete set of Tauri commands the Abbey desktop client exposes.
 //!
-//! Eleven, all read-only, all enumerated in `main.rs`'s `generate_handler!`. The
+//! Twelve, all read-only, all enumerated in `main.rs`'s `generate_handler!`. The
 //! webview can invoke nothing else: there is no `exec`, no submit, no cancel, no
 //! invoke, no obsolete, no command-name parameter that resolves to a subprocess,
 //! and no plugin in `Cargo.toml` that would provide one.
 //!
 //! Protocol v1/v2 reads use `AppCommand`. Protocol-v3 memory search/metadata
 //! and model inventory use a separate session that requests exactly
-//! `ReadMemory` and `ReadModels` — both read-only. No mutating grant is ever
-//! requested, so model download/load/unload are unreachable from here.
+//! `ReadMemory`, `ReadModels`, and `ReadClaimsById` — all read-only. No
+//! mutating grant is ever requested, so model download/load/unload are
+//! unreachable from here.
 
 use abbey::app_core::{
     ClaimsQuery, ClaimsSnapshot, RouteAuditPage, RouteAuditQuery, RunEventPage, RunEventsQuery,
     RunQuery, RunSnapshot, RuntimeStatus, V3CapabilitySet, V3EntityPage, V3EntityRecord,
-    V3PageQuery, V3ResourceQuery, V3SearchRequest,
+    V3PageQuery, V3ResourceQuery, V3SearchRequest, V3StableClaim,
 };
 use abbey::edition::ACTIVE;
 
@@ -57,10 +58,11 @@ pub fn app_run_events(query: RunEventsQuery) -> Result<RunEventPage, IpcError> {
     backend::run_events(query)
 }
 
-/// Negotiated protocol-v3 grants. The desktop requests exactly `ReadMemory`
-/// and `ReadModels`; a daemon without model authority grants the former alone
-/// and the Models surface stays unavailable. No bearer → empty set. Never
-/// falls back to opening the memory store.
+/// Negotiated protocol-v3 grants. The desktop requests exactly `ReadMemory`,
+/// `ReadModels`, and `ReadClaimsById`. `ReadModels` is edition-scoped, so a
+/// daemon without model authority omits it and the Models surface stays
+/// unavailable; `ReadClaimsById` is granted unconditionally at daemon startup.
+/// No bearer → empty set. Never falls back to opening the memory store.
 #[tauri::command]
 pub fn app_v3_grants() -> Result<V3CapabilitySet, IpcError> {
     backend::v3_grants()
@@ -84,6 +86,13 @@ pub fn app_memory_metadata(query: V3ResourceQuery) -> Result<V3EntityRecord, Ipc
 #[tauri::command]
 pub fn app_models_list(query: V3PageQuery) -> Result<V3EntityPage, IpcError> {
     backend::models_list(query)
+}
+
+/// `ReadClaimsById` — one canonical claim by exact stable ID. Complements the
+/// protocol-v1 `app_claims` ledger read rather than replacing it.
+#[tauri::command]
+pub fn app_claim_by_id(query: V3ResourceQuery) -> Result<V3StableClaim, IpcError> {
+    backend::claim_by_id(query)
 }
 
 /// How this client reaches Abbey. No secret material; see `ipc::ConnectionInfo`.
