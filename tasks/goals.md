@@ -826,6 +826,40 @@ observed behaviour, not a wiring claim. The one caveat: this capability has no
 daemon/library-level (`tests/daemon_cli.rs:377`) rather than CLI-level as the
 Models slice had.
 
+**2026-08-28 mirror drift tests + resilient bootstrap.** Two gaps an independent
+review of the previous two slices found, both now closed.
+
+`desktop/src-tauri/src/v3_ipc.rs` is a hand-maintained serde mirror, and
+`desktop/codegen` generates the desktop's TypeScript from that MIRROR rather than
+from `src/app_core/v3.rs`. So a shape change upstream would compile clean, pass
+`codegen --check` (which only diffs the mirror against its own output), and fail
+at runtime in the shipped app. Only `V3SearchRequest`/`V3CapabilitySet` were
+pinned; `V3PageQuery`, `V3ResourceQuery`, `V3OperationState`, `V3EntityRecord`,
+`V3EntityPage`, and `V3StableClaim` were not. Six round-trip tests now pin every
+mirrored type against its `abbey::app_core` original, in both directions:
+`deny_unknown_fields` on both sides means a renamed mirror field fails the
+deserialize and an extra one fails the round-trip back.
+
+**Verified by deliberately breaking the mirror, not by inspection.** Two
+experiments. Renaming the Rust field `name` to `title` failed at COMPILE time
+(the test references `mirror.name`) — real, but it only proves the Rust name is
+pinned. The sharper case is a pure wire divergence with Rust names unchanged:
+adding `#[serde(rename = "title")]` to `name` compiles fine and fails at runtime
+with `unknown field 'name', expected one of 'id', 'title', 'status', 'note'`.
+That is precisely the drift that would otherwise reach users. Mirror restored,
+7/7 passing.
+
+Separately, `desktop/src/App.tsx`'s bootstrap made a v3-grants failure fatal to
+the ENTIRE window: with a bearer configured and the daemon unreachable,
+`Promise.all` rejected and blanked the protocol-v1 surfaces too, which never
+needed the daemon. `appV3Grants` now degrades to an empty capability set;
+`appStatus`/`appConnection` stay fatal because every surface depends on them.
+The v3-gated surfaces already render as ungranted on an empty set. This was
+pre-existing (it dates to the first memory-read slice), not introduced by the
+model-inventory or claim-lookup work, but both of those sat behind it.
+
+`desktop/check.sh` and the root `./check.sh` both exit 0.
+
 **The read-only exposure pattern is now exhausted.** An audit of all 15
 `V3Capability` variants found that of the read-only ones, `ReadMemory`,
 `ReadModels`, and `ReadClaimsById` are the only three the daemon negotiates at

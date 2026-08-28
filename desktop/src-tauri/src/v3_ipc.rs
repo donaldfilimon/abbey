@@ -157,4 +157,137 @@ mod tests {
                 .expect("core grants");
         assert_eq!(core_grants, back);
     }
+
+    #[test]
+    fn page_query_wire_matches_app_core_serde() {
+        let core_page = abbey::app_core::V3PageQuery {
+            after: 4,
+            through: Some(9),
+            limit: 16,
+        };
+        let json = serde_json::to_string(&core_page).expect("serialize core page");
+        let mirror: V3PageQuery = serde_json::from_str(&json).expect("desktop page");
+        assert_eq!(mirror.after, 4);
+        assert_eq!(mirror.through, Some(9));
+        assert_eq!(mirror.limit, 16);
+
+        let back: abbey::app_core::V3PageQuery =
+            serde_json::from_str(&serde_json::to_string(&mirror).expect("re-ser page"))
+                .expect("core page");
+        assert_eq!(core_page, back);
+    }
+
+    #[test]
+    fn resource_query_wire_matches_app_core_serde() {
+        let core_query = abbey::app_core::V3ResourceQuery {
+            resource_id: "resource-fixture".to_owned(),
+        };
+        let json = serde_json::to_string(&core_query).expect("serialize core query");
+        let mirror: V3ResourceQuery = serde_json::from_str(&json).expect("desktop query");
+        assert_eq!(mirror.resource_id, "resource-fixture");
+
+        let back: abbey::app_core::V3ResourceQuery =
+            serde_json::from_str(&serde_json::to_string(&mirror).expect("re-ser query"))
+                .expect("core query");
+        assert_eq!(core_query, back);
+    }
+
+    #[test]
+    fn operation_state_wire_matches_app_core_serde() {
+        let variants = [
+            abbey::app_core::V3OperationState::Available,
+            abbey::app_core::V3OperationState::Queued,
+            abbey::app_core::V3OperationState::Running,
+            abbey::app_core::V3OperationState::InputRequired,
+            abbey::app_core::V3OperationState::Succeeded,
+            abbey::app_core::V3OperationState::Failed,
+            abbey::app_core::V3OperationState::Denied,
+            abbey::app_core::V3OperationState::Cancelled,
+            abbey::app_core::V3OperationState::NotDownloaded,
+        ];
+        for core_state in variants {
+            let json = serde_json::to_string(&core_state).expect("serialize core state");
+            let mirror: V3OperationState = serde_json::from_str(&json).expect("desktop state");
+            let back: abbey::app_core::V3OperationState =
+                serde_json::from_str(&serde_json::to_string(&mirror).expect("re-ser state"))
+                    .expect("core state");
+            assert_eq!(core_state, back);
+        }
+    }
+
+    #[test]
+    fn entity_record_wire_matches_app_core_serde() {
+        let core_record = abbey::app_core::V3EntityRecord {
+            id: "entity-fixture".to_owned(),
+            label: "Entity Fixture".to_owned(),
+            state: abbey::app_core::V3OperationState::Running,
+        };
+        let json = serde_json::to_string(&core_record).expect("serialize core record");
+        let mirror: V3EntityRecord = serde_json::from_str(&json).expect("desktop record");
+        assert_eq!(mirror.id, "entity-fixture");
+        assert_eq!(mirror.label, "Entity Fixture");
+        assert_eq!(mirror.state, V3OperationState::Running);
+
+        let back: abbey::app_core::V3EntityRecord =
+            serde_json::from_str(&serde_json::to_string(&mirror).expect("re-ser record"))
+                .expect("core record");
+        assert_eq!(core_record, back);
+    }
+
+    #[test]
+    fn entity_page_wire_matches_app_core_serde() {
+        let core_page = abbey::app_core::V3EntityPage {
+            after: 0,
+            through: 2,
+            records: vec![
+                abbey::app_core::V3EntityRecord {
+                    id: "entity-1".to_owned(),
+                    label: "Entity One".to_owned(),
+                    state: abbey::app_core::V3OperationState::Available,
+                },
+                abbey::app_core::V3EntityRecord {
+                    id: "entity-2".to_owned(),
+                    label: "Entity Two".to_owned(),
+                    state: abbey::app_core::V3OperationState::NotDownloaded,
+                },
+            ],
+        };
+        let json = serde_json::to_string(&core_page).expect("serialize core page");
+        let mirror: V3EntityPage = serde_json::from_str(&json).expect("desktop page");
+        assert_eq!(mirror.after, 0);
+        assert_eq!(mirror.through, 2);
+        assert_eq!(mirror.records.len(), 2);
+        assert_eq!(mirror.records[0].id, "entity-1");
+        assert_eq!(mirror.records[1].state, V3OperationState::NotDownloaded);
+
+        let back: abbey::app_core::V3EntityPage =
+            serde_json::from_str(&serde_json::to_string(&mirror).expect("re-ser page"))
+                .expect("core page");
+        assert_eq!(core_page, back);
+    }
+
+    #[test]
+    fn stable_claim_wire_matches_app_core_serde() {
+        // `status` is `ClaimStatus`, imported directly via
+        // `use abbey::app_core::ClaimStatus;` above rather than redeclared
+        // in this mirror, so no drift is possible on that field
+        // specifically — this round-trip still pins `id`/`name`/`note`.
+        let core_claim = abbey::app_core::V3StableClaim {
+            id: "claim-fixture".to_owned(),
+            name: "Claim Fixture".to_owned(),
+            status: ClaimStatus::Current,
+            note: "fixture note".to_owned(),
+        };
+        let json = serde_json::to_string(&core_claim).expect("serialize core claim");
+        let mirror: V3StableClaim = serde_json::from_str(&json).expect("desktop claim");
+        assert_eq!(mirror.id, "claim-fixture");
+        assert_eq!(mirror.name, "Claim Fixture");
+        assert_eq!(mirror.status, ClaimStatus::Current);
+        assert_eq!(mirror.note, "fixture note");
+
+        let back: abbey::app_core::V3StableClaim =
+            serde_json::from_str(&serde_json::to_string(&mirror).expect("re-ser claim"))
+                .expect("core claim");
+        assert_eq!(core_claim, back);
+    }
 }

@@ -12,6 +12,7 @@ import type {
   IpcError,
   RuntimeStatus,
   V3Capability,
+  V3CapabilitySet,
 } from "./ipc/generated";
 import { SURFACES, type Surface, type SurfaceId } from "./surfaces";
 import { ClaimsView } from "./views/ClaimsView";
@@ -52,7 +53,15 @@ export function App() {
 
   useEffect(() => {
     let live = true;
-    Promise.all([appStatus(), appConnection(), appV3Grants()])
+    // A v3 grants failure (daemon unreachable with a bearer configured) must
+    // not blank the whole window: the v1 surfaces (Doctor/Claims/Routes/Runs)
+    // don't need the daemon, and the v3-gated surfaces already render as
+    // ungranted with no grants present. Only appStatus/appConnection stay
+    // fatal — those back every surface, protocol-v1 included.
+    const v3Grants: Promise<V3CapabilitySet> = appV3Grants().catch(
+      () => ({ capabilities: [] }) satisfies V3CapabilitySet,
+    );
+    Promise.all([appStatus(), appConnection(), v3Grants])
       .then(async ([status, connection, grants]) => {
         // Bundle identity is informational; a failure here must not blank the
         // whole window.
