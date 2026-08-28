@@ -1,17 +1,19 @@
 //! The complete set of Tauri commands the Abbey desktop client exposes.
 //!
-//! Ten, all read-only, all enumerated in `main.rs`'s `generate_handler!`. The
+//! Eleven, all read-only, all enumerated in `main.rs`'s `generate_handler!`. The
 //! webview can invoke nothing else: there is no `exec`, no submit, no cancel, no
 //! invoke, no obsolete, no command-name parameter that resolves to a subprocess,
 //! and no plugin in `Cargo.toml` that would provide one.
 //!
 //! Protocol v1/v2 reads use `AppCommand`. Protocol-v3 memory search/metadata
-//! use a separate session that requests `ReadMemory` only.
+//! and model inventory use a separate session that requests exactly
+//! `ReadMemory` and `ReadModels` — both read-only. No mutating grant is ever
+//! requested, so model download/load/unload are unreachable from here.
 
 use abbey::app_core::{
     ClaimsQuery, ClaimsSnapshot, RouteAuditPage, RouteAuditQuery, RunEventPage, RunEventsQuery,
     RunQuery, RunSnapshot, RuntimeStatus, V3CapabilitySet, V3EntityPage, V3EntityRecord,
-    V3ResourceQuery, V3SearchRequest,
+    V3PageQuery, V3ResourceQuery, V3SearchRequest,
 };
 use abbey::edition::ACTIVE;
 
@@ -55,8 +57,10 @@ pub fn app_run_events(query: RunEventsQuery) -> Result<RunEventPage, IpcError> {
     backend::run_events(query)
 }
 
-/// Negotiated protocol-v3 grants. The desktop requests `ReadMemory` only.
-/// No bearer → empty set. Never falls back to opening the memory store.
+/// Negotiated protocol-v3 grants. The desktop requests exactly `ReadMemory`
+/// and `ReadModels`; a daemon without model authority grants the former alone
+/// and the Models surface stays unavailable. No bearer → empty set. Never
+/// falls back to opening the memory store.
 #[tauri::command]
 pub fn app_v3_grants() -> Result<V3CapabilitySet, IpcError> {
     backend::v3_grants()
@@ -72,6 +76,14 @@ pub fn app_memory_search(request: V3SearchRequest) -> Result<V3EntityPage, IpcEr
 #[tauri::command]
 pub fn app_memory_metadata(query: V3ResourceQuery) -> Result<V3EntityRecord, IpcError> {
     backend::memory_metadata(query)
+}
+
+/// `ReadModels` — one bounded page of the model inventory. Inventory only:
+/// download, load, and unload are separate grants this process never requests,
+/// so they are not reachable from the webview.
+#[tauri::command]
+pub fn app_models_list(query: V3PageQuery) -> Result<V3EntityPage, IpcError> {
+    backend::models_list(query)
 }
 
 /// How this client reaches Abbey. No secret material; see `ipc::ConnectionInfo`.

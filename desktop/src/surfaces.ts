@@ -114,16 +114,8 @@ export const SURFACES: readonly Surface[] = [
   {
     id: "models",
     label: "Models",
-    blurb: "Backends and role bindings.",
-    requires: null,
-    unavailable: {
-      reason: "not_on_contract",
-      detail:
-        "Backend selection and the Max/Gemma role bindings are resolved inside the " +
-        "agent process. `RuntimeStatus` carries the build stamp and capability set, " +
-        "not the model configuration, and no command exposes it.",
-      ledgerFilter: "role bindings",
-    },
+    blurb: "Protocol-v3 model inventory, read-only.",
+    requires: "read_models",
   },
   {
     id: "training",

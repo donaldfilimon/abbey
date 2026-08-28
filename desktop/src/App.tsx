@@ -18,6 +18,7 @@ import { ClaimsView } from "./views/ClaimsView";
 import { DoctorView } from "./views/DoctorView";
 import { ErrorCard } from "./views/ErrorCard";
 import { MemoryView } from "./views/MemoryView";
+import { ModelsView } from "./views/ModelsView";
 import { RoutesView } from "./views/RoutesView";
 import { RunsView } from "./views/RunsView";
 import { UnavailableView } from "./views/UnavailableView";
@@ -35,8 +36,8 @@ function available(
   v3Grants: V3Capability[],
 ): boolean {
   if (surface.requires === null) return false;
-  if (surface.requires === "read_memory") {
-    return v3Grants.includes("read_memory");
+  if (surface.requires === "read_memory" || surface.requires === "read_models") {
+    return v3Grants.includes(surface.requires);
   }
   if (status === null) return false;
   return (status.capabilities.capabilities as readonly string[]).includes(
@@ -126,6 +127,7 @@ export function App() {
         {boot !== null && surface.id === "routes" && surfaceIsAvailable && <RoutesView />}
         {boot !== null && surface.id === "runs" && surfaceIsAvailable && <RunsView />}
         {boot !== null && surface.id === "memory" && surfaceIsAvailable && <MemoryView />}
+        {boot !== null && surface.id === "models" && surfaceIsAvailable && <ModelsView />}
         {boot !== null && surface.requires !== null && !surfaceIsAvailable && (
           <>
             <h1>{surface.label}</h1>

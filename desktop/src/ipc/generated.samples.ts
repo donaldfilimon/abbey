@@ -236,7 +236,7 @@ export const v3EntityPageFixture = {
 } as const satisfies V3EntityPage;
 
 /** Capabilities consumed by the desktop's read-only Tauri bridge. */
-export const DESKTOP_READ_CAPABILITIES = ["read_status","read_claims","read_routes","read_run","read_run_events","read_memory"] as const;
+export const DESKTOP_READ_CAPABILITIES = ["read_status","read_claims","read_routes","read_run","read_run_events","read_memory","read_models"] as const;
 
 /** Every capability protocol v2 can advertise when a run route is bound. */
 export const ALL_APP_CAPABILITIES = ["read_status","read_claims","read_run","read_run_events","submit_run","cancel_run","read_routes"] as const;

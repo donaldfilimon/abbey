@@ -1,55 +1,85 @@
 //! Protocol-v3 desktop reads. Separate from v1/v2 `AppCommand` routing.
 //!
-//! The desktop requests **exactly** [`V3Capability::ReadMemory`]. Extra grants
-//! are never asked for. In-process `AppService` is not a memory backend: no
-//! bearer means deny-all grants and rejected search/metadata, never a silent
-//! SQLite open.
+//! The desktop requests **exactly** [`V3Capability::ReadMemory`] and
+//! [`V3Capability::ReadModels`], both read-only. No mutating model grant
+//! (`DownloadModels`, `ManageModels`) is ever requested, so download, load,
+//! and unload remain unreachable from the webview by construction rather than
+//! by UI convention.
+//!
+//! Requesting both in one negotiation is safe and deliberate:
+//! `V3GrantNegotiation::validate_for` rejects only grants that were *not*
+//! requested, so a daemon without model authority configured answers with
+//! `ReadMemory` alone and negotiation still succeeds. Model authority is
+//! edition-scoped and owner-only, so that subset is the expected case, not an
+//! error — the Models surface simply stays ungranted and renders unavailable.
+//!
+//! In-process `AppService` is not a memory or model backend: no bearer means
+//! deny-all grants and rejected reads, never a silent SQLite open.
 
 use abbey::app_core::{
-    V3Capability, V3CapabilitySet, V3EntityPage, V3EntityRecord, V3ResourceQuery, V3SearchRequest,
+    V3Capability, V3CapabilitySet, V3EntityPage, V3EntityRecord, V3PageQuery, V3ResourceQuery,
+    V3SearchRequest,
 };
 use abbey::daemon::V3DaemonSession;
 
 use super::{Route, bearer_source, from_client_error, route};
 use crate::ipc::{IpcError, IpcErrorKind};
 
-fn v3_memory_session() -> Result<V3DaemonSession, IpcError> {
+fn v3_read_session() -> Result<V3DaemonSession, IpcError> {
     if bearer_source().is_none() {
         return Err(IpcError::new(
             IpcErrorKind::Rejected,
-            "protocol-v3 memory reads require a configured abbeyd",
+            "protocol-v3 reads require a configured abbeyd",
         ));
     }
     match route()? {
         Route::InProcess(_) => Err(IpcError::new(
             IpcErrorKind::Rejected,
-            "protocol-v3 memory reads are daemon-only and never open the in-process store",
+            "protocol-v3 reads are daemon-only and never open the in-process store",
         )),
         Route::Daemon(client) => {
-            let requested = V3CapabilitySet::from_sorted(vec![V3Capability::ReadMemory])
-                .expect("single ReadMemory grant is canonical");
+            let requested = V3CapabilitySet::from_sorted(vec![
+                V3Capability::ReadMemory,
+                V3Capability::ReadModels,
+            ])
+            .expect("read-only ReadMemory + ReadModels grant pair is canonical");
             client.negotiate_v3(requested).map_err(from_client_error)
         }
     }
 }
 
 /// Negotiated v3 grants for this process. No bearer → empty set, not an error.
+///
+/// The returned set is what the frontend gates surfaces on, so a daemon that
+/// grants only `ReadMemory` correctly leaves the Models surface unavailable
+/// rather than showing a view whose every read would be refused.
 pub fn v3_grants() -> Result<V3CapabilitySet, IpcError> {
     if bearer_source().is_none() {
         return Ok(V3CapabilitySet::deny_all());
     }
-    Ok(v3_memory_session()?.negotiation().granted.clone())
+    Ok(v3_read_session()?.negotiation().granted.clone())
 }
 
 pub fn memory_search(request: V3SearchRequest) -> Result<V3EntityPage, IpcError> {
-    v3_memory_session()?
+    v3_read_session()?
         .search_memory(request)
         .map_err(from_client_error)
 }
 
 pub fn memory_metadata(query: V3ResourceQuery) -> Result<V3EntityRecord, IpcError> {
-    v3_memory_session()?
+    v3_read_session()?
         .read_memory_metadata(query)
+        .map_err(from_client_error)
+}
+
+/// `ReadModels` — one bounded fixed-watermark page of the model inventory.
+///
+/// Read-only by construction: the session never negotiates `DownloadModels` or
+/// `ManageModels`, so the daemon refuses any mutation this process could
+/// attempt even if a future caller tried.
+pub fn models_list(query: V3PageQuery) -> Result<V3EntityPage, IpcError> {
+    v3_read_session()?
+        .list_models(query)
         .map_err(from_client_error)
 }
 
@@ -61,7 +91,7 @@ mod tests {
     const MEMORY_SPACE: &str = "memory-v1-summary";
 
     #[test]
-    fn in_process_v3_grants_are_empty_and_memory_reads_reject() {
+    fn in_process_v3_grants_are_empty_and_reads_reject() {
         if crate::backend::bearer_source().is_some() {
             return;
         }
@@ -79,6 +109,35 @@ mod tests {
         })
         .expect_err("in-process memory metadata is not permitted");
         assert_eq!(meta_error.kind, IpcErrorKind::Rejected);
+        // Models must fail closed on the same in-process route: a desktop
+        // without a configured daemon has no model authority either.
+        let models_error = models_list(V3PageQuery::default())
+            .expect_err("in-process model inventory is not permitted");
+        assert_eq!(models_error.kind, IpcErrorKind::Rejected);
+    }
+
+    /// The negotiated request must stay read-only. If a later change adds a
+    /// mutating model grant to `v3_read_session`, this fails rather than
+    /// silently handing the webview download/load/unload authority.
+    #[test]
+    fn requested_v3_grants_are_read_only() {
+        let requested = V3CapabilitySet::from_sorted(vec![
+            V3Capability::ReadMemory,
+            V3Capability::ReadModels,
+        ])
+        .expect("canonical read-only pair");
+        for forbidden in [
+            V3Capability::DownloadModels,
+            V3Capability::ManageModels,
+            V3Capability::InvokeTools,
+            V3Capability::ManageTraining,
+            V3Capability::InferModels,
+        ] {
+            assert!(
+                !requested.contains(forbidden),
+                "desktop must never request {forbidden:?}"
+            );
+        }
     }
 
     /// Live proof. Vacuous unless `ABBEY_DESKTOP_LIVE_DAEMON=1` is exported by
@@ -92,9 +151,17 @@ mod tests {
         let grants = v3_grants().expect("v3 grants through live abbeyd");
         assert!(
             grants.contains(V3Capability::ReadMemory),
-            "expected ReadMemory only, granted {grants:?}"
+            "expected ReadMemory, granted {grants:?}"
         );
-        assert_eq!(grants.as_slice(), &[V3Capability::ReadMemory]);
+        // `ReadModels` is edition-scoped and owner-only, so the daemon may
+        // grant it or not. Both are valid; what must never appear is a
+        // capability this process did not request — especially a mutating one.
+        for granted in grants.as_slice() {
+            assert!(
+                matches!(granted, V3Capability::ReadMemory | V3Capability::ReadModels),
+                "live daemon granted unrequested capability {granted:?}"
+            );
+        }
 
         let page = memory_search(V3SearchRequest {
             space_id: MEMORY_SPACE.to_owned(),
