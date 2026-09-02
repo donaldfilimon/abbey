@@ -1,5 +1,5 @@
 # Abbey TUI — exact 2026 nightly, using Rust's current edition 2024.
 [toolchain]
-channel = "nightly-2026-08-19"
+channel = "nightly-2026-09-01"
 components = ["rustfmt", "clippy"]
 profile = "minimal"

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import importlib.util
 from pathlib import Path
 import stat
@@ -141,6 +142,92 @@ class ClaimsSyncTests(unittest.TestCase):
         invalid["claims"][0]["id"] = "example.invalid"
         with self.assertRaisesRegex(ValueError, "invalid id"):
             claims_sync.normalize_manifest(invalid)
+
+    def test_manifest_status_semantics_fail_closed(self) -> None:
+        cases = (
+            ("current", lambda claim: claim["evidence"].update({"local_live": {"state": "required", "refs": ["proof"]}}), "cannot carry required"),
+            ("partial", lambda claim: claim.update({"status": "partial"}), "missing proof"),
+            ("proposed", lambda claim: claim.update({"status": "proposed"}), "shipped evidence"),
+            ("blocked", lambda claim: claim.update({"status": "blocked"}), "external evidence"),
+            ("out_of_scope", lambda claim: (claim.update({"status": "out_of_scope"}), claim["evidence"].update({"local_live": {"state": "verified", "refs": ["proof"]}})), "cannot carry evidence state"),
+        )
+        for name, mutate, error in cases:
+            with self.subTest(name=name):
+                manifest = copy.deepcopy(fixture_manifest())
+                mutate(manifest["claims"][0])
+                with self.assertRaisesRegex(ValueError, error):
+                    claims_sync.normalize_manifest(manifest)
+
+    def test_lifecycle_status_semantics_fail_closed(self) -> None:
+        for status, error in (
+            ("failed", "verified local evidence"),
+            ("expired", "fresh local proof"),
+        ):
+            with self.subTest(status=status):
+                manifest = copy.deepcopy(fixture_manifest())
+                manifest["claims"][0]["status"] = status
+                if status == "failed":
+                    manifest["claims"][0]["evidence"]["local_live"] = {
+                        "state": "verified",
+                        "refs": ["proof"],
+                    }
+                with self.assertRaisesRegex(ValueError, error):
+                    claims_sync.normalize_manifest(manifest)
+
+        revoked = copy.deepcopy(fixture_manifest())
+        revoked["claims"][0]["status"] = "revoked"
+        revoked["claims"][0]["evidence"]["local_live"] = {
+            "state": "required",
+            "refs": ["proof"],
+        }
+        with self.assertRaisesRegex(ValueError, "evidence outstanding"):
+            claims_sync.normalize_manifest(revoked)
+
+    def test_superseded_claim_requires_an_existing_replacement(self) -> None:
+        manifest = copy.deepcopy(fixture_manifest())
+        replacement = copy.deepcopy(manifest["claims"][0])
+        replacement["id"] = "example-replacement"
+        replacement["name"] = "Example replacement"
+        manifest["claims"].append(replacement)
+        manifest["claims"][0]["status"] = "superseded"
+        manifest["claims"][0]["instead"] = "example-replacement"
+        claims_sync.normalize_manifest(manifest)
+
+        for instead in (None, "missing-claim", "example-current"):
+            with self.subTest(instead=instead):
+                invalid = copy.deepcopy(manifest)
+                invalid["claims"][0]["instead"] = instead
+                with self.assertRaisesRegex(ValueError, "replacement|invalid instead"):
+                    claims_sync.normalize_manifest(invalid)
+
+    def test_evidence_state_shapes_are_exact(self) -> None:
+        invalid_states = (
+            {"state": "required"},
+            {"state": "not_required"},
+            {"state": "required", "refs": ["proof"], "reason": "mixed"},
+            {"state": "verified", "refs": ["proof"], "extra": True},
+        )
+        for state in invalid_states:
+            with self.subTest(state=state):
+                manifest = copy.deepcopy(fixture_manifest())
+                manifest["claims"][0]["evidence"]["local_live"] = state
+                with self.assertRaisesRegex(ValueError, "local_live"):
+                    claims_sync.normalize_manifest(manifest)
+
+    def test_nonblocked_goal_cannot_carry_blocker_owner(self) -> None:
+        goals = """## Active
+<!-- abbey-goal
+id: active
+status: in_progress
+implementation-evidence: source
+automated-test-evidence: tests
+live-external-evidence: local
+next-action: continue
+blocker-owner: repository owner
+-->
+"""
+        with self.assertRaisesRegex(ValueError, "nonblocked goal"):
+            claims_sync.parse_goal_metadata(goals)
 
     def test_generated_region_is_semantic_and_idempotent(self) -> None:
         manifest = fixture_manifest()

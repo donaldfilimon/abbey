@@ -11,6 +11,7 @@
 use crate::agent;
 use crate::output;
 use anyhow::Result;
+use std::path::Path;
 use std::process::Command;
 use std::thread;
 
@@ -83,11 +84,11 @@ pub fn surface_matrix() -> &'static [SurfaceSupport] {
             note: "syntect ANSI when TTY",
         },
         SurfaceSupport {
-            name: "voice I/O (say + Speech)",
-            linux: false,
+            name: "voice I/O (say/Speech; whisper/espeak/piper/SAPI when present)",
+            linux: true,
             macos: true,
-            windows: false,
-            note: "macOS only",
+            windows: true,
+            note: "macOS say+Speech Current; portable tools when on PATH; no bundled weights",
         },
         SurfaceSupport {
             name: "on-device fm backend",
@@ -323,8 +324,9 @@ pub fn print_platform() -> Result<i32> {
          observable here. The rows above are presence detection only. Numerical kernel \
          execution on Metal, checked against a CPU oracle, ships behind `--features accel` \
          (`abbey accel verify`) — that is arithmetic, not models. Multi-threading = subagent \
-         jobs, not accelerator kernels. Voice/fm remain macOS-only.\n\
-         paths:   abbey platform paths"
+         jobs, not accelerator kernels. Voice adapters are portable when host \
+         tools exist; fm remains macOS-only. Live Discord and GUI learning are not Current.\n\
+         paths:   abbey platform paths · abbey platform ui"
     );
     Ok(0)
 }
@@ -368,6 +370,63 @@ pub fn print_compute() -> Result<i32> {
     Ok(0)
 }
 
+/// Report-only GUI / accessibility / desktop / Discord inventory.
+///
+/// This is host detection, not UI learning and not a Discord bot.
+pub fn print_ui_surfaces() -> Result<i32> {
+    println!("abbey platform ui — report-only host GUI / a11y / client inventory");
+    println!(
+        "host:    {}/{}",
+        std::env::consts::OS,
+        std::env::consts::ARCH
+    );
+    match std::env::consts::OS {
+        "macos" => {
+            let ax = Path::new("/System/Library/Frameworks/ApplicationServices.framework").is_dir()
+                || Path::new("/usr/bin/osascript").is_file();
+            println!(
+                "a11y:    macOS Accessibility / AX — {} (inventory only; Abbey does not drive UI)",
+                if ax {
+                    "frameworks present"
+                } else {
+                    "not found"
+                }
+            );
+        }
+        "linux" => {
+            let atspi = Path::new("/usr/lib/at-spi2-core").is_dir()
+                || crate::host::which_bin("busctl").is_some();
+            println!(
+                "a11y:    AT-SPI — {} (inventory only; Abbey does not drive GTK/Qt)",
+                if atspi { "tools present" } else { "not found" }
+            );
+        }
+        "windows" => {
+            println!(
+                "a11y:    UI Automation is a Windows runtime API — no execution proof on this build host"
+            );
+        }
+        other => println!("a11y:    no GUI inventory for OS `{other}`"),
+    }
+    println!(
+        "desktop: Tauri 2 + React client exists as source (`desktop/`) — \
+         windowed packaging is Proposed (`desktop-tauri-react`); not a shipped native app"
+    );
+    println!(
+        "discord: Program 3 is closed synthetic guild intelligence only. \
+         There is no live Discord bot, no participant-consented capture, \
+         and no Discord app feature parity claim."
+    );
+    println!(
+        "learn-ui: driving or learning macOS / Linux / Windows GUI is not implemented. \
+         `abbey os` remains allowlist + --confirm. This command does not grant GUI control."
+    );
+    println!(
+        "voice:   `abbey voice status` — macOS say/Speech plus portable Whisper tiny/base when installed"
+    );
+    Ok(0)
+}
+
 pub fn dispatch(args: &[String]) -> Result<i32> {
     match args.first().map(String::as_str) {
         None | Some("status") | Some("show") | Some("targets") => print_platform(),
@@ -381,6 +440,9 @@ pub fn dispatch(args: &[String]) -> Result<i32> {
             println!("argv_clamp_bytes: {}", crate::host::max_prompt_argv_bytes());
             Ok(0)
         }
+        Some("ui") | Some("gui") | Some("a11y") | Some("discord") | Some("desktop") => {
+            print_ui_surfaces()
+        }
         Some("refuse") | Some("runtime") | Some("kernels") => crate::claims::refuse("npu"),
         Some("-h") | Some("--help") => {
             println!(
@@ -391,6 +453,7 @@ pub fn dispatch(args: &[String]) -> Result<i32> {
                    abbey platform compute      # threads + GPU/NPU/TPU detect\n\
                    abbey platform paths        # state/config/agent locations\n\
                    abbey platform threads      # parallelism + argv clamp\n\
+                   abbey platform ui           # GUI/a11y/discord/desktop inventory (report-only)\n\
                    abbey platform refuse       # Proposed: Abbey accelerator runtime\n\
                  \n\
                  aliases: abbey compute · abbey accel\n\
@@ -400,7 +463,7 @@ pub fn dispatch(args: &[String]) -> Result<i32> {
         }
         Some(other) => {
             anyhow::bail!(
-                "unknown platform subcommand `{other}` — try: status|compute|paths|threads|refuse"
+                "unknown platform subcommand `{other}` — try: status|compute|paths|threads|ui|refuse"
             );
         }
     }
@@ -430,6 +493,20 @@ mod tests {
             .find(|s| s.name.starts_with("CLI core"))
             .unwrap();
         assert!(core.linux && core.macos && core.windows);
+        let voice = surface_matrix()
+            .iter()
+            .find(|s| s.name.starts_with("voice I/O"))
+            .unwrap();
+        assert!(
+            voice.linux && voice.macos && voice.windows,
+            "portable voice adapters are source-present on every primary host"
+        );
+        assert!(voice.note.contains("no bundled weights"), "{}", voice.note);
+    }
+
+    #[test]
+    fn ui_inventory_returns_success() {
+        assert_eq!(print_ui_surfaces().unwrap(), 0);
     }
 
     #[test]

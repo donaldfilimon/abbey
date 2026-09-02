@@ -149,8 +149,37 @@ pub fn claude_model(requested: &str) -> Option<String> {
     }
 }
 
-/// How much transcript tail rides into an abi turn as context.
+/// How much transcript tail rides into an abi/ollama turn as context.
 pub const ABI_CONTEXT_TAIL_BYTES: usize = 8 * 1024;
+
+/// Map an Abbey model/alias onto a local Ollama tag.
+///
+/// Cursor leftovers (`claude-*thinking*`, `composer-2.5`, `auto`) collapse to
+/// the default local Gemma 4 26.2B MLX tag. `gemma:27b-mlx` is accepted as an
+/// alias for that same installed weight — Ollama has no `gemma:27b-mlx` tag
+/// on this host. Any other non-empty string is passed through so a user can
+/// select `gemma4:12b-mlx` without Abbey rewriting it.
+pub fn ollama_normalize_model(requested: &str) -> String {
+    let t = requested.trim();
+    let lower = t.to_ascii_lowercase();
+    match lower.as_str() {
+        "" | "auto" | "smart" | "default" | "local" | "ollama" | "gemma" | "gemma4" | "gemma-4"
+        | "gemma:27b-mlx" | "gemma4:26b-mlx" | "gemma4:26b" | "max" | "composer" | "composer2"
+        | "composer-2.5" | "opus" | "opus5" | "fable" | "fable5" | "qwen" | "kimi" | "grok"
+        | "codex" | "sol" | "terra" => crate::models::OLLAMA_DEFAULT_MODEL.into(),
+        other
+            if other.starts_with("cursor-")
+                || other.starts_with("claude-")
+                || other.starts_with("gpt-")
+                || other.starts_with("composer-")
+                || other.starts_with("kimi-")
+                || other.contains("thinking") =>
+        {
+            crate::models::OLLAMA_DEFAULT_MODEL.into()
+        }
+        _ => t.to_string(),
+    }
+}
 
 /// The trailing ≤ `max_bytes` of `s`, cut on a UTF-8 boundary.
 pub fn utf8_tail(s: &str, max_bytes: usize) -> &str {
@@ -228,7 +257,7 @@ pub fn clamp_prompt_args(prompt_and_rest: &[String]) -> Vec<String> {
         .collect()
 }
 
-pub(super) fn map_exec_err(err: std::io::Error, agent_path: &Path) -> anyhow::Error {
+pub(crate) fn map_exec_err(err: std::io::Error, agent_path: &Path) -> anyhow::Error {
     let cap = max_prompt_argv_bytes();
     // E2BIG — Darwin/Linux typically use errno 7; Windows CreateProcess uses other codes.
     let too_long = err.raw_os_error() == Some(7)
@@ -401,6 +430,49 @@ impl AgentConfig {
         args
     }
 
+    /// `ollama run` argv. Built from scratch like the `abi` grammar: ollama
+    /// shares no flags with cursor-agent, and a leaked `--force`/`--sandbox`
+    /// would be parsed as (or joined into) the prompt.
+    ///
+    /// `ollama run` is a stateless one-shot with no `--resume` flag, so the
+    /// mode note rides in the input text and the prompt always follows a real
+    /// `--` separator. `resume_id` names the transcript whose bounded tail is
+    /// injected as a context prefix (Abbey-side continuity).
+    fn build_args_ollama(
+        &self,
+        resume_id: Option<&str>,
+        prompt_and_rest: &[String],
+    ) -> Vec<String> {
+        let prompts = clamp_prompt_args(prompt_and_rest);
+        let mut args = vec![
+            "run".into(),
+            "--nowordwrap".into(),
+            ollama_normalize_model(&self.model),
+            "--".into(),
+        ];
+        if let Some(id) = resume_id.filter(|i| !i.is_empty())
+            && let Some(path) = self.transcript_path(id)
+            && let Ok(prev) = std::fs::read_to_string(&path)
+        {
+            let tail = utf8_tail(&prev, ABI_CONTEXT_TAIL_BYTES);
+            if !tail.trim().is_empty() {
+                args.push(format!(
+                    "Previous conversation (context, oldest first, may be truncated):\n\
+                     {tail}\n--- end of context; answer the next message ---"
+                ));
+            }
+        }
+        if let Some(mode) = &self.mode {
+            args.push(match mode.as_str() {
+                "ask" => "Answer the question. Do not modify files.".into(),
+                "plan" => "Produce a plan only. Do not write the implementation.".into(),
+                other => format!("Mode: {other}."),
+            });
+        }
+        args.extend(prompts);
+        args
+    }
+
     pub fn build_args(&self, resume_id: Option<&str>, prompt_and_rest: &[String]) -> Vec<String> {
         if self.backend == AgentBackend::Fm {
             return self.build_args_fm(resume_id, prompt_and_rest);
@@ -410,6 +482,9 @@ impl AgentConfig {
         }
         if self.backend == AgentBackend::Claude {
             return self.build_args_claude(resume_id, prompt_and_rest);
+        }
+        if self.backend == AgentBackend::Ollama {
+            return self.build_args_ollama(resume_id, prompt_and_rest);
         }
         let prompts = clamp_prompt_args(prompt_and_rest);
         let mut args = Vec::new();

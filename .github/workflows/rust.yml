@@ -16,12 +16,17 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  ABBEY_TOOLCHAIN: nightly-2026-09-01
+  # This must match rust-toolchain.toml at ABI_REVISION until that immutable
+  # integration pin advances.
+  ABI_TOOLCHAIN: nightly-2026-08-20
   ABI_REVISION: 21f2e2f0e5a5ec325a67dc8f6b05be360b1ed5f3
   # WDBX was extracted from abi on 2026-08-22. abbey consumes abi-wdbx and
   # abi-compute from it directly, and also transitively through abi-worker and
   # abi-sea, so all three checkouts must be siblings or Cargo resolves two
-  # non-unifying copies of abi-wdbx. Public source removes the cross-repository
-  # credential requirement; the immutable pin remains mandatory.
+  # non-unifying copies of abi-wdbx. The workflow fetches both siblings as
+  # tokenless public source and fails closed if either becomes private; the
+  # immutable pins remain mandatory.
   WDBX_REVISION: f42b9789eabcf89f952df0a160a7b6837c5acb57
 
 # Self-hosted jobs are restricted to trusted same-repository events. Fork code
@@ -39,30 +44,32 @@ jobs:
     runs-on: [self-hosted, Linux, ARM64, abbey]
     steps:
       - name: Check out Abbey
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: abbey
+          persist-credentials: false
 
       - name: Check out the verified ABI dependency
-        uses: actions/checkout@v4
-        with:
-          repository: donaldfilimon/abi
-          ref: ${{ env.ABI_REVISION }}
-          path: abi
+        run: >-
+          ./abbey/tools/ci/checkout-public-revision.sh
+          donaldfilimon/abi "${ABI_REVISION}" abi
 
       - name: Check out the public WDBX substrate
-        uses: actions/checkout@v4
-        with:
-          repository: donaldfilimon/wdbx
-          ref: ${{ env.WDBX_REVISION }}
-          path: wdbx
+        run: >-
+          ./abbey/tools/ci/checkout-public-revision.sh
+          donaldfilimon/wdbx "${WDBX_REVISION}" wdbx
 
-      - name: Install pinned toolchain
-        working-directory: abbey
-        run: |
-          rustup show active-toolchain || rustup toolchain install
-          rustc --version
-          cargo --version
+      - name: Install pinned ABI toolchain
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: ${{ env.ABI_TOOLCHAIN }}
+          components: rustfmt, clippy, rust-src
+
+      - name: Install pinned Abbey toolchain
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: ${{ env.ABBEY_TOOLCHAIN }}
+          components: rustfmt, clippy
 
       - name: Build the real ABI binary
         working-directory: abi
@@ -147,37 +154,40 @@ jobs:
     runs-on: [self-hosted, macOS, ARM64, abbey]
     steps:
       - name: Check out Abbey
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: abbey
+          persist-credentials: false
 
       - name: Check out the verified ABI dependency
-        uses: actions/checkout@v4
-        with:
-          repository: donaldfilimon/abi
-          ref: ${{ env.ABI_REVISION }}
-          path: abi
+        run: >-
+          ./abbey/tools/ci/checkout-public-revision.sh
+          donaldfilimon/abi "${ABI_REVISION}" abi
 
       - name: Check out the public WDBX substrate
-        uses: actions/checkout@v4
-        with:
-          repository: donaldfilimon/wdbx
-          ref: ${{ env.WDBX_REVISION }}
-          path: wdbx
+        run: >-
+          ./abbey/tools/ci/checkout-public-revision.sh
+          donaldfilimon/wdbx "${WDBX_REVISION}" wdbx
 
       - name: Prefer system compiler and linker tools
         run: |
           for directory in /usr/bin /bin /usr/sbin /sbin; do
             echo "$directory" >> "$GITHUB_PATH"
           done
-
-      - name: Install pinned toolchain
-        working-directory: abbey
-        run: |
+          export PATH="/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
           test "$(command -v cc)" = /usr/bin/cc
-          rustup show active-toolchain || rustup toolchain install
-          rustc --version
-          cargo --version
+
+      - name: Install pinned ABI toolchain
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: ${{ env.ABI_TOOLCHAIN }}
+          components: rustfmt, clippy, rust-src
+
+      - name: Install pinned Abbey toolchain
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: ${{ env.ABBEY_TOOLCHAIN }}
+          components: rustfmt, clippy
 
       - name: Build the real ABI binary
         working-directory: abi
@@ -261,34 +271,32 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out Abbey
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: abbey
+          persist-credentials: false
 
       - name: Check out the verified ABI dependency
-        uses: actions/checkout@v4
-        with:
-          repository: donaldfilimon/abi
-          ref: ${{ env.ABI_REVISION }}
-          path: abi
+        run: >-
+          ./abbey/tools/ci/checkout-public-revision.sh
+          donaldfilimon/abi "${ABI_REVISION}" abi
 
       - name: Check out the public WDBX substrate
-        uses: actions/checkout@v4
-        with:
-          repository: donaldfilimon/wdbx
-          ref: ${{ env.WDBX_REVISION }}
-          path: wdbx
+        run: >-
+          ./abbey/tools/ci/checkout-public-revision.sh
+          donaldfilimon/wdbx "${WDBX_REVISION}" wdbx
 
-      - name: Install pinned toolchains
-        working-directory: abbey
-        run: |
-          rustup show
-          rustup toolchain install nightly --profile minimal
-          rustup component add --toolchain nightly rustfmt clippy rust-src
-          rustup toolchain install nightly-2026-08-19 --profile minimal
-          rustup component add --toolchain nightly-2026-08-19 rustfmt clippy
-          rustc --version
-          cargo --version
+      - name: Install pinned ABI toolchain
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: ${{ env.ABI_TOOLCHAIN }}
+          components: rustfmt, clippy, rust-src
+
+      - name: Install pinned Abbey toolchain
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: ${{ env.ABBEY_TOOLCHAIN }}
+          components: rustfmt, clippy
 
       - name: Build the real ABI binary
         working-directory: abi

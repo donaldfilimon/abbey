@@ -123,7 +123,19 @@ pub fn agent_candidate_paths(backend: &str, home: &Path) -> Vec<PathBuf> {
                 }
             }
         }
-        // cursor (default)
+        "ollama" => {
+            out.push(home.join(".local/bin/ollama"));
+            out.push(PathBuf::from("/opt/homebrew/bin/ollama"));
+            out.push(PathBuf::from("/usr/local/bin/ollama"));
+            #[cfg(windows)]
+            {
+                out.push(home.join(".local\\bin\\ollama.exe"));
+                if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+                    out.push(PathBuf::from(local).join("Programs\\Ollama\\ollama.exe"));
+                }
+            }
+        }
+        // cursor (explicit ABBEY_BACKEND=cursor only)
         _ => {
             out.push(home.join(".local/bin/cursor-agent"));
             out.push(home.join(".local/bin/agent"));
@@ -271,6 +283,24 @@ mod tests {
                 "abi backend must not fall through to cursor paths: {s}"
             );
         }
+    }
+
+    #[test]
+    fn ollama_candidates_never_include_cursor_agent() {
+        let home = PathBuf::from("/tmp/home");
+        let paths = agent_candidate_paths("ollama", &home);
+        assert!(
+            paths
+                .iter()
+                .any(|p| p.ends_with("ollama") || p.ends_with("ollama.exe")),
+            "expected an ollama candidate, got {paths:?}"
+        );
+        assert!(
+            paths
+                .iter()
+                .all(|p| !p.to_string_lossy().contains("cursor-agent")),
+            "ollama backend must not fall through to cursor paths: {paths:?}"
+        );
     }
 
     #[test]

@@ -94,6 +94,59 @@ fn typing_a_slash_opens_suggest_and_tab_accepts_it() {
 }
 
 #[test]
+fn natural_language_predicts_review_and_tab_accepts() {
+    let mut app = scratch_app("predict-nl");
+    type_str(&mut app, "review the auth diff");
+    assert_eq!(app.overlay, OverlayKind::SlashSuggest);
+    assert!(
+        app.predictions.iter().any(|p| p.name == "review"),
+        "{:?}",
+        app.predictions
+    );
+    app.handle_key(press(KeyCode::Tab));
+    assert!(
+        app.input.starts_with("/review "),
+        "accepted NL prediction: {:?}",
+        app.input
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn unchanged_input_attempts_the_llm_rerank_once() {
+    use std::os::unix::fs::PermissionsExt as _;
+    use std::time::Duration;
+
+    let mut app = scratch_app("predict-once");
+    let script = app.state.state_dir.join("ollama");
+    let calls = app.state.state_dir.join("ollama-calls");
+    std::fs::write(
+        &script,
+        format!(
+            "#!/bin/sh\nif [ \"$1\" = list ]; then printf 'NAME ID SIZE\\n{} digest 1GB\\n'; exit 0; fi\necho call >> '{}'\necho review\n",
+            crate::tui::predict::PREDICT_MODEL,
+            calls.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
+    app.cfg.backend = AgentBackend::Ollama;
+    app.cfg.agent_path = script;
+    type_str(&mut app, "review this change");
+    app.predict_idle = 7;
+    app.poll_command_prediction();
+    let rx = app.predict_rx.take().expect("rerank receiver");
+    let hint = rx
+        .recv_timeout(Duration::from_secs(2))
+        .expect("rerank result");
+    assert_eq!(hint.name, Some("review"));
+    app.poll_command_prediction();
+    app.poll_command_prediction();
+    assert!(app.predict_rx.is_none(), "unchanged input reranked twice");
+    assert_eq!(std::fs::read_to_string(calls).unwrap().lines().count(), 1);
+}
+
+#[test]
 fn enter_routes_slash_input_and_plain_prompts_differently() {
     let mut app = scratch_app("submit");
     type_str(&mut app, "hello world");

@@ -1,4 +1,4 @@
-//! Max / Gemma worker roles — bindings to cursor-agent model ids, not local weights.
+//! Max / Gemma worker roles with backend-normalized model aliases.
 
 /// Rebindable worker role (technical vs visual/conversational).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -231,9 +231,9 @@ pub fn role_system_note(role: WorkerRole) -> String {
 
 pub fn role_status_lines(max_model: &str, gemma_model: &str) -> Vec<String> {
     vec![
-        format!("role.max →   {max_model} (cursor-agent binding)"),
-        format!("role.gemma → {gemma_model} (cursor-agent binding)"),
-        "note:        Max/Gemma are roles, not local model weights".into(),
+        format!("role.max →   {max_model} (executor model binding)"),
+        format!("role.gemma → {gemma_model} (executor model binding)"),
+        "note:        Max/Gemma are roles, not bundled Abbey weights".into(),
     ]
 }
 

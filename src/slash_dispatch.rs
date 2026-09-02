@@ -37,6 +37,7 @@ pub fn dispatch_slash(input: &str, state: &AbbeyState, cfg: &mut AgentConfig) ->
     let Some((cmd, rest)) = slash::parse_slash(input) else {
         bail!("not a slash command");
     };
+    let cmd = crate::slash_alias::resolve_name(cmd).unwrap_or(cmd);
     match cmd {
         "help" | "h" | "?" => {
             print!("{}", slash::help_text());

@@ -3,6 +3,7 @@
 mod app;
 mod keys;
 mod overlay;
+mod predict;
 mod refresh;
 mod tabs;
 mod theme;

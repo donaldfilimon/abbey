@@ -121,28 +121,78 @@ impl App {
         if self.overlay == OverlayKind::Palette || self.overlay == OverlayKind::Help {
             return;
         }
-        let t = self.input.trim_start();
-        if t.starts_with('/') && !t.contains(char::is_whitespace) {
-            self.overlay = OverlayKind::SlashSuggest;
+        self.predict_gen = self.predict_gen.wrapping_add(1);
+        self.predict_idle = 0;
+        self.llm_boost = None;
+        self.predict_rx = None;
+        self.predictions = super::predict::rank(&self.input, &self.input_history, None);
+        if self.predictions.is_empty() {
+            if self.overlay == OverlayKind::SlashSuggest {
+                self.overlay = OverlayKind::None;
+                self.overlay_idx = 0;
+            }
+            return;
+        }
+        self.overlay = OverlayKind::SlashSuggest;
+        if self.overlay_idx >= self.predictions.len() {
             self.overlay_idx = 0;
-        } else if self.overlay == OverlayKind::SlashSuggest {
-            self.overlay = OverlayKind::None;
         }
     }
 
     fn accept_slash_suggestion(&mut self) {
-        let prefix = self
-            .input
-            .split_whitespace()
-            .next()
-            .unwrap_or("/")
-            .trim_start_matches('/');
-        let suggestions = overlay::slash_suggestions(prefix);
-        if let Some(cmd) = suggestions.get(self.overlay_idx) {
-            self.input = format!("/{} ", cmd.name);
-            self.cursor = self.input.len();
-            self.overlay = OverlayKind::None;
-            self.overlay_idx = 0;
+        let Some(pred) = self.predictions.get(self.overlay_idx).copied() else {
+            return;
+        };
+        self.input = super::predict::accept_text(&self.input, pred.name);
+        self.cursor = self.input.len();
+        self.overlay = OverlayKind::None;
+        self.overlay_idx = 0;
+        self.predictions.clear();
+    }
+
+    pub(super) fn poll_command_prediction(&mut self) {
+        if let Some(rx) = &self.predict_rx
+            && let Ok(hint) = rx.try_recv()
+        {
+            self.predict_rx = None;
+            if hint.generation == self.predict_gen {
+                self.llm_boost = hint.name;
+                self.predictions =
+                    super::predict::rank(&self.input, &self.input_history, self.llm_boost);
+                if self.overlay_idx >= self.predictions.len() {
+                    self.overlay_idx = 0;
+                }
+            }
+            return;
+        }
+        if self.overlay != OverlayKind::SlashSuggest
+            || self.predict_rx.is_some()
+            || self.llm_attempt_gen == Some(self.predict_gen)
+        {
+            return;
+        }
+        self.predict_idle = self.predict_idle.saturating_add(1);
+        if self.predict_idle < 8 || self.input.trim().len() < 4 {
+            return;
+        }
+        if self.cfg.backend != crate::agent::AgentBackend::Ollama {
+            return;
+        }
+        let path = if !self.cfg.agent_path.as_os_str().is_empty() {
+            self.cfg.agent_path.clone()
+        } else {
+            match crate::agent::resolve_agent_for(crate::agent::AgentBackend::Ollama) {
+                Ok(p) => p,
+                Err(_) => return,
+            }
+        };
+        let generation = self.predict_gen;
+        let input = self.input.clone();
+        let receiver =
+            super::predict::spawn_llm_hint(path, super::predict::PREDICT_MODEL, input, generation);
+        if receiver.is_some() {
+            self.llm_attempt_gen = Some(generation);
+            self.predict_rx = receiver;
         }
     }
 
@@ -402,7 +452,9 @@ impl App {
                     return;
                 }
                 KeyCode::Enter => {
-                    if self.overlay == OverlayKind::SlashSuggest {
+                    if self.overlay == OverlayKind::SlashSuggest
+                        && self.input.trim_start().starts_with('/')
+                    {
                         self.accept_slash_suggestion();
                         return;
                     }
@@ -419,13 +471,7 @@ impl App {
                 }
                 KeyCode::Down => {
                     if self.overlay == OverlayKind::SlashSuggest {
-                        let prefix = self
-                            .input
-                            .split_whitespace()
-                            .next()
-                            .unwrap_or("/")
-                            .trim_start_matches('/');
-                        let n = overlay::slash_suggestions(prefix).len();
+                        let n = self.predictions.len();
                         if n > 0 {
                             self.overlay_idx = (self.overlay_idx + 1).min(n - 1);
                         }

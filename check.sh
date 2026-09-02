@@ -19,7 +19,7 @@ if ! probe=$(cargo check --quiet 2>&1 >/dev/null); then
     printf '%s\n' "$probe" >&2
     printf '\ncheck.sh: the active toolchain is too old for this workspace.\n\n' >&2
     printf '  active cargo : %s (%s)\n' "$(command -v cargo)" "$(cargo --version 2>&1)" >&2
-    printf '  Abbey pins   : nightly-2026-08-19 (rust-toolchain.toml)\n' >&2
+    printf '  Abbey pins   : nightly-2026-09-01 (rust-toolchain.toml)\n' >&2
     cat >&2 <<'MSG'
 
 This is usually PATH shadowing, not a missing toolchain: rustup may already
@@ -27,10 +27,10 @@ have the pinned nightly while a Homebrew-installed rustc/cargo appears first
 on PATH (rustup's shims live in ~/.cargo/bin and may be absent entirely).
 
 Check and fix:
-  rustup run nightly-2026-08-19 rustc --version
+  rustup run nightly-2026-09-01 rustc --version
   command -v -a cargo                    # which cargo actually wins?
   brew unlink rust                       # let rustup's shims take over
-  rustup toolchain install nightly-2026-08-19 --component rustfmt clippy
+  rustup toolchain install nightly-2026-09-01 --component rustfmt clippy
 
 MSG
     exit 1

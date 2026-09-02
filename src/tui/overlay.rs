@@ -7,6 +7,7 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Clear, List, ListItem, Paragraph, Wrap};
 
+use super::app::App;
 use super::tabs::OverlayKind;
 use super::theme::Theme;
 use super::widgets::{dim_style, list_highlight_style, rounded_block};
@@ -59,7 +60,7 @@ const BUILTIN: &[PaletteItem] = &[
     PaletteItem {
         id: "backend",
         label: "Cycle backend",
-        detail: "cursor → grok → fm → abi → claude (skips unresolvable)",
+        detail: "ollama → grok → fm → abi → claude → cursor (skips unresolvable)",
         action: PaletteAction::CycleBackend,
     },
     PaletteItem {
@@ -125,10 +126,11 @@ pub fn help_lines() -> Vec<&'static str> {
         "  1-7            jump to tab",
         "  Ctrl-K         command palette",
         "  Ctrl-T         cycle theme (ink / violet / mono)",
-        "  Ctrl-B         cycle backend (cursor / grok / fm / abi / claude)",
+        "  Ctrl-B         cycle backend (ollama / grok / fm / abi / claude / cursor)",
         "  F1 / ?         help (empty prompt)",
         "  /              filter lists (panel focus)",
         "  ↑↓             history (prompt) · move (panel)",
+        "  Tab            accept command prediction",
         "  Enter          run / slash / select",
         "  Ctrl-n         new chat",
         "  Ctrl-p         please-fix",
@@ -149,20 +151,21 @@ fn centered(area: Rect, width: u16, height: u16) -> Rect {
 }
 
 /// Draw the active overlay centered over `area`.
-pub fn draw_overlay(
-    f: &mut Frame,
-    area: Rect,
-    kind: OverlayKind,
-    query: &str,
-    idx: usize,
-    theme: &Theme,
-    slash_input: &str,
-) {
-    match kind {
+pub fn draw_overlay(f: &mut Frame, area: Rect, app: &App) {
+    match app.overlay {
         OverlayKind::None => {}
-        OverlayKind::Help => draw_help(f, area, theme),
-        OverlayKind::Palette => draw_palette(f, area, query, idx, theme),
-        OverlayKind::SlashSuggest => draw_slash(f, area, slash_input, idx, theme),
+        OverlayKind::Help => draw_help(f, area, &app.theme),
+        OverlayKind::Palette => {
+            draw_palette(f, area, &app.overlay_query, app.overlay_idx, &app.theme)
+        }
+        OverlayKind::SlashSuggest => draw_slash(
+            f,
+            area,
+            &app.input,
+            app.overlay_idx,
+            &app.theme,
+            &app.predictions,
+        ),
     }
 }
 
@@ -243,31 +246,56 @@ fn draw_palette(f: &mut Frame, area: Rect, query: &str, idx: usize, theme: &Them
     );
 }
 
-fn draw_slash(f: &mut Frame, area: Rect, slash_input: &str, idx: usize, theme: &Theme) {
-    let prefix = slash_input
-        .split_whitespace()
-        .next()
-        .unwrap_or("/")
-        .trim_start_matches('/');
-    let suggestions = slash_suggestions(prefix);
-    if suggestions.is_empty() {
+fn draw_slash(
+    f: &mut Frame,
+    area: Rect,
+    slash_input: &str,
+    idx: usize,
+    theme: &Theme,
+    predictions: &[super::predict::Prediction],
+) {
+    let rows: Vec<super::predict::Prediction> = if predictions.is_empty() {
+        let prefix = slash_input
+            .split_whitespace()
+            .next()
+            .unwrap_or("/")
+            .trim_start_matches('/');
+        slash_suggestions(prefix)
+            .into_iter()
+            .map(|c| super::predict::Prediction {
+                name: c.name,
+                help: c.help,
+                origin: "abbey",
+                via: "prefix",
+                score: 0,
+            })
+            .collect()
+    } else {
+        predictions.to_vec()
+    };
+    if rows.is_empty() {
         return;
     }
-    let height = (suggestions.len() as u16).saturating_add(2).min(12);
-    let width = 52u16.min(area.width.saturating_sub(2));
+    let height = (rows.len() as u16).saturating_add(2).min(12);
+    let width = 64u16.min(area.width.saturating_sub(2));
     // Anchor just above the bottom (composer region).
     let y = area
         .y
         .saturating_add(area.height.saturating_sub(height.saturating_add(4)));
     let rect = Rect::new(area.x + 1, y, width, height);
     f.render_widget(Clear, rect);
-    let block = rounded_block(" /slash ", theme, true);
+    let title = if slash_input.trim_start().starts_with('/') {
+        " /slash "
+    } else {
+        " commands "
+    };
+    let block = rounded_block(title, theme, true);
     let inner = block.inner(rect);
     f.render_widget(block, rect);
-    let items: Vec<ListItem> = suggestions
+    let items: Vec<ListItem> = rows
         .iter()
         .enumerate()
-        .map(|(i, c)| {
+        .map(|(i, p)| {
             let style = if i == idx {
                 list_highlight_style(theme)
             } else {
@@ -275,10 +303,11 @@ fn draw_slash(f: &mut Frame, area: Rect, slash_input: &str, idx: usize, theme: &
             };
             ListItem::new(Line::from(vec![
                 Span::styled(
-                    format!("/{:<14}", c.name),
+                    format!("/{:<14}", p.name),
                     style.fg(theme.accent).add_modifier(Modifier::BOLD),
                 ),
-                Span::styled(c.help.to_string(), dim_style(theme)),
+                Span::styled(format!("{:<7} ", p.origin), dim_style(theme)),
+                Span::styled(p.help.to_string(), dim_style(theme)),
             ]))
             .style(style)
         })

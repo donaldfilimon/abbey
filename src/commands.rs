@@ -55,7 +55,7 @@ fn passthrough_or_refuse(cfg: &AgentConfig, verb: &str, args: &[String]) -> Resu
         eprintln!(
             "abbey: `{verb}` is not applicable under the `{}` backend (ABBEY_BACKEND={}).\n\
              It has no account, session list, or MCP surface.\n\
-             Unset ABBEY_BACKEND to use cursor-agent.",
+             Select ABBEY_BACKEND=ollama for the default local executor, or another installed backend.",
             cfg.backend.label(),
             cfg.backend.label(),
         );

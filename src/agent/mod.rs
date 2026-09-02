@@ -1,14 +1,31 @@
-//! Resolve and invoke cursor-agent with Abbey defaults.
+//! Resolve and invoke the selected executor with Abbey defaults.
 
 mod argv;
+#[cfg(not(unix))]
+mod capture;
 
 use anyhow::{Context, Result, bail};
 use argv::{map_exec_err, warn_if_prompt_looks_like_flags};
+use fs4::fs_std::FileExt as _;
+use std::fs::{File, OpenOptions};
+use std::io::{Seek as _, Write as _};
 use std::path::PathBuf;
 use std::process::{Command, ExitStatus, Stdio};
+#[cfg(unix)]
+use std::time::Duration;
+
+#[cfg(unix)]
+use crate::runtime::supervisor::{
+    ProcessSpec, SupervisorLimits, SupervisorOutcome, run_with_checkpoint,
+};
 
 pub(crate) use argv::looks_like_flags;
-pub use argv::{abi_normalize_model, truncate_utf8_bytes};
+pub use argv::{abi_normalize_model, ollama_normalize_model, truncate_utf8_bytes};
+
+const MAX_LOCAL_TRANSCRIPT_BYTES: u64 = 1024 * 1024;
+const MAX_TRANSCRIPT_PROMPT_BYTES: usize = 16 * 1024;
+const MAX_TRANSCRIPT_OUTPUT_BYTES: usize = 48 * 1024;
+const MAX_CAPTURE_BYTES: usize = 4 * 1024 * 1024;
 
 /// Grok `--worktree` with optional name (`-w` vs `-w mybranch`).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -123,6 +140,7 @@ fn env_flag(name: &str, default: bool) -> bool {
 
 mod backend;
 
+pub(crate) use backend::ollama_lists_model;
 pub use backend::{AgentBackend, resolve_agent, resolve_agent_for, strip_ansi};
 
 pub use crate::host::{max_prompt_argv_bytes, which_bin};
@@ -162,10 +180,10 @@ impl AgentConfig {
     }
 
     pub fn create_chat(&self) -> Result<String> {
-        // `fm` and `abi` have no server and no chat ids — Abbey mints one
-        // locally and backs it with a transcript file: `fm` passes that file
-        // to the backend, `abi` replays its tail as a context prefix because
-        // `abi complete` itself keeps no state between turns.
+        // `fm`, `abi`, and `ollama` have no server and no chat ids — Abbey
+        // mints one locally and backs it with a transcript file: `fm` passes
+        // that file to the backend; `abi`/`ollama` replay its tail as a
+        // context prefix because those CLIs keep no state between turns.
         if !self.backend.has_server_sessions() {
             let id = uuid::Uuid::new_v4().to_string();
             if let Some(dir) = &self.transcript_dir {
@@ -210,28 +228,77 @@ impl AgentConfig {
         let _ = std::fs::write(&path, "claude session established\n");
     }
 
-    /// Record one abi turn so the next run can carry bounded context.
+    /// Record one local one-shot turn so the next run can carry bounded context.
     /// Best-effort: a failed write must not fail the run that produced it.
-    pub fn append_abi_transcript(&self, chat_id: &str, prompt: &[String], output: &str) {
+    pub fn append_local_transcript(&self, chat_id: &str, prompt: &[String], output: &str) {
         let Some(path) = self.transcript_path(chat_id) else {
             return;
         };
         if let Some(dir) = path.parent() {
             let _ = std::fs::create_dir_all(dir);
         }
-        let entry = format!(
-            "### user\n{}\n### abbey\n{}\n",
-            prompt.join(" ").trim(),
-            output.trim()
-        );
-        use std::io::Write as _;
-        if let Ok(mut f) = std::fs::OpenOptions::new()
+        let prompt = truncate_utf8_bytes(prompt.join(" ").trim(), MAX_TRANSCRIPT_PROMPT_BYTES);
+        let output = truncate_utf8_bytes(output.trim(), MAX_TRANSCRIPT_OUTPUT_BYTES);
+        let entry = format!("### user\n{}\n### abbey\n{}\n", prompt, output);
+        if let Ok(mut f) = OpenOptions::new()
             .create(true)
-            .append(true)
+            .read(true)
+            .write(true)
+            .truncate(false)
             .open(&path)
         {
+            if f.lock_exclusive().is_err() {
+                return;
+            }
+            let existing = f.metadata().map_or(0, |metadata| metadata.len());
+            if existing.saturating_add(entry.len() as u64) > MAX_LOCAL_TRANSCRIPT_BYTES {
+                let _ = fs4::fs_std::FileExt::unlock(&f);
+                drop(f);
+                let prev = path.with_extension("transcript.prev");
+                let _ = std::fs::remove_file(&prev);
+                if std::fs::rename(&path, &prev).is_err() {
+                    return;
+                }
+                if let Ok(mut rotated) = OpenOptions::new()
+                    .create(true)
+                    .write(true)
+                    .truncate(true)
+                    .open(&path)
+                {
+                    let _ = rotated.write_all(
+                        b"### earlier turns omitted at transcript size limit; previous file retained as .transcript.prev\n",
+                    );
+                    let _ = rotated.write_all(entry.as_bytes());
+                }
+                return;
+            }
+            if f.seek(std::io::SeekFrom::End(0)).is_err() {
+                let _ = fs4::fs_std::FileExt::unlock(&f);
+                return;
+            }
             let _ = f.write_all(entry.as_bytes());
+            let _ = fs4::fs_std::FileExt::unlock(&f);
         }
+    }
+
+    fn lock_local_turn(&self, chat_id: &str) -> Result<Option<File>> {
+        let Some(path) = self.transcript_path(chat_id) else {
+            return Ok(None);
+        };
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        let lock_path = path.with_extension("transcript.lock");
+        let lock = OpenOptions::new()
+            .create(true)
+            .read(true)
+            .write(true)
+            .truncate(false)
+            .open(&lock_path)
+            .with_context(|| format!("open conversation turn lock {}", lock_path.display()))?;
+        lock.lock_exclusive()
+            .with_context(|| format!("lock conversation turn {}", lock_path.display()))?;
+        Ok(Some(lock))
     }
 
     /// Interactive hand-off: inherit stdio (full TUI agent session).
@@ -240,9 +307,9 @@ impl AgentConfig {
         resume_id: Option<&str>,
         prompt_and_rest: &[String],
     ) -> Result<ExitStatus> {
-        // The abi grammar passes the prompt after a real `--` separator, so a
-        // leading-dash prompt is text there, not options — no warning needed.
-        if self.backend != AgentBackend::Abi {
+        // Local one-shot grammars pass the prompt after a real `--` separator,
+        // so a leading-dash prompt is text there, not options — no warning.
+        if !self.backend.is_oneshot_local() {
             warn_if_prompt_looks_like_flags(prompt_and_rest);
         }
         let agent = self.exec_path()?;
@@ -263,22 +330,53 @@ impl AgentConfig {
         resume_id: Option<&str>,
         prompt_and_rest: &[String],
     ) -> Result<(ExitStatus, String, String)> {
-        if self.backend != AgentBackend::Abi {
+        if !self.backend.is_oneshot_local() {
             warn_if_prompt_looks_like_flags(prompt_and_rest);
         }
         let agent = self.exec_path()?;
         let mut cfg = self.clone();
         cfg.print = true;
         let args = cfg.build_args(resume_id, prompt_and_rest);
-        let out = Command::new(&agent)
-            .args(&args)
-            .output()
-            .map_err(|e| map_exec_err(e, &agent))?;
-        Ok((
-            out.status,
-            String::from_utf8_lossy(&out.stdout).into_owned(),
-            String::from_utf8_lossy(&out.stderr).into_owned(),
-        ))
+        #[cfg(unix)]
+        {
+            let spec = ProcessSpec::inherited(
+                agent.clone(),
+                args.iter().map(std::ffi::OsString::from).collect(),
+            );
+            let limits = SupervisorLimits {
+                timeout: Duration::from_secs(30 * 60),
+                terminate_grace: Duration::from_secs(1),
+                stdout_bytes: MAX_CAPTURE_BYTES,
+                stderr_bytes: MAX_CAPTURE_BYTES,
+                poll_interval: Duration::from_millis(20),
+            };
+            match run_with_checkpoint(&spec, &limits, || false) {
+                Ok(SupervisorOutcome::Exited {
+                    status,
+                    stdout,
+                    stderr,
+                }) => Ok((
+                    status,
+                    String::from_utf8_lossy(&stdout).into_owned(),
+                    String::from_utf8_lossy(&stderr).into_owned(),
+                )),
+                Ok(SupervisorOutcome::TimedOut) => {
+                    bail!("agent capture exceeded the 30-minute limit")
+                }
+                Ok(SupervisorOutcome::StdoutLimit) => {
+                    bail!("agent stdout exceeded the {MAX_CAPTURE_BYTES}-byte limit")
+                }
+                Ok(SupervisorOutcome::StderrLimit) => {
+                    bail!("agent stderr exceeded the {MAX_CAPTURE_BYTES}-byte limit")
+                }
+                Ok(SupervisorOutcome::Cancelled) => bail!("agent capture was cancelled"),
+                Err(error) => bail!("supervise {}: {error}", agent.display()),
+            }
+        }
+        #[cfg(not(unix))]
+        {
+            capture::bounded_capture_output(&agent, &args)
+        }
     }
 
     pub fn passthrough(&self, args: &[String]) -> Result<ExitStatus> {
@@ -310,6 +408,14 @@ impl AgentConfig {
                  fable     Claude Fable (plan-gated)\n\
                  claude-*  full Claude catalog id, passed through\n"
                 .into());
+        }
+        if self.backend == AgentBackend::Ollama {
+            return Ok(format!(
+                "{}  default Ollama tag (alias gemma:27b-mlx)\n\
+                 gemma4:12b-mlx  smaller Ollama tag\n\
+                 <tag>           any tag `ollama list` reports; passed through\n",
+                crate::models::OLLAMA_DEFAULT_MODEL
+            ));
         }
         let out = Command::new(self.exec_path()?).arg("models").output()?;
         Ok(String::from_utf8_lossy(&out.stdout).into_owned())
@@ -421,17 +527,26 @@ fn run_once(
     prompt_and_rest: &[String],
     capture_print: bool,
 ) -> Result<i32> {
-    // `abi complete` is one-shot and non-interactive — always capture, both
-    // for clean emit and so the turn can be recorded for Abbey-side
-    // continuity (the context prefix the next build_args_abi reads).
-    if capture_print || cfg.backend == AgentBackend::Abi {
+    // Local one-shot CLIs (`abi complete`, `ollama run`) are non-interactive
+    // — always capture, both for clean emit and so the turn can be recorded
+    // for Abbey-side continuity.
+    if capture_print || cfg.backend.is_oneshot_local() {
+        let _turn_lock = if cfg.backend.is_oneshot_local() {
+            resume_id
+                .filter(|id| !id.is_empty())
+                .map(|id| cfg.lock_local_turn(id))
+                .transpose()?
+                .flatten()
+        } else {
+            None
+        };
         let (st, out, err) = cfg.run_capture(resume_id, prompt_and_rest)?;
         eprint!("{err}");
-        if cfg.backend == AgentBackend::Abi
+        if cfg.backend.is_oneshot_local()
             && st.success()
             && let Some(id) = resume_id.filter(|i| !i.is_empty())
         {
-            cfg.append_abi_transcript(id, prompt_and_rest, &out);
+            cfg.append_local_transcript(id, prompt_and_rest, &out);
         }
         if cfg.backend == AgentBackend::Claude
             && st.success()
@@ -483,6 +598,7 @@ mod tests {
         assert!(!AgentBackend::Fm.supports_account_surface());
         assert!(!AgentBackend::Abi.supports_account_surface());
         assert!(!AgentBackend::Claude.supports_account_surface());
+        assert!(!AgentBackend::Ollama.supports_account_surface());
         assert!(AgentBackend::Cursor.supports_account_surface());
         assert!(AgentBackend::Grok.supports_account_surface());
     }
@@ -494,6 +610,81 @@ mod tests {
         assert!(!AgentBackend::Fm.has_server_sessions());
         assert!(!AgentBackend::Abi.has_server_sessions());
         assert!(!AgentBackend::Claude.has_server_sessions());
+        assert!(!AgentBackend::Ollama.has_server_sessions());
+        assert!(AgentBackend::Ollama.is_oneshot_local());
+        assert!(AgentBackend::Abi.is_oneshot_local());
+        assert!(!AgentBackend::Fm.is_oneshot_local());
+    }
+
+    #[test]
+    fn local_transcript_rollover_keeps_the_previous_file() {
+        let dir = std::env::temp_dir().join(format!(
+            "abbey-transcript-prev-{}-{}",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let cfg = AgentConfig {
+            transcript_dir: Some(dir.clone()),
+            ..AgentConfig::default()
+        };
+        cfg.append_local_transcript("kept", &["first".into()], "one");
+        let large = "x".repeat(MAX_TRANSCRIPT_OUTPUT_BYTES);
+        for index in 0..40 {
+            cfg.append_local_transcript("kept", &[format!("large-{index}")], &large);
+        }
+        let path = dir.join("kept.transcript");
+        let prev = dir.join("kept.transcript.prev");
+        let current = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            current.contains("previous file retained as .transcript.prev"),
+            "{current}"
+        );
+        assert!(prev.is_file(), "rolled transcript must be retained");
+        let previous = std::fs::read_to_string(prev).unwrap();
+        assert!(previous.contains("### user"), "{previous}");
+        assert!(std::fs::metadata(path).unwrap().len() <= MAX_LOCAL_TRANSCRIPT_BYTES);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn local_transcript_appends_are_serialized_and_bounded() {
+        let dir = std::env::temp_dir().join(format!(
+            "abbey-transcript-bound-{}-{}",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let cfg = std::sync::Arc::new(AgentConfig {
+            transcript_dir: Some(dir.clone()),
+            ..AgentConfig::default()
+        });
+        let mut workers = Vec::new();
+        for index in 0..16 {
+            let cfg = cfg.clone();
+            workers.push(std::thread::spawn(move || {
+                cfg.append_local_transcript(
+                    "shared",
+                    &[format!("prompt-{index}")],
+                    &format!("output-{index}"),
+                );
+            }));
+        }
+        for worker in workers {
+            worker.join().unwrap();
+        }
+        let path = dir.join("shared.transcript");
+        let transcript = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(transcript.matches("### user").count(), 16);
+        assert_eq!(transcript.matches("### abbey").count(), 16);
+
+        let large = "x".repeat(MAX_TRANSCRIPT_OUTPUT_BYTES * 2);
+        for index in 0..32 {
+            cfg.append_local_transcript("shared", &[format!("large-{index}")], &large);
+        }
+        let metadata = std::fs::metadata(path).unwrap();
+        assert!(metadata.len() <= MAX_LOCAL_TRANSCRIPT_BYTES);
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     /// The `CURSOR_AGENT_CHAT_ID` guard in `AbbeyState::read_chat_for` keys off
@@ -504,7 +695,12 @@ mod tests {
     /// makes the switch safe, in both directions.
     #[test]
     fn cursor_chat_env_is_honoured_per_backend_not_per_process() {
-        for switched_to in [AgentBackend::Fm, AgentBackend::Abi, AgentBackend::Claude] {
+        for switched_to in [
+            AgentBackend::Fm,
+            AgentBackend::Abi,
+            AgentBackend::Claude,
+            AgentBackend::Ollama,
+        ] {
             assert!(
                 !switched_to.has_server_sessions(),
                 "{switched_to:?} must not adopt CURSOR_AGENT_CHAT_ID"
@@ -523,6 +719,7 @@ mod tests {
         assert_eq!(AgentBackend::Abi.transcript_subdir(), "abi");
         assert_eq!(AgentBackend::Fm.transcript_subdir(), "fm");
         assert_eq!(AgentBackend::Claude.transcript_subdir(), "claude");
+        assert_eq!(AgentBackend::Ollama.transcript_subdir(), "ollama");
         // A mid-session switch must not land abi turns in fm's directory.
         assert_ne!(
             AgentBackend::Abi.transcript_subdir(),
@@ -532,19 +729,20 @@ mod tests {
 
     #[test]
     fn backend_cycle_visits_all_and_wraps() {
-        let mut b = AgentBackend::Cursor;
+        let mut b = AgentBackend::Ollama;
         let mut seen = Vec::new();
-        for _ in 0..5 {
+        for _ in 0..6 {
             b = b.cycle_next();
             seen.push(b);
         }
-        assert_eq!(b, AgentBackend::Cursor, "cycle must wrap to the start");
+        assert_eq!(b, AgentBackend::Ollama, "cycle must wrap to the start");
         for expect in [
             AgentBackend::Grok,
             AgentBackend::Fm,
             AgentBackend::Abi,
             AgentBackend::Claude,
             AgentBackend::Cursor,
+            AgentBackend::Ollama,
         ] {
             assert!(seen.contains(&expect), "{expect:?} missing from cycle");
         }

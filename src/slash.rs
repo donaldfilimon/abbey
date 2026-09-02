@@ -388,7 +388,8 @@ pub fn help_text() -> String {
         );
     }
     out.push_str(
-        "\nTip: bare prompts launch the agent; flags like -m/--force/--worktree still apply.\n",
+        "\nAliases: /exec→ask (codex) · /resume→continue (grok) · /plugin→plugins (claude).\n\
+         Tip: bare prompts launch the agent; flags like -m/--force/--worktree still apply.\n",
     );
     out
 }
@@ -411,8 +412,8 @@ pub fn parse_slash(input: &str) -> Option<(&str, &str)> {
 }
 
 pub fn lookup(name: &str) -> Option<&'static SlashCmd> {
-    let lower = name.to_ascii_lowercase();
-    SLASH_CATALOG.iter().find(|c| c.name == lower.as_str())
+    let resolved = crate::slash_alias::resolve_name(name)?;
+    SLASH_CATALOG.iter().find(|c| c.name == resolved)
 }
 
 #[cfg(test)]
@@ -430,6 +431,13 @@ mod tests {
     fn lookup_is_case_insensitive() {
         assert!(lookup("INIT").is_some());
         assert_eq!(lookup("INIT").unwrap().name, "init");
+    }
+
+    #[test]
+    fn lookup_resolves_cross_cli_aliases() {
+        assert_eq!(lookup("plugin").unwrap().name, "plugins");
+        assert_eq!(lookup("exec").unwrap().name, "ask");
+        assert_eq!(lookup("resume").unwrap().name, "continue");
     }
 
     #[test]

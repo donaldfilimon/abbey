@@ -1,10 +1,118 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
+from pathlib import PurePosixPath
 import re
+import stat
+import tomllib
 import unittest
 
-WORKFLOW = Path(__file__).resolve().parents[2] / ".github" / "workflows" / "rust.yml"
+ROOT = Path(__file__).resolve().parents[2]
+WORKFLOW = ROOT / ".github" / "workflows" / "rust.yml"
+CARGO_MANIFEST = ROOT / "Cargo.toml"
+PUBLIC_CHECKOUT = ROOT / "tools" / "ci" / "checkout-public-revision.sh"
+CHECKOUT_ACTION = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+TOOLCHAIN_ACTION = (
+    "dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772"
+)
+
+
+@dataclass(frozen=True)
+class SiblingCheckout:
+    root: str
+    repository: str
+    revision_env: str
+
+
+SIBLING_CHECKOUTS = {
+    "abi": SiblingCheckout("abi", "donaldfilimon/abi", "ABI_REVISION"),
+    "wdbx": SiblingCheckout("wdbx", "donaldfilimon/wdbx", "WDBX_REVISION"),
+}
+
+
+def dependency_tables(manifest: dict[str, object]) -> list[dict[str, object]]:
+    """Return Cargo dependency mappings that can contain path dependencies."""
+    tables: list[dict[str, object]] = []
+    dependency_keys = ("dependencies", "dev-dependencies", "build-dependencies")
+    for key in dependency_keys:
+        value = manifest.get(key)
+        if isinstance(value, dict):
+            tables.append(value)
+    targets = manifest.get("target")
+    if isinstance(targets, dict):
+        for target in targets.values():
+            if not isinstance(target, dict):
+                continue
+            for key in dependency_keys:
+                value = target.get(key)
+                if isinstance(value, dict):
+                    tables.append(value)
+    workspace = manifest.get("workspace")
+    if isinstance(workspace, dict):
+        for key in dependency_keys:
+            value = workspace.get(key)
+            if isinstance(value, dict):
+                tables.append(value)
+    return tables
+
+
+def external_sibling_roots(manifest_text: str) -> tuple[str, ...]:
+    """Derive immediate sibling checkout roots from Cargo path dependencies."""
+    manifest = tomllib.loads(manifest_text)
+    roots: set[str] = set()
+    for table in dependency_tables(manifest):
+        for dependency in table.values():
+            if not isinstance(dependency, dict) or "path" not in dependency:
+                continue
+            raw_path = dependency["path"]
+            if not isinstance(raw_path, str):
+                raise AssertionError("Cargo dependency path must be a string")
+            path = PurePosixPath(raw_path)
+            parts = path.parts
+            if path.is_absolute():
+                raise AssertionError(
+                    f"absolute Cargo dependency path is unsupported: {raw_path}"
+                )
+            if not parts or parts[0] != "..":
+                continue
+            if len(parts) < 2 or parts[1] in {"", ".", ".."}:
+                raise AssertionError(
+                    f"Cargo dependency must use one immediate sibling root: {raw_path}"
+                )
+            if ".." in parts[2:]:
+                raise AssertionError(
+                    f"Cargo dependency cannot traverse outside its sibling root: {raw_path}"
+                )
+            roots.add(parts[1])
+    return tuple(sorted(roots))
+
+
+def required_sibling_checkouts(manifest_text: str) -> tuple[SiblingCheckout, ...]:
+    roots = external_sibling_roots(manifest_text)
+    unknown = set(roots) - SIBLING_CHECKOUTS.keys()
+    stale = SIBLING_CHECKOUTS.keys() - set(roots)
+    if unknown:
+        raise AssertionError(f"unmapped sibling checkout: {sorted(unknown)}")
+    if stale:
+        raise AssertionError(f"checkout mapping has no Cargo dependency: {sorted(stale)}")
+    return tuple(SIBLING_CHECKOUTS[root] for root in roots)
+
+
+def checkout_commands(body: str) -> tuple[tuple[str, str, str], ...]:
+    pattern = re.compile(
+        r"\./abbey/tools/ci/checkout-public-revision\.sh\s+"
+        r"([a-z0-9_.-]+/[a-z0-9_.-]+)\s+\"\$\{([A-Z][A-Z0-9_]*)\}\"\s+"
+        r"([a-z0-9_.-]+)"
+    )
+    return tuple(pattern.findall(body))
+
+
+def workflow_env(text: str, name: str) -> str:
+    match = re.search(rf"(?m)^  {re.escape(name)}:\s*([^\s#]+)\s*$", text)
+    if match is None:
+        raise AssertionError(f"workflow lacks environment value {name}")
+    return match.group(1)
 
 
 def job_blocks(text: str) -> dict[str, str]:
@@ -65,6 +173,9 @@ class WorkflowGuards(unittest.TestCase):
     def setUp(self) -> None:
         self.text = WORKFLOW.read_text(encoding="utf-8")
         self.jobs = job_blocks(self.text)
+        self.checkouts = required_sibling_checkouts(
+            CARGO_MANIFEST.read_text(encoding="utf-8")
+        )
 
     def test_workflow_declares_jobs(self) -> None:
         self.assertTrue(self.jobs, "no jobs parsed out of rust.yml")
@@ -129,7 +240,7 @@ class WorkflowGuards(unittest.TestCase):
                 body,
                 r"(?m)^ {6}- name: Clean runner workspace\n {8}if: always\(\)$",
             )
-            for checkout in ("abbey", "abi", "wdbx"):
+            for checkout in ("abbey", *(item.root for item in self.checkouts)):
                 self.assertIn(
                     f'"$GITHUB_WORKSPACE/{checkout}"',
                     body,
@@ -141,6 +252,9 @@ class ForkSafety(unittest.TestCase):
     def setUp(self) -> None:
         self.text = WORKFLOW.read_text(encoding="utf-8")
         self.jobs = job_blocks(self.text)
+        self.checkouts = required_sibling_checkouts(
+            CARGO_MANIFEST.read_text(encoding="utf-8")
+        )
 
     def test_no_pull_request_target_trigger(self) -> None:
         # pull_request_target runs with repository secrets against fork code.
@@ -175,17 +289,51 @@ class ForkSafety(unittest.TestCase):
         )
         self.assertNotIn("self-hosted", body)
 
-    def test_public_wdbx_checkout_never_uses_a_secret(self) -> None:
+    def test_public_sibling_checkouts_never_use_a_secret(self) -> None:
         self.assertNotIn("WDBX_CHECKOUT_TOKEN", self.text)
         self.assertNotRegex(self.text, r"(?m)^\s*token:\s*\$\{\{\s*secrets\.")
-        self.assertIn(
-            "WDBX_REVISION: f42b9789eabcf89f952df0a160a7b6837c5acb57",
-            self.text,
-        )
+        for checkout in self.checkouts:
+            self.assertNotIn(f"repository: {checkout.repository}", self.text)
+
+    def test_every_job_checks_out_each_required_sibling_exactly_once(self) -> None:
+        expected = {
+            (item.repository, item.revision_env, item.root) for item in self.checkouts
+        }
         for name, body in self.jobs.items():
-            self.assertEqual(body.count("repository: donaldfilimon/wdbx"), 1, name)
-            self.assertIn("ref: ${{ env.WDBX_REVISION }}", body, name)
-            self.assertIn("path: wdbx", body, name)
+            commands = checkout_commands(body)
+            self.assertEqual(len(commands), len(set(commands)), name)
+            self.assertEqual(set(commands), expected, name)
+
+    def test_required_revision_environment_values_are_immutable(self) -> None:
+        for checkout in self.checkouts:
+            value = workflow_env(self.text, checkout.revision_env)
+            self.assertRegex(value, r"^[0-9a-f]{40}$")
+
+    def test_actions_and_toolchains_are_exactly_pinned(self) -> None:
+        self.assertEqual(self.text.count(f"uses: {CHECKOUT_ACTION}"), 3)
+        self.assertEqual(self.text.count("persist-credentials: false"), 3)
+        self.assertEqual(self.text.count(f"uses: {TOOLCHAIN_ACTION}"), 6)
+        self.assertIn("ABBEY_TOOLCHAIN: nightly-2026-09-01", self.text)
+        self.assertIn("ABI_TOOLCHAIN: nightly-2026-08-20", self.text)
+        self.assertNotRegex(
+            self.text,
+            r"(?m)^\s*(?:toolchain:\s*|rustup toolchain install )nightly\s*(?:$|--)",
+        )
+
+    def test_public_checkout_helper_is_allowlisted_and_noninteractive(self) -> None:
+        helper = PUBLIC_CHECKOUT.read_text(encoding="utf-8")
+        self.assertTrue(PUBLIC_CHECKOUT.stat().st_mode & stat.S_IXUSR)
+        expected = {f"{item.repository}:{item.root}" for item in self.checkouts}
+        allowlisted = set(
+            re.findall(r"\b([a-z0-9_.-]+/[a-z0-9_.-]+:[a-z0-9_.-]+)\b", helper)
+        )
+        self.assertEqual(allowlisted, expected)
+        self.assertIn("GIT_CONFIG_NOSYSTEM=1", helper)
+        self.assertIn("GIT_CONFIG_GLOBAL=/dev/null", helper)
+        self.assertIn("GIT_TERMINAL_PROMPT=0", helper)
+        self.assertIn("-c credential.helper= fetch", helper)
+        self.assertNotIn("github.token", helper)
+        self.assertNotIn("secrets.", helper)
 
     def test_fork_job_runs_the_real_portable_gate(self) -> None:
         body = self.jobs["gate-forks"]
@@ -195,7 +343,8 @@ class ForkSafety(unittest.TestCase):
                 "Check out Abbey",
                 "Check out the verified ABI dependency",
                 "Check out the public WDBX substrate",
-                "Install pinned toolchains",
+                "Install pinned ABI toolchain",
+                "Install pinned Abbey toolchain",
                 "Build the real ABI binary",
                 "Gate all portable Abbey modes",
             }.issubset(steps)
@@ -221,3 +370,33 @@ class ForkSafety(unittest.TestCase):
         )
         for body in forbidden:
             self.assertRegex(body, r"(?m)^ {4}permissions\s*:")
+
+
+class CargoTopology(unittest.TestCase):
+    def test_current_external_siblings_have_exact_checkout_mappings(self) -> None:
+        checkouts = required_sibling_checkouts(CARGO_MANIFEST.read_text(encoding="utf-8"))
+        self.assertEqual(tuple(item.root for item in checkouts), ("abi", "wdbx"))
+
+    def test_unmapped_external_sibling_fails_closed(self) -> None:
+        manifest = '[dependencies]\nexample = { path = "../other/crates/example" }\n'
+        with self.assertRaisesRegex(AssertionError, "unmapped sibling checkout"):
+            required_sibling_checkouts(manifest)
+
+    def test_local_and_duplicate_paths_do_not_add_checkouts(self) -> None:
+        manifest = """[dependencies]
+local = { path = "crates/local" }
+one = { path = "../abi/crates/one" }
+two = { path = "../abi/crates/two" }
+wdbx = { path = "../wdbx/crates/wdbx" }
+"""
+        self.assertEqual(external_sibling_roots(manifest), ("abi", "wdbx"))
+
+    def test_non_immediate_external_path_fails_closed(self) -> None:
+        manifest = '[dependencies]\nexample = { path = "../../other/example" }\n'
+        with self.assertRaisesRegex(AssertionError, "immediate sibling root"):
+            external_sibling_roots(manifest)
+
+    def test_dependency_cannot_escape_after_a_valid_sibling_prefix(self) -> None:
+        manifest = '[dependencies]\nexample = { path = "../abi/../other/example" }\n'
+        with self.assertRaisesRegex(AssertionError, "cannot traverse"):
+            external_sibling_roots(manifest)

@@ -465,35 +465,63 @@ fn wire_request(
     socket: &Path,
     request: crate::daemon::RequestEnvelope,
 ) -> crate::daemon::ResponseEnvelope {
-    wire_exchange(socket, &request)
+    let request_id = request.request_id.clone();
+    wire_exchange(socket, &request, &request_id)
 }
 
 fn wire_v3_request(
     socket: &Path,
     request: crate::daemon::V3RequestEnvelope,
 ) -> crate::daemon::V3ResponseEnvelope {
-    wire_exchange(socket, &request)
+    let request_id = request.request_id.clone();
+    wire_exchange(socket, &request, &request_id)
 }
 
-fn wire_exchange<T, R>(socket: &Path, request: &T) -> R
+// This is a scheduler budget for a process-backed integration fixture, not a
+// product latency claim. The daemon intentionally serves one connection at a
+// time, and the full parallel suite can deschedule its server thread long
+// enough for the former one-second client timeout to expire spuriously.
+const WIRE_IO_TIMEOUT: Duration = Duration::from_secs(5);
+
+fn wire_exchange<T, R>(socket: &Path, request: &T, request_id: &str) -> R
 where
     T: serde::Serialize,
     R: serde::de::DeserializeOwned,
 {
-    let mut stream = UnixStream::connect(socket).unwrap();
+    let mut stream = UnixStream::connect(socket)
+        .unwrap_or_else(|error| panic!("connect for wire request {request_id:?}: {error}"));
     stream
-        .set_read_timeout(Some(Duration::from_secs(1)))
-        .unwrap();
-    let bytes = serde_json::to_vec(request).unwrap();
+        .set_read_timeout(Some(WIRE_IO_TIMEOUT))
+        .unwrap_or_else(|error| {
+            panic!("set read timeout for wire request {request_id:?}: {error}")
+        });
+    stream
+        .set_write_timeout(Some(WIRE_IO_TIMEOUT))
+        .unwrap_or_else(|error| {
+            panic!("set write timeout for wire request {request_id:?}: {error}")
+        });
+    let bytes = serde_json::to_vec(request)
+        .unwrap_or_else(|error| panic!("encode wire request {request_id:?}: {error}"));
     let mut frame = Vec::with_capacity(4 + bytes.len());
     frame.extend_from_slice(&(bytes.len() as u32).to_be_bytes());
     frame.extend_from_slice(&bytes);
-    stream.write_all(&frame).unwrap();
+    stream
+        .write_all(&frame)
+        .unwrap_or_else(|error| panic!("write wire request {request_id:?}: {error}"));
+    stream
+        .flush()
+        .unwrap_or_else(|error| panic!("flush wire request {request_id:?}: {error}"));
     let mut prefix = [0_u8; 4];
-    stream.read_exact(&mut prefix).unwrap();
-    let mut response = vec![0_u8; u32::from_be_bytes(prefix) as usize];
-    stream.read_exact(&mut response).unwrap();
-    serde_json::from_slice(&response).unwrap()
+    stream
+        .read_exact(&mut prefix)
+        .unwrap_or_else(|error| panic!("read wire response prefix for {request_id:?}: {error}"));
+    let response_len = u32::from_be_bytes(prefix) as usize;
+    let mut response = vec![0_u8; response_len];
+    stream.read_exact(&mut response).unwrap_or_else(|error| {
+        panic!("read {response_len}-byte wire response body for {request_id:?}: {error}")
+    });
+    serde_json::from_slice(&response)
+        .unwrap_or_else(|error| panic!("decode wire response for {request_id:?}: {error}"))
 }
 
 fn scratch(label: &str) -> PathBuf {

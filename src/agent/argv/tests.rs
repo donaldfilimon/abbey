@@ -416,6 +416,126 @@ fn claude_plan_mode_maps_to_permission_mode() {
 }
 
 #[test]
+fn ollama_argv_never_leaks_cursor_flags() {
+    let mut cfg = maximal_cursor_config();
+    cfg.backend = AgentBackend::Ollama;
+    cfg.model = "auto".into();
+    let argv = cfg.build_args(Some("chat-1"), &["hello".into()]);
+    let dashdash = argv.iter().position(|a| a == "--").expect("-- separator");
+    for a in &argv[..dashdash] {
+        assert!(
+            ["run", "--nowordwrap"].contains(&a.as_str()) || !a.starts_with("--"),
+            "leaked non-ollama flag {a:?} into argv {argv:?}"
+        );
+    }
+    for banned in [
+        "--auto-review",
+        "--trust",
+        "--force",
+        "--mode",
+        "--worktree",
+        "--workspace",
+        "--add-dir",
+        "--sandbox",
+        "--output-format",
+        "--print",
+        "--debug",
+        "--max-turns",
+        "--instructions",
+        "--no-stream",
+        "--save-transcript",
+        "--resume",
+        "--live",
+        "--model",
+    ] {
+        assert!(!argv.contains(&banned.to_string()), "{banned} leaked");
+    }
+    assert!(!argv.contains(&"chat-1".to_string()), "resume id leaked");
+    assert_eq!(argv[0], "run");
+    assert_eq!(argv[2], crate::models::OLLAMA_DEFAULT_MODEL);
+}
+
+#[test]
+fn ollama_aliases_collapse_to_local_gemma4() {
+    for alias in [
+        "auto",
+        "gemma",
+        "gemma:27b-mlx",
+        "gemma4:26b-mlx",
+        "claude-fable-5-thinking-high",
+        "composer-2.5",
+        "opus",
+    ] {
+        assert_eq!(
+            ollama_normalize_model(alias),
+            crate::models::OLLAMA_DEFAULT_MODEL,
+            "{alias}"
+        );
+    }
+    assert_eq!(ollama_normalize_model("gemma4:12b-mlx"), "gemma4:12b-mlx");
+}
+
+#[test]
+fn ollama_prompt_always_follows_a_double_dash() {
+    let mut cfg = maximal_cursor_config();
+    cfg.backend = AgentBackend::Ollama;
+    cfg.mode = None;
+    cfg.model = "auto".into();
+    let argv = cfg.build_args(None, &["--force".into()]);
+    let dashdash = argv.iter().position(|a| a == "--").expect("-- separator");
+    let prompt = argv.iter().position(|a| a == "--force").expect("prompt");
+    assert!(
+        prompt > dashdash,
+        "prompt reached ollama in option position"
+    );
+}
+
+#[test]
+fn ollama_resume_carries_bounded_transcript_context() {
+    let dir = std::env::temp_dir().join(format!("abbey-ollama-ctx-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut cfg = maximal_cursor_config();
+    cfg.backend = AgentBackend::Ollama;
+    cfg.mode = None;
+    cfg.model = "auto".into();
+    cfg.transcript_dir = Some(dir.clone());
+
+    let argv = cfg.build_args(Some("chat-9"), &["next".into()]);
+    assert!(!argv.iter().any(|a| a.contains("Previous conversation")));
+
+    std::fs::write(
+        dir.join("chat-9.transcript"),
+        format!(
+            "### user\nremember the word xyzzy\n### abbey\nnoted\n{}",
+            "pad ".repeat(4000)
+        ),
+    )
+    .unwrap();
+    let argv = cfg.build_args(Some("chat-9"), &["next".into()]);
+    let ctx = argv
+        .iter()
+        .find(|a| a.contains("Previous conversation"))
+        .expect("context element");
+    assert!(
+        ctx.len() <= ABI_CONTEXT_TAIL_BYTES + 200,
+        "context unbounded: {}",
+        ctx.len()
+    );
+    let dashdash = argv.iter().position(|a| a == "--").unwrap();
+    let ctx_pos = argv
+        .iter()
+        .position(|a| a.contains("Previous conversation"))
+        .unwrap();
+    assert!(
+        ctx_pos > dashdash,
+        "context must be input text, not options"
+    );
+    assert_eq!(argv.last().unwrap(), "next");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn cursor_backend_argv_is_unchanged_by_the_fm_split() {
     let mut cfg = maximal_cursor_config();
     cfg.backend = AgentBackend::Cursor;
