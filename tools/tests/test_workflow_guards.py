@@ -1,12 +1,35 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import importlib
 from pathlib import Path
 from pathlib import PurePosixPath
 import re
 import stat
-import tomllib
 import unittest
+
+
+def resolve_toml_reader(importer=importlib.import_module):
+    """Select the supported TOML reader without weakening Cargo parsing.
+
+    Python 3.11+ provides tomllib. Older managed runners may provide the
+    backport directly; Xcode's Python 3.9 provides the same reader through its
+    bundled pip. A minimal Python without any of those readers fails closed
+    with an actionable diagnostic instead of silently parsing TOML as text.
+    """
+    attempted = ("tomllib", "tomli", "pip._vendor.tomli")
+    for module_name in attempted:
+        try:
+            return importer(module_name)
+        except ModuleNotFoundError:
+            continue
+    raise RuntimeError(
+        "workflow guards require Python 3.11+ or a managed Python runtime "
+        "providing tomli; no structural TOML reader is available"
+    )
+
+
+tomllib = resolve_toml_reader()
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "rust.yml"
@@ -29,6 +52,28 @@ SIBLING_CHECKOUTS = {
     "abi": SiblingCheckout("abi", "donaldfilimon/abi", "ABI_REVISION"),
     "wdbx": SiblingCheckout("wdbx", "donaldfilimon/wdbx", "WDBX_REVISION"),
 }
+
+
+class TomlReaderCompatibility(unittest.TestCase):
+    def test_xcode_python_fallback_order_is_explicit(self) -> None:
+        sentinel = object()
+        attempted: list[str] = []
+
+        def importer(name: str):
+            attempted.append(name)
+            if name == "pip._vendor.tomli":
+                return sentinel
+            raise ModuleNotFoundError(name)
+
+        self.assertIs(resolve_toml_reader(importer), sentinel)
+        self.assertEqual(attempted, ["tomllib", "tomli", "pip._vendor.tomli"])
+
+    def test_missing_structural_reader_fails_closed(self) -> None:
+        def missing(_name: str):
+            raise ModuleNotFoundError
+
+        with self.assertRaisesRegex(RuntimeError, "structural TOML reader"):
+            resolve_toml_reader(missing)
 
 
 def dependency_tables(manifest: dict[str, object]) -> list[dict[str, object]]:
