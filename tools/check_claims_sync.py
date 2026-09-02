@@ -317,14 +317,23 @@ def normalize_manifest(raw: object) -> dict[str, Any]:
         missing = required - claim.keys()
         if missing:
             raise ValueError(f"claim {index} missing fields: {sorted(missing)}")
+        extra = claim.keys() - required
+        if extra:
+            raise ValueError(f"claim {index} has unknown fields: {sorted(extra)}")
         claim_id = claim["id"]
         name = claim["name"]
         if not is_stable_kebab_id(claim_id):
             raise ValueError(f"claim {index} has an invalid id")
         if claim_id in ids:
             raise ValueError(f"duplicate claim id: {claim_id}")
-        if not isinstance(name, str) or not name:
-            raise ValueError(f"claim {claim_id} has an invalid name")
+        for field in ("name", "note", "next_action"):
+            value = claim[field]
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"claim {claim_id} has an invalid {field}")
+        for field in ("instead", "blocker_owner"):
+            value = claim[field]
+            if value is not None and (not isinstance(value, str) or not value.strip()):
+                raise ValueError(f"claim {claim_id} has an invalid {field}")
         if name in names:
             raise ValueError(f"duplicate claim name: {name}")
         if claim["status"] not in statuses:
@@ -343,26 +352,94 @@ def normalize_manifest(raw: object) -> dict[str, Any]:
         for refs_key in ("implementation_refs", "automated_test_refs"):
             refs = evidence[refs_key]
             if not isinstance(refs, list) or any(
-                not isinstance(item, str) or not item for item in refs
+                not isinstance(item, str) or not item.strip() for item in refs
             ):
                 raise ValueError(f"claim {claim_id} has invalid {refs_key}")
+            if len(refs) != len(set(refs)):
+                raise ValueError(f"claim {claim_id} has duplicate {refs_key}")
         for state_key in ("local_live", "external_required"):
-            state = evidence[state_key]
-            if not isinstance(state, dict) or state.get("state") not in {
-                "verified",
-                "required",
-                "not_required",
-            }:
-                raise ValueError(f"claim {claim_id} has invalid {state_key} state")
-            if state["state"] in {"verified", "required"}:
-                refs = state.get("refs")
-                if not isinstance(refs, list) or not refs:
-                    raise ValueError(f"claim {claim_id} has empty {state_key} refs")
-            elif not isinstance(state.get("reason"), str) or not state["reason"]:
-                raise ValueError(f"claim {claim_id} lacks {state_key} rationale")
+            validate_evidence_state(claim_id, state_key, evidence[state_key])
         ids.add(claim_id)
         names.add(name)
+    validate_claim_semantics(claims, ids)
     return raw
+
+
+def validate_evidence_state(claim_id: str, field: str, value: object) -> str:
+    if not isinstance(value, dict) or value.get("state") not in {
+        "verified",
+        "required",
+        "not_required",
+    }:
+        raise ValueError(f"claim {claim_id} has invalid {field} state")
+    state = str(value["state"])
+    expected = {"state", "reason"} if state == "not_required" else {"state", "refs"}
+    if value.keys() != expected:
+        raise ValueError(f"claim {claim_id} has invalid {field} fields")
+    if state == "not_required":
+        reason = value["reason"]
+        if not isinstance(reason, str) or not reason.strip():
+            raise ValueError(f"claim {claim_id} lacks {field} rationale")
+        return state
+    refs = value["refs"]
+    if (
+        not isinstance(refs, list)
+        or not refs
+        or any(not isinstance(item, str) or not item.strip() for item in refs)
+    ):
+        raise ValueError(f"claim {claim_id} has empty {field} refs")
+    if len(refs) != len(set(refs)):
+        raise ValueError(f"claim {claim_id} has duplicate {field} refs")
+    return state
+
+
+def validate_claim_semantics(claims: list[dict[str, Any]], claim_ids: set[str]) -> None:
+    """Independently enforce the Rust registry's evidence/status contract."""
+    for claim in claims:
+        claim_id = str(claim["id"])
+        status = str(claim["status"])
+        evidence = claim["evidence"]
+        assert isinstance(evidence, dict)
+        implementation = evidence["implementation_refs"]
+        tests = evidence["automated_test_refs"]
+        local_state = str(evidence["local_live"]["state"])
+        external_state = str(evidence["external_required"]["state"])
+        built = bool(implementation) and bool(tests)
+        blocker = claim["blocker_owner"]
+
+        if status in {"current", "partial", "blocked", "failed", "expired", "out_of_scope"} and not built:
+            raise ValueError(f"{status} claim {claim_id} requires implementation and test evidence")
+        if status == "current" and "required" in {local_state, external_state}:
+            raise ValueError(f"Current claim {claim_id} cannot carry required evidence")
+        if status == "partial" and "required" not in {local_state, external_state}:
+            raise ValueError(f"Partial claim {claim_id} must identify missing proof")
+        if status == "proposed":
+            if implementation or tests:
+                raise ValueError(f"Proposed claim {claim_id} cannot carry shipped evidence")
+            if local_state != "required":
+                raise ValueError(f"Proposed claim {claim_id} must require local proof")
+        if status == "blocked":
+            if external_state != "required":
+                raise ValueError(f"Blocked claim {claim_id} must require external evidence")
+            if blocker is None:
+                raise ValueError(f"Blocked claim {claim_id} must identify a blocker owner")
+        elif blocker is not None:
+            raise ValueError(f"{status} claim {claim_id} cannot carry a blocker owner")
+        if status == "failed" and local_state == "verified":
+            raise ValueError(f"Failed claim {claim_id} cannot retain verified local evidence")
+        if status == "revoked" and "required" in {local_state, external_state}:
+            raise ValueError(f"Revoked claim {claim_id} cannot leave evidence outstanding")
+        if status == "superseded":
+            replacement = claim["instead"]
+            if replacement not in claim_ids or replacement == claim_id:
+                raise ValueError(f"Superseded claim {claim_id} must name an existing replacement")
+        if status == "expired" and local_state != "required":
+            raise ValueError(f"Expired claim {claim_id} must require fresh local proof")
+        if status == "out_of_scope" and {
+            local_state,
+            external_state,
+        } != {"not_required"}:
+            raise ValueError(f"Out-of-scope claim {claim_id} cannot carry evidence state")
 
 
 def markdown_cell(value: object) -> str:
@@ -489,6 +566,8 @@ def parse_goal_metadata(text: str) -> list[dict[str, str]]:
             raise ValueError(f"goal `{title}` has unknown status `{status}`")
         if status == "blocked" and not metadata.get("blocker-owner"):
             raise ValueError(f"blocked goal `{title}` lacks blocker-owner")
+        if status != "blocked" and metadata.get("blocker-owner"):
+            raise ValueError(f"nonblocked goal `{title}` cannot carry blocker-owner")
         goals.append(metadata)
     if not goals:
         raise ValueError("goals.md contains no structured goals")
@@ -674,6 +753,9 @@ def synchronized_documents(
                 "`abbey claims manifest` exposes the same typed registry.\n\n## Gotchas"
                 + suffix
             )
+        begin = f"<!-- BEGIN abbey-generated:claims-{mode} -->"
+        if begin not in text:
+            raise ValueError(f"{path.relative_to(ROOT)} lacks its generated claims region")
         region = render_region(mode, manifest, digest, path, workflow)
         rendered[path] = replace_generated_region(text, mode, region)
     rendered[GENERATED_LEDGER] = render_evidence_document(manifest, digest, workflow)

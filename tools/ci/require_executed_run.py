@@ -19,7 +19,9 @@ PRIMARY_JOB = "gate (Linux ARM64)"
 REQUIRED_PRIMARY_STEPS = {
     "Check out Abbey",
     "Check out the verified ABI dependency",
-    "Install pinned toolchain",
+    "Check out the public WDBX substrate",
+    "Install pinned ABI toolchain",
+    "Install pinned Abbey toolchain",
     "Build the real ABI binary",
     "Gate both Abbey feature sets",
     "Install cargo-audit if absent",
@@ -35,7 +37,8 @@ REQUIRED_HOSTED_FORK_STEPS = {
     "Check out Abbey",
     "Check out the verified ABI dependency",
     "Check out the public WDBX substrate",
-    "Install pinned toolchains",
+    "Install pinned ABI toolchain",
+    "Install pinned Abbey toolchain",
     "Build the real ABI binary",
     "Gate all portable Abbey modes",
 }

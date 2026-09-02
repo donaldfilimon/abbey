@@ -14,6 +14,7 @@ use ratatui::backend::CrosstermBackend;
 use std::io::stdout;
 use std::time::Duration;
 
+use super::predict::Prediction;
 use super::theme::{Theme, ThemeId};
 
 pub use super::tabs::{Focus, OverlayKind, PendingAction, Tab};
@@ -50,6 +51,13 @@ pub struct App {
     pub persona_lines: Vec<String>,
     pub memory_lines: Vec<String>,
     pub skill_lines: Vec<String>,
+    /// Ranked slash/command predictions for the composer overlay.
+    pub predictions: Vec<Prediction>,
+    pub predict_gen: u64,
+    pub predict_idle: u8,
+    pub llm_attempt_gen: Option<u64>,
+    pub llm_boost: Option<&'static str>,
+    pub predict_rx: Option<std::sync::mpsc::Receiver<super::predict::LlmHint>>,
 }
 
 impl App {
@@ -70,7 +78,7 @@ impl App {
             theme: Theme::from_id(theme_id),
             input: String::new(),
             cursor: 0,
-            status: "Enter run · ` focus · Ctrl-K palette · Ctrl-T theme · ? help".into(),
+            status: "Enter run · Tab predict · ` focus · Ctrl-K palette · ? help".into(),
             list_idx: 0,
             scroll: 0,
             filter: String::new(),
@@ -92,6 +100,12 @@ impl App {
             persona_lines: Vec::new(),
             memory_lines: Vec::new(),
             skill_lines: Vec::new(),
+            predictions: Vec::new(),
+            predict_gen: 0,
+            predict_idle: 0,
+            llm_attempt_gen: None,
+            llm_boost: None,
+            predict_rx: None,
         };
         app.refresh_doctor();
         app.refresh_personas();
@@ -131,8 +145,8 @@ impl App {
     /// mints as usual; `fm`/`abi` mint locally and Claude uses its own store.
     pub fn cycle_backend(&mut self) {
         let mut next = self.cfg.backend;
-        // Five backends means at most four alternatives before wrapping.
-        for _ in 0..4 {
+        // Six backends means at most five alternatives before wrapping.
+        for _ in 0..5 {
             next = next.cycle_next();
             let Ok(path) = crate::agent::resolve_agent_for(next) else {
                 continue;
@@ -369,6 +383,7 @@ pub fn run_tui(state: AbbeyState, cfg: AgentConfig) -> Result<i32> {
                 }
             }
             app.tick = app.tick.wrapping_add(1);
+            app.poll_command_prediction();
         }
         Ok(code)
     })();

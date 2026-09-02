@@ -528,6 +528,9 @@ fn backend_source() -> String {
         .and_then(|c| c.backend.clone())
     {
         Some(v) => format!("config backend={v}"),
+        None if std::env::var("ABBEY_AGENT").is_ok_and(|value| !value.trim().is_empty()) => {
+            "ABBEY_AGENT (legacy cursor-compatible override)".into()
+        }
         // "default" — or the auto-fallback note when cursor-agent is not
         // installed and another executor was picked up instead.
         None => agent::AgentBackend::from_env_source().into(),
@@ -547,7 +550,7 @@ pub fn cmd_doctor(state: &AbbeyState, cfg: &AgentConfig) -> Result<i32> {
     let agent_path = if cfg.agent_path.as_os_str().is_empty() {
         // Honest, not broken: local verbs (this one included) need no
         // executor; only generation does, and it says so when attempted.
-        "(none found — generation needs cursor-agent, grok, fm, abi, or claude)".to_string()
+        "(none found — generation needs ollama, grok, fm, abi, claude, or cursor-agent)".to_string()
     } else {
         cfg.agent_path.display().to_string()
     };
@@ -677,13 +680,26 @@ pub fn cmd_doctor(state: &AbbeyState, cfg: &AgentConfig) -> Result<i32> {
         }
     ));
     let backend = agent::AgentBackend::from_env();
-    if backend.is_on_device() {
+    if backend == agent::AgentBackend::Fm {
         let _ = output::println(format!("on-device: {}", cfg.fm_availability()));
         let _ =
             output::println("on-device: no cursor-agent and no network required for generation");
+    } else if backend == agent::AgentBackend::Ollama {
+        let _ = output::println(format!(
+            "ollama: local daemon selected with tag {}; Abbey does not verify model provenance or remote delegation",
+            crate::agent::ollama_normalize_model(&cfg.model)
+        ));
+        let _ = output::println(
+            "ollama: no cursor-agent required; automatic selection also requires the default tag to appear in `ollama list`",
+        );
     } else {
         let _ = output::println(format!(
-            "on-device: available via ABBEY_BACKEND=fm ({})",
+            "local options: ABBEY_BACKEND=ollama ({}) or ABBEY_BACKEND=fm ({})",
+            if agent::which_bin("ollama").is_some() {
+                "ollama present"
+            } else {
+                "ollama not installed"
+            },
             if agent::which_bin("fm").is_some() {
                 "fm present"
             } else {

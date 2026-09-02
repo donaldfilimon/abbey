@@ -52,15 +52,7 @@ pub fn draw(f: &mut Frame, app: &App) {
     draw_status(f, root[4], app);
 
     if app.overlay != OverlayKind::None {
-        overlay::draw_overlay(
-            f,
-            f.area(),
-            app.overlay,
-            &app.overlay_query,
-            app.overlay_idx,
-            &app.theme,
-            &app.input,
-        );
+        overlay::draw_overlay(f, f.area(), app);
     }
 }
 
@@ -142,6 +134,10 @@ fn draw_home(f: &mut Frame, area: Rect, app: &App) {
         ]),
         Line::from(""),
         Line::from(Span::styled("Keys", accent_style(&app.theme))),
+        Line::from(Span::styled(
+            "  Tab              accept command prediction",
+            dim_style(&app.theme),
+        )),
         Line::from(Span::styled(
             "  Enter /slash     run or execute slash",
             dim_style(&app.theme),
@@ -298,7 +294,7 @@ fn draw_list_tab(f: &mut Frame, area: Rect, app: &App, title: &str) {
 fn draw_input(f: &mut Frame, area: Rect, app: &App) {
     let focused = app.focus == Focus::Prompt;
     let title = if focused {
-        " Prompt · Enter run · /slash · ↑↓ history "
+        " Prompt · Enter run · Tab predict · /slash · ↑↓ history "
     } else {
         " Prompt (Ctrl-L / ` to focus) "
     };
@@ -357,7 +353,7 @@ fn draw_status(f: &mut Frame, area: Rect, app: &App) {
     let backend = app.cfg.backend;
     let backend_span = Span::styled(
         format!("{} ", backend.label()),
-        if backend == crate::agent::AgentBackend::Cursor {
+        if backend == crate::agent::AgentBackend::Ollama {
             dim_style(&app.theme)
         } else {
             Style::default().fg(app.theme.warn)

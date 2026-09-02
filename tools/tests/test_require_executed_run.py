@@ -83,7 +83,8 @@ class RunEvidence(unittest.TestCase):
                     "Check out Abbey",
                     "Check out the verified ABI dependency",
                     "Check out the public WDBX substrate",
-                    "Install pinned toolchains",
+                    "Install pinned ABI toolchain",
+                    "Install pinned Abbey toolchain",
                     "Build the real ABI binary",
                     "Gate all portable Abbey modes",
                 )

@@ -289,6 +289,7 @@ mod tests {
         assert!(!stage_accepts_model_binding(AgentBackend::Abi));
         assert!(stage_accepts_model_binding(AgentBackend::Cursor));
         assert!(stage_accepts_model_binding(AgentBackend::Grok));
+        assert!(stage_accepts_model_binding(AgentBackend::Ollama));
     }
 
     #[test]

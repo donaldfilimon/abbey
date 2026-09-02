@@ -1,4 +1,11 @@
-//! Friendly model aliases → cursor-agent model ids.
+//! Friendly model aliases → executor model ids.
+//!
+//! Cursor-shaped aliases stay cursor-agent ids. The ollama backend maps
+//! through [`crate::agent::ollama_normalize_model`] instead of this table.
+
+/// Default local Ollama tag. `gemma:27b-mlx` is accepted as an alias; the
+/// installed weight is Google Gemma 4 26.2B MLX (`gemma4:26b-mlx`).
+pub const OLLAMA_DEFAULT_MODEL: &str = "gemma4:26b-mlx";
 
 /// Resolve a user-facing alias or pass through a full model id.
 pub fn resolve_model(raw: &str) -> String {

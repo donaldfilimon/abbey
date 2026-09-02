@@ -1,14 +1,19 @@
 //! Executor backend selection and binary resolution.
 //!
 //! Split out of `agent/mod.rs` per the repo's file-size rule. The invariants
-//! live here: backend precedence (env > config > cursor when resolvable >
-//! first other installed executor), the once-per-process cache, and the rule
-//! that no backend — cursor-agent included — is a hard requirement.
+//! live here: backend precedence (backend env > config > legacy agent path > ollama >
+//! first other installed executor, cursor last), the once-per-process cache,
+//! and the rule that no backend is a hard requirement.
 
 use anyhow::{Context, Result, bail};
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use crate::host::which_bin;
+use crate::runtime::supervisor::{
+    ProcessSpec, SupervisorLimits, SupervisorOutcome, run_with_checkpoint,
+};
 
 /// Backend preference, or auto path via `ABBEY_AGENT`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -23,6 +28,10 @@ pub enum AgentBackend {
     Abi,
     /// Claude Code CLI (`claude`) with its own session store and argv grammar.
     Claude,
+    /// Local Ollama CLI (`ollama run`) — preferred default. One-shot with
+    /// Abbey-side transcript continuity; default model is the local
+    /// `gemma4:26b-mlx` tag (alias `gemma:27b-mlx`).
+    Ollama,
 }
 
 impl AgentBackend {
@@ -34,16 +43,18 @@ impl AgentBackend {
             "fm" | "apple" | "foundation" | "on-device" => Some(Self::Fm),
             "abi" | "abi-cli" => Some(Self::Abi),
             "claude" | "claude-code" => Some(Self::Claude),
+            "ollama" | "ollama-cli" => Some(Self::Ollama),
             _ => None,
         }
     }
 
     /// Backend precedence: `ABBEY_BACKEND` env > config `backend` key >
-    /// cursor when resolvable > the first other installed executor.
+    /// legacy `ABBEY_AGENT` cursor path > ollama when resolvable >
+    /// grok/fm/abi/claude, then cursor last.
     ///
-    /// A *set but unknown* env value still means cursor (long-standing
-    /// behaviour) — it does not fall through to the config key, so a typo in
-    /// the env var cannot silently activate a config-chosen backend.
+    /// A *set but unknown* env value still means ollama — it does not fall
+    /// through to the config key, so a typo in the env var cannot silently
+    /// activate a config-chosen backend.
     ///
     /// Resolved once per process and cached: neither the environment nor the
     /// config file changes mid-run, and `read_chat` (hence the TUI's per-frame
@@ -55,7 +66,7 @@ impl AgentBackend {
     }
 
     /// Where the cached backend choice came from, for `doctor` honesty:
-    /// `"default"`, or the auto-fallback note when cursor-agent is absent.
+    /// `"default"`, or the auto-fallback note when ollama is absent.
     /// Env/config sources keep their existing richer formatting in `doctor`.
     pub fn from_env_source() -> &'static str {
         Self::from_env_with_source().1
@@ -68,60 +79,79 @@ impl AgentBackend {
     }
 
     fn resolve_from_env_and_config() -> (Self, &'static str) {
-        if let Ok(v) = std::env::var("ABBEY_BACKEND")
-            && !v.trim().is_empty()
-        {
-            return (Self::parse(&v).unwrap_or(Self::Cursor), "env");
-        }
-        let Some(configured) = crate::config::AbbeyConfig::load()
+        let env_backend = std::env::var("ABBEY_BACKEND").ok();
+        let config_backend = crate::config::AbbeyConfig::load()
             .ok()
-            .and_then(|c| c.backend)
-        else {
-            return Self::default_with_fallback();
-        };
-        let parsed = Self::parse(&configured).unwrap_or_else(|| {
-            // Silently falling back would make a typo'd config key look like
-            // it worked — the user asked for a specific executor and got
-            // cursor-agent instead, with no way to tell.
-            eprintln!(
-                "abbey: config `backend = {configured:?}` is not one of \
-                 cursor|grok|fm|abi|claude — using cursor-agent"
-            );
-            Self::Cursor
-        });
-        (parsed, "config")
+            .and_then(|c| c.backend);
+        Self::select_from_sources(
+            env_backend.as_deref(),
+            config_backend.as_deref(),
+            legacy_agent_path().is_some(),
+        )
+        .unwrap_or_else(Self::default_with_fallback)
     }
 
-    /// The unchosen default: cursor when it (or an explicit `ABBEY_AGENT`
-    /// binary) resolves, otherwise the first other installed executor in the
-    /// fixed TUI cycle order. cursor-agent is preferred, never required —
-    /// a machine with only `abi` (or `grok`/`fm`) works out of the box.
-    /// `doctor` reports the auto choice; generation on a machine with no
-    /// executor at all still fails at spawn time with the full remedy list.
+    /// `ABBEY_BACKEND` wins over a config key; a config key wins over the
+    /// legacy `ABBEY_AGENT` cursor path. Unknown env still selects ollama so a
+    /// typo cannot fall through to config. `None` means the unchosen default.
+    fn select_from_sources(
+        env_backend: Option<&str>,
+        config_backend: Option<&str>,
+        has_legacy_agent: bool,
+    ) -> Option<(Self, &'static str)> {
+        if let Some(value) = env_backend.filter(|value| !value.trim().is_empty()) {
+            return Some((Self::parse(value).unwrap_or(Self::Ollama), "env"));
+        }
+        if let Some(configured) = config_backend.filter(|value| !value.trim().is_empty()) {
+            let parsed = Self::parse(configured).unwrap_or_else(|| {
+                eprintln!(
+                    "abbey: config `backend = {configured:?}` is not one of \
+                     ollama|cursor|grok|fm|abi|claude — using ollama"
+                );
+                Self::Ollama
+            });
+            return Some((parsed, "config"));
+        }
+        if has_legacy_agent {
+            return Some((Self::Cursor, "ABBEY_AGENT"));
+        }
+        None
+    }
+
+    /// The unchosen default: ollama when it resolves, otherwise the first
+    /// other installed executor in the fixed TUI cycle order, with cursor
+    /// last. ollama is preferred, never required — a machine with only
+    /// `abi` (or `grok`/`fm`) still works out of the box. The legacy
+    /// `ABBEY_AGENT` path is handled before this unchosen-default path.
     fn default_with_fallback() -> (Self, &'static str) {
-        // An ABBEY_AGENT override names a concrete binary for the default
-        // backend — honour it before probing anything.
-        if std::env::var("ABBEY_AGENT")
-            .map(|p| Path::new(&p).is_file())
-            .unwrap_or(false)
-        {
-            return (Self::Cursor, "default");
-        }
-        Self::pick_default_backend(&|b| resolve_agent_for(b).is_ok())
+        Self::pick_default_backend(&|backend| resolve_agent_for(backend).is_ok(), &|| {
+            resolve_agent_for(Self::Ollama).is_ok_and(|path| ollama_default_ready(&path))
+        })
     }
 
-    fn pick_default_backend(resolves: &dyn Fn(AgentBackend) -> bool) -> (Self, &'static str) {
-        if resolves(Self::Cursor) {
-            return (Self::Cursor, "default");
+    fn pick_default_backend(
+        resolves: &dyn Fn(AgentBackend) -> bool,
+        ollama_ready: &dyn Fn() -> bool,
+    ) -> (Self, &'static str) {
+        let ollama_installed = resolves(Self::Ollama);
+        if ollama_installed && ollama_ready() {
+            return (Self::Ollama, "default");
         }
-        for candidate in [Self::Grok, Self::Fm, Self::Abi, Self::Claude] {
+        for candidate in [Self::Grok, Self::Fm, Self::Abi, Self::Claude, Self::Cursor] {
             if resolves(candidate) {
-                return (candidate, "auto — cursor-agent not installed");
+                return (
+                    candidate,
+                    if ollama_installed {
+                        "auto — ollama daemon/default model unavailable"
+                    } else {
+                        "auto — ollama not installed"
+                    },
+                );
             }
         }
-        // Nothing installed: stay on cursor so the eventual spawn-time error
+        // Nothing installed: stay on ollama so the eventual spawn-time error
         // names the preferred install first.
-        (Self::Cursor, "default")
+        (Self::Ollama, "default — no ready executor found")
     }
 
     /// State subdirectory holding this backend's conversation transcripts.
@@ -133,6 +163,7 @@ impl AgentBackend {
         match self {
             Self::Abi => "abi",
             Self::Claude => "claude",
+            Self::Ollama => "ollama",
             _ => "fm",
         }
     }
@@ -144,10 +175,11 @@ impl AgentBackend {
             Self::Fm => "fm",
             Self::Abi => "abi",
             Self::Claude => "claude",
+            Self::Ollama => "ollama",
         }
     }
 
-    /// Whether this backend runs entirely on the local machine.
+    /// Whether this backend is verifiably on-device for every supported model.
     ///
     /// `abi` is deliberately excluded: its default transport is local, but a
     /// `claude-*`/`live` model selects a real network transport, so the label
@@ -156,10 +188,18 @@ impl AgentBackend {
         matches!(self, Self::Fm)
     }
 
+    /// Local one-shot CLIs with Abbey-side transcript continuity.
+    ///
+    /// `abi complete` and `ollama run` have no server session: Abbey captures
+    /// the turn and replays a bounded transcript tail on the next prompt.
+    pub fn is_oneshot_local(self) -> bool {
+        matches!(self, Self::Abi | Self::Ollama)
+    }
+
     /// Account / session-list / MCP surface. Claude has its own commands, but
     /// does not accept cursor-agent's account verbs.
     pub fn supports_account_surface(self) -> bool {
-        !matches!(self, Self::Fm | Self::Abi | Self::Claude)
+        matches!(self, Self::Cursor | Self::Grok)
     }
 
     /// Server-side chat sessions (`create-chat` / `--resume <id>`).
@@ -176,11 +216,12 @@ impl AgentBackend {
     /// The next backend in the fixed TUI switch order (wraps around).
     pub fn cycle_next(self) -> Self {
         match self {
-            Self::Cursor => Self::Grok,
+            Self::Ollama => Self::Grok,
             Self::Grok => Self::Fm,
             Self::Fm => Self::Abi,
             Self::Abi => Self::Claude,
             Self::Claude => Self::Cursor,
+            Self::Cursor => Self::Ollama,
         }
     }
 }
@@ -209,13 +250,49 @@ pub fn strip_ansi(s: &str) -> String {
 }
 
 pub fn resolve_agent() -> Result<PathBuf> {
-    if let Ok(p) = std::env::var("ABBEY_AGENT") {
-        let p = PathBuf::from(p);
-        if p.is_file() {
-            return Ok(p);
-        }
+    let backend = AgentBackend::from_env();
+    if backend == AgentBackend::Cursor
+        && let Some(path) = legacy_agent_path()
+    {
+        return Ok(path);
     }
-    resolve_agent_for(AgentBackend::from_env())
+    resolve_agent_for(backend)
+}
+
+fn legacy_agent_path() -> Option<PathBuf> {
+    let value = std::env::var_os("ABBEY_AGENT")?;
+    if value.is_empty() {
+        return None;
+    }
+    let path = PathBuf::from(value);
+    path.is_file().then_some(path)
+}
+
+fn ollama_default_ready(path: &Path) -> bool {
+    ollama_lists_model(path, crate::models::OLLAMA_DEFAULT_MODEL)
+}
+
+/// True only when `ollama list` already contains `model`. Used to refuse
+/// `ollama run`, which would otherwise pull a missing tag.
+pub(crate) fn ollama_lists_model(path: &Path, model: &str) -> bool {
+    let spec = ProcessSpec::inherited(path.to_path_buf(), vec![OsString::from("list")]);
+    let limits = SupervisorLimits {
+        timeout: Duration::from_millis(750),
+        terminate_grace: Duration::from_millis(100),
+        stdout_bytes: 64 * 1024,
+        stderr_bytes: 4 * 1024,
+        poll_interval: Duration::from_millis(10),
+    };
+    let Ok(SupervisorOutcome::Exited { status, stdout, .. }) =
+        run_with_checkpoint(&spec, &limits, || false)
+    else {
+        return false;
+    };
+    status.success()
+        && String::from_utf8_lossy(&stdout)
+            .lines()
+            .skip(1)
+            .any(|line| line.split_whitespace().next() == Some(model))
 }
 
 /// Resolve the executor binary for a specific backend.
@@ -242,6 +319,7 @@ pub fn resolve_agent_for(backend: AgentBackend) -> Result<PathBuf> {
         AgentBackend::Fm => "fm",
         AgentBackend::Abi => "abi",
         AgentBackend::Claude => "claude",
+        AgentBackend::Ollama => "ollama",
     };
     let candidates = crate::host::agent_candidate_paths(key, &home);
     for c in &candidates {
@@ -276,7 +354,7 @@ pub fn resolve_agent_for(backend: AgentBackend) -> Result<PathBuf> {
             }
             bail!(
                 "`fm` not found — the on-device backend needs the Apple Foundation Models \
-                 CLI (macOS 26+). Unset ABBEY_BACKEND=fm to use cursor-agent."
+                 CLI (macOS 26+). Unset ABBEY_BACKEND=fm to use the default ollama backend."
             );
         }
         AgentBackend::Abi => {
@@ -299,11 +377,21 @@ pub fn resolve_agent_for(backend: AgentBackend) -> Result<PathBuf> {
                  backend."
             );
         }
+        AgentBackend::Ollama => {
+            if let Some(path) = which_bin("ollama") {
+                return Ok(path);
+            }
+            bail!(
+                "`ollama` not found — ABBEY_BACKEND=ollama needs the Ollama CLI on PATH \
+                 (https://ollama.com). The default model is gemma4:26b-mlx \
+                 (alias gemma:27b-mlx)."
+            );
+        }
     }
     bail!(
         "{} not found — generation needs an executor backend. Install any of \
-         cursor-agent, grok, fm, abi, or claude \
-         (ABBEY_BACKEND=cursor|grok|fm|abi|claude picks \
+         ollama, grok, fm, abi, claude, or cursor-agent \
+         (ABBEY_BACKEND=ollama|cursor|grok|fm|abi|claude picks \
          one explicitly, ABBEY_AGENT points at a binary directly); local verbs \
          work without one",
         backend.label()
@@ -319,35 +407,56 @@ mod tests {
     use super::*;
 
     #[test]
-    fn default_backend_prefers_cursor_but_never_requires_it() {
-        // cursor wins whenever it resolves…
-        let (b, src) = AgentBackend::pick_default_backend(&|_| true);
-        assert_eq!(b, AgentBackend::Cursor);
+    fn default_backend_prefers_ollama_but_never_requires_cursor() {
+        // ollama wins whenever it resolves, even if cursor-agent is also present.
+        let (b, src) = AgentBackend::pick_default_backend(&|_| true, &|| true);
+        assert_eq!(b, AgentBackend::Ollama);
         assert_eq!(src, "default");
 
-        // …otherwise the first other installed executor serves, in the fixed
+        // cursor present without ollama is a last-resort auto fallback, never
+        // the preferred default.
+        let (b, src) =
+            AgentBackend::pick_default_backend(&|b| matches!(b, AgentBackend::Cursor), &|| false);
+        assert_eq!(b, AgentBackend::Cursor);
+        assert!(
+            src.starts_with("auto"),
+            "cursor without ollama must be an auto fallback: {src}"
+        );
+
+        // otherwise the first other installed executor serves, in the fixed
         // cycle order, and the source string says the choice was automatic.
-        let (b, src) = AgentBackend::pick_default_backend(&|b| matches!(b, AgentBackend::Abi));
+        let (b, src) =
+            AgentBackend::pick_default_backend(&|b| matches!(b, AgentBackend::Abi), &|| false);
         assert_eq!(b, AgentBackend::Abi);
         assert!(
             src.starts_with("auto"),
             "auto choice must be visible: {src}"
         );
 
-        let (b, _) = AgentBackend::pick_default_backend(&|b| {
-            matches!(b, AgentBackend::Grok | AgentBackend::Abi)
-        });
+        let (b, _) = AgentBackend::pick_default_backend(
+            &|b| matches!(b, AgentBackend::Grok | AgentBackend::Abi),
+            &|| false,
+        );
         assert_eq!(b, AgentBackend::Grok, "cycle order breaks the tie");
 
-        let (b, src) = AgentBackend::pick_default_backend(&|b| matches!(b, AgentBackend::Claude));
+        let (b, src) =
+            AgentBackend::pick_default_backend(&|b| matches!(b, AgentBackend::Claude), &|| false);
         assert_eq!(b, AgentBackend::Claude);
         assert!(src.starts_with("auto"));
 
-        // Nothing installed: stay on cursor so the spawn-time error names the
-        // preferred install first — never a panic, never a random pick.
-        let (b, src) = AgentBackend::pick_default_backend(&|_| false);
-        assert_eq!(b, AgentBackend::Cursor);
-        assert_eq!(src, "default");
+        // Nothing installed: stay on ollama so the spawn-time error names the
+        // preferred install first — never a panic, never a random pick, never
+        // cursor-agent.
+        let (b, src) = AgentBackend::pick_default_backend(&|_| false, &|| false);
+        assert_eq!(b, AgentBackend::Ollama);
+        assert_eq!(src, "default — no ready executor found");
+
+        let (b, src) = AgentBackend::pick_default_backend(
+            &|backend| matches!(backend, AgentBackend::Ollama | AgentBackend::Abi),
+            &|| false,
+        );
+        assert_eq!(b, AgentBackend::Abi);
+        assert!(src.contains("default model unavailable"));
     }
 
     #[test]
@@ -356,6 +465,66 @@ mod tests {
         assert_eq!(
             AgentBackend::parse("Claude-Code"),
             Some(AgentBackend::Claude)
+        );
+    }
+
+    #[test]
+    fn ollama_backend_aliases_parse() {
+        assert_eq!(AgentBackend::parse("ollama"), Some(AgentBackend::Ollama));
+        assert_eq!(
+            AgentBackend::parse("Ollama-CLI"),
+            Some(AgentBackend::Ollama)
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn automatic_ollama_probe_requires_the_default_model() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let path = std::env::temp_dir().join(format!(
+            "abbey-ollama-probe-{}-{}",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::write(
+            &path,
+            format!(
+                "#!/bin/sh\nprintf 'NAME ID SIZE\\n{} digest 1GB\\n'\n",
+                crate::models::OLLAMA_DEFAULT_MODEL
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
+        assert!(ollama_default_ready(&path));
+
+        std::fs::write(
+            &path,
+            "#!/bin/sh\nprintf 'NAME ID SIZE\\nother:latest digest 1GB\\n'\n",
+        )
+        .unwrap();
+        assert!(!ollama_default_ready(&path));
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn configured_backend_outranks_the_legacy_agent_path() {
+        assert_eq!(
+            AgentBackend::select_from_sources(Some("abi"), Some("ollama"), true),
+            Some((AgentBackend::Abi, "env"))
+        );
+        assert_eq!(
+            AgentBackend::select_from_sources(None, Some("ollama"), true),
+            Some((AgentBackend::Ollama, "config"))
+        );
+        assert_eq!(
+            AgentBackend::select_from_sources(None, None, true),
+            Some((AgentBackend::Cursor, "ABBEY_AGENT"))
+        );
+        assert_eq!(AgentBackend::select_from_sources(None, None, false), None);
+        assert_eq!(
+            AgentBackend::select_from_sources(Some("not-a-backend"), Some("claude"), true),
+            Some((AgentBackend::Ollama, "env"))
         );
     }
 }

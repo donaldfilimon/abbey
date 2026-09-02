@@ -1,10 +1,12 @@
-//! High-quality voice I/O on macOS.
+//! Voice I/O: macOS `say` / Speech.framework, plus portable host tools.
 //!
-//! - **TTS**: `say(1)` preferring Premium → Enhanced → compact voices
-//! - **STT**: on-device Apple Speech via `scripts/abbey-stt.swift` (lazy-built)
-//! - No cloud TTS/STT subscription; no local neural weights in Abbey itself
+//! - **TTS**: `say(1)` on macOS (Premium/Enhanced/Sol/Siri when installed);
+//!   espeak-ng/piper on Unix; Windows SAPI when those tools exist
+//! - **STT**: Apple Speech helper on macOS; Whisper.cpp tiny/base when a CLI
+//!   and ggml weight are on the host
+//! - No cloud TTS/STT subscription; no bundled Whisper/Piper weights
 //!
-//! Non-macOS builds refuse with an honest message.
+//! Missing host tools refuse honestly. Local neural speech remains Proposed.
 
 use crate::agent::AgentConfig;
 use crate::state::AbbeyState;
@@ -51,8 +53,8 @@ const NOVELTY: &[&str] = &[
 
 /// Known natural compact voices — used when Premium/Enhanced aren't installed.
 const NATURAL: &[&str] = &[
-    "Samantha", "Ava", "Allison", "Evan", "Nathan", "Zoe", "Nicky", "Noelle", "Susan", "Victoria",
-    "Karen", "Daniel", "Moira", "Fiona", "Tessa", "Veena", "Rishi", "Serena",
+    "Sol", "Samantha", "Ava", "Allison", "Evan", "Nathan", "Zoe", "Nicky", "Noelle", "Susan",
+    "Victoria", "Karen", "Daniel", "Moira", "Fiona", "Tessa", "Veena", "Rishi", "Serena",
 ];
 
 fn is_macos() -> bool {
@@ -61,8 +63,10 @@ fn is_macos() -> bool {
 
 fn refuse_platform(feature: &str) -> Result<i32> {
     eprintln!(
-        "abbey: `{feature}` requires macOS (`say` + Speech.framework).\n\
-         On other platforms, use an external STT/TTS tool and pipe text into abbey."
+        "abbey: `{feature}` has no backend on this host.\n\
+         macOS: `say` + Speech.framework (Current).\n\
+         Portable: espeak-ng TTS; Piper with ABBEY_PIPER_MODEL and a host player; whisper-cli + ggml-tiny.bin STT.\n\
+         Bundled neural speech is Proposed — Abbey does not ship Whisper/Piper weights."
     );
     Ok(2)
 }
@@ -89,7 +93,18 @@ pub fn parse_voice_line(line: &str) -> Option<VoiceInfo> {
     if name.is_empty() {
         return None;
     }
-    let quality = voice_quality(&name);
+    let mut quality = voice_quality(&name);
+    if quality > 0
+        && (line.contains("Siri")
+            || name.eq_ignore_ascii_case("Sol")
+            || name.to_ascii_lowercase().starts_with("sol "))
+    {
+        quality = quality.max(if name.eq_ignore_ascii_case("Sol") {
+            3
+        } else {
+            2
+        });
+    }
     Some(VoiceInfo {
         name,
         locale,
@@ -105,7 +120,7 @@ pub fn voice_quality(name: &str) -> u8 {
     {
         return 0;
     }
-    if lower.contains("premium") {
+    if lower.contains("premium") || lower == "sol" || lower.starts_with("sol ") {
         3
     } else if lower.contains("enhanced") {
         2
@@ -158,7 +173,7 @@ pub fn best_voice(locale_prefix: &str, preferred: Option<&str>) -> Result<VoiceI
         .collect();
     filtered
         .into_iter()
-        .max_by_key(|v| (v.quality, locale_boost(&v.locale), name_boost(&v.name)))
+        .max_by_key(|v| (locale_boost(&v.locale), v.quality, name_boost(&v.name)))
         .or_else(|| voices.into_iter().find(|v| v.quality > 0))
         .context("no usable voices found")
 }
@@ -205,6 +220,9 @@ pub fn speak(
     out: Option<&Path>,
 ) -> Result<i32> {
     if !is_macos() {
+        if crate::voice_portable::has_portable_tts() {
+            return crate::voice_portable::speak_portable(text, voice, rate, out);
+        }
         return refuse_platform("voice speak");
     }
     let text = text.trim();
@@ -328,7 +346,7 @@ fn ensure_stt_binary(state: &AbbeyState) -> Result<PathBuf> {
 /// Listen on the mic and return recognized text (on-device when available).
 pub fn listen(state: &AbbeyState, seconds: f64, locale: Option<&str>) -> Result<String> {
     if !is_macos() {
-        bail!("voice listen requires macOS");
+        return crate::voice_portable::listen_whisper(seconds, None);
     }
     let bin = ensure_stt_binary(state)?;
     let locale = locale.map(|s| s.to_string()).unwrap_or_else(|| {
@@ -362,7 +380,25 @@ pub fn listen(state: &AbbeyState, seconds: f64, locale: Option<&str>) -> Result<
 
 pub fn print_voices(locale_filter: Option<&str>) -> Result<i32> {
     if !is_macos() {
-        return refuse_platform("voice voices");
+        println!("voice backends (portable — no bundled weights):");
+        for t in crate::voice_portable::inventory() {
+            println!(
+                "  {:<8} {:<12} {}{}",
+                t.role,
+                t.name,
+                t.path.display(),
+                if t.small { "  [small]" } else { "" }
+            );
+        }
+        if let Some(m) = crate::voice_portable::prefer_whisper_model() {
+            println!("whisper model: {} (tiny/base preferred)", m.display());
+        } else {
+            println!(
+                "whisper model: none — set ABBEY_WHISPER_MODEL to ggml-tiny.bin \
+                 (preferred) or ggml-base.bin"
+            );
+        }
+        return Ok(0);
     }
     let voices = list_voices()?;
     let filter = locale_filter.unwrap_or("").to_ascii_lowercase();
@@ -414,7 +450,9 @@ pub fn ask(
     seconds: f64,
     hint: &[String],
 ) -> Result<i32> {
-    if !is_macos() {
+    if !is_macos()
+        && !(crate::voice_portable::has_portable_stt() && crate::voice_portable::has_portable_tts())
+    {
         return refuse_platform("voice ask");
     }
     let heard = listen(state, seconds, None)?;
@@ -531,11 +569,42 @@ pub fn dispatch(state: &AbbeyState, cfg: &mut AgentConfig, args: &[String]) -> R
 }
 
 fn status(state: &AbbeyState) -> Result<i32> {
-    if !is_macos() {
-        return refuse_platform("voice");
-    }
-    println!("voice: macOS say + on-device Speech.framework");
+    println!(
+        "voice: {}",
+        if is_macos() {
+            "macOS say + Speech.framework"
+        } else {
+            "portable host tools only (no bundled neural speech)"
+        }
+    );
     println!("state: {}", state.state_dir.display());
+    println!("portable tools:");
+    let tools = crate::voice_portable::inventory();
+    if tools.is_empty() {
+        println!("  (none discovered)");
+    } else {
+        for t in &tools {
+            println!(
+                "  {:<8} {:<12} {}{}",
+                t.role,
+                t.name,
+                t.path.display(),
+                if t.small { "  [small]" } else { "" }
+            );
+        }
+    }
+    if let Some(m) = crate::voice_portable::prefer_whisper_model() {
+        println!("whisper: {} (tiny/base preferred over large)", m.display());
+    } else {
+        println!("whisper: no ggml tiny/base weight (set ABBEY_WHISPER_MODEL)");
+    }
+    if !is_macos() {
+        println!(
+            "env:    ABBEY_VOICE · ABBEY_VOICE_RATE · ABBEY_VOICE_LOCALE · ABBEY_WHISPER_MODEL"
+        );
+        return Ok(0);
+    }
+    println!("macos:  say + on-device Speech.framework");
     match list_voices() {
         Ok(v) => {
             let premium = v.iter().filter(|x| x.quality == 3).count();
@@ -601,5 +670,17 @@ mod tests {
         assert_eq!(voice_quality("Bells"), 0);
         assert_eq!(voice_quality("Zarvox"), 0);
         assert_eq!(voice_quality("Ava (Premium)"), 3);
+        assert_eq!(voice_quality("Sol"), 3);
+        assert_eq!(voice_quality("Whisper"), 0);
+    }
+
+    #[test]
+    fn siri_comment_promotes_quality() {
+        let v = parse_voice_line("Aman (English (India)) en_IN    # Hi, I’m Siri!").unwrap();
+        assert_eq!(v.quality, 2);
+        let sol =
+            parse_voice_line("Sol                 en_US    # Hello! My name is Sol.").unwrap();
+        assert_eq!(sol.quality, 3);
+        assert_eq!(sol.name, "Sol");
     }
 }

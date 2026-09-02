@@ -197,6 +197,7 @@ pub(super) fn run_with_checkpoint(
     let mut command = Command::new(canonical_program);
     command
         .args(&spec.args)
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     if let Some(current_dir) = canonical_current_dir {

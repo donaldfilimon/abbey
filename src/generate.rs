@@ -26,9 +26,9 @@ pub enum GenKind {
 
 fn refuse_no_tools(backend: AgentBackend, kind: &str) -> Result<i32> {
     eprintln!(
-        "abbey: `{kind}` needs cursor-agent tool access.\n\
+        "abbey: `{kind}` needs an executor with image/video tool access.\n\
          The `{}` backend (ABBEY_BACKEND={}) has no image/video generation surface.\n\
-         Unset ABBEY_BACKEND to use cursor-agent.",
+         Select ABBEY_BACKEND=cursor only if you explicitly want cursor-agent tools.",
         backend.label(),
         backend.label(),
     );
@@ -110,7 +110,10 @@ pub fn run_generate(
     aspect: Option<&str>,
     edit: Option<PathBuf>,
 ) -> Result<i32> {
-    if matches!(cfg.backend, AgentBackend::Fm | AgentBackend::Abi) {
+    if matches!(
+        cfg.backend,
+        AgentBackend::Fm | AgentBackend::Abi | AgentBackend::Ollama
+    ) {
         return refuse_no_tools(
             cfg.backend,
             match kind {

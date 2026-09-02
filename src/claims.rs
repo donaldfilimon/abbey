@@ -179,6 +179,8 @@ fn validate_claims(claims: &[Claim]) -> Result<()> {
         if !ids.insert(claim.id) {
             bail!("duplicate claim id `{}`", claim.id);
         }
+    }
+    for claim in claims {
         for (field, value) in [
             ("name", claim.name),
             ("note", claim.note),
@@ -204,7 +206,6 @@ fn validate_claims(claims: &[Claim]) -> Result<()> {
             "external_required",
             claim.evidence.external_required,
         )?;
-
         let implementation_is_empty = claim.evidence.implementation_refs.is_empty();
         let tests_are_empty = claim.evidence.automated_test_refs.is_empty();
         match claim.status {
@@ -292,9 +293,16 @@ fn validate_claims(claims: &[Claim]) -> Result<()> {
             Status::Superseded => {
                 // Decision 68 is only useful if a superseded claim says what
                 // replaced it; otherwise the capability silently disappears.
-                if claim.instead.is_none_or(|value| value.trim().is_empty()) {
+                let Some(replacement) = claim.instead.filter(|value| !value.trim().is_empty())
+                else {
                     bail!(
                         "Superseded claim `{}` must name the claim that replaced it",
+                        claim.id
+                    );
+                };
+                if replacement == claim.id || !ids.contains(replacement) {
+                    bail!(
+                        "Superseded claim `{}` must name a different existing replacement",
                         claim.id
                     );
                 }

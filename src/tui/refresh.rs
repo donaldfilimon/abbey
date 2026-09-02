@@ -17,7 +17,10 @@ use super::app::App;
 /// Doctor line naming the active executor backend.
 pub fn backend_doctor_line(backend: AgentBackend) -> String {
     match backend {
-        AgentBackend::Cursor => "backend:   cursor-agent (default)".into(),
+        AgentBackend::Cursor => "backend:   cursor-agent (ABBEY_BACKEND=cursor)".into(),
+        AgentBackend::Ollama => {
+            "backend:   ollama — local `ollama run`, default gemma4:26b-mlx (default)".into()
+        }
         AgentBackend::Grok => "backend:   grok (ABBEY_BACKEND=grok)".into(),
         AgentBackend::Fm => {
             "backend:   fm — on-device Apple Foundation Models (ABBEY_BACKEND=fm)".into()
@@ -217,6 +220,8 @@ mod tests {
         assert!(abi.contains("abi complete") && abi.contains("ABBEY_BACKEND=abi"));
         let claude = backend_doctor_line(AgentBackend::Claude);
         assert!(claude.contains("Claude Code") && claude.contains("ABBEY_BACKEND=claude"));
+        let ollama = backend_doctor_line(AgentBackend::Ollama);
+        assert!(ollama.contains("ollama") && ollama.contains("gemma4:26b-mlx"));
     }
 
     #[test]
@@ -225,6 +230,7 @@ mod tests {
             AgentBackend::Cursor,
             AgentBackend::Grok,
             AgentBackend::Claude,
+            AgentBackend::Ollama,
         ] {
             assert!(roles_doctor_line(b).contains("bindings"));
         }

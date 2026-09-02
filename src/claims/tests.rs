@@ -640,8 +640,17 @@ fn a_superseded_claim_must_name_its_replacement() {
     );
 
     let mut ok = lifecycle_claim("fixture-superseded", Status::Superseded);
-    ok.instead = Some("backend-cursor-agent");
-    validate_claims(&[ok]).expect("a superseded claim naming its replacement is valid");
+    ok.instead = Some("fixture-replacement");
+    let replacement = lifecycle_claim("fixture-replacement", Status::Current);
+    validate_claims(&[ok, replacement])
+        .expect("a superseded claim naming its replacement is valid");
+
+    for replacement in ["missing-claim", "fixture-superseded"] {
+        let mut invalid = lifecycle_claim("fixture-superseded", Status::Superseded);
+        invalid.instead = Some(replacement);
+        let err = validate_claims(&[invalid]).expect_err("replacement must resolve elsewhere");
+        assert!(err.to_string().contains("different existing replacement"));
+    }
 
     // Whitespace is not a name.
     let mut blank = lifecycle_claim("fixture-superseded", Status::Superseded);
@@ -671,13 +680,14 @@ fn no_lifecycle_state_may_carry_a_blocker_owner() {
         let mut claim = lifecycle_claim("fixture-owner", status);
         claim.blocker_owner = Some("Donald");
         match status {
-            Status::Superseded => claim.instead = Some("backend-cursor-agent"),
+            Status::Superseded => claim.instead = Some("fixture-replacement"),
             Status::Expired => {
                 claim.evidence.local_live = EvidenceState::Required(&["re-run the gate"]);
             }
             _ => {}
         }
-        let err = match validate_claims(&[claim]) {
+        let replacement = lifecycle_claim("fixture-replacement", Status::Current);
+        let err = match validate_claims(&[claim, replacement]) {
             Ok(()) => panic!("{} must reject a blocker owner", status.label()),
             Err(err) => err.to_string(),
         };

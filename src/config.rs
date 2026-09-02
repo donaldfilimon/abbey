@@ -17,8 +17,8 @@ pub struct AbbeyConfig {
     pub memory_backend: String,
     #[serde(default)]
     pub abi_bin: Option<PathBuf>,
-    /// Default executor backend (`cursor` | `grok` | `fm` | `abi` | `claude`).
-    /// Precedence: `ABBEY_BACKEND` env > this key > cursor.
+    /// Default executor backend (`ollama` | `cursor` | `grok` | `fm` | `abi` | `claude`).
+    /// Precedence: `ABBEY_BACKEND` env > this key > ollama.
     #[serde(default)]
     pub backend: Option<String>,
     /// Learned-memory embedding provider. API credentials are environment-only.
@@ -59,10 +59,10 @@ impl Default for EmbeddingConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RoleBindings {
-    /// cursor-agent model id or Abbey alias for Max (technical worker role).
+    /// Executor model id or Abbey alias for Max (technical worker role).
     #[serde(default = "default_max_model")]
     pub max: String,
-    /// cursor-agent model id or Abbey alias for Gemma (visual/conversational role).
+    /// Executor model id or Abbey alias for Gemma (visual/conversational role).
     #[serde(default = "default_gemma_model")]
     pub gemma: String,
 }
@@ -100,10 +100,10 @@ fn default_memory_backend() -> String {
     "sqlite".into()
 }
 fn default_max_model() -> String {
-    "opus".into()
+    "max".into()
 }
 fn default_gemma_model() -> String {
-    "composer".into()
+    "gemma".into()
 }
 fn default_embedding_provider() -> String {
     "none".into()
@@ -219,7 +219,7 @@ impl AbbeyConfig {
             format!("embedding_dim:   {}", self.embeddings.dimension),
             format!(
                 "backend:         {}",
-                self.backend.as_deref().unwrap_or("(cursor default)")
+                self.backend.as_deref().unwrap_or("(ollama default)")
             ),
             format!(
                 "abi_bin:         {}",
@@ -233,8 +233,9 @@ impl AbbeyConfig {
 }
 
 fn default_toml_text() -> &'static str {
-    r#"# Abbey hybrid config — role bindings are cursor-agent model ids/aliases,
-# NOT local Qwen/Gemma weights.
+    r#"# Abbey hybrid config — role bindings are executor model ids/aliases.
+# The portable max/gemma aliases resolve per backend; they are roles, not
+# bundled Abbey weights.
 
 persona_policy = "auto"
 default_role = "auto"
@@ -249,19 +250,17 @@ model = "text-embedding-3-small"
 dimension = 1536
 language = "en"
 
-# Default executor backend: "cursor" (default) | "grok" | "fm" | "abi" | "claude".
-# ABBEY_BACKEND overrides this. "abi" and "claude" each run through their own
-# CLI and argv grammar with no cursor-agent installed.
-# backend = "abi"
+# Default executor backend: "ollama" (preferred when installed) | "grok" | "fm" | "abi" | "claude" | "cursor".
+# ABBEY_BACKEND overrides this. The unchosen default prefers ollama, then grok/fm/abi/claude, then cursor last.
+# backend = "ollama"
 
 # Path to a real `abi` binary (a shell alias will not do). Required by the abi
-# backend above and by the `abbey wdbx` bridge; ABBEY_ABI_BIN overrides.
+# backend and by the `abbey wdbx` bridge; ABBEY_ABI_BIN overrides.
 # abi_bin = "/path/to/abi"
 
 [roles]
-# Alternatives for max: "sol" (gpt-5.6-sol-high), "fable" (claude-fable-5-thinking-high)
-max = "opus"
-gemma = "composer"
+max = "max"
+gemma = "gemma"
 "#
 }
 
@@ -365,14 +364,14 @@ mod tests {
     #[test]
     fn parse_default_shape() {
         let cfg = parse_toml_lite(default_toml_text()).unwrap();
-        assert_eq!(cfg.roles.max, "opus");
-        assert_eq!(cfg.roles.gemma, "composer");
+        assert_eq!(cfg.roles.max, "max");
+        assert_eq!(cfg.roles.gemma, "gemma");
         assert_eq!(cfg.memory_backend, "sqlite");
         assert_eq!(cfg.embeddings.provider, "none");
         assert_eq!(cfg.embeddings.dimension, 1536);
         // The scaffold must not *activate* anything the user didn't choose:
         // backend/abi_bin ship commented out, so a fresh config still means
-        // cursor + PATH lookup.
+        // ollama-when-installed (code default), not a pinned executor.
         assert_eq!(cfg.backend, None);
         assert_eq!(cfg.abi_bin, None);
     }

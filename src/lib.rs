@@ -48,12 +48,14 @@ pub mod run_control;
 pub mod runtime;
 mod session;
 mod slash;
+mod slash_alias;
 mod slash_dispatch;
 mod state;
 mod subagents;
 mod surfaces;
 mod tui;
 mod voice;
+mod voice_portable;
 mod wdbx_bridge;
 
 pub use entry::run_cli;

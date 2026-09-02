@@ -270,6 +270,55 @@ fn run_stubbed(s: &Scratch, agent: &PathBuf, args: &[&str]) -> (i32, String, Str
 
 #[cfg(unix)]
 #[test]
+fn explicit_backend_cannot_receive_the_legacy_agent_executable() {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let scratch = Scratch::new("backend-agent-collision");
+    let legacy = scratch.0.join("legacy-agent");
+    let legacy_marker = scratch.0.join("legacy-ran");
+    std::fs::write(
+        &legacy,
+        format!(
+            "#!/bin/sh\ntouch '{}'\necho wrong-backend\n",
+            legacy_marker.display()
+        ),
+    )
+    .unwrap();
+    let abi = scratch.0.join("abi");
+    let abi_args = scratch.0.join("abi-args");
+    std::fs::write(
+        &abi,
+        format!(
+            "#!/bin/sh\nprintf '%s\\n' \"$@\" > '{}'\necho abi-reply\n",
+            abi_args.display()
+        ),
+    )
+    .unwrap();
+    for path in [&legacy, &abi] {
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700)).unwrap();
+    }
+
+    let output = Command::new(BIN)
+        .args(["print", "hello"])
+        .env(abbey::edition::ACTIVE.state_dir_env(), &scratch.0)
+        .env("ABBEY_BACKEND", "abi")
+        .env("ABBEY_AGENT", &legacy)
+        .env("ABBEY_ABI_BIN", &abi)
+        .output()
+        .unwrap();
+
+    assert!(output.status.success(), "{:?}", output.stderr);
+    assert!(!legacy_marker.exists(), "lower-precedence ABBEY_AGENT ran");
+    let args = std::fs::read_to_string(abi_args).unwrap();
+    assert!(
+        args.lines().next().is_some_and(|arg| arg == "complete"),
+        "{args}"
+    );
+    assert!(String::from_utf8_lossy(&output.stdout).contains("abi-reply"));
+}
+
+#[cfg(unix)]
+#[test]
 fn print_bypasses_the_route_log_where_ask_appends() {
     let s = Scratch::new("route-bypass");
     let agent = write_stub_agent(&s);

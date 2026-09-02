@@ -1,6 +1,8 @@
 //! Session orchestration: flags, hybrid persona/role run, history compact.
 
-use crate::agent::{AgentBackend, AgentConfig, Worktree, abi_normalize_model, run_resilient};
+use crate::agent::{
+    AgentBackend, AgentConfig, Worktree, abi_normalize_model, ollama_normalize_model, run_resilient,
+};
 use crate::cli::{Cli, ExecMode};
 use crate::config;
 use crate::hybrid_loop::{self, STAGE_IMPLEMENT, STAGE_INTERPRET, StageRequest};
@@ -16,11 +18,23 @@ use abi_ai::AgentProfile;
 use anyhow::{Result, bail};
 
 pub fn apply_global_flags(cli: &Cli, state: &AbbeyState, cfg: &mut AgentConfig) -> Result<()> {
-    // `fm` and `abi` keep conversations in transcript files under the state
-    // dir; Claude stores its transcript itself and Abbey keeps only a local
-    // marker that distinguishes a new session id from one safe to resume.
+    // `fm`, `abi`, and `ollama` keep conversations in transcript files under
+    // the state dir; Claude stores its transcript itself and Abbey keeps only
+    // a local marker that distinguishes a new session id from one safe to resume.
     cfg.transcript_dir = Some(state.state_dir.join(cfg.backend.transcript_subdir()));
-    if cfg.backend == AgentBackend::Abi {
+    if cfg.backend == AgentBackend::Ollama {
+        if let Some(level) = &cli.thinking {
+            eprintln!(
+                "abbey: --thinking is a cursor-agent model alias; under ABBEY_BACKEND=ollama \
+                 it has no effect (local gemma4:26b-mlx). Requested level={level}"
+            );
+        }
+        if let Some(m) = &cli.model {
+            cfg.model = ollama_normalize_model(m);
+        } else {
+            cfg.model = ollama_normalize_model(&state.read_model_raw());
+        }
+    } else if cfg.backend == AgentBackend::Abi {
         // Do not expand through cursor aliases: `opus` → claude-*-thinking-*
         // would look like an explicit Anthropic live request under abi.
         // Also skip `read_model()` (which itself resolve_models) so a persisted
@@ -138,16 +152,30 @@ fn assemble_prompt(
     }
 }
 
-fn maybe_inject_role_model(cfg: &mut AgentConfig, state: &AbbeyState, model_alias: &str) {
+fn maybe_inject_role_model(
+    cfg: &mut AgentConfig,
+    state: &AbbeyState,
+    role: WorkerRole,
+    model_alias: &str,
+) {
     // Never under `fm` (vocabulary is system|pcc) or `abi` (a cursor id like
     // `claude-*` would read as an explicit live-transport request there —
     // injection would silently turn a local run into a network call). Role
-    // distinction is prompt-only on both.
-    if !matches!(cfg.backend, AgentBackend::Fm | AgentBackend::Abi)
-        && std::env::var("ABBEY_MODEL").is_err()
-        && cfg.model == state.read_model()
-    {
-        cfg.model = resolve_model(model_alias);
+    // distinction is prompt-only on both. Ollama accepts the role alias as a
+    // local tag (gemma/max → gemma4:26b-mlx) without cursor expansion.
+    if matches!(cfg.backend, AgentBackend::Fm | AgentBackend::Abi) {
+        return;
+    }
+    if std::env::var("ABBEY_MODEL").is_err() && cfg.model == state.read_model() {
+        cfg.model = if cfg.backend == AgentBackend::Ollama {
+            ollama_normalize_model(model_alias)
+        } else {
+            let portable_alias = match model_alias {
+                crate::models::OLLAMA_DEFAULT_MODEL => roles::default_model_for_role(role),
+                other => other,
+            };
+            resolve_model(portable_alias)
+        };
     }
 }
 
@@ -204,7 +232,7 @@ pub fn hybrid_run(
             }
         }
     };
-    maybe_inject_role_model(cfg, state, model_alias);
+    maybe_inject_role_model(cfg, state, role, model_alias);
 
     let prefs = learn::preference_context(&state.state_dir, 8);
     let final_prompt = assemble_prompt(persona, role, &joined, &prefs);
@@ -430,6 +458,17 @@ mod tests {
             claude.transcript_dir.as_deref(),
             Some(state.state_dir.join("claude").as_path())
         );
+
+        let mut ollama = AgentConfig {
+            backend: AgentBackend::Ollama,
+            ..AgentConfig::default()
+        };
+        apply_global_flags(&cli, &state, &mut ollama).unwrap();
+        assert_eq!(
+            ollama.transcript_dir.as_deref(),
+            Some(state.state_dir.join("ollama").as_path())
+        );
+        assert_eq!(ollama.model, crate::models::OLLAMA_DEFAULT_MODEL);
     }
 
     #[test]
@@ -454,6 +493,13 @@ mod tests {
         };
         apply_global_flags(&cli, &state, &mut abi).unwrap();
         assert_eq!(abi.model, "local");
+
+        let mut ollama = AgentConfig {
+            backend: AgentBackend::Ollama,
+            ..AgentConfig::default()
+        };
+        apply_global_flags(&cli, &state, &mut ollama).unwrap();
+        assert_eq!(ollama.model, crate::models::OLLAMA_DEFAULT_MODEL);
     }
 
     #[test]
@@ -505,8 +551,21 @@ mod tests {
             model: state.read_model(),
             ..AgentConfig::default()
         };
-        maybe_inject_role_model(&mut cursor, &state, "max");
+        maybe_inject_role_model(&mut cursor, &state, WorkerRole::Max, "max");
         assert_eq!(cursor.model, resolve_model("max"));
+
+        let mut migrated = AgentConfig {
+            backend: AgentBackend::Cursor,
+            model: state.read_model(),
+            ..AgentConfig::default()
+        };
+        maybe_inject_role_model(
+            &mut migrated,
+            &state,
+            WorkerRole::Gemma,
+            crate::models::OLLAMA_DEFAULT_MODEL,
+        );
+        assert_eq!(migrated.model, resolve_model("gemma"));
 
         // …but an explicitly chosen model is never overridden…
         let mut chosen = AgentConfig {
@@ -514,7 +573,7 @@ mod tests {
             model: "explicit-model".into(),
             ..AgentConfig::default()
         };
-        maybe_inject_role_model(&mut chosen, &state, "max");
+        maybe_inject_role_model(&mut chosen, &state, WorkerRole::Max, "max");
         assert_eq!(chosen.model, "explicit-model");
 
         // …and fm/abi never inject: a cursor id there would silently turn a
@@ -526,7 +585,7 @@ mod tests {
                 ..AgentConfig::default()
             };
             let before = cfg.model.clone();
-            maybe_inject_role_model(&mut cfg, &state, "max");
+            maybe_inject_role_model(&mut cfg, &state, WorkerRole::Max, "max");
             assert_eq!(cfg.model, before, "{backend:?} must not inject");
         }
     }
