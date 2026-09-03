@@ -6,6 +6,10 @@ Canonical capability ledger: **40 Current · 3 Partial · 8 Proposed · 1 Blocke
 Executable workflow ledger: **27 goals (24 done, 1 in_progress, 1 proposed, 1 blocked) · 167 checked / 25 open todos** (stable goal metadata in `tasks/goals.md`).
 <!-- END abbey-generated:claims-summary -->
 
+> **Intelligence Without Limits — with a claims ledger.**  
+> Hybrid CLI/TUI companion for coding and ops: personas, skills, parallel peers,  
+> and verbs that refuse what isn’t **Current**.
+
 **Intelligence Without Limits** — with a claims ledger.
 
 abi is the runtime/WDBX; Abbey is the companion that will not claim what the ledger cannot prove. See [docs/brand.md](docs/brand.md).
