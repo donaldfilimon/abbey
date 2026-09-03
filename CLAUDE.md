@@ -13,6 +13,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Abbey — a hybrid persona/role CLI/TUI written in Rust, backed by pluggable executor backends: `ollama` (preferred default, local `gemma4:26b-mlx`) · `grok` · on-device `fm` · the sibling `abi` CLI · the `claude` CLI · optional `cursor-agent`. It mimics compatible surfaces from Grok Build, Codex, and Claude Code while routing generation through the selected executor and, for personas/identity, the sibling `abi-ai` crate. No single backend is a hard requirement: local verbs run with none installed, and generation uses whichever executor resolves. Claude wiring is source/unit-tested; live account, model availability, and vendor-runtime parity are not claimed.
 
+Brand: **Intelligence Without Limits** — with a claims ledger. IWL is Abbey/ABI only; Quesar keeps Private AI operations and does not inherit this tagline. See [docs/brand.md](docs/brand.md).
+
 Full agent guidance lives in [AGENTS.md](AGENTS.md) — read it too; this file does not duplicate its claims-gate table or gotchas.
 
 ## Commands
@@ -148,6 +150,7 @@ Personas (Abbey/Aviva/Abi) and Max/Gemma worker roles are defined in the sibling
 
 ## Docs map
 
+- [docs/brand.md](docs/brand.md) — IWL umbrella; Abbey/ABI only, not Quesar
 - [docs/identity.md](docs/identity.md) — persona/role spec, Current vs. Proposed
 - [docs/architecture.md](docs/architecture.md) — layered module map, production rules, feature matrix
 - [docs/production.md](docs/production.md) — release gate, runtime deps, config/env vars, versioning, release checklist

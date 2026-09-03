@@ -73,6 +73,7 @@ Guidance for AI coding agents in this repository.
 
 - Name: `abbey`
 - Purpose: Hybrid coding-agent CLI/TUI — personas, Max/Gemma roles, parallel lanes, OS control, skills/plugins inventory, self-learn — backed by pluggable executors (**ollama** preferred with local `gemma4:26b-mlx`; `grok`/`fm`/`abi`/`claude`/`cursor-agent` alternates; none hard-required)
+- Brand: Intelligence Without Limits — with a claims ledger. IWL is Abbey/ABI only; Quesar does not inherit this tagline. See [docs/brand.md](docs/brand.md).
 - Stack: Rust nightly-2026-09-01 (`rustc 1.100.0-nightly`), edition 2024, `ratatui`, `clap`, path-dep `abi-ai`
 - Root: `/Users/donaldfilimon/dev/active/abbey`
 - Install: `./install.sh` → `~/.local/bin/abbey` + Unix `abbeyd`
@@ -124,7 +125,7 @@ src/surfaces.rs      vision/cot/runtime honesty surfaces
 src/learn.rs os_control.rs parallel.rs inventory.rs
 src/tui/              7-tab ratatui; `/daemon run` shares run_control
 src/init/ gitops.rs agent/ models.rs state.rs config.rs
-docs/                 identity · architecture · production
+docs/                 identity · architecture · production · brand
 tasks/                goals + todo
 desktop/              Tauri 2 + React/TS client of the app core — separate cargo
                       workspace, NOT built by ./check.sh (see desktop/README.md);
