@@ -1,14 +1,16 @@
 import copy
 import hashlib
+import json
 from pathlib import Path
 import sys
 import unittest
 import tempfile
-from unittest.mock import patch
+import socket
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from routes_assertions import WORKSPACES, ProofFailure, empty, inspect, populated, rejected
-from prove_routes_macos import Smoke
+from prove_routes_macos import Smoke, accepting_socket
 
 
 def snapshot(*texts):
@@ -82,6 +84,29 @@ class Assertions(unittest.TestCase):
 
 
 class ScratchIsolation(unittest.TestCase):
+    def test_daemon_readiness_requires_listen_not_just_bind(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root) / "daemon.sock"
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as listener:
+                listener.bind(str(path))
+                path.chmod(0o600)
+                self.assertFalse(accepting_socket(path))
+                listener.listen(4)
+                self.assertTrue(accepting_socket(path))
+            self.assertFalse(accepting_socket(path))
+
+    def test_discarded_traversal_strings_are_scanned(self):
+        with tempfile.TemporaryDirectory() as root:
+            proof = Smoke(Path(root), Path(root) / "driver", {})
+            envelope = {"snapshots": [valid_page()],
+                        "observedStrings": [proof.bearer], "discardedSnapshots": 1}
+            result = Mock(returncode=0, stdout=json.dumps(envelope).encode(), stderr=b"")
+            process = Mock(pid=123)
+            process.poll.return_value = None
+            with patch("prove_routes_macos.subprocess.run", return_value=result):
+                with self.assertRaisesRegex(ProofFailure, "^rendered_sensitive_data$"):
+                    proof.ax(process)
+
     def test_scratch_environment_and_route_hash_guard(self):
         with tempfile.TemporaryDirectory() as root:
             scratch = Path(root)

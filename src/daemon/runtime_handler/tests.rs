@@ -447,18 +447,42 @@ fn write_script(path: &Path, body: &str) {
 fn wait_for_socket(socket: &Path) {
     let deadline = Instant::now() + Duration::from_secs(2);
     loop {
-        if let Ok(metadata) = std::fs::metadata(socket) {
-            let mode = metadata.permissions().mode();
-            if metadata.file_type().is_socket() && mode & 0o077 == 0 {
-                return;
-            }
+        if socket_is_ready(socket) {
+            return;
         }
         assert!(
             Instant::now() < deadline,
-            "daemon socket was not created with owner-only permissions"
+            "daemon socket did not become an owner-only accepting listener"
         );
         thread::sleep(Duration::from_millis(5));
     }
+}
+
+// A pathname can exist before listen() completes, or after a listener closes.
+// File type and permissions alone do not establish connection readiness.
+fn socket_is_ready(socket: &Path) -> bool {
+    std::fs::metadata(socket).is_ok_and(|metadata| {
+        metadata.file_type().is_socket()
+            && metadata.permissions().mode() & 0o077 == 0
+            && UnixStream::connect(socket).is_ok()
+    })
+}
+
+#[test]
+fn socket_readiness_requires_an_accepting_listener() {
+    let root = scratch("readiness");
+    let socket = root.join("abbeyd.sock");
+    let listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+    std::fs::set_permissions(&socket, std::fs::Permissions::from_mode(0o600)).unwrap();
+    assert!(socket_is_ready(&socket));
+    drop(listener);
+    assert!(std::fs::metadata(&socket).unwrap().file_type().is_socket());
+    let closed_is_ready = socket_is_ready(&socket);
+    std::fs::remove_dir_all(root).unwrap();
+    assert!(
+        !closed_is_ready,
+        "a closed socket pathname is not a ready listener"
+    );
 }
 
 fn wire_request(

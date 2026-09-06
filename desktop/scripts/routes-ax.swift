@@ -3,6 +3,9 @@ import AppKit
 import ApplicationServices
 import Foundation
 
+var observedStrings: [String] = []
+var observedBytes = 0
+var discardedSnapshots = 0
 struct DriverError: Error { let id: String }
 func fail(_ id: String) throws -> Never { throw DriverError(id: id) }
 func read(_ element: AXUIElement, _ name: String) throws -> CFTypeRef? {
@@ -12,6 +15,12 @@ func read(_ element: AXUIElement, _ name: String) throws -> CFTypeRef? {
     guard result == .success else {
         let diagnosticName = name.range(of: "^AX[A-Za-z]{1,60}$", options: .regularExpression) == nil ? "attribute" : name
         try fail("ax_attribute_read_failed_\(result.rawValue)_\(diagnosticName)")
+    }
+    if let value {
+        let found = strings(value)
+        observedBytes += found.reduce(0) { $0 + $1.utf8.count }
+        guard observedBytes <= 8_000_000 else { try fail("ax_traversal_truncated") }
+        observedStrings.append(contentsOf: found)
     }
     return value
 }
@@ -44,15 +53,17 @@ struct Tree {
         }
         var attributes: [String: [String]] = [:]
         for name in names {
-            // SDK contract: AXGrowArea is an AXUIElementRef convenience alias,
-            // never text. AppKit advertises it even when the window has no
-            // grow-area element and returns kAXErrorFailure on this macOS.
-            // Traverse actual elements through AXChildren instead.
-            if name == kAXGrowAreaAttribute { continue }
-            // WebKit advertises this non-text live-region ownership flag even
-            // on versions whose AX bridge refuses the attribute (-25202).
-            // Source: WebKit/WebCore WebAccessibilityObjectWrapperMac.mm.
-            if name == "AXPostsOwnLiveRegionAnnouncements" { continue }
+            // SDK-defined non-text element references and convenience aliases.
+            // Some AppKit windows/menus advertise absent aliases but return a
+            // generic error when read. AXChildrenInNavigationOrder is explicitly
+            // the same children in a different order (NSAccessibilityProtocols).
+            // Traverse every actual child through AXChildren; do not suppress
+            // failures for text attributes or for that canonical child list.
+            if [kAXGrowAreaAttribute, "AXHighestEditableAncestor",
+                "AXEditableAncestor", "AXFocusableAncestor",
+                kAXLinkedUIElementsAttribute, kAXParentAttribute,
+                kAXTopLevelUIElementAttribute, kAXWindowAttribute,
+                kAXTitleUIElementAttribute, "AXChildrenInNavigationOrder"].contains(name) { continue }
             if let value = try read(element, name) {
                 let found = strings(value)
                 textBytes += found.reduce(0) { $0 + $1.utf8.count }
@@ -77,11 +88,37 @@ struct Tree {
     }
 }
 func tree(_ app: AXUIElement) throws -> Tree {
-    var result = Tree()
-    try result.walk(app)
-    guard result.nodes.contains(where: { $0.role == "AXWindow" }) else { try fail("ax_window_missing") }
-    return result
+    // WebKit may replace AX elements during React/menu updates. Discard the
+    // entire invalid traversal and retry, never accept a partial tree. Every
+    // string read on discarded attempts remains in the secrecy scan envelope.
+    for attempt in 0..<3 {
+        var result = Tree()
+        do {
+            try result.walk(app)
+            guard result.nodes.contains(where: { $0.role == "AXWindow" }) else {
+                try fail("ax_window_missing")
+            }
+            return result
+        } catch let error as DriverError {
+            guard error.id.contains("_-25202_"), attempt < 2 else { throw error }
+            discardedSnapshots += 1
+            Thread.sleep(forTimeInterval: 0.15)
+        }
+    }
+    try fail("ax_traversal_incomplete")
 }
+struct Output: Codable {
+    let snapshots: [Snapshot]
+    let observedStrings: [String]
+    let discardedSnapshots: Int
+}
+func emit(_ snapshots: [Snapshot]) throws {
+    let data = try JSONEncoder().encode(Output(
+        snapshots: snapshots, observedStrings: observedStrings,
+        discardedSnapshots: discardedSnapshots))
+    FileHandle.standardOutput.write(data)
+}
+
 func press(_ elements: [AXUIElement]) throws {
     guard elements.count == 1 else { try fail("ax_control_missing_or_ambiguous") }
     guard AXUIElementPerformAction(elements[0], kAXPressAction as CFString) == .success else {
@@ -137,9 +174,10 @@ do {
         guard selected else { try fail("ax_limit_option_missing") }
     default: try fail("invalid_action")
     }
-    let data = try JSONEncoder().encode(snapshots)
-    FileHandle.standardOutput.write(data)
+    try emit(snapshots)
 } catch {
+    // Partial observations travel only over the private JSON pipe, never stderr.
+    try? emit([])
     // Never format AX data, application errors, or bearer values in diagnostics.
     let id = (error as? DriverError)?.id ?? "ax_driver_failed"
     FileHandle.standardError.write(Data((id + "\n").utf8))

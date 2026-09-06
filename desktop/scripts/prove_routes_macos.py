@@ -7,6 +7,7 @@ from pathlib import Path
 import platform
 import re
 import secrets
+import socket as socket_api
 import subprocess
 import sys
 import signal
@@ -48,6 +49,20 @@ def stop(process):
         except subprocess.TimeoutExpired:
             process.kill()
             process.wait(timeout=5)
+
+
+def accepting_socket(path):
+    """A private pathname alone is not proof that listen() has completed."""
+    if not path.is_socket():
+        return False
+    require(path.stat().st_mode & 0o077 == 0, "scratch_socket_permissions")
+    with socket_api.socket(socket_api.AF_UNIX, socket_api.SOCK_STREAM) as probe:
+        probe.settimeout(0.25)
+        try:
+            probe.connect(str(path))
+            return True
+        except (ConnectionRefusedError, FileNotFoundError, TimeoutError):
+            return False
 
 
 class Smoke:
@@ -106,7 +121,7 @@ class Smoke:
         socket = self.scratch / (state + ".sock")
         proc = self.launch(ROOT / "target/debug/abbeyd", self.env(state, socket, self.bearer), state)
         deadline = time.monotonic() + 15
-        while not socket.is_socket():
+        while not accepting_socket(socket):
             require(proc.poll() is None, "scratch_daemon_exited")
             require(time.monotonic() < deadline, "scratch_socket_timeout")
             time.sleep(0.05)
@@ -122,17 +137,28 @@ class Smoke:
             result = subprocess.run([str(self.driver), str(proc.pid), action, *args], capture_output=True, timeout=15)
         except subprocess.TimeoutExpired:
             raise ProofFailure("ax_command_timeout") from None
-        if result.returncode:
-            # Only this static driver diagnostic may be surfaced, never AX output.
-            error = result.stderr.decode(errors="replace").strip()
-            allowed = {"ax_window_missing", "accessibility_permission_required", "ax_attribute_read_failed", "ax_attribute_inventory_failed", "ax_traversal_truncated", "ax_control_missing_or_ambiguous", "ax_press_failed", "ax_limit_option_missing", "owned_process_unavailable"}
-            numeric_inventory_error = re.fullmatch(r"ax_attribute_inventory_failed_-?[0-9]+_depth_[0-9]+", error)
-            raise ProofFailure(error if error in allowed or numeric_inventory_error or re.fullmatch(r"ax_attribute_read_failed_-?[0-9]+_(AX[A-Za-z]{1,60}|attribute)", error) else "ax_driver_failed")
         try:
-            snapshots = json.loads(result.stdout)
-        except (ValueError, UnicodeError):
+            envelope = json.loads(result.stdout)
+            snapshots = envelope["snapshots"]
+            observed = envelope["observedStrings"]
+            discarded = envelope["discardedSnapshots"]
+            require(isinstance(discarded, int) and 0 <= discarded <= 100, "ax_retry_count_invalid")
+            self.receipt["discarded_traversals"] = self.receipt.get("discarded_traversals", 0) + discarded
+            # Include strings read before a stale WebKit element invalidated a
+            # traversal. Such a traversal can never satisfy a UI assertion.
+            inspect({"complete": True, "nodes": [{"attributes": {"observed": observed}}]}, self.secrets)
+        except (ValueError, UnicodeError, KeyError, TypeError):
             raise ProofFailure("ax_json_invalid") from None
+        if result.returncode:
+            error = result.stderr.decode(errors="replace").strip()
+            allowed = {"ax_window_missing", "accessibility_permission_required",
+                       "ax_traversal_truncated", "ax_control_missing_or_ambiguous",
+                       "ax_press_failed", "ax_limit_option_missing", "owned_process_unavailable"}
+            numeric_error = re.fullmatch(
+                r"ax_attribute_(inventory_failed_-?[0-9]+_depth_[0-9]+|read_failed_-?[0-9]+_(AX[A-Za-z]{1,60}|attribute))", error)
+            raise ProofFailure(error if error in allowed or numeric_error else "ax_driver_failed")
         require(isinstance(snapshots, list) and bool(snapshots), "ax_no_snapshots")
+        self.receipt["native_snapshots"] = self.receipt.get("native_snapshots", 0) + len(snapshots)
         for snapshot in snapshots:
             inspect(snapshot, self.secrets)
         return snapshots[-1]
@@ -210,6 +236,8 @@ def main():
     receipt = dict(schema=1, started_at=datetime.now(timezone.utc).isoformat(), status="failed", platform=platform.system(), architecture=platform.machine(), completed_scenarios=[], gates={"desktop": "not_run", "root": "not_run"})
     receipt["revision"] = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
     receipt["dirty"] = bool(subprocess.check_output(["git", "status", "--porcelain"], cwd=ROOT))
+    harness_files = ("prove-routes-macos.sh", "prove_routes_macos.py", "routes_assertions.py", "routes-ax.swift")
+    receipt["harness"] = {name: sha(DESKTOP / "scripts" / name) for name in harness_files}
     smoke = None
     try:
         require(platform.system() == "Darwin", "macos_required")
@@ -234,6 +262,12 @@ def main():
             finally:
                 if smoke is not None:
                     smoke.close()
+        require(receipt["completed_scenarios"] == [
+            "authenticated-25", "limit-10", "limit-50", "authentication-rejection",
+            "daemon-loss-no-fallback", "empty-log", "route-files-unchanged",
+        ], "incomplete_scenario_sequence")
+        require(all(sha(DESKTOP / "scripts" / name) == digest
+                    for name, digest in receipt["harness"].items()), "harness_changed_during_smoke")
         receipt["status"] = "passed"
     except (ProofFailure, subprocess.SubprocessError, OSError):
         error = sys.exc_info()[1]

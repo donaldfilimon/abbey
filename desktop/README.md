@@ -11,7 +11,8 @@ Ledger status: `desktop-tauri-react` is **Proposed**. Nothing here changes that.
 The client compiles, typechecks, and reads the linked application core when no
 bearer is set. With a bearer, process-level reads go through a real scratch
 `abbeyd` (`desktop/scripts/prove-daemon-read.sh`). It has not been packaged,
-signed, notarized, or opened as a window — see [Unmet bars](#unmet-bars).
+signed, or notarized. The safe macOS Routes view now has native window
+acceptance against a scratch daemon; see [Unmet bars](#unmet-bars).
 
 ## Layout
 
@@ -113,6 +114,9 @@ startup can write within scratch state. Cleanup terminates only owned processes.
 Every collected Accessibility snapshot is checked for workspace/path canaries,
 the generated bearer values, and the forbidden local fallback marker. The driver
 scans string attributes, including labels, values, descriptions, help, and titles.
+WebKit can invalidate AX elements during updates: the driver retries the entire
+tree at most three times for that specific error, retaining already-read strings
+from discarded attempts in the secrecy scan. It never accepts a partial tree.
 This is bounded Accessibility evidence for these scenarios, not a hidden-DOM
 inspection or a guarantee about all possible secret strings. No mock IPC, browser
 substitute, test-only application command, or remote-debugging endpoint is used.
@@ -287,15 +291,18 @@ Phase 7 in `tasks/todo.md` asks for more than this slice delivers:
 - **Not packaged, signed, or notarized.** No `tauri build` bundle was produced.
   Apple Developer ID + notarization and Windows/Linux signing keys are
   owner-controlled release blockers; no credential was manufactured or embedded.
-- **Live `abbeyd` reads are process-level, not a window.**
+- **The existing backend smoke remains process-level.**
   `desktop/scripts/prove-daemon-read.sh` starts an owner-only scratch daemon
   and drives the shipped desktop `status` / `run_status` / `run_events`
   functions over that socket. A bearer with no listener still fails closed
   (`a_configured_daemon_never_falls_back_to_the_in_process_core`). No WebView
-  is opened.
-- **No windowed runtime proof.** A real `abbey-desktop` binary links
-  (`Mach-O 64-bit executable arm64`, macOS ARM64), but the window has never been
-  opened, so nothing here has been seen rendering.
+  is opened by that older script.
+- **Windowed runtime proof is Routes-only on macOS ARM64.** On 2026-09-06,
+  `scripts/prove-routes-macos.sh` opened the ordinary safe-edition Tauri window
+  and passed all seven scenario checks against real scratch daemons. Thirteen
+  assertion/isolation tests, the complete desktop gate with native acceptance
+  required, and root `./check.sh` passed. Packaging, other views, the personal
+  edition GUI, and other platforms remain unproven.
 - **Not run on Ubuntu ARM64 or Win11 ARM.** `ClientError::UnsupportedPlatform`
   is surfaced honestly on Windows, where `abbeyd` has no named-pipe transport.
 - **The Linux desktop graph retains one upstream dependency advisory.** The
