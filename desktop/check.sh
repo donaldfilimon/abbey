@@ -9,6 +9,9 @@
 set -eu
 cd "$(dirname "$0")"
 
+echo "== native Routes acceptance assertion tests =="
+python3 -m unittest discover -s scripts/tests -p 'test_*.py'
+
 echo "== codegen drift =="
 cargo run --quiet -p abbey-desktop-codegen -- --check
 
@@ -47,5 +50,10 @@ ABBEYD_BEARER_TOKEN="$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')" \
 # link against the platform WebView frameworks, so build a real binary.
 echo "== cargo build (links a real binary) =="
 cargo build --quiet --locked -p abbey-desktop
+
+if [ "${ABBEY_DESKTOP_ROUTES_ACCEPTANCE:-0}" = "1" ]; then
+  echo "== macOS Routes window acceptance (required) =="
+  ./scripts/prove-routes-macos.sh
+fi
 
 echo "desktop/check.sh: OK"

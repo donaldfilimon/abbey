@@ -85,6 +85,46 @@ Two verification notes:
   `std::env::set_var` is `unsafe` in edition 2024 and this crate denies
   `unsafe_code`.
 
+## Native macOS Routes acceptance
+
+Run `bun run smoke:routes:macos` from this directory, or
+`ABBEY_DESKTOP_ROUTES_ACCEPTANCE=1 ./desktop/check.sh` from the repository root.
+The opt-in gate requires the smoke to pass; it never substitutes a backend test
+or silently skips a missing GUI prerequisite. The root `./check.sh` remains a
+separate required gate. The assertion self-tests run in every desktop gate.
+
+This uses a Swift Accessibility driver against the ordinary bundled Tauri
+frontend and real scratch `abbeyd`. It requires a logged-in macOS GUI session,
+the selected Xcode toolchain, Bun dependencies, pinned Rust, and Accessibility
+permission for the runner. The driver checks existing permission without
+requesting or changing it. Missing permission, an inaccessible window, traversal
+limits, and timeouts fail with fixed diagnostic IDs. The driver is built at
+`target/routes-acceptance/routes-ax`; grant permission through macOS settings
+if the runner reports `accessibility_or_interactive_gui_required`.
+
+The runner owns all launched PIDs and uses fresh owner-only scratch state,
+configuration, bearer, and socket paths. Separate daemon and desktop route logs
+make a local fallback observable. It checks the rendered 25/10/50-row tails,
+opaque workspace digests, redacted paths, authentication rejection, daemon loss
+without stale rows, and an empty log. Seeded route logs must remain byte-identical.
+Only read operations cross the existing desktop bridge; fixture setup and daemon
+startup can write within scratch state. Cleanup terminates only owned processes.
+
+Every collected Accessibility snapshot is checked for workspace/path canaries,
+the generated bearer values, and the forbidden local fallback marker. The driver
+scans string attributes, including labels, values, descriptions, help, and titles.
+This is bounded Accessibility evidence for these scenarios, not a hidden-DOM
+inspection or a guarantee about all possible secret strings. No mock IPC, browser
+substitute, test-only application command, or remote-debugging endpoint is used.
+
+`target/routes-acceptance/receipt.json` records the most recent attempt, source
+revision and dirty state, available artifact hashes, completed scenarios, and
+success or a fixed failure ID. Gate fields remain `not_run` until the actual
+separate gate results are recorded. Build logs are owner-only in that same
+ignored directory; raw AX snapshots and runtime logs are not retained. A failed
+attempt replaces any previous success receipt. Running this script does not
+update claims, todos, or release status.
+
 ## Generated IPC types
 
 `src/ipc/generated*.ts` are produced by `desktop/codegen` and carry an

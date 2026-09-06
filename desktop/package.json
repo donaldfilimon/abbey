@@ -11,7 +11,8 @@
     "codegen": "cargo run --manifest-path codegen/Cargo.toml --quiet --",
     "codegen:check": "cargo run --manifest-path codegen/Cargo.toml --quiet -- --check",
     "verify:bundle": "node scripts/verify-bundle.mjs",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "smoke:routes:macos": "./scripts/prove-routes-macos.sh"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.1",
