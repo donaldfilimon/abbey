@@ -46,7 +46,20 @@ abbey doctor                       # build stamp + persona/role/memory/os honest
 abbey claims [partial|proposed|blocked|oos|manifest] · abbey claims refuse lora|multinode
 ```
 
-`./check.sh` is the merge bar — always run it before considering work done. In order: a toolchain probe (a cheap `cargo check` that trips the `rust-version` gate during unit-graph construction, so a shadowed Homebrew cargo fails fast with the remedy printed), fmt-check, then clippy `-D warnings` + tests interleaved per build mode for **all four build modes** (default · `wdbx` · `personal-edition` · `accel`), then warning-denied private-item rustdoc for each of the four, then the Python tool tests (`tools/tests/`), claims synchronization, the Program 3 read-only boundary check (`tools/check_p3_readonly.py` fails closed if `src/app_core/guild_intelligence.rs` acquires network/process/fs/store/tool code), installer checks (`sh -n` plus `tools/tests/smoke_accel_install.sh`), the file-size guard, then *soft* cross-compile checks for `x86_64-pc-windows-gnu` / `x86_64-unknown-linux-gnu` (skipped when the required cross toolchain is unavailable, and never a hard pass), and an opt-in soft coverage report (`ABBEY_COVERAGE=1`, needs `cargo-llvm-cov`; report-only, never a gate). A bare `cargo test` never compiles `src/memory/wdbx.rs` or the edition- and accelerator-gated code, so it can pass while a gated surface is broken.
+`./check.sh` is the merge bar — always run it before considering work done. In order:
+
+1. Toolchain probe: a cheap `cargo check` that trips the `rust-version` gate during unit-graph construction, so a shadowed Homebrew cargo fails fast with the remedy printed.
+2. `cargo fmt --all -- --check`.
+3. Clippy `-D warnings` + tests, interleaved per build mode for **all four build modes** (default · `wdbx` · `personal-edition` · `accel`).
+4. Warning-denied private-item rustdoc for each of the four modes.
+5. Python tool tests (`tools/tests/`), then claims synchronization (`tools/check_claims_sync.py`).
+6. Program 3 read-only boundary check (`tools/check_p3_readonly.py` fails closed if `src/app_core/guild_intelligence.rs` acquires network/process/fs/store/tool code).
+7. Installer checks (`sh -n` plus `tools/tests/smoke_accel_install.sh`).
+8. File-size guard.
+9. *Soft* cross-compile checks for `x86_64-pc-windows-gnu` / `x86_64-unknown-linux-gnu` (skipped when the required cross toolchain is unavailable, and never a hard pass).
+10. Opt-in soft coverage report (`ABBEY_COVERAGE=1`, needs `cargo-llvm-cov`; report-only, never a gate).
+
+A bare `cargo test` never compiles `src/memory/wdbx.rs` or the edition- and accelerator-gated code, so it can pass while a gated surface is broken.
 
 `tests/` includes process-level CLI suites plus `app_core_contract.rs`, which imports Abbey as an external library client. Process tests drive `CARGO_BIN_EXE_abbey` (the daemon suites also need `CARGO_BIN_EXE_abbeyd`, the second binary from `src/bin/abbeyd.rs`) because some guarantees only exist once the process runs — real exit codes, real stdout/stderr, and the SIGPIPE reset before `main`. `daemon_cli.rs` starts real `abbeyd` and `abbey` binaries against owner-only scratch state; it must never use a user's socket or bearer. `cli_surface.rs` uses a throwaway `ABBEY_STATE_DIR`; keep that property for state-mutating cases. `slash_parse.rs` is read-only/current-dir scoped. The app-core contract test must stay presentation-neutral and must not gain crate-private access.
 
@@ -96,22 +109,21 @@ Key modules (`src/`):
 |---|---|
 | `main.rs` | pre-Clap SIGPIPE shim delegating to the library; must stay under 200 lines |
 | `lib.rs` / `entry.rs` | private implementation graph + library-owned CLI/TUI routing |
-| `app_core/` | public protocol-v1 reads, protocol-v2 bounded runs, and separate deny-by-default protocol-v3 contracts; `routes.rs` holds the sanitized route-audit view; `guild_intelligence.rs` (+ `guild_intelligence/{plan,validation}.rs`) is Program 3, a read-only planner that `tools/check_p3_readonly.py` keeps free of network/process/fs/store/tool code |
+| `app_core/` | public protocol-v1 reads, protocol-v2 bounded runs, and deny-by-default protocol-v3 contracts; `guild_intelligence.rs` is Program 3, a read-only planner that `tools/check_p3_readonly.py` keeps free of network/process/fs/store/tool code |
 | `run_control.rs` | presentation-neutral protocol-v2 run control shared by CLI and TUI (`tests/run_control*.rs`) |
 | `abbey_contracts.rs` (+ `abbey_contracts/fixture_validation.rs`) | data-only qualification of the pinned Program 1 Abbey contract corpus under `contracts/abbey/` (`abbey-contracts.lock.json` + `corpus/`; `tests/abbey_contracts.rs`) |
-| `daemon/` / `bin/abbeyd.rs` | authenticated bounded Unix v1 reads, v2 startup-bound run control, and separate v3 safe tool/memory/claim plus conditional route, manifest-presence, and signed model-lifecycle authority; no arbitrary executable/argv/env/workspace. `federation.rs` is a distinct strict `abbey.v1` envelope with a fail-closed reference service; authority-bearing requests never downgrade into it |
-| `runtime/` (`manager.rs`, `store.rs` + `store/` split, `identity.rs`, `supervisor.rs`, `executor.rs`, `provider.rs`, `migrations.rs`, `delegated.rs`, `legacy.rs`) | durable run lifecycle, opaque schema-v4 conversation identity mutations, bounded process-group supervision, startup-owned ABI `ModelProvider` adapters, fixed-recipe delegated execution over the bounded Unix supervisor (`delegated.rs`), and bounded legacy-metadata migration (`legacy.rs`); `store/` is split into `codec`, `audit`, `projection`, `records`, `private`, `tool_approval`, `tool_execution`, `model_operation`, `identity_receipts`, `identity_validation`; no provider-neutral tool runtime |
+| `daemon/` / `bin/abbeyd.rs` | authenticated bounded Unix v1 reads, v2 run control, and v3 safe tool/memory/claim authority, never arbitrary executable/argv/env/workspace; `federation.rs` is a separate fail-closed `abbey.v1` envelope that authority-bearing requests never downgrade into |
+| `runtime/` | durable run lifecycle, schema-v4 conversation identity, bounded process-group supervision, ABI `ModelProvider` adapters, fixed-recipe delegated execution, and legacy-metadata migration; no provider-neutral tool runtime |
 | `accel.rs` (+ `accel/bridge.rs`) | `abbey accel verify` — Metal kernel execution checked against the deterministic CPU oracle, only under `--features accel` |
 | `edition.rs` | compile-time safe (default) and separately identified `personal-edition` namespaces; neither edition implements unrestricted execution |
 | `mesh.rs` | claim-bounded bridge to ABI's authenticated local multi-process proof on one Unix host, never production multi-host evidence |
 | `capture.rs` | backend-aware headless capture shared by print, commit, and voice ask |
 | `cli.rs` | clap `Cli`/`Subcommand` definitions (Grok Build/Codex/Claude Code parity surface) |
 | `actions.rs` | `RunSpec` + `run_agent` — the one path every surface calls |
-| `commands.rs` | clap subcommand match → actions |
 | `prompts.rs` | review/commit prompt builders over `gitops` diffs |
 | `output.rs` | stdout helpers that treat a broken pipe as success (`abbey doctor \| head`) |
 | `build_info.rs` | build-stamp constants from `build.rs` (version/git/target/profile/host) |
-| `improve/` (`mod.rs`, `gate.rs`, `ledger.rs`, `report.rs`) | `abbey improve` — goal-ledger pick + local subagent lanes + `check.sh` gate; stops on green + no open slice, never auto-closes a goal to done |
+| `improve/` | `abbey improve`: goal-ledger pick + local subagent lanes + `check.sh` gate; stops on green with no open slice and never auto-closes a goal to done |
 | `slash.rs` / `slash_dispatch.rs` / `slash_alias.rs` | slash catalog + shared handler → actions; `slash_alias.rs` maps Claude Code / Codex / Grok slash names onto Abbey catalog names |
 | `session.rs` | global flag application, `hybrid_run`, history compaction |
 | `persona.rs` / `roles.rs` / `route_log.rs` | hybrid routing spine (`route_decision` → conf/alt/fb on JSONL) |
@@ -120,7 +132,7 @@ Key modules (`src/`):
 | `generate.rs` | `imagine` / `generate video` / `reason` via cursor-agent tools (no local models) |
 | `voice.rs` / `voice_portable.rs` | macOS Premium/Enhanced TTS + on-device STT (`scripts/abbey-stt.swift`); `voice_portable.rs` holds the portable Whisper/Piper adapters (`ABBEY_WHISPER_MODEL` / `ABBEY_PIPER_MODEL`) used when `say`/Speech.framework are unavailable |
 | `protocols.rs` / `protocols/mcp.rs` | MCP config inventory + ACP peer discovery/launch (Abbey is not a *client/host* of other providers' servers) |
-| `mcp_host/` (`mod.rs`, `serve.rs`, `http/`, `tools.rs`, `jsonrpc.rs`, `limits.rs`, `redact.rs`) | `abbey mcp serve` — Abbey's own read-only MCP server over newline-delimited stdio and unauthenticated loopback-only HTTP, with shared JSON-RPC/version/tool-schema handling, enforced bounds, hostile-Origin/Host rejection, rate limits, and outbound secret redaction. No non-loopback binding, HTTPS/TLS, OAuth, or external-server client-host authority |
+| `mcp_host/` | `abbey mcp serve`: Abbey's own read-only MCP server over stdio and loopback-only HTTP with enforced bounds, hostile-Origin/Host rejection, rate limits, and secret redaction; no non-loopback binding, TLS, OAuth, or client-host authority |
 | `highlight.rs` | syntect ANSI for fenced code on `-p`/print + `abbey highlight` |
 | `subagents.rs` / `subagents/` (`catalog.rs`, `execute.rs`, `parsing.rs`) | multi-subagent lanes + local PATH peer fan-out + synthesize |
 | `claims.rs` / `claims/registry.rs` | Current/Partial/Proposed/Blocked/OOS gate + refuse paths and machine manifest |
@@ -128,17 +140,15 @@ Key modules (`src/`):
 | `surfaces.rs` | vision/cot/runtime honesty (neural media/owned host Proposed; hidden CoT OOS) |
 | `deferred.rs` | deferred-capability index — lora/weights/accel/host Proposed; shipped-edition shell bypass OOS |
 | `host.rs` | portable PATH/PATHEXT lookup, argv clamp, install/state path helpers |
-| `memory/` (`mod.rs`, `sqlite.rs` + `sqlite/migrations.rs`, `wdbx.rs`, `map.rs`, `similarity.rs`, `embedding.rs`, `semantic.rs`, `migrate.rs`) | `MemoryStore` trait, shared reflect/validation, backend dispatch (add new backends here and they work everywhere); `map.rs` = deterministic 3-D map (topic × recency × consolidation), `similarity.rs` = `memory similar` over `abi_ai::text_embedding` feature-hash vectors — **lexical, not learned**, so that surface answers surface-form questions only. Learned embeddings are the separate opt-in `embedding.rs`/`semantic.rs` path (`abbey memory embed status|--all`, `abbey memory semantic …`, `[embeddings]` config, provider `none|apple|openai`, key only via `ABBEY_EMBEDDING_API_KEY`/`OPENAI_API_KEY`); a provider or model change creates a new isolated vector space and never silently falls back |
+| `memory/` | `MemoryStore` trait and backend dispatch (`sqlite.rs` default, `wdbx.rs` behind `--features wdbx`); `similarity.rs` is feature-hash **lexical, not learned** similarity, while learned embeddings are the separate opt-in `embedding.rs`/`semantic.rs` path (API key only via `ABBEY_EMBEDDING_API_KEY`/`OPENAI_API_KEY`) whose provider or model change creates a new isolated vector space and never silently falls back |
 | `hybrid_loop.rs` | two-stage Gemma→Max run; stages linked by `correlation` in the route log |
 | `wdbx_bridge.rs` | `abbey wdbx` — passthrough to `abi wdbx`, plus in-process `stats`/`checkpoint` |
-| `learn.rs` | self-learn capture/digest/review/stats into `train_candidate` |
 | `os_control.rs` | cross-platform OS allowlist policy |
 | `parallel.rs` | multi-lane fan-out (Max/Gemma/Aviva) |
 | `inventory.rs` / `inventory/` (`skills.rs`, `plugins.rs`) | skills/plugins/peer-agent-tool discovery |
 | `init/` (`mod.rs`, `detect.rs`, `probe.rs`) | `abbey init` — scans a project and writes `AGENTS.md` |
-| `tui/` (`app.rs`, `keys.rs`, `ui.rs`, `tabs.rs`, `overlay.rs`, `refresh.rs`, `theme.rs`, `widgets.rs`, `predict.rs`, `mod.rs`) | 7-tab ratatui app; `keys.rs` holds key/palette/editor/mouse input handling split out of `app.rs`; `predict.rs` is ranked composer prediction with an optional fail-closed, time-bounded Ollama rerank |
-| `doctor.rs` | doctor/debug/persona/role/memory checks |
-| `agent/` (`backend.rs`, `mod.rs`, `argv.rs`, `capture.rs`) / `models.rs` / `gitops.rs` / `state.rs` / `state/conversation.rs` (+ `clear.rs`, `private_fs.rs`) / `state/conversation_portable.rs` / `config.rs` / `cli/args.rs` | executor invocation (cursor · grok · on-device `fm` · `abi complete` · Claude Code; `argv.rs` holds isolated per-backend grammars + prompt/argv clamping; `agent/capture.rs` is the bounded non-Unix capture path and is not the top-level `capture.rs`), model aliases, local git helpers, per-cwd state, canonical-first identity save/clear with a private compatibility-mirror journal (`conversation_portable.rs` keeps exact legacy file behaviour on non-Unix hosts and claims no canonicalization), config loading, leaf clap argument definitions |
+| `tui/` | 7-tab ratatui app; `predict.rs` is ranked composer prediction with an optional fail-closed, time-bounded Ollama rerank |
+| `agent/` / `models.rs` / `gitops.rs` / `state.rs` / `state/` / `config.rs` / `cli/args.rs` | executor invocation with an isolated per-backend argv grammar in `agent/argv.rs` (`agent/capture.rs` is the bounded non-Unix capture path, not the top-level `capture.rs`), model aliases, git helpers, canonical-first identity save/clear with a private compatibility-mirror journal, config loading, and leaf clap args |
 
 Personas (Abbey/Aviva/Abi) and Max/Gemma worker roles are defined in the sibling `abi-ai` crate (`../abi/crates/abi-ai/src/identity.rs`) — Abbey's own code consumes those contracts rather than redefining identity. See [docs/identity.md](docs/identity.md) for the distilled spec and Current/Proposed status of each claim.
 
