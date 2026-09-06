@@ -15,7 +15,8 @@ Abbey — a hybrid persona/role CLI/TUI written in Rust, backed by pluggable exe
 
 Brand: **Intelligence Without Limits** — with a claims ledger. IWL is Abbey/ABI only; Quesar keeps Private AI operations and does not inherit this tagline. See [docs/brand.md](docs/brand.md).
 
-Full agent guidance lives in [AGENTS.md](AGENTS.md) — read it too; this file does not duplicate its claims-gate table or gotchas.
+Canonical agent guidance lives in [AGENTS.md](AGENTS.md); this is its expanded
+companion. Only marked claims regions are generator-owned, not the whole files.
 
 ## Commands
 
@@ -46,7 +47,8 @@ abbey doctor                       # build stamp + persona/role/memory/os honest
 abbey claims [partial|proposed|blocked|oos|manifest] · abbey claims refuse lora|multinode
 ```
 
-`./check.sh` is the merge bar — always run it before considering work done. In order:
+`./check.sh` is the code-change merge bar. For docs-only edits use the scoped
+checks in `AGENTS.md`; the claims synchronizer itself invokes `cargo run`. In order:
 
 1. Toolchain probe: a cheap `cargo check` that trips the `rust-version` gate during unit-graph construction, so a shadowed Homebrew cargo fails fast with the remedy printed.
 2. `cargo fmt --all -- --check`.
@@ -67,7 +69,19 @@ A bare `cargo test` never compiles `src/memory/wdbx.rs` or the edition- and acce
 
 Rust **nightly-2026-09-01** (`rustc 1.100.0-nightly`), edition **2024**, pinned via `rust-toolchain.toml` (`rustfmt` + `clippy` components). Rust has no edition 2026; edition 2024 is the current language edition, while the dated toolchain makes the 2026 compiler baseline reproducible. `Cargo.toml` sets `unsafe_code = "deny"` as a manifest lint (clippy `-D warnings` alone would not catch it), so every `unsafe` needs a justified `#[allow(unsafe_code)]` with a SAFETY comment.
 
-**Two sibling checkouts are required, not one.** `Cargo.toml` has six unconditional path deps into `../abi/crates/` (`abi-ai`, `abi-agent-host`, `abi-agent-runtime`, `abi-model-runtime`, `abi-models`, `abi-worker`); `--features wdbx` adds `abi-wdbx` from **`../wdbx/crates/`**, and `--features accel` adds `abi-gpu` from `../abi` plus `abi-compute` from `../wdbx` (and enables `abi-model-runtime/metal`). `abi`, `abbey`, and `wdbx` must be siblings or the build fails at manifest resolution; a non-sibling layout resolves two non-unifying `abi-wdbx` copies. CI pins both to immutable SHAs (`ABI_REVISION`, `WDBX_REVISION` in `.github/workflows/rust.yml`) and builds ABI with its own toolchain (`ABI_TOOLCHAIN: nightly-2026-08-20`), so local and CI can disagree on substrate changes. The `abi` executable is usually a shell alias, not on `PATH`: build it with `cargo build -p abi-cli` in `../abi` and point `ABBEY_ABI_BIN` (or `abi_bin` in config) at it, which every CI job does; `abbey wdbx` and `ABBEY_BACKEND=abi` both need it. `build.rs` watches `.git/HEAD` and the branch ref so the `abbey doctor` build stamp cannot go stale across commits.
+**Both sibling checkouts are required even for default builds.** `Cargo.toml`
+unconditionally consumes `abi-ai`, `abi-agent-host`, `abi-agent-runtime`,
+`abi-model-runtime`, `abi-models`, and `abi-worker` from `../abi/crates/`; those
+already depend on `../wdbx`. `--features wdbx` enables Abbey's in-process memory
+backend; `--features accel` adds `abi-gpu`, `abi-compute`, and
+`abi-model-runtime/metal`. Keep all three repositories adjacent and avoid mixing
+git/path sources of shared crates. CI pins `ABI_REVISION`, `WDBX_REVISION`, and
+the pinned ABI revision's own `ABI_TOOLCHAIN` in `.github/workflows/rust.yml`;
+these need not match the current local siblings. Both `abbey wdbx` and
+`ABBEY_BACKEND=abi` need a real executable: run `./tools/cargo.sh build -p abi-cli`
+inside `../abi`, then point `ABBEY_ABI_BIN` or config `abi_bin` at it. A shell
+alias does not satisfy subprocess resolution. `build.rs` watches Git HEAD and
+the branch ref for the build stamp.
 
 ## Architecture
 
@@ -168,12 +182,11 @@ Personas (Abbey/Aviva/Abi) and Max/Gemma worker roles are defined in the sibling
 - **ollama is preferred, never required.** Backend precedence (`src/agent/backend.rs`) is `ABBEY_BACKEND` env > config `backend` key > the legacy `ABBEY_AGENT` cursor path > ollama when resolvable > grok → fm → abi → claude, then cursor last; a set-but-unknown `ABBEY_BACKEND` value selects ollama and does not fall through to config; `doctor` shows an automatic choice as `backend: … (from auto …)`. Executor resolution is best-effort at startup and mandatory only at spawn time (`AgentConfig::exec_path`), so every local verb works on a machine with no executor installed. `ABBEY_BACKEND=ollama|abi|claude` runs without cursor-agent. Continuity under `abi`/`ollama` is Abbey's bounded context transcript; Claude continuity remains in Claude's own session store.
 - **Never branch per-call behaviour on `AgentBackend::from_env()`** — it is resolved once per process, while the TUI's Ctrl-B switch changes `AgentConfig::backend` at runtime. Thread the live `cfg.backend` through instead (`state.read_chat_for(cfg.backend)`, `AgentBackend::transcript_subdir()`). Reading the cached value is what let a cursor-launched session keep adopting `CURSOR_AGENT_CHAT_ID` after switching to `abi`, silently killing continuity — a guard that consults the wrong backend is not a guard.
 - OS execution (`os_control.rs`) must never run without `--confirm`, and only against the allowlist — this is a safety invariant, not a default to relax.
-- **`WdbxMemory` must hold its `fs4` advisory lock for the handle's whole life** (Unix `flock` / Windows `LockFileEx`). `abi-wdbx`'s `DurableStore` has no cross-process locking; without the guard, two concurrent `abbey` processes interleave WAL appends and leave the store permanently unreadable (verified: 20 writers → CRC mismatch, every later open fails). SQLite survives the same load unaided, so the lock is what makes the two backends interchangeable. `wdbx_bridge` takes the same lock when a passthrough targets Abbey's own store — new code paths that reach the store must not route around it.
+- **`WdbxMemory` must hold its `fs4` advisory lock for the handle's whole life** (Unix `flock` / Windows `LockFileEx`). It acquires `<dir>/abbey.lock` before recovery and drops the store before releasing it. `wdbx_bridge` takes that same lock for own-store subprocesses. The current sibling `DurableStore` separately holds `<base>.writer.lock`; the old claim that it has no cross-process lock is stale. Preserve both coordination layers.
 - The lock does not extend to an `abi` you invoke directly against the same store, and `./install.sh` builds without `wdbx`, so an installed `abbey` asked for wdbx falls back to SQLite and says so in `doctor`. Installers name binaries from the compiled edition probe (`abbey edition --name`) so the two editions cannot clobber each other; `install.ps1`'s naming is proven by a parser test only, no Windows host has run it, so that claim is Partial.
 - Read-only callers should use `memory::backend_path` (pure) rather than opening, and interactive ones `open_backend_with_timeout` — `learn status` once created the very store it was meant to report on, and the TUI redraw would otherwise stall 10s on a lock (the TUI memory panel uses a 250 ms open timeout and renders `unavailable: …`).
 - **`abbey daemon` and `abbeyd` must use the same socket and exactly one bearer source** (`ABBEYD_SOCKET_PATH`; `ABBEYD_BEARER_TOKEN` xor `ABBEYD_BEARER_TOKEN_FILE`, owner-only). Client failures never fall back to in-process claims.
 - **`desktop/` is a second cargo workspace** (Tauri 2 + React/TypeScript client of the app core) with its own `Cargo.toml`, `check.sh`, and `package.json`, and its TypeScript IPC types are generated from `src/app_core/`. `./check.sh` does not build it; changing `app_core` without regenerating those types breaks it silently.
-- README still labels cursor-agent as the default backend and omits `ollama` from its backends table; the code, AGENTS.md, and this file are right, README is the stale side.
 - `abi wdbx` takes **base paths** (parent dir + base name) while Abbey opens a **directory** — Abbey's `<state>/wdbx/` is `<state>/wdbx/wdbx` to `abi`. `wdbx_bridge` translates; passing the bare directory silently reads one level up and reports an empty store.
 - Self-learn's `train_candidate` path requires provenance; don't add silent deletes to the reflect/digest flow.
 - State (`~/.local/state/abbey`, including `memory.sqlite`) is runtime data — never commit it, and don't assume it exists in a fresh checkout.
