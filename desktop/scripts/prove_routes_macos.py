@@ -127,7 +127,7 @@ class Smoke:
             error = result.stderr.decode(errors="replace").strip()
             allowed = {"ax_window_missing", "accessibility_permission_required", "ax_attribute_read_failed", "ax_attribute_inventory_failed", "ax_traversal_truncated", "ax_control_missing_or_ambiguous", "ax_press_failed", "ax_limit_option_missing", "owned_process_unavailable"}
             numeric_inventory_error = re.fullmatch(r"ax_attribute_inventory_failed_-?[0-9]+_depth_[0-9]+", error)
-            raise ProofFailure(error if error in allowed or numeric_inventory_error else "ax_driver_failed")
+            raise ProofFailure(error if error in allowed or numeric_inventory_error or re.fullmatch(r"ax_attribute_read_failed_-?[0-9]+_(AX[A-Za-z]{1,60}|attribute)", error) else "ax_driver_failed")
         try:
             snapshots = json.loads(result.stdout)
         except (ValueError, UnicodeError):

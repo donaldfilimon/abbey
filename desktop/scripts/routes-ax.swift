@@ -9,7 +9,10 @@ func read(_ element: AXUIElement, _ name: String) throws -> CFTypeRef? {
     var value: CFTypeRef?
     let result = AXUIElementCopyAttributeValue(element, name as CFString, &value)
     if result == .noValue || result == .attributeUnsupported { return nil }
-    guard result == .success else { try fail("ax_attribute_read_failed") }
+    guard result == .success else {
+        let diagnosticName = name.range(of: "^AX[A-Za-z]{1,60}$", options: .regularExpression) == nil ? "attribute" : name
+        try fail("ax_attribute_read_failed_\(result.rawValue)_\(diagnosticName)")
+    }
     return value
 }
 func strings(_ value: Any) -> [String] {
@@ -41,6 +44,15 @@ struct Tree {
         }
         var attributes: [String: [String]] = [:]
         for name in names {
+            // SDK contract: AXGrowArea is an AXUIElementRef convenience alias,
+            // never text. AppKit advertises it even when the window has no
+            // grow-area element and returns kAXErrorFailure on this macOS.
+            // Traverse actual elements through AXChildren instead.
+            if name == kAXGrowAreaAttribute { continue }
+            // WebKit advertises this non-text live-region ownership flag even
+            // on versions whose AX bridge refuses the attribute (-25202).
+            // Source: WebKit/WebCore WebAccessibilityObjectWrapperMac.mm.
+            if name == "AXPostsOwnLiveRegionAnnouncements" { continue }
             if let value = try read(element, name) {
                 let found = strings(value)
                 textBytes += found.reduce(0) { $0 + $1.utf8.count }
