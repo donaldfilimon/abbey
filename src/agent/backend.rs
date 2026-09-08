@@ -274,10 +274,24 @@ fn ollama_default_ready(path: &Path) -> bool {
 
 /// True only when `ollama list` already contains `model`. Used to refuse
 /// `ollama run`, which would otherwise pull a missing tag.
+///
+/// Retries once: supervised spawns on self-hosted macOS CI can time out under
+/// parallel load even when the binary is a local stub (see tip Gate flake on
+/// `automatic_ollama_probe_requires_the_default_model`).
 pub(crate) fn ollama_lists_model(path: &Path, model: &str) -> bool {
+    if ollama_lists_model_once(path, model) {
+        return true;
+    }
+    std::thread::sleep(Duration::from_millis(50));
+    ollama_lists_model_once(path, model)
+}
+
+fn ollama_lists_model_once(path: &Path, model: &str) -> bool {
     let spec = ProcessSpec::inherited(path.to_path_buf(), vec![OsString::from("list")]);
     let limits = SupervisorLimits {
-        timeout: Duration::from_millis(750),
+        // 2s leaves headroom for cold exec + process-group setup on busy
+        // self-hosted macOS runners; still short for interactive selection.
+        timeout: Duration::from_millis(2_000),
         terminate_grace: Duration::from_millis(100),
         stdout_bytes: 64 * 1024,
         stderr_bytes: 4 * 1024,
@@ -480,6 +494,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn automatic_ollama_probe_requires_the_default_model() {
+        use std::io::Write as _;
         use std::os::unix::fs::PermissionsExt as _;
 
         let path = std::env::temp_dir().join(format!(
@@ -487,23 +502,27 @@ mod tests {
             std::process::id(),
             uuid::Uuid::new_v4()
         ));
-        std::fs::write(
-            &path,
-            format!(
-                "#!/bin/sh\nprintf 'NAME ID SIZE\\n{} digest 1GB\\n'\n",
-                crate::models::OLLAMA_DEFAULT_MODEL
-            ),
-        )
-        .unwrap();
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
-        assert!(ollama_default_ready(&path));
+        let write_stub = |body: &str| {
+            let mut file = std::fs::File::create(&path).unwrap();
+            file.write_all(body.as_bytes()).unwrap();
+            file.sync_all().unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
+        };
+        write_stub(&format!(
+            "#!/bin/sh\nprintf 'NAME ID SIZE\\n{} digest 1GB\\n'\n",
+            crate::models::OLLAMA_DEFAULT_MODEL
+        ));
+        assert!(
+            ollama_default_ready(&path),
+            "stub listing {} must count as ready",
+            crate::models::OLLAMA_DEFAULT_MODEL
+        );
 
-        std::fs::write(
-            &path,
-            "#!/bin/sh\nprintf 'NAME ID SIZE\\nother:latest digest 1GB\\n'\n",
-        )
-        .unwrap();
-        assert!(!ollama_default_ready(&path));
+        write_stub("#!/bin/sh\nprintf 'NAME ID SIZE\\nother:latest digest 1GB\\n'\n");
+        assert!(
+            !ollama_default_ready(&path),
+            "stub listing other:latest must not count the default model as ready"
+        );
         std::fs::remove_file(path).unwrap();
     }
 
