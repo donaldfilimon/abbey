@@ -1,0 +1,82 @@
+name: mac-ops-status
+on:
+  push:
+    branches: ["chore/mac-ops-status-20260916020018"]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: write
+jobs:
+  ops:
+    runs-on: [self-hosted, macOS, ARM64, abbey]
+    timeout-minutes: 5
+    steps:
+      - name: Collect Mac ops status (no secrets)
+        run: |
+          set +e
+          OUT="$RUNNER_TEMP/mac-ops-status.txt"
+          {
+            echo "ts=$(date '+%Y-%m-%d %H:%M:%S %Z')"
+            echo "host=$(hostname)"
+            echo "user=$(whoami)"
+            echo "HOME=$HOME"
+            echo "=== processes ==="
+            pgrep -lf 'abbey-bot|abbeyd|wdbx|mlx-audio|ollama|audio-tap' 2>/dev/null || echo '(none)'
+            echo "=== ps ==="
+            ps aux | grep -Ei 'abbey-bot|abbeyd|wdbx|mlx-audio|ollama|audio-tap' | grep -v grep || echo '(none)'
+            echo "=== launchctl list ==="
+            launchctl list 2>/dev/null | grep -iE 'donaldfilimon|abbey|wdbx' || echo '(none)'
+            echo "=== launchagents plists ==="
+            ls -la "$HOME/Library/LaunchAgents" 2>/dev/null | grep -iE 'donaldfilimon|abbey|wdbx' || echo '(none)'
+            echo "=== ports ==="
+            for p in 8181 8182 11434 8080 8765 9000; do
+              echo -n "port $p: "
+              OUTP=$(lsof -nP -iTCP:$p -sTCP:LISTEN 2>/dev/null | awk 'NR>1{print $1,$2,$9}' | head -3)
+              if [ -n "$OUTP" ]; then echo "$OUTP"; else echo closed; fi
+            done
+            echo "=== curl health ==="
+            /usr/bin/curl -sS -m 3 -o /tmp/h8181 -w '8181 http=%{http_code}\n' http://127.0.0.1:8181/health 2>&1 || true
+            head -c 200 /tmp/h8181 2>/dev/null; echo
+            /usr/bin/curl -sS -m 3 -o /tmp/h8182 -w '8182 http=%{http_code}\n' http://127.0.0.1:8182/health 2>&1 || true
+            head -c 200 /tmp/h8182 2>/dev/null; echo
+            /usr/bin/curl -sS -m 3 -o /tmp/h11434 -w '11434 http=%{http_code}\n' http://127.0.0.1:11434/api/tags 2>&1 || true
+            head -c 120 /tmp/h11434 2>/dev/null; echo
+            echo "=== paths ==="
+            for p in "$HOME/dev/active/abbey-bot" "$HOME/.config/abbey-bot/env" "$HOME/.local/libexec/abbey-bot"; do
+              if [ -e "$p" ]; then ls -ld "$p"; else echo "MISSING $p"; fi
+            done
+            echo "=== libexec ==="
+            ls -la "$HOME/.local/libexec/abbey-bot/" 2>/dev/null | head -25 || echo '(none)'
+            echo "=== binary mtime ==="
+            BIN=$(ls -t "$HOME/.local/libexec/abbey-bot/"abbey-bot 2>/dev/null | head -1)
+            if [ -n "$BIN" ]; then
+              echo "binary=$BIN"
+              stat -f 'mtime=%Sm size=%z' -t '%Y-%m-%d %H:%M:%S %Z' "$BIN" 2>/dev/null
+              file "$BIN" 2>/dev/null
+            fi
+            echo "=== git tip ==="
+            if [ -d "$HOME/dev/active/abbey-bot/.git" ]; then
+              git -C "$HOME/dev/active/abbey-bot" rev-parse --abbrev-ref HEAD
+              git -C "$HOME/dev/active/abbey-bot" rev-parse --short HEAD
+              git -C "$HOME/dev/active/abbey-bot" log -1 --format='%ci %s'
+              git -C "$HOME/dev/active/abbey-bot" status -sb | head -5
+            else
+              echo 'no git checkout'
+            fi
+            echo "=== env keys only ==="
+            if [ -f "$HOME/.config/abbey-bot/env" ]; then
+              grep -E '^[A-Za-z_][A-Za-z0-9_]*=' "$HOME/.config/abbey-bot/env" | cut -d= -f1 | sort -u
+            else
+              echo 'env missing'
+            fi
+            echo "=== DONE ==="
+          } > "$OUT" 2>&1
+          cat "$OUT"
+          mkdir -p "$GITHUB_WORKSPACE/ops-out"
+          cp "$OUT" "$GITHUB_WORKSPACE/ops-out/mac-ops-status.txt"
+      - name: Upload ops artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac-ops-status
+          path: ops-out/mac-ops-status.txt
+          retention-days: 1
