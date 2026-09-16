@@ -275,38 +275,49 @@ fn ollama_default_ready(path: &Path) -> bool {
 /// True only when `ollama list` already contains `model`. Used to refuse
 /// `ollama run`, which would otherwise pull a missing tag.
 ///
-/// Retries once: supervised spawns on self-hosted macOS CI can time out under
-/// parallel load even when the binary is a local stub (see tip Gate flake on
-/// `automatic_ollama_probe_requires_the_default_model`).
+/// Retries once, but only when the probe failed to produce an answer at all.
+/// Supervised spawns on self-hosted macOS CI can time out under parallel load
+/// even when the binary is a local stub (see tip Gate flake on
+/// `automatic_ollama_probe_requires_the_default_model`). A clean `ollama list`
+/// that simply does not name `model` is a real answer, so it is returned
+/// immediately rather than paying a second spawn to re-derive it.
 pub(crate) fn ollama_lists_model(path: &Path, model: &str) -> bool {
-    if ollama_lists_model_once(path, model) {
-        return true;
+    if let Some(answer) = ollama_lists_model_once(path, model) {
+        return answer;
     }
     std::thread::sleep(Duration::from_millis(50));
-    ollama_lists_model_once(path, model)
+    ollama_lists_model_once(path, model).unwrap_or(false)
 }
 
-fn ollama_lists_model_once(path: &Path, model: &str) -> bool {
+/// `Some(listed)` when `ollama list` ran to completion, `None` when the probe
+/// was indeterminate (timed out, cancelled, overflowed a stream budget, or
+/// failed to spawn) and is therefore worth retrying.
+fn ollama_lists_model_once(path: &Path, model: &str) -> Option<bool> {
     let spec = ProcessSpec::inherited(path.to_path_buf(), vec![OsString::from("list")]);
     let limits = SupervisorLimits {
-        // 2s leaves headroom for cold exec + process-group setup on busy
-        // self-hosted macOS runners; still short for interactive selection.
+        // 2s leaves headroom for a cold exec of the real `ollama` binary on a
+        // busy self-hosted macOS runner; still short for interactive selection.
+        // Note this bounds the child's own run, not teardown: `supervise` starts
+        // the deadline after spawn returns and reaps under `terminate_grace`.
         timeout: Duration::from_millis(2_000),
         terminate_grace: Duration::from_millis(100),
         stdout_bytes: 64 * 1024,
         stderr_bytes: 4 * 1024,
         poll_interval: Duration::from_millis(10),
     };
-    let Ok(SupervisorOutcome::Exited { status, stdout, .. }) =
-        run_with_checkpoint(&spec, &limits, || false)
-    else {
-        return false;
-    };
-    status.success()
-        && String::from_utf8_lossy(&stdout)
-            .lines()
-            .skip(1)
-            .any(|line| line.split_whitespace().next() == Some(model))
+    match run_with_checkpoint(&spec, &limits, || false) {
+        Ok(SupervisorOutcome::Exited { status, stdout, .. }) => Some(
+            status.success()
+                && String::from_utf8_lossy(&stdout)
+                    .lines()
+                    .skip(1)
+                    .any(|line| line.split_whitespace().next() == Some(model)),
+        ),
+        // Truncation is deterministic for a given listing, so it is an answer,
+        // not a transient miss: a retry would truncate identically.
+        Ok(SupervisorOutcome::StdoutLimit | SupervisorOutcome::StderrLimit) => Some(false),
+        Ok(SupervisorOutcome::TimedOut | SupervisorOutcome::Cancelled) | Err(_) => None,
+    }
 }
 
 /// Resolve the executor binary for a specific backend.
@@ -494,7 +505,6 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn automatic_ollama_probe_requires_the_default_model() {
-        use std::io::Write as _;
         use std::os::unix::fs::PermissionsExt as _;
 
         let path = std::env::temp_dir().join(format!(
@@ -502,20 +512,18 @@ mod tests {
             std::process::id(),
             uuid::Uuid::new_v4()
         ));
-        let write_stub = |body: &str| {
-            let mut file = std::fs::File::create(&path).unwrap();
-            file.write_all(body.as_bytes()).unwrap();
-            file.sync_all().unwrap();
-            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
-        };
+        // `fs::write` truncates the existing inode in place, so the 0o700 set
+        // after the first write carries over to the rewrite below.
+        let write_stub = |body: &str| std::fs::write(&path, body).unwrap();
+        let default_model = crate::models::OLLAMA_DEFAULT_MODEL;
+
         write_stub(&format!(
-            "#!/bin/sh\nprintf 'NAME ID SIZE\\n{} digest 1GB\\n'\n",
-            crate::models::OLLAMA_DEFAULT_MODEL
+            "#!/bin/sh\nprintf 'NAME ID SIZE\\n{default_model} digest 1GB\\n'\n"
         ));
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
         assert!(
             ollama_default_ready(&path),
-            "stub listing {} must count as ready",
-            crate::models::OLLAMA_DEFAULT_MODEL
+            "stub listing {default_model} must count as ready"
         );
 
         write_stub("#!/bin/sh\nprintf 'NAME ID SIZE\\nother:latest digest 1GB\\n'\n");

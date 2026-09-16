@@ -127,12 +127,13 @@ Key modules (`src/`):
 | `run_control.rs` | presentation-neutral protocol-v2 run control shared by CLI and TUI (`tests/run_control*.rs`) |
 | `abbey_contracts.rs` (+ `abbey_contracts/fixture_validation.rs`) | data-only qualification of the pinned Program 1 Abbey contract corpus under `contracts/abbey/` (`abbey-contracts.lock.json` + `corpus/`; `tests/abbey_contracts.rs`) |
 | `daemon/` / `bin/abbeyd.rs` | authenticated bounded Unix v1 reads, v2 run control, and v3 safe tool/memory/claim authority, never arbitrary executable/argv/env/workspace; `federation.rs` is a separate fail-closed `abbey.v1` envelope that authority-bearing requests never downgrade into |
-| `runtime/` | durable run lifecycle, schema-v4 conversation identity, bounded process-group supervision, ABI `ModelProvider` adapters, fixed-recipe delegated execution, and legacy-metadata migration; no provider-neutral tool runtime |
+| `runtime/` | durable run lifecycle, schema-v4 conversation identity, bounded process-group supervision, ABI `ModelProvider` adapters, fixed-recipe delegated execution, and legacy-metadata migration; no provider-neutral tool runtime. Schema migrations are the numbered `migration_N_*.sql` files beside `migrations.rs`, each embedded with `include_str!` (all seven since #104); a new migration is a new `.sql` file plus its constant, not inline SQL |
 | `accel.rs` (+ `accel/bridge.rs`) | `abbey accel verify` — Metal kernel execution checked against the deterministic CPU oracle, only under `--features accel` |
 | `edition.rs` | compile-time safe (default) and separately identified `personal-edition` namespaces; neither edition implements unrestricted execution |
 | `mesh.rs` | claim-bounded bridge to ABI's authenticated local multi-process proof on one Unix host, never production multi-host evidence |
 | `capture.rs` | backend-aware headless capture shared by print, commit, and voice ask |
 | `cli.rs` | clap `Cli`/`Subcommand` definitions (Grok Build/Codex/Claude Code parity surface) |
+| `commands.rs` / `doctor.rs` / `learn.rs` | clap subcommand dispatch (home of the `print` capture bypass); doctor/debug/persona/role/memory/init helpers; self-learning from corrections, routes, and activity into the memory layers |
 | `actions.rs` | `RunSpec` + `run_agent` — the one path every surface calls |
 | `prompts.rs` | review/commit prompt builders over `gitops` diffs |
 | `output.rs` | stdout helpers that treat a broken pipe as success (`abbey doctor \| head`) |
