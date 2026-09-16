@@ -1,8 +1,11 @@
 name: mac-ops-status
 on:
+  push:
+    branches: ["chore/mac-ops-status-20260916020018"]
   workflow_dispatch:
 permissions:
   contents: read
+  actions: write
 jobs:
   ops:
     runs-on: [self-hosted, macOS, ARM64, abbey]
