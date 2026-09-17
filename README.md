@@ -90,6 +90,7 @@ abbey parallel --peers gemini,claude "second opinions"   # local distributed pee
 abbey routes --correlation <id>              # both stages (conf · alt · fb)
 abbey learn review                           # train_candidate provenance curation
 abbey learn stats
+abbey learn improve [n] [--apply]            # propose from routes/reflect; --apply promotes routes only
 abbey learn-review · abbey learn-stats       # aliases
 abbey os · abbey allowlist                   # allowlist panel (execute needs --confirm)
 abbey wdbx query                             # → `abi wdbx query <abbey store> --json`
@@ -162,7 +163,7 @@ Proposed provider-neutral Abbey-owned agent/tool runtime.
 /help  /plan  /ask  /diff  /review  /security-review
 /commit  /pr  /init [--force|--print|--agent]  /branch name
 /clear  /compact  /model fable  /memory  /routes  /skills  /permissions  /doctor
-/learn correction|preference|routes|digest|review|stats
+/learn correction|preference|routes|digest|review|stats|improve
 ```
 
 ## Backends

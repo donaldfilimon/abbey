@@ -190,7 +190,8 @@ impl App {
             "os-control: abbey os dry-run|execute --confirm (cross-platform allowlist)".into(),
             "subagents:  abbey subagents run --lanes max,reviewer [--peers gemini]".into(),
             "parallel:   alias of subagents with Max+Gemma+Aviva defaults".into(),
-            "learn:      abbey learn correction|preference|routes|digest|review|stats".into(),
+            "learn:      abbey learn correction|preference|routes|digest|review|stats|improve"
+                .into(),
         ]);
         self.doctor_lines = lines;
         self.history = self.state.history(40);

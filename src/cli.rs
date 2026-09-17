@@ -339,7 +339,7 @@ pub enum Commands {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         text: Vec<String>,
     },
-    /// Self-learn: correction|preference|routes|digest|export|review|stats (LoRA Proposed)
+    /// Self-learn: correction|preference|routes|digest|export|review|stats|improve (LoRA Proposed)
     Learn {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,

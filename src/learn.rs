@@ -204,6 +204,7 @@ fn print_learn_usage() {
          \x20  abbey learn correction <text>  # LTM correction\n\
          \x20  abbey learn preference <text>  # LTM standing directive\n\
          \x20  abbey learn routes [n]         # route.jsonl → activity\n\
+         \x20  abbey learn improve [n] [--apply] # propose; apply additive steps only\n\
          \x20  abbey learn digest|export …\n\
          note:  LoRA / fine-tune is Proposed but unavailable — curation only"
     );
@@ -280,6 +281,122 @@ pub fn train_stats(state: &AbbeyState) -> Result<()> {
     Ok(())
 }
 
+/// Route confidence below which a routing decision is proposed for review.
+pub const IMPROVE_LOW_ROUTE_CONFIDENCE: f32 = 0.6;
+
+/// One reviewable proposal from `abbey learn improve`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ImprovementProposal {
+    /// Stable kind label (`promote-routes`, `review-route`, `dedupe`, …).
+    pub kind: &'static str,
+    /// Human-readable detail.
+    pub detail: String,
+    /// Whether `--apply` performs this step (only additive steps are applied).
+    pub applies: bool,
+}
+
+/// Build proposals from existing self-learn signals. Pure: no I/O.
+pub fn plan_improvements(
+    reflect: &memory::ReflectReport,
+    routes: &[route_log::RouteRecord],
+    curation: Option<TrainStats>,
+) -> Vec<ImprovementProposal> {
+    let mut out = Vec::new();
+    if !routes.is_empty() {
+        out.push(ImprovementProposal {
+            kind: "promote-routes",
+            detail: format!(
+                "promote {} recent route record(s) into activity",
+                routes.len()
+            ),
+            applies: true,
+        });
+    }
+    for r in routes
+        .iter()
+        .filter(|r| r.confidence < IMPROVE_LOW_ROUTE_CONFIDENCE)
+    {
+        out.push(ImprovementProposal {
+            kind: "review-route",
+            detail: format!(
+                "{} {}/{} -> {} at conf {:.2} ({}); consider `abbey learn preference`",
+                r.ts, r.persona, r.role, r.model, r.confidence, r.reason
+            ),
+            applies: false,
+        });
+    }
+    for (a, b) in &reflect.duplicate_summaries {
+        out.push(ImprovementProposal {
+            kind: "dedupe",
+            detail: format!("duplicate memory summaries {a} / {b}"),
+            applies: false,
+        });
+    }
+    for id in &reflect.low_confidence {
+        out.push(ImprovementProposal {
+            kind: "low-confidence",
+            detail: format!("memory {id} is low confidence; confirm or correct it"),
+            applies: false,
+        });
+    }
+    for id in &reflect.superseded {
+        out.push(ImprovementProposal {
+            kind: "superseded",
+            detail: format!("memory {id} is superseded; retire it by hand if stale"),
+            applies: false,
+        });
+    }
+    if let Some(stats) = curation
+        && stats.missing_provenance() > 0
+    {
+        out.push(ImprovementProposal {
+            kind: "provenance",
+            detail: format!(
+                "{} train_candidate record(s) lack provenance; see `abbey learn review`",
+                stats.missing_provenance()
+            ),
+            applies: false,
+        });
+    }
+    out
+}
+
+/// `abbey learn improve [n] [--apply]`: dry-run by default. `--apply` runs only
+/// the additive steps (route promotion); every other proposal stays for a human.
+pub fn improve(state: &AbbeyState, n: usize, apply: bool) -> Result<usize> {
+    let mode = if apply { "apply" } else { "dry-run" };
+    println!("abbey learn improve ({mode}) — propose, then apply only additive steps\n");
+    let routes = route_log::recent_routes(&state.state_dir, n)?;
+    let path = memory::backend_path(&state.state_dir, &configured_backend());
+    // Dry-run must stay read-only: opening a backend would create the store.
+    let (reflect, curation) = if path.exists() {
+        let mem = open_mem(state)?;
+        let cur = collect_train_curation(mem.as_ref())?;
+        (mem.reflect()?, Some(cur.stats))
+    } else {
+        (memory::ReflectReport::default(), None)
+    };
+    let plan = plan_improvements(&reflect, &routes, curation);
+    if plan.is_empty() {
+        println!("(no proposals — no routes, reflect issues, or curation gaps)");
+        return Ok(0);
+    }
+    for p in &plan {
+        let tag = if p.applies { "auto" } else { "review" };
+        println!("[{tag}] {:<15} {}", p.kind, p.detail);
+    }
+    let mut applied = 0;
+    if apply {
+        if plan.iter().any(|p| p.kind == "promote-routes") {
+            applied += learn_from_routes(state, n)?;
+        }
+        println!("\napplied: {applied} record(s) promoted; review items unchanged");
+    } else {
+        println!("\nnext: `abbey learn improve {n} --apply` runs the [auto] steps only");
+    }
+    Ok(applied)
+}
+
 pub fn dispatch(state: &AbbeyState, args: &[String]) -> Result<i32> {
     if args.is_empty() {
         status(state)?;
@@ -348,10 +465,16 @@ pub fn dispatch(state: &AbbeyState, args: &[String]) -> Result<i32> {
             train_stats(state)?;
             Ok(0)
         }
+        "improve" => {
+            let apply = args[1..].iter().any(|a| a == "--apply");
+            let n: usize = args[1..].iter().find_map(|a| a.parse().ok()).unwrap_or(20);
+            improve(state, n, apply)?;
+            Ok(0)
+        }
         "lora" | "finetune" | "fine-tune" | "fine_tune" => crate::claims::refuse("lora"),
         other => bail!(
             "unknown learn subcommand `{other}`\n\
-             usage: abbey learn [status|correction|train|preference|routes|digest|export|review|stats]\n\
+             usage: abbey learn [status|correction|train|preference|routes|digest|export|review|stats|improve]\n\
              (LoRA/fine-tune is Proposed — see `abbey claims proposed`)"
         ),
     }
@@ -435,6 +558,61 @@ mod tests {
         assert!(p.contains("alternate=gemma"));
         assert!(p.contains("fallback=low conf"));
         assert!(p.contains("confidence=0.55"));
+    }
+
+    #[test]
+    fn plan_improvements_flags_low_confidence_routes_for_review_only() {
+        let hi = RouteRecord::new(".", "abbey", "max", "fable", "hybrid", 0.9);
+        let lo = RouteRecord::new(".", "abbey", "max", "fable", "guess", 0.3);
+        let reflect = memory::ReflectReport {
+            duplicate_summaries: vec![("a".into(), "b".into())],
+            low_confidence: vec!["c".into()],
+            superseded: vec![],
+        };
+        let stats = TrainStats {
+            total: 2,
+            with_provenance: 1,
+            high_confidence: 2,
+        };
+        let plan = plan_improvements(&reflect, &[hi, lo], Some(stats));
+        let kinds: Vec<_> = plan.iter().map(|p| p.kind).collect();
+        assert_eq!(
+            kinds,
+            [
+                "promote-routes",
+                "review-route",
+                "dedupe",
+                "low-confidence",
+                "provenance"
+            ]
+        );
+        // Only the additive step is auto-applied.
+        assert!(
+            plan.iter()
+                .filter(|p| p.applies)
+                .all(|p| p.kind == "promote-routes")
+        );
+        assert_eq!(plan.iter().filter(|p| p.applies).count(), 1);
+    }
+
+    #[test]
+    fn plan_improvements_is_empty_without_signals() {
+        let plan = plan_improvements(&memory::ReflectReport::default(), &[], None);
+        assert!(plan.is_empty());
+    }
+
+    #[test]
+    fn improve_dry_run_does_not_create_a_store() {
+        unsafe { std::env::set_var("ABBEY_MEMORY_BACKEND", "sqlite") };
+        let state = temp_state("improve-dry");
+        let rec = RouteRecord::new(".", "abbey", "max", "fable", "hybrid", 0.4);
+        route_log::append_route_record(&state.state_dir, &rec).unwrap();
+        let applied = improve(&state, 5, false).unwrap();
+        assert_eq!(applied, 0);
+        assert!(!memory::backend_path(&state.state_dir, "sqlite").exists());
+        let applied = improve(&state, 5, true).unwrap();
+        assert_eq!(applied, 1);
+        let _ = fs::remove_dir_all(&state.state_dir);
     }
 
     #[test]
