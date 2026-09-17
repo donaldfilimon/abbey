@@ -295,6 +295,47 @@ pub struct ImprovementProposal {
     pub applies: bool,
 }
 
+/// Group duplicate-summary pairs into connected clusters of memory ids.
+/// Clusters and their members keep first-seen order, so output is stable.
+fn duplicate_clusters(pairs: &[(String, String)]) -> Vec<Vec<String>> {
+    fn root(parent: &mut [usize], mut i: usize) -> usize {
+        while parent[i] != i {
+            parent[i] = parent[parent[i]];
+            i = parent[i];
+        }
+        i
+    }
+    let mut ids: Vec<String> = Vec::new();
+    let mut index: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut parent: Vec<usize> = Vec::new();
+    for (a, b) in pairs {
+        let mut slot = |id: &String| -> usize {
+            if let Some(&i) = index.get(id) {
+                return i;
+            }
+            let i = ids.len();
+            ids.push(id.clone());
+            parent.push(i);
+            index.insert(id.clone(), i);
+            i
+        };
+        let (ia, ib) = (slot(a), slot(b));
+        let (ra, rb) = (root(&mut parent, ia), root(&mut parent, ib));
+        if ra != rb {
+            parent[ra.max(rb)] = ra.min(rb);
+        }
+    }
+    let mut clusters: Vec<(usize, Vec<String>)> = Vec::new();
+    for (i, id) in ids.into_iter().enumerate() {
+        let r = root(&mut parent, i);
+        match clusters.iter_mut().find(|c| c.0 == r) {
+            Some(cluster) => cluster.1.push(id),
+            None => clusters.push((r, vec![id])),
+        }
+    }
+    clusters.into_iter().map(|(_, members)| members).collect()
+}
+
 /// Build proposals from existing self-learn signals. Pure: no I/O.
 pub fn plan_improvements(
     reflect: &memory::ReflectReport,
@@ -312,23 +353,54 @@ pub fn plan_improvements(
             applies: true,
         });
     }
+    // One row per repeated low-confidence routing pattern, not per record:
+    // a fallback route logs the same (persona, role, model, reason) many times.
+    let mut route_groups: Vec<(String, usize, String, String)> = Vec::new();
     for r in routes
         .iter()
         .filter(|r| r.confidence < IMPROVE_LOW_ROUTE_CONFIDENCE)
     {
+        let key = format!(
+            "{}/{} -> {} at conf {:.2} ({})",
+            r.persona, r.role, r.model, r.confidence, r.reason
+        );
+        match route_groups.iter_mut().find(|g| g.0 == key) {
+            Some(group) => {
+                group.1 += 1;
+                group.3.clone_from(&r.ts);
+            }
+            None => route_groups.push((key, 1, r.ts.clone(), r.ts.clone())),
+        }
+    }
+    for (key, count, first, last) in route_groups {
+        let when = if count == 1 {
+            first
+        } else {
+            format!("x{count} {first}..{last}")
+        };
         out.push(ImprovementProposal {
             kind: "review-route",
-            detail: format!(
-                "{} {}/{} -> {} at conf {:.2} ({}); consider `abbey learn preference`",
-                r.ts, r.persona, r.role, r.model, r.confidence, r.reason
-            ),
+            detail: format!("{when} {key}; consider `abbey learn preference`"),
             applies: false,
         });
     }
-    for (a, b) in &reflect.duplicate_summaries {
+    // Duplicate pairs are reported pairwise by reflect; cluster them so one
+    // shared summary yields one row however many copies exist.
+    for cluster in duplicate_clusters(&reflect.duplicate_summaries) {
+        let shown: Vec<&str> = cluster.iter().take(3).map(String::as_str).collect();
+        let more = cluster.len().saturating_sub(shown.len());
+        let tail = if more > 0 {
+            format!(" (+{more} more)")
+        } else {
+            String::new()
+        };
         out.push(ImprovementProposal {
             kind: "dedupe",
-            detail: format!("duplicate memory summaries {a} / {b}"),
+            detail: format!(
+                "{} memories share one summary: {}{tail}",
+                cluster.len(),
+                shown.join(", ")
+            ),
             applies: false,
         });
     }
@@ -593,6 +665,58 @@ mod tests {
                 .all(|p| p.kind == "promote-routes")
         );
         assert_eq!(plan.iter().filter(|p| p.applies).count(), 1);
+    }
+
+    #[test]
+    fn plan_improvements_groups_repeated_routes_and_duplicate_clusters() {
+        let low = |ts: &str| {
+            let mut r = RouteRecord::new(".", "abbey", "max", "fable", "Other", 0.55);
+            r.ts = ts.into();
+            r
+        };
+        let routes = [low("t1"), low("t2"), low("t3")];
+        let pair = |a: &str, b: &str| (a.to_owned(), b.to_owned());
+        let reflect = memory::ReflectReport {
+            duplicate_summaries: vec![
+                pair("a", "b"),
+                pair("a", "c"),
+                pair("b", "c"),
+                pair("x", "y"),
+            ],
+            low_confidence: vec![],
+            superseded: vec![],
+        };
+        let plan = plan_improvements(&reflect, &routes, None);
+        let reviews: Vec<_> = plan.iter().filter(|p| p.kind == "review-route").collect();
+        assert_eq!(reviews.len(), 1, "{plan:?}");
+        assert!(
+            reviews[0].detail.starts_with("x3 t1..t3 "),
+            "{}",
+            reviews[0].detail
+        );
+        let dedupes: Vec<_> = plan
+            .iter()
+            .filter(|p| p.kind == "dedupe")
+            .map(|p| p.detail.as_str())
+            .collect();
+        assert_eq!(
+            dedupes,
+            [
+                "3 memories share one summary: a, b, c",
+                "2 memories share one summary: x, y"
+            ]
+        );
+    }
+
+    #[test]
+    fn duplicate_clusters_merges_chains() {
+        let pairs: Vec<(String, String)> = (0..5)
+            .map(|i| (format!("m{i}"), format!("m{}", i + 1)))
+            .collect();
+        let clusters = duplicate_clusters(&pairs);
+        assert_eq!(clusters.len(), 1);
+        assert_eq!(clusters[0].len(), 6);
+        assert!(duplicate_clusters(&[]).is_empty());
     }
 
     #[test]
