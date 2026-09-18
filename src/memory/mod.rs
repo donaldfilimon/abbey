@@ -344,9 +344,19 @@ pub fn reflect_over(all: &[MemoryRecord]) -> ReflectReport {
     }
     for i in 0..all.len() {
         for j in (i + 1)..all.len() {
+            // Route records are an append-only routing audit log whose records all
+            // share a `route <persona>/<role> → <model>` summary; clustering them
+            // would always report one giant duplicate set.
+            if all[i].source_type == "route" || all[j].source_type == "route" {
+                continue;
+            }
+            // Same-summary-prefix is not enough to call a pair a duplicate: the
+            // legacy session audit log shares `route <persona>/<role> → <model>`
+            // summaries across rows that carry distinct payloads. Only flag pairs
+            // whose payloads also match exactly.
             let a = char_prefix(&all[i].summary, 24);
             let b = char_prefix(&all[j].summary, 24);
-            if a.chars().count() >= 12 && a == b {
+            if a.chars().count() >= 12 && a == b && all[i].payload == all[j].payload {
                 report
                     .duplicate_summaries
                     .push((all[i].id.clone(), all[j].id.clone()));
@@ -515,6 +525,72 @@ mod filter_tests {
                 Some("2026-08-08T12:00:00Z".into()),
             )
             .is_ok()
+        );
+    }
+
+    #[test]
+    fn reflect_over_ignores_route_duplicates_but_still_reports_their_quality() {
+        let route = |summary: &str, confidence: f32| {
+            let mut rec = MemoryRecord::new_stm(summary, "payload");
+            rec.source_type = "route".into();
+            rec.retention = "activity".into();
+            rec.confidence = confidence;
+            rec
+        };
+        let session = |summary: &str| {
+            let mut rec = MemoryRecord::new_stm(summary, "payload");
+            rec.source_type = "session".into();
+            rec.retention = "activity".into();
+            rec
+        };
+        // Identical route summaries (the normal route-audit shape) are not dups,
+        // but low/high confidence reporting still applies to route records.
+        let all = vec![
+            route("route abbey/max → gemma4", 0.9),
+            route("route abbey/max → gemma4", 0.7),
+            route("route abbey/max → gemma4", 0.3),
+        ];
+        let report = reflect_over(&all);
+        assert!(report.duplicate_summaries.is_empty(), "{report:?}");
+        assert_eq!(report.low_confidence.len(), 1);
+        // A pair where one side is a route record must not be flagged either.
+        let mixed = vec![
+            session("route abbey/max → gemma4 today"),
+            route("route abbey/max → gemma4", 0.9),
+        ];
+        assert!(reflect_over(&mixed).duplicate_summaries.is_empty());
+        // Non-route duplicates are still clustered (unchanged behavior).
+        let sessions = vec![session("prefer small diffs"), session("prefer small diffs")];
+        assert_eq!(reflect_over(&sessions).duplicate_summaries.len(), 1);
+    }
+
+    #[test]
+    fn reflect_over_requires_payload_equality_not_just_summary_prefix() {
+        // Distinguishing payloads are the real-world session-audit shape; shared
+        // `route <persona>/<role>` summaries must no longer produce false dups.
+        let session = |summary: &str, payload: &str| {
+            let mut rec = MemoryRecord::new_stm(summary, payload);
+            rec.source_type = "session".into();
+            rec.retention = "activity".into();
+            rec
+        };
+        assert!(
+            reflect_over(&[
+                session("route abbey/max → gemma4 today", "payload-a"),
+                session("route abbey/max → gemma4 today", "payload-b"),
+            ])
+            .duplicate_summaries
+            .is_empty(),
+        );
+        // Identical summaries AND identical payloads are still duplicates.
+        assert_eq!(
+            reflect_over(&[
+                session("route abbey/max → gemma4 today", "payload-a"),
+                session("route abbey/max → gemma4 today", "payload-a"),
+            ])
+            .duplicate_summaries
+            .len(),
+            1,
         );
     }
 }

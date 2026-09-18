@@ -51,12 +51,22 @@ pub(super) fn spawn_llm_hint(
         .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
         .ok()?;
     let (tx, rx) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
-        let _guard = InFlightGuard;
-        let name = llm_hint(&ollama, model, &input);
-        let _ = tx.send(LlmHint { generation, name });
-    });
-    Some(rx)
+    let spawned = std::thread::Builder::new()
+        .name("abbey-predict-rerank".into())
+        .spawn(move || {
+            let _guard = InFlightGuard;
+            let name = llm_hint(&ollama, model, &input);
+            let _ = tx.send(LlmHint { generation, name });
+        });
+    match spawned {
+        Ok(_) => Some(rx),
+        // A failed spawn leaves no worker to drop the guard, so reset the flag
+        // instead of silently disabling all reranks for the rest of the session.
+        Err(_) => {
+            LLM_IN_FLIGHT.store(false, Ordering::Release);
+            None
+        }
+    }
 }
 
 /// One ranked suggestion.
