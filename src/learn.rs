@@ -1,7 +1,7 @@
 //! Self-learning from user corrections, routes, and activity → memory layers.
 
 use crate::config;
-use crate::memory::{self, MemoryRecord, MemoryStore};
+use crate::memory::{self, MemoryFilter, MemoryRecord, MemoryStore};
 use crate::route_log;
 use crate::state::AbbeyState;
 use anyhow::{Result, bail};
@@ -57,8 +57,25 @@ fn route_activity_payload(r: &route_log::RouteRecord) -> String {
 pub fn learn_from_routes(state: &AbbeyState, n: usize) -> Result<usize> {
     let mem = open_mem(state)?;
     let routes = route_log::recent_routes(&state.state_dir, n)?;
+    // Idempotent promotion: provenance `route.jsonl @ <ts>` is stable per route,
+    // so re-consuming the same route tail must not re-store identical events.
+    let already: std::collections::HashSet<String> = mem
+        .filter_with(
+            &MemoryFilter {
+                source_type: Some("route".into()),
+                ..MemoryFilter::default()
+            },
+            10_000,
+        )?
+        .into_iter()
+        .map(|rec| rec.provenance)
+        .collect();
     let mut stored = 0;
     for r in routes {
+        let provenance = format!("route.jsonl @ {}", r.ts);
+        if already.contains(&provenance) {
+            continue;
+        }
         let mut rec = MemoryRecord::new_stm(
             format!("route {}/{} → {}", r.persona, r.role, r.model),
             route_activity_payload(&r),
@@ -67,7 +84,7 @@ pub fn learn_from_routes(state: &AbbeyState, n: usize) -> Result<usize> {
         rec.retention = "activity".into();
         rec.tags = vec!["activity".into(), "self-learn".into(), r.role.clone()];
         rec.confidence = r.confidence;
-        rec.provenance = format!("route.jsonl @ {}", r.ts);
+        rec.provenance = provenance;
         mem.store(rec)?;
         stored += 1;
     }
@@ -619,6 +636,27 @@ mod tests {
         assert!(rows[0].payload.contains("alternate=gemma"));
         assert!(rows[0].payload.contains("fallback=prefer hybrid-loop"));
         assert!(rows[0].payload.contains("confidence=0.70"));
+        let _ = fs::remove_dir_all(&state.state_dir);
+    }
+
+    #[test]
+    fn learn_from_routes_is_idempotent_over_the_same_route_tail() {
+        unsafe { std::env::set_var("ABBEY_MEMORY_BACKEND", "sqlite") };
+        let state = temp_state("routes-idem");
+        for ts in ["t1", "t2", "t3"] {
+            let mut rec = RouteRecord::new(".", "abbey", "max", "fable", "hybrid", 0.7);
+            rec.ts = ts.into();
+            route_log::append_route_record(&state.state_dir, &rec).unwrap();
+        }
+        let first = learn_from_routes(&state, 5).unwrap();
+        assert_eq!(first, 3);
+        let second = learn_from_routes(&state, 5).unwrap();
+        assert_eq!(second, 0, "re-consuming the same tail must not re-store");
+        let mem = memory::open_backend(&state.state_dir, "sqlite").unwrap();
+        let rows = mem
+            .filter(Some("activity"), Some("self-learn"), 100)
+            .unwrap();
+        assert_eq!(rows.len(), 3);
         let _ = fs::remove_dir_all(&state.state_dir);
     }
 

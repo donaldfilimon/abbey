@@ -73,65 +73,38 @@ from `src/claims.rs` and workflow ledgers. Edit prose outside those regions;
 capability changes belong in the registry, not the generated table.
 Brand: Intelligence Without Limits, Abbey/ABI only, never Quesar (`docs/brand.md`).
 
-## Gates And Boundaries
+## Need to know (the three things that bite)
 
-- `rust-toolchain.toml` pins nightly-2026-09-01; edition 2024. `check.sh` probes
-  Cargo but does not fix PATH: Homebrew Rust or Swiftly's linker can shadow the
-  intended tools. Use the pinned rustup toolchain and system compiler.
-- Code gate: `./check.sh`, not bare `cargo test`. It checks default, `wdbx`,
-  `personal-edition`, and `accel` separately with clippy/tests/private rustdoc,
-  plus Python claims tests, Program 3 boundaries, installer smoke, and size limits.
-  Cross-target checks and opt-in coverage are soft, not execution proof.
-- Source limits apply to `src/**/*.rs`: 200 lines for `main.rs`, hard 1,000
-  otherwise, warning above 800. New features need explicit gate coverage.
-- Docs-only: `python3 -m unittest discover -s tools/tests -p 'test_*.py'`, source
-  comparison, and `git diff --check`. `python3 tools/check_claims_sync.py` checks
-  generated ledgers but invokes `cargo run`; `--write` can update multiple docs.
-- `desktop/` is a separate Cargo workspace and Bun project. Root `check.sh`
-  does not build/test it or check IPC type drift. Use `desktop/check.sh` there;
-  `desktop/codegen` owns `desktop/src/ipc/generated*.ts` from app-core sources.
-- Both `../abi` and `../wdbx` are required even for default builds through
-  unconditional ABI dependencies. `wdbx` enables Abbey's memory backend, not
-  the first substrate dependency. Keep all three siblings; do not mix git/path
-  copies of shared crates. CI pins both revisions in `.github/workflows/rust.yml`.
-- `ABBEY_BACKEND=abi` and the WDBX bridge require a real executable, not a shell
-  alias. Build with `./tools/cargo.sh build -p abi-cli` inside `../abi`; set
-  `ABBEY_ABI_BIN` or config `abi_bin` to its binary.
+1. **Toolchain**: pinned `nightly-2026-09-01` (Rust 1.100.0). Homebrew `rust` shadows `rustup` — run `rustup run nightly-2026-09-01 cargo ...` or `brew unlink rust`.
+2. **Sibling repos required**: `../abi` and `../wdbx` are path dependencies. Even default builds fail without them. CI pins revisions in `.github/workflows/rust.yml`.
+3. **Gate is `./check.sh`, not `cargo test`**. It runs all four feature modes (default, `wdbx`, `personal-edition`, `accel`) plus Python claims/program-3 checks. A bare `cargo test` misses 75% of gated code.
 
-## Runtime Invariants
+## Gates (exact commands)
 
-- Route through `actions::run_agent` / `session::hybrid_run`; headless `print`,
-  `commit`, and `voice ask` deliberately use `capture.rs` without route-log writes.
-- Pass live `cfg.backend` through per-call behavior. `AgentBackend::from_env()`
-  is cached, while TUI Ctrl-B changes the active backend. Backend argv grammars
-  are separate; never leak Cursor flags/model bindings into other executors.
-- Local verbs require no executor. Ollama is preferred, not mandatory; automatic
-  selection also checks readiness (`src/agent/backend.rs`). Max/Gemma are roles,
-  not bundled weights; `/cost` remains N/A for cursor-agent.
-- `WdbxMemory` holds `<dir>/abbey.lock` before recovery until after store drop;
-  `wdbx_bridge` coordinates own-store subprocesses with it. The sibling substrate
-  also holds `<base>.writer.lock`; these are distinct locks, not substitutes.
-- Abbey's store directory `<state>/wdbx/` becomes base path
-  `<state>/wdbx/wdbx` for `abi wdbx`; preserve `wdbx_bridge` translation.
-- Read-only memory status uses `memory::backend_path`, not store opening.
-  Tests use scratch state/socket/bearer, never live `~/.local/state/abbey`.
-  Conversation clears preserve history, transcripts, memory, and retained backups.
-- Learned embeddings are opt-in, space-isolated, and never silently substituted.
-  Keys use `ABBEY_EMBEDDING_API_KEY` / `OPENAI_API_KEY`, not `config.toml`.
-- Daemon client/server share one socket and exactly one bearer source. No
-  in-process fallback after client failure, mutation replay on downgrade, or raw
-  prompt/output in lifecycle pages. MCP is read-only; its loopback HTTP is
-  unauthenticated, unlike the owner-only authenticated Unix daemon.
-- OS execution requires allowlist plus `--confirm` in both compile-time editions.
-  Installers derive names from the compiled edition; personal is not unrestricted.
-- `tools/check_p3_readonly.py` keeps the synthetic guild planner free of network,
-  process, filesystem, store, and tool effects. Do not bypass that boundary.
-- `docs/claims.md` and `abbey claims manifest` carry evidence; Proposed (including
-  LoRA) is not Current or Out of scope. No vendor-runtime reimplementation, fake
-  accounting, bundled cloud speech, hidden-CoT engine, or unapproved clean rewrite.
-  Architecture: `docs/architecture.md`; goal ownership: `tasks/goals.md`.
+- `./check.sh` — production gate (toolchain probe → fmt → clippy/tests × 4 modes → rustdoc × 4 → Python tools → claims sync → Program 3 boundary → installer smoke → file-size guard → soft cross-compile → opt-in coverage)
+- `cargo build --features wdbx` — in-process WDBX backend (off by default)
+- `cargo build --features personal-edition` — separately named personal edition (distinct binary/config/credential namespace)
+- `cargo build --features accel` — Metal kernel verification (needs macOS Xcode toolchain)
+- `cargo test --features wdbx|personal-edition|accel` — run feature-gated tests
+- `python3 tools/check_claims_sync.py [--write]` — verify/generate claims ledger
+- `python3 tools/check_p3_readonly.py` — enforce Program 3 read-only boundary
+- `desktop/check.sh` — separate workspace; root gate does not touch it
+- `ABBEY_CARGO_FEATURES=personal-edition ./install.sh` — install personal edition
 
-<!-- machine-git-policy -->
+## Conventions
+
+- Source limits enforced by gate: `main.rs` ≤200 lines (hard), other `.rs` warn >800, fail >1000
+- `unsafe_code = deny` in `Cargo.toml` — every `unsafe` needs justified `#[allow]` + SAFETY comment
+- Each backend gets its own argv grammar in `src/agent/argv.rs`; never leak Cursor flags into fm/abi/claude/ollama
+- `AgentBackend::from_env()` is cached at startup; thread live `cfg.backend` through calls (TUI Ctrl-B switches at runtime)
+- WDBX lock: `WdbxMemory` holds `<dir>/abbey.lock` for handle lifetime; `wdbx_bridge` takes same lock for subprocesses. Sibling `DurableStore` holds `<base>.writer.lock` separately.
+- Abbey's `<state>/wdbx/` = `abi wdbx` base `<state>/wdbx/wdbx` — `wdbx_bridge` translates; passing bare directory reads one level up
+- Daemon: single owner-only Unix socket + one bearer source (`ABBEYD_BEARER_TOKEN_FILE`). Client failure never falls back in-process.
+- OS execution: allowlist + `--confirm` required in both editions. No shell bypass.
+- `desktop/` = Tauri 2 + React/TS workspace. Types generated from `src/app_core/` via `desktop/codegen`. Root `check.sh` does not build it.
+- `abbey wdbx` / `ABBEY_BACKEND=abi` need a real `abi` binary (not alias). Build: `./tools/cargo.sh build -p abi-cli` in `../abi`; set `ABBEY_ABI_BIN` or config `abi_bin`.
+- Learned embeddings: opt-in only; keys from `ABBEY_EMBEDDING_API_KEY` / `OPENAI_API_KEY` (not config.toml); provider/model change = new isolated vector space.
+
 ## Git workflow (machine policy, 2026-08-27)
 
 Work on the default branch in this canonical checkout. Do not create
@@ -140,4 +113,3 @@ isolation, or when Donald asks. Any worktree or topic branch created here
 must be merged back into this checkout's default branch, the worktree
 removed, and the branch deleted, before pushing and before the task is
 called done. Full policy: `~/.claude/CLAUDE.md` (*Git discipline*).
-<!-- /machine-git-policy -->
