@@ -35,11 +35,15 @@ pub const cli_args = @import("cli/args.zig");
 pub const help = @import("cli/help.zig");
 pub const dispatch = @import("cli/dispatch.zig");
 pub const memory_cmd = @import("cli/memory_cmd.zig");
+pub const daemon_text = @import("daemon/text.zig");
+pub const route_audit = @import("daemon/route_audit.zig");
+pub const daemon_protocol = @import("daemon/protocol.zig");
 
 test {
     _ = @import("learn_test.zig");
     _ = @import("session_test.zig");
     _ = @import("cli/help_test.zig");
+    _ = @import("daemon/protocol_test.zig");
 }
 
 test {
