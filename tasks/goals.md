@@ -1197,3 +1197,16 @@ capability expansion roadmap without reopening or replacing that section.
   results. This is fixture-specific Accessibility evidence, not hidden-DOM or
   exhaustive secret detection. Packaging/signing, other views, personal-edition
   GUI, and other platforms remain unproven; Phase 7 is still open.
+
+**2026-09-21 correction: the Train 1.6 "below 800 lines" claim was stale from 1205de0 to cda30ae.**
+  `1205de0` (2026-09-18) re-inlined `src/state/conversation/private_fs.rs` into
+  `conversation.rs` (946 lines) and `clear_tests.rs` into `clear.rs` (825 lines),
+  leaving both files orphaned and three files failing rustfmt. So the
+  `automated-test-evidence` sentence "every production Rust module remains
+  below 800 lines" was false on `main` for those three days. `cda30ae` restores
+  `src/` byte-identical to `1205de0^` (582 and 452 lines, no behavior change).
+  Measured with `wc -l` on every tracked `src/**/*.rs`: the largest production
+  module is now `src/protocols/mcp.rs` at 796. `./check.sh` with the fmt stage
+  narrowed to `-p abbey` (the stock `--all` stage reaches the sibling
+  `abi/crates/abi-mcp/src/http.rs`, which has unrelated uncommitted WIP) passed:
+  3096 tests, 0 failed, all four build modes, and a size guard with no warnings.
