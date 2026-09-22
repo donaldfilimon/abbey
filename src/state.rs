@@ -106,10 +106,7 @@ impl AbbeyState {
     /// the cached value here would let a session that *started* on cursor keep
     /// adopting `CURSOR_AGENT_CHAT_ID` after switching to `abi`/`fm`, which is
     /// exactly the hijack described below.
-    pub fn resolve_chat_for(
-        &self,
-        backend: crate::agent::AgentBackend,
-    ) -> Result<Option<String>> {
+    pub fn resolve_chat_for(&self, backend: crate::agent::AgentBackend) -> Result<Option<String>> {
         // Recover the canonical commit's compatibility mirrors before backend
         // selection. An inherited Cursor id may win below, but it must not
         // indefinitely strand a committed journal from an earlier process.

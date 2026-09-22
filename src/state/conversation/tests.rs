@@ -79,11 +79,7 @@ fn canonical_resolution_is_exact_cwd_first_and_never_falls_back_on_divergence() 
     );
 
     fs::write(&scratch.state.chat_file, b"canonical-private-id\n").unwrap();
-    fs::write(
-        scratch.state.active_chat_file(),
-        b"divergent-cwd-id\n",
-    )
-    .unwrap();
+    fs::write(scratch.state.active_chat_file(), b"divergent-cwd-id\n").unwrap();
     let error = read_chat(&scratch.state).unwrap_err();
     assert!(error.to_string().contains("diverged"));
     assert_eq!(
@@ -111,11 +107,7 @@ fn cwd_tombstone_continues_to_global_and_global_tombstone_resolves_none() {
 
     fs::remove_file(scratch.state.active_chat_file()).unwrap();
     clear_chat(&scratch.state, true).unwrap();
-    fs::write(
-        &scratch.state.chat_file,
-        vec![b'x'; MAX_ID_FILE_BYTES + 1],
-    )
-    .unwrap();
+    fs::write(&scratch.state.chat_file, vec![b'x'; MAX_ID_FILE_BYTES + 1]).unwrap();
     assert_eq!(read_chat(&scratch.state).unwrap(), None);
 }
 
