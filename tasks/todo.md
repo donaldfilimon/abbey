@@ -1191,3 +1191,33 @@ shipped default stays configurable and currently resolves to cursor-agent.
       with the reorder live: both flagged files (`app.rs` 896, `src/improve/mod.rs` 842)
       correctly only WARN; `gate::classify_failures`'s `"hard max 1000"` match still lines
       up with the FAIL message text, so the `FailKind::FileSize` classifier isn't dead
+
+## Reconciliation, 2026-09-21 (append-only; earlier lines are left as written)
+
+- Open-item status: all 25 open checkboxes in this file remain open. The count
+  of 25 was measured in this slice (`lstrip().startswith` on the unchecked
+  checkbox marker, the same rule `tools/check_claims_sync.py` uses); that each
+  is still unsatisfied by code is the result of the 2026-09-21 read-only audit
+  against the claim registry (`src/claims/registry.rs`), not re-verified item
+  by item here. No checkbox changed, so the generated ledger above still reads
+  168 checked / 25 open.
+- Correction to the "Working CI on GitHub" blocked item (lines 32-45): its
+  statement that runs `33069897239`, `33067560632`, and `33065344081` conclude
+  `success` is historical and must not be read as the current CI state.
+  Measured with `gh run view` on 2026-09-21: runs `35084871302`, `35185845448`,
+  `35188185544`, and `35318972427` failed (the last two at the
+  `RustSec dependency scan` step), and run `35392077105` at `1205de0` failed at
+  rustfmt (`Diff in` `src/state/conversation/tests.rs`, `conversation.rs`,
+  `state.rs`). The latest run, `35679386815` at `c608214`, succeeded, but only
+  its self-hosted `gate (macOS ARM64 adjunct)` job ran; `gate (Linux ARM64)` and
+  `gate (GitHub-hosted fork)` were `skipped`, so "no GitHub-hosted job has ever
+  executed" still holds. Separately, GitHub-hosted Actions on this account have
+  been billing-locked since 2026-09-08 (read from the machine map
+  `~/CLAUDE.md`, not measured here), so a hosted job would not start even if
+  its `if:` admitted it; treat any hosted red after that date as unmeasured.
+- Correction to the Phase 7 security sub-item (line 809, "exactly ten
+  enumerated read-only commands"): `desktop/src-tauri/src/main.rs`
+  `generate_handler!` registers twelve commands, the ten listed there plus
+  `app_models_list` and `app_claim_by_id`. The other security facts on that
+  line (CSP, no shell/fs/http/process/opener/dialog plugin, `core:default`
+  only) were not re-checked in this slice.
