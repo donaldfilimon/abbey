@@ -9,7 +9,8 @@ const Environ = std.process.Environ;
 pub const Error = std.process.RunError;
 
 pub const Limits = struct {
-    stdout_bytes: usize = 4 * 1024 * 1024,
+    pub const stdout_bytes_default = 4 * 1024 * 1024;
+    stdout_bytes: usize = stdout_bytes_default,
     stderr_bytes: usize = 4 * 1024 * 1024,
     timeout_ms: i64 = 30 * 60 * 1000,
 };

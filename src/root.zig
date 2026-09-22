@@ -14,6 +14,25 @@ pub const proc = @import("proc.zig");
 pub const models = @import("models.zig");
 pub const backend = @import("agent/backend.zig");
 pub const argv = @import("agent/argv.zig");
+pub const run = @import("agent/run.zig");
+pub const persona = @import("persona/router.zig");
+pub const roles = @import("roles.zig");
+pub const route_log = @import("route_log.zig");
+pub const state = @import("state/state.zig");
+pub const memory_record = @import("memory/record.zig");
+pub const memory = @import("memory/store.zig");
+pub const similarity = @import("memory/similarity.zig");
+pub const memory_new = @import("memory/new.zig");
+pub const learn = @import("learn.zig");
+pub const learn_improve = @import("learn_improve.zig");
+pub const session = @import("session.zig");
+pub const actions = @import("actions.zig");
+pub const capture = @import("capture.zig");
+
+test {
+    _ = @import("learn_test.zig");
+    _ = @import("session_test.zig");
+}
 
 test {
     std.testing.refAllDecls(@This());
