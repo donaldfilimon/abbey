@@ -17,10 +17,12 @@ zig fmt --check src build.zig
 stage "build (safe edition)"
 zig build -Dpersonal=false > "$LOG_DIR/build-safe.log" 2>&1 || { cat "$LOG_DIR/build-safe.log"; exit 1; }
 test -x zig-out/bin/abbey-zig
+test -x zig-out/bin/abbeyd-zig
 
 stage "build (personal edition)"
 zig build -Dpersonal=true > "$LOG_DIR/build-personal.log" 2>&1 || { cat "$LOG_DIR/build-personal.log"; exit 1; }
 test -x zig-out/bin/abbey-zig-personal
+test -x zig-out/bin/abbeyd-zig-personal
 
 run_tests() {
   # $1 = true|false for -Dpersonal, $2 = binary prefix
@@ -65,14 +67,17 @@ python3 tools/check_claims.py
 stage "rust route reader (oracle)"
 sh tools/stages/rust_oracle.sh "$PWD/zig-out/bin/abbey-zig"
 
+stage "rust daemon client (wire compat against the Zig abbeyd)"
+sh tools/stages/rust_daemon_client.sh "$PWD/zig-out/bin/abbeyd-zig" "$PWD/zig-out/bin/abbey-zig"
+
 stage "e2e with a real abi binary"
 sh tools/stages/e2e_abi.sh "$PWD/zig-out/bin/abbey-zig"
 
-stage "size guard (main.zig <= 200, others <= 1000)"
+stage "size guard (entry points <= 200, others <= 1000)"
 bad=0
 for f in $(find src -name '*.zig' | sort); do
   n=$(wc -l < "$f" | tr -d ' ')
-  if [ "$(basename "$f")" = "main.zig" ] && [ "$n" -gt 200 ]; then echo "FAIL $f: $n lines (max 200)"; bad=1; fi
+  case "$(basename "$f")" in main.zig|abbeyd.zig) if [ "$n" -gt 200 ]; then echo "FAIL $f: $n lines (max 200)"; bad=1; fi ;; esac
   if [ "$n" -gt 1000 ]; then echo "FAIL $f: $n lines (max 1000)"; bad=1; fi
 done
 [ "$bad" -eq 0 ] || exit 1

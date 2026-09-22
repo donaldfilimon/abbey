@@ -36,7 +36,9 @@ editions, help goldens (`tests/golden/help/<cmd>.txt` vs `<cmd> --help`),
 contracts qualification (`tools/abbey_contracts.py verify`, copied verbatim
 from `../abi`, plus the lock digest), claims sync (`tools/check_claims.py`),
 the Rust route-reader oracle (`tools/stages/rust_oracle.sh`, uses
-`ABBEY_ZIG_RUST_ORACLE` or `~/.local/bin/abbey`), the real-abi end to end
+`ABBEY_ZIG_RUST_ORACLE` or `~/.local/bin/abbey`), the Rust daemon client
+against the Zig abbeyd (`tools/stages/rust_daemon_client.sh`, same binary;
+a recording proxy proves its v2 -> v1 downgrade), the real-abi end to end
 run (`tools/stages/e2e_abi.sh`, needs `ABBEY_ZIG_E2E_ABI`), size guard.
 Oracle and e2e stages print `SKIP:` when their binary is absent; a SKIP is
 unmeasured, never a pass.
@@ -53,7 +55,13 @@ dispatch; `agent/` backend selection, argv grammars, execution; `memory/`
 JSONL store, record shape, lexical similarity; `persona/` router and
 contracts; `session.zig` + `actions.zig` the canonical path; `capture.zig`
 the headless bypasses; `learn*.zig`; `route_log.zig`; `state/`; `config/`;
-`util/` JSON, time, uuid, file helpers. `contracts/abbey/` is a
+`util/` JSON, time, uuid, file helpers. `daemon/` is P2: `protocol.zig`
+(transport-free v1 decision, unit tested), `route_audit.zig` + `text.zig`
+(sanitizer), `server.zig` + `sys.zig` (socket, poll deadlines), `config.zig`,
+`client.zig`, `cli.zig` (`abbey-zig daemon ...`); `src/abbeyd.zig` is the
+`abbeyd-zig` entry. Daemon sockets in tests and stages live under short
+paths (`/private/tmp/abz-*` or the repo's `.zig-cache/tmp`): Darwin's
+`sun_path` holds 104 bytes. `contracts/abbey/` is a
 byte-identical copy of `../abbey/contracts/abbey`; never edit it here.
 
 ## Rules
