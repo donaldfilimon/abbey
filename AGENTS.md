@@ -38,7 +38,9 @@ from `../abi`, plus the lock digest), claims sync (`tools/check_claims.py`),
 the Rust route-reader oracle (`tools/stages/rust_oracle.sh`, uses
 `ABBEY_ZIG_RUST_ORACLE` or `~/.local/bin/abbey`), the Rust daemon client
 against the Zig abbeyd (`tools/stages/rust_daemon_client.sh`, same binary;
-a recording proxy proves its v2 -> v1 downgrade), the real-abi end to end
+a recording proxy proves its v2 -> v1 downgrade), the TUI live-backend grep
+guard, the TUI in a real pty (`tools/stages/tui_pty.sh`: `stty -g` identical
+before and after a quit and a SIGTERM), the real-abi end to end
 run (`tools/stages/e2e_abi.sh`, needs `ABBEY_ZIG_E2E_ABI`), size guard.
 Oracle and e2e stages print `SKIP:` when their binary is absent; a SKIP is
 unmeasured, never a pass.
@@ -59,7 +61,16 @@ the headless bypasses; `learn*.zig`; `route_log.zig`; `state/`; `config/`;
 (transport-free v1 decision, unit tested), `route_audit.zig` + `text.zig`
 (sanitizer), `server.zig` + `sys.zig` (socket, poll deadlines), `config.zig`,
 `client.zig`, `cli.zig` (`abbey-zig daemon ...`); `src/abbeyd.zig` is the
-`abbeyd-zig` entry. Daemon sockets in tests and stages live under short
+`abbeyd-zig` entry. `tui/` is P3: `app.zig` (pure key/tab state machine over
+decoded keys and an injected `Host`), `ui.zig` + `frame.zig` (cell grid,
+plain and truecolor ANSI encoders), `input.zig` (byte -> key decoder),
+`term.zig` (injectable Terminal, raw mode, restore, signals), `host.zig`
+(live panel data), `run.zig` (event loop and the `tui` verb). The App holds
+the caller's `AgentConfig` by pointer: Ctrl-B mutates it and the loop hands
+the same pointer to `actions.runAgent`. Never read ABBEY_BACKEND or call
+`backend.select` under `src/tui/` (the gate greps for it). Change a frame:
+edit `ui.zig`, run the lib tests, review `.zig-cache/tmp/tui-golden/<name>.txt`,
+copy it over `tests/golden/tui/<name>.txt`. Daemon sockets in tests and stages live under short
 paths (`/private/tmp/abz-*` or the repo's `.zig-cache/tmp`): Darwin's
 `sun_path` holds 104 bytes. `contracts/abbey/` is a
 byte-identical copy of `../abbey/contracts/abbey`; never edit it here.

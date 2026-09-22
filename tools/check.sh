@@ -70,6 +70,15 @@ sh tools/stages/rust_oracle.sh "$PWD/zig-out/bin/abbey-zig"
 stage "rust daemon client (wire compat against the Zig abbeyd)"
 sh tools/stages/rust_daemon_client.sh "$PWD/zig-out/bin/abbeyd-zig" "$PWD/zig-out/bin/abbey-zig"
 
+stage "tui live-backend guard"
+# The TUI must thread the live AgentConfig: no TUI source may re-read the
+# backend from the environment or re-run backend selection.
+if grep -nE 'getEnv\("ABBEY_BACKEND"\)|envNonEmpty\("ABBEY_BACKEND"\)|backend\.select\(' $(ls src/tui/*.zig | grep -v _test.zig); then echo "FAIL: TUI re-reads the backend"; exit 1; fi
+echo ok
+
+stage "tui pty"
+sh tools/stages/tui_pty.sh "$PWD/zig-out/bin/abbey-zig"
+
 stage "e2e with a real abi binary"
 sh tools/stages/e2e_abi.sh "$PWD/zig-out/bin/abbey-zig"
 
