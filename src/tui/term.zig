@@ -202,7 +202,7 @@ pub const Posix = struct {
     }
 
     fn setAttr(ud: ?*anyopaque, a: Attr) Error!void {
-        posix.tcsetattr(cast(ud).in, .FLUSH, a) catch |e| return switch (e) {
+        posix.tcsetattr(cast(ud).in, .NOW, a) catch |e| return switch (e) {
             error.NotATerminal => error.NotATerminal,
             else => error.TerminalFailed,
         };
