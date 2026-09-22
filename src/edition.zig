@@ -19,6 +19,10 @@ pub const Identity = struct {
     chat_file_env: []const u8,
     model_file_env: []const u8,
     history_file_env: []const u8,
+    daemon_socket_env: []const u8,
+    daemon_socket_name: []const u8,
+    daemon_bearer_env: []const u8,
+    daemon_bearer_file_env: []const u8,
 };
 
 pub const safe_identity: Identity = .{
@@ -30,6 +34,10 @@ pub const safe_identity: Identity = .{
     .chat_file_env = "ABBEY_ZIG_CHAT_FILE",
     .model_file_env = "ABBEY_ZIG_MODEL_FILE",
     .history_file_env = "ABBEY_ZIG_HISTORY_FILE",
+    .daemon_socket_env = "ABBEY_ZIG_DAEMON_SOCKET_PATH",
+    .daemon_socket_name = "abbey-zig-daemon.sock",
+    .daemon_bearer_env = "ABBEY_ZIG_DAEMON_BEARER_TOKEN",
+    .daemon_bearer_file_env = "ABBEY_ZIG_DAEMON_BEARER_TOKEN_FILE",
 };
 
 pub const personal_identity: Identity = .{
@@ -41,6 +49,10 @@ pub const personal_identity: Identity = .{
     .chat_file_env = "ABBEY_ZIG_PERSONAL_CHAT_FILE",
     .model_file_env = "ABBEY_ZIG_PERSONAL_MODEL_FILE",
     .history_file_env = "ABBEY_ZIG_PERSONAL_HISTORY_FILE",
+    .daemon_socket_env = "ABBEY_ZIG_PERSONAL_DAEMON_SOCKET_PATH",
+    .daemon_socket_name = "abbey-zig-personal-daemon.sock",
+    .daemon_bearer_env = "ABBEY_ZIG_PERSONAL_DAEMON_BEARER_TOKEN",
+    .daemon_bearer_file_env = "ABBEY_ZIG_PERSONAL_DAEMON_BEARER_TOKEN_FILE",
 };
 
 pub const active: Edition = if (build_options.personal) .personal else .safe;
@@ -102,7 +114,16 @@ test "edition namespaces never reuse the Rust variables" {
         try std.testing.expect(!std.mem.eql(u8, i.state_dir_env, "ABBEY_PERSONAL_STATE_DIR"));
         try std.testing.expect(!std.mem.eql(u8, i.config_path_env, "ABBEY_CONFIG"));
         try std.testing.expect(std.mem.startsWith(u8, i.slug, "abbey-zig"));
+        // The Rust daemon variables (both editions) are never read here.
+        for ([_][]const u8{ i.daemon_socket_env, i.daemon_bearer_env, i.daemon_bearer_file_env }) |v| {
+            try std.testing.expect(std.mem.startsWith(u8, v, "ABBEY_ZIG_"));
+            for ([_][]const u8{ "ABBEYD_SOCKET_PATH", "ABBEYD_BEARER_TOKEN", "ABBEYD_BEARER_TOKEN_FILE", "ABBEY_PERSONAL_DAEMON_SOCKET_PATH", "ABBEY_PERSONAL_DAEMON_BEARER_TOKEN", "ABBEY_PERSONAL_DAEMON_BEARER_TOKEN_FILE" }) |rust| {
+                try std.testing.expect(!std.mem.eql(u8, v, rust));
+            }
+        }
     }
+    try std.testing.expect(!std.mem.eql(u8, safe_identity.daemon_bearer_env, personal_identity.daemon_bearer_env));
+    try std.testing.expect(!std.mem.eql(u8, safe_identity.daemon_socket_name, personal_identity.daemon_socket_name));
     try std.testing.expect(!std.mem.eql(u8, safe_identity.state_dir_env, personal_identity.state_dir_env));
     try std.testing.expect(!std.mem.eql(u8, safe_identity.slug, personal_identity.slug));
 }

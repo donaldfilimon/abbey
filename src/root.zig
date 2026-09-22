@@ -38,12 +38,17 @@ pub const memory_cmd = @import("cli/memory_cmd.zig");
 pub const daemon_text = @import("daemon/text.zig");
 pub const route_audit = @import("daemon/route_audit.zig");
 pub const daemon_protocol = @import("daemon/protocol.zig");
+pub const daemon_sys = @import("daemon/sys.zig");
+pub const daemon_config = @import("daemon/config.zig");
+pub const daemon_server = @import("daemon/server.zig");
+pub const daemon_client = @import("daemon/client.zig");
 
 test {
     _ = @import("learn_test.zig");
     _ = @import("session_test.zig");
     _ = @import("cli/help_test.zig");
     _ = @import("daemon/protocol_test.zig");
+    _ = @import("daemon/server_test.zig");
 }
 
 test {
