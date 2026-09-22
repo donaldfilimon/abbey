@@ -21,7 +21,9 @@ check_log() { # $1 log; fail on a leak report from the Debug allocator
 }
 run() { # $1 name, rest = args
   name="$1"; shift
-  if ! "$ZIG_BIN" "$@" > "$T/$name.out" 2> "$T/$name.err"; then cat "$T/$name.out" "$T/$name.err"; echo "FAIL: $name exit $?"; exit 1; fi
+  rc=0
+  "$ZIG_BIN" "$@" > "$T/$name.out" 2> "$T/$name.err" || rc=$?
+  if [ "$rc" -ne 0 ]; then cat "$T/$name.out" "$T/$name.err"; echo "FAIL: $name exit $rc"; exit 1; fi
   check_log "$T/$name.err"
   echo "ok: $name (exit 0)"
 }
