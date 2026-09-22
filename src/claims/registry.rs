@@ -715,7 +715,7 @@ pub const CLAIMS: &[Claim] = &[
         "ci-self-hosted-linux-proof",
         "self-hosted Linux CI execution proof",
         Status::Blocked,
-        "Abbey pins public ABI 21f2e2f0e5a5ec325a67dc8f6b05be360b1ed5f3 and public WDBX f42b9789eabcf89f952df0a160a7b6837c5acb57 without a checkout secret; exact-head macOS ARM64 self-hosted runs succeeded and forks have a hosted-safe gate that has not yet executed for a foreign fork; Linux ARM64 is not provisioned and Windows runtime proof remains open",
+        "Abbey pins public ABI 243082d06f64ff7a68b82ea296f480fcf7f6df68 and public WDBX 62ac490f962df0f73fc875c1e294393474d329ad without a checkout secret; exact-head macOS ARM64 self-hosted runs succeeded and forks have a hosted-safe gate that has not yet executed for a foreign fork; Linux ARM64 is not provisioned and Windows runtime proof remains open",
         Some("run ./check.sh locally; treat an exact-head hosted or macOS success as its own narrower fact; provision/register Linux ARM64 and obtain successful Linux/Windows jobs before claiming cross-platform CI green"),
         impl: [".github/workflows/rust.yml", "check.sh"],
         tests: ["./check.sh", "workflow job steps in .github/workflows/rust.yml"],

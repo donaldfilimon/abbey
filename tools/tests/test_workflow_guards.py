@@ -359,7 +359,7 @@ class ForkSafety(unittest.TestCase):
         self.assertEqual(self.text.count("persist-credentials: false"), 3)
         self.assertEqual(self.text.count(f"uses: {TOOLCHAIN_ACTION}"), 6)
         self.assertIn("ABBEY_TOOLCHAIN: nightly-2026-09-01", self.text)
-        self.assertIn("ABI_TOOLCHAIN: nightly-2026-08-20", self.text)
+        self.assertIn("ABI_TOOLCHAIN: nightly-2026-09-01", self.text)
         self.assertNotRegex(
             self.text,
             r"(?m)^\s*(?:toolchain:\s*|rustup toolchain install )nightly\s*(?:$|--)",

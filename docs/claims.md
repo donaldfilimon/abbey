@@ -2,7 +2,7 @@
 
 This file is generated from `src/claims.rs` by `tools/check_claims_sync.py --write`. Do not edit it by hand.
 
-Schema: `2` · Digest: `abce40345de363a41493a95e50327a89510be9a81030bb16e532bc6cd8ddc646` · 40 Current · 3 Partial · 8 Proposed · 1 Blocked · 5 Out of scope.
+Schema: `2` · Digest: `6a5150ae646a3ed49a7e97722a5c177dbb95a82dd74166e6d4139391c9499817` · 40 Current · 3 Partial · 8 Proposed · 1 Blocked · 5 Out of scope.
 
 Workflow ledger: 27 goals (24 done, 1 in_progress, 1 proposed, 1 blocked) · 168 checked / 25 open todos. Goal evidence remains canonical in [`tasks/goals.md`](../tasks/goals.md).
 
