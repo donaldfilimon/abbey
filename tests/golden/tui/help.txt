@@ -1,0 +1,30 @@
+╭ ✦ Abbey  ink ────────────────────────────────────────────────────────────────────────────────────╮
+│ Home │ Chats │ Personas │ Memory │ Skills │ Models │ Doctor                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+ backend abi   model local   chat 4f1c2a9e   persona abbey   role auto   last 0   mem jsonl /state/m
+╭ Session ────────────────────────────────────────────╮╭ Recent chats ─────────────────────────────╮
+│model  l╭ Help ──────────────────────────────────────────────────────────────────────────╮        │
+│chat   4│Abbey TUI - keys                                                                │        │
+│cwd    ~│                                                                                │director│
+│        │  ` / Ctrl-L     toggle focus  prompt <-> panel                                 │        │
+│Keys    │  Tab / S-Tab    next / previous tab                                            │        │
+│  Enter │  1-7            jump to tab (panel focus)                                      │        │
+│  `  Ctr│  Ctrl-K         command palette                                                │        │
+│  Ctrl-K│  Ctrl-T         cycle theme (ink / violet / mono)                              │        │
+│  Ctrl-B│  Ctrl-B         cycle backend (ollama / grok / fm / abi / claude / cursor)     │        │
+│  Tab 1-│  F1 / ?         help (empty prompt)                                            │        │
+│        │  /              filter lists (panel focus)                                     │        │
+│Composer│  Up/Down        history (prompt) . move (panel)                                │────────╯
+│        │  Enter          run / select                                                   │────────╮
+│        │  Ctrl-N         new chat                                                       │        │
+│        │  Ctrl-R         refresh                                                        │        │
+│        │  Esc            close overlay . clear . quit                                   │        │
+│        │  Ctrl-Q/C       quit                                                           │        │
+│        │                                                                                │        │
+│        │Slash commands, prediction, please-fix: Proposed (see claims).                  │        │
+│        ╰────────────────────────────────────────────────────────────────────────────────╯        │
+╰─────────────────────────────────────────────────────╯╰───────────────────────────────────────────╯
+╭ Prompt . Enter run . Up/Down history ────────────────────────────────────────────────────────────╮
+│                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+ ▸ prompt abi ink Enter run . ` focus . Ctrl-K palette . Ctrl-B backend . ? help last=0

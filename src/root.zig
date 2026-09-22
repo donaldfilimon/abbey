@@ -43,6 +43,14 @@ pub const daemon_config = @import("daemon/config.zig");
 pub const daemon_server = @import("daemon/server.zig");
 pub const daemon_client = @import("daemon/client.zig");
 pub const daemon_cli = @import("daemon/cli.zig");
+pub const tui_theme = @import("tui/theme.zig");
+pub const tui_app = @import("tui/app.zig");
+pub const tui_frame = @import("tui/frame.zig");
+pub const tui_ui = @import("tui/ui.zig");
+pub const tui_input = @import("tui/input.zig");
+pub const tui_term = @import("tui/term.zig");
+pub const tui_host = @import("tui/host.zig");
+pub const tui_run = @import("tui/run.zig");
 
 test {
     _ = @import("learn_test.zig");
@@ -50,6 +58,7 @@ test {
     _ = @import("cli/help_test.zig");
     _ = @import("daemon/protocol_test.zig");
     _ = @import("daemon/server_test.zig");
+    _ = @import("tui/tui_test.zig");
 }
 
 test {

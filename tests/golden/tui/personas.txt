@@ -1,0 +1,30 @@
+╭ ✦ Abbey  ink ────────────────────────────────────────────────────────────────────────────────────╮
+│ Home │ Chats │ Personas │ Memory │ Skills │ Models │ Doctor                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭ Personas . Max/Gemma roles ──────────────────────────────────────────────────────────────────────╮
+│persona: abbey (router/env/explicit)                                                              │
+│prior weights abbey=0.40 aviva=0.30 abi=0.30                                                      │
+│personas: Abbey (default) . Aviva (direct) . Abi (orchestrator)                                   │
+│role.max -> max (executor model binding)                                                          │
+│role.gemma -> gemma (executor model binding)                                                      │
+│default_role: auto                                                                                │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭ Prompt (Ctrl-L / ` to focus) ────────────────────────────────────────────────────────────────────╮
+│                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+ ▸ panel abi ink Enter run . ` focus . Ctrl-K palette . Ctrl-B backend . ? help last=0
