@@ -38,6 +38,29 @@ prerequisite or proof · **Out of scope** = explicitly excluded.
 └─────────────────────────────────────────────────────────┘
 ```
 
+## Execution path
+
+All three surfaces funnel into one canonical path; the rules for it, and the
+complete capture-bypass inventory, are in [AGENTS.md](../AGENTS.md#execution-path).
+
+```
+CLI (clap) · TUI (ratatui) · slash catalog
+        ↓ all three funnel into:
+actions::run_agent           — canonical RunSpec, the single entry point
+session::hybrid_run          — persona + role + prefs + routing decision
+parallel                     — Max/Gemma/Aviva lane fan-out
+hybrid_loop                  — Gemma interpret → Max implement, one correlation id
+os_control                   — allowlist dry-run / execute --confirm
+learn                        — correction/preference/digest → memory
+inventory                    — skills/plugins/peer agent tools
+        ↓ backed by:
+abi-ai (sibling path dep)    — Abbey/Aviva/Abi persona contracts + router
+memory (src/memory/)         — open_backend → Box<dyn MemoryStore>:
+                                 sqlite.rs (default) · wdbx.rs (--features wdbx)
+wdbx_bridge                  — `abbey wdbx` → `abi wdbx` subprocess passthrough
+agent                        — cursor-agent process executor
+```
+
 ## Module map (`src/`)
 
 | Module | Responsibility |
@@ -237,3 +260,17 @@ See `abbey claims oos`. Includes: reimplementing Grok/Codex/Claude runtimes; fak
 accounting; bundled cloud TTS/STT SaaS; Abbey-owned hidden chain-of-thought engine/UI;
 and unrestricted shell/allowlist bypass in the shipped edition. The separately packaged
 personal-unrestricted edition is Proposed, not a waiver of current safety controls.
+
+## Docs map
+
+- [../AGENTS.md](../AGENTS.md) — canonical agent guidance: rules, traps, gate order
+- [../CLAUDE.md](../CLAUDE.md) — pointer: command table and `src/` module map
+- [docs/brand.md](brand.md) — IWL umbrella; Abbey/ABI only, not Quesar
+- [docs/identity.md](identity.md) — persona/role spec, Current vs. Proposed
+- [docs/architecture.md](architecture.md) — layered module map, production rules, feature matrix
+- [docs/production.md](production.md) — release gate, runtime deps, config/env vars, versioning, release checklist
+- [docs/runtime.md](runtime.md) — protocol compatibility, durable runtime, delegated-execution, and evidence boundaries
+- [docs/claims.md](claims.md) — generated claims evidence; refresh with `python3 tools/check_claims_sync.py --write`
+- `docs/superpowers/{plans,specs}/` — dated design and plan docs (list with `ls docs/superpowers/*`)
+- `contracts/abbey/` — pinned Program 1 contract corpus + lock file; `tools/{ci,security}/` — CI helpers and `security/run-dep-scan.sh` (needs `cargo-audit`)
+- [tasks/goals.md](../tasks/goals.md) / [tasks/todo.md](../tasks/todo.md) / [tasks/lessons.md](../tasks/lessons.md) — active goals and backlog

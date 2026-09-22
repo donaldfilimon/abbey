@@ -98,6 +98,7 @@ RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --document-private-items --featur
 echo "== claims/docs synchronization =="
 python3 -m unittest discover -s tools/tests -p 'test_*.py'
 python3 tools/check_claims_sync.py
+python3 tools/check_instructions.py
 
 # desktop/ is a separate cargo workspace whose TypeScript IPC types are
 # generated from src/app_core/ (and desktop/src-tauri/src/{ipc,v3_ipc}.rs) by

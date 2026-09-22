@@ -233,7 +233,7 @@ fn invalidate_hides_from_search_but_keeps_the_record() {
 
 /// The capture-bypass inventory (`print`, `commit`, `voice ask`) deliberately
 /// skips `hybrid_run` — no persona wrap and, load-bearing for the routing
-/// audit, **no `route.jsonl` entry**. CLAUDE.md documents this as verified by
+/// audit, **no `route.jsonl` entry**. AGENTS.md (*Execution path*) documents this as verified by
 /// hand; this encodes it, so a new bypass that starts routing (or a routed
 /// verb that stops logging) fails the gate instead of drifting silently.
 #[cfg(unix)]

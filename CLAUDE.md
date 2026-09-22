@@ -6,17 +6,11 @@ Canonical capability ledger: **40 Current · 3 Partial · 8 Proposed · 1 Blocke
 Executable workflow ledger: **27 goals (24 done, 1 in_progress, 1 proposed, 1 blocked) · 168 checked / 25 open todos** (stable goal metadata in `tasks/goals.md`).
 <!-- END abbey-generated:claims-summary -->
 
-
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
-## Project
-
-Abbey — a hybrid persona/role CLI/TUI written in Rust, backed by pluggable executor backends: `ollama` (preferred default, local `gemma4:26b-mlx`) · `grok` · on-device `fm` · the sibling `abi` CLI · the `claude` CLI · optional `cursor-agent`. It mimics compatible surfaces from Grok Build, Codex, and Claude Code while routing generation through the selected executor and, for personas/identity, the sibling `abi-ai` crate. No single backend is a hard requirement: local verbs run with none installed, and generation uses whichever executor resolves. Claude wiring is source/unit-tested; live account, model availability, and vendor-runtime parity are not claimed.
-
-Brand: **Intelligence Without Limits** — with a claims ledger. IWL is Abbey/ABI only; Quesar keeps Private AI operations and does not inherit this tagline. See [docs/brand.md](docs/brand.md).
-
-Canonical agent guidance lives in [AGENTS.md](AGENTS.md); this is its expanded
-companion. Only marked claims regions are generator-owned, not the whole files.
+See [AGENTS.md](AGENTS.md) — canonical. This file keeps only the command table
+and the `src/` module map; every rule, trap, and gate description lives in
+AGENTS.md, and the execution-path diagram and docs map live in
+[docs/architecture.md](docs/architecture.md). `tools/check_instructions.py`
+(a `./check.sh` step) fails if other content reappears here.
 
 ## Commands
 
@@ -47,77 +41,7 @@ abbey doctor                       # build stamp + persona/role/memory/os honest
 abbey claims [partial|proposed|blocked|oos|manifest] · abbey claims refuse lora|multinode
 ```
 
-`./check.sh` is the code-change merge bar. For docs-only edits use the scoped
-checks in `AGENTS.md`; the claims synchronizer itself invokes `cargo run`. In order:
-
-1. Toolchain probe: a cheap `cargo check` that trips the `rust-version` gate during unit-graph construction, so a shadowed Homebrew cargo fails fast with the remedy printed.
-2. `cargo fmt --all -- --check`.
-3. Clippy `-D warnings` + tests, interleaved per build mode for **all four build modes** (default · `wdbx` · `personal-edition` · `accel`).
-4. Warning-denied private-item rustdoc for each of the four modes.
-5. Python tool tests (`tools/tests/`), then claims synchronization (`tools/check_claims_sync.py`), then the desktop IPC codegen drift check (`desktop/codegen -- --check`, `--locked`; builds only the codegen crate).
-6. Program 3 read-only boundary check (`tools/check_p3_readonly.py` fails closed if `src/app_core/guild_intelligence.rs` acquires network/process/fs/store/tool code).
-7. Installer checks (`sh -n` plus `tools/tests/smoke_accel_install.sh`).
-8. File-size guard.
-9. *Soft* cross-compile checks for `x86_64-pc-windows-gnu` / `x86_64-unknown-linux-gnu` (skipped when the required cross toolchain is unavailable, and never a hard pass).
-10. Opt-in soft coverage report (`ABBEY_COVERAGE=1`, needs `cargo-llvm-cov`; report-only, never a gate).
-
-A bare `cargo test` never compiles `src/memory/wdbx.rs` or the edition- and accelerator-gated code, so it can pass while a gated surface is broken.
-
-`tests/` includes process-level CLI suites plus `app_core_contract.rs`, which imports Abbey as an external library client. Process tests drive `CARGO_BIN_EXE_abbey` (the daemon suites also need `CARGO_BIN_EXE_abbeyd`, the second binary from `src/bin/abbeyd.rs`) because some guarantees only exist once the process runs — real exit codes, real stdout/stderr, and the SIGPIPE reset before `main`. `daemon_cli.rs` starts real `abbeyd` and `abbey` binaries against owner-only scratch state; it must never use a user's socket or bearer. `cli_surface.rs` uses a throwaway `ABBEY_STATE_DIR`; keep that property for state-mutating cases. `slash_parse.rs` is read-only/current-dir scoped. The app-core contract test must stay presentation-neutral and must not gain crate-private access.
-
-## Toolchain
-
-Rust **nightly-2026-09-01** (`rustc 1.100.0-nightly`), edition **2024**, pinned via `rust-toolchain.toml` (`rustfmt` + `clippy` components). Rust has no edition 2026; edition 2024 is the current language edition, while the dated toolchain makes the 2026 compiler baseline reproducible. `Cargo.toml` sets `unsafe_code = "deny"` as a manifest lint (clippy `-D warnings` alone would not catch it), so every `unsafe` needs a justified `#[allow(unsafe_code)]` with a SAFETY comment.
-
-**Both sibling checkouts are required even for default builds.** `Cargo.toml`
-unconditionally consumes `abi-ai`, `abi-agent-host`, `abi-agent-runtime`,
-`abi-model-runtime`, `abi-models`, and `abi-worker` from `../abi/crates/`; those
-already depend on `../wdbx`. `--features wdbx` enables Abbey's in-process memory
-backend; `--features accel` adds `abi-gpu`, `abi-compute`, and
-`abi-model-runtime/metal`. Keep all three repositories adjacent and avoid mixing
-git/path sources of shared crates. CI pins `ABI_REVISION`, `WDBX_REVISION`, and
-the pinned ABI revision's own `ABI_TOOLCHAIN` in `.github/workflows/rust.yml`;
-these need not match the current local siblings. Both `abbey wdbx` and
-`ABBEY_BACKEND=abi` need a real executable: run `./tools/cargo.sh build -p abi-cli`
-inside `../abi`, then point `ABBEY_ABI_BIN` or config `abi_bin` at it. A shell
-alias does not satisfy subprocess resolution. `build.rs` watches Git HEAD and
-the branch ref for the build stamp.
-
-## Architecture
-
-Abbey has one canonical execution path shared by the CLI, slash commands, and the TUI — do not add a second way to invoke the agent.
-
-Three headless capture surfaces are the standing exceptions, all routed through
-the shared `capture.rs` (`run_print` / `capture_chat`) rather than calling the
-executor ad hoc: `print` (`commands.rs`), `commit` (`actions::run_commit`), and
-`voice ask` (`voice.rs`). None reach `run_agent`, so they skip `hybrid_run`
-entirely — no persona/role wrap, no prefs injection, and **no `route.jsonl`
-entry** (enforced by `print_bypasses_the_route_log_where_ask_appends` in
-`tests/cli_surface.rs`: `abbey print …` leaves the route log unchanged where
-`abbey ask …` appends a row). That is deliberate for single-shot piping and
-spoken replies, but it means the routing audit does not see them. New bypasses
-must go through `capture.rs` and be added to this list — its caller set *is*
-the bypass inventory.
-
-```
-CLI (clap) · TUI (ratatui) · slash catalog
-        ↓ all three funnel into:
-actions::run_agent           — canonical RunSpec, the single entry point
-session::hybrid_run          — persona + role + prefs + routing decision
-parallel                     — Max/Gemma/Aviva lane fan-out
-hybrid_loop                  — Gemma interpret → Max implement, one correlation id
-os_control                   — allowlist dry-run / execute --confirm
-learn                        — correction/preference/digest → memory
-inventory                    — skills/plugins/peer agent tools
-        ↓ backed by:
-abi-ai (sibling path dep)    — Abbey/Aviva/Abi persona contracts + router
-memory (src/memory/)         — open_backend → Box<dyn MemoryStore>:
-                                 sqlite.rs (default) · wdbx.rs (--features wdbx)
-wdbx_bridge                  — `abbey wdbx` → `abi wdbx` subprocess passthrough
-agent                        — cursor-agent process executor
-```
-
-Key modules (`src/`):
+## Module map (`src/`)
 
 | Module | Responsibility |
 |---|---|
@@ -164,45 +88,6 @@ Key modules (`src/`):
 | `init/` (`mod.rs`, `detect.rs`, `probe.rs`) | `abbey init` — scans a project and writes `AGENTS.md` |
 | `tui/` | 7-tab ratatui app; `predict.rs` is ranked composer prediction with an optional fail-closed, time-bounded Ollama rerank |
 | `agent/` / `models.rs` / `gitops.rs` / `state.rs` / `state/` / `config.rs` / `cli/args.rs` | executor invocation with an isolated per-backend argv grammar in `agent/argv.rs` (`agent/capture.rs` is the bounded non-Unix capture path, not the top-level `capture.rs`), model aliases, git helpers, canonical-first identity save/clear with a private compatibility-mirror journal, config loading, and leaf clap args |
-
-Personas (Abbey/Aviva/Abi) and Max/Gemma worker roles are defined in the sibling `abi-ai` crate (`../abi/crates/abi-ai/src/identity.rs`) — Abbey's own code consumes those contracts rather than redefining identity. See [docs/identity.md](docs/identity.md) for the distilled spec and Current/Proposed status of each claim.
-
-## Conventions specific to this repo
-
-- **File size is enforced by `check.sh`, not just style**: `main.rs` must stay under 200 lines (hard fail); other `.rs` files warn past 800 and hard-fail past 1000 lines. Split modules before hitting the ceiling rather than after.
-- Prefer small, reviewable diffs that match existing style.
-- Only commit when asked; never force-push `main`; never commit secrets.
-- Conversation mirrors are projections: commit the opaque canonical save or clear
-  tombstone first, then recover only the exactly marked creation/removal plan through the
-  owner-only locked journal. Identity clear must never delete history, transcripts,
-  memory, models, route/run data, or finalized backups. Provider-facing reads must use
-  the fallible canonical selector; only presentation may use the lossy mirror wrapper.
-- **Keep claims honest** — this project explicitly tracks what is shipped ("Current") vs. designed-only ("Proposed") vs. explicitly deferred ("Out of scope") in [AGENTS.md](AGENTS.md)'s claims-gate table and in the docs. `ollama` is preferred, while alternate CLI wiring does not reimplement Grok/Codex/Claude runtimes; Max/Gemma default to the local `gemma4:26b-mlx` Ollama tag, not bundled Abbey weights; `/cost` is intentionally N/A. Don't let new code or docs imply otherwise. A capability behind an off-by-default feature is "Current behind `--features X`", not plain Current — and only if the gate compiles and tests it.
-- **A feature-gated module is invisible to the default gate.** If you add another `[features]` entry, add matching `clippy`/`test` lines to `check.sh`, or the code can rot while CI stays green.
-- **Each backend gets its own argv grammar.** `fm`, `abi`, `claude`, and `ollama` share none of cursor-agent's flags; their builders start from scratch, and tests assert no foreign flag leaks. Under `fm`/`abi`, don't let `hybrid_run` inject role→model ids (`fm` vocabulary is `system|pcc`; under `abi` a cursor `claude-*` binding would look like an explicit live request). Under `ollama`, role aliases collapse to `gemma4:26b-mlx`. Claude maps Abbey aliases into its own vocabulary and uses a marker only to select `--session-id` versus `--resume`; Claude owns the transcript.
-- **ollama is preferred, never required.** Backend precedence (`src/agent/backend.rs`) is `ABBEY_BACKEND` env > config `backend` key > the legacy `ABBEY_AGENT` cursor path > ollama when resolvable > grok → fm → abi → claude, then cursor last; a set-but-unknown `ABBEY_BACKEND` value selects ollama and does not fall through to config; `doctor` shows an automatic choice as `backend: … (from auto …)`. Executor resolution is best-effort at startup and mandatory only at spawn time (`AgentConfig::exec_path`), so every local verb works on a machine with no executor installed. `ABBEY_BACKEND=ollama|abi|claude` runs without cursor-agent. Continuity under `abi`/`ollama` is Abbey's bounded context transcript; Claude continuity remains in Claude's own session store.
-- **Never branch per-call behaviour on `AgentBackend::from_env()`** — it is resolved once per process, while the TUI's Ctrl-B switch changes `AgentConfig::backend` at runtime. Thread the live `cfg.backend` through instead (`state.read_chat_for(cfg.backend)`, `AgentBackend::transcript_subdir()`). Reading the cached value is what let a cursor-launched session keep adopting `CURSOR_AGENT_CHAT_ID` after switching to `abi`, silently killing continuity — a guard that consults the wrong backend is not a guard.
-- OS execution (`os_control.rs`) must never run without `--confirm`, and only against the allowlist — this is a safety invariant, not a default to relax.
-- **`WdbxMemory` must hold its `fs4` advisory lock for the handle's whole life** (Unix `flock` / Windows `LockFileEx`). It acquires `<dir>/abbey.lock` before recovery and drops the store before releasing it. `wdbx_bridge` takes that same lock for own-store subprocesses. The current sibling `DurableStore` separately holds `<base>.writer.lock`; the old claim that it has no cross-process lock is stale. Preserve both coordination layers.
-- The lock does not extend to an `abi` you invoke directly against the same store, and `./install.sh` builds without `wdbx`, so an installed `abbey` asked for wdbx falls back to SQLite and says so in `doctor`. Installers name binaries from the compiled edition probe (`abbey edition --name`) so the two editions cannot clobber each other; `install.ps1`'s naming is proven by a parser test only, no Windows host has run it, so that claim is Partial.
-- Read-only callers should use `memory::backend_path` (pure) rather than opening, and interactive ones `open_backend_with_timeout` — `learn status` once created the very store it was meant to report on, and the TUI redraw would otherwise stall 10s on a lock (the TUI memory panel uses a 250 ms open timeout and renders `unavailable: …`).
-- **`abbey daemon` and `abbeyd` must use the same socket and exactly one bearer source** (`ABBEYD_SOCKET_PATH`; `ABBEYD_BEARER_TOKEN` xor `ABBEYD_BEARER_TOKEN_FILE`, owner-only). Client failures never fall back to in-process claims.
-- **`desktop/` is a second cargo workspace** (Tauri 2 + React/TypeScript client of the app core) with its own `Cargo.toml`, `check.sh`, and `package.json`, and its TypeScript IPC types are generated from `src/app_core/`. `./check.sh` does not build it, but runs `desktop/codegen --check` with `--locked`, so changing `app_core` without regenerating those types fails the root gate; when `desktop/Cargo.lock` is stale against the siblings that step cannot resolve and prints `WARN … UNMEASURED` instead of passing.
-- `abi wdbx` takes **base paths** (parent dir + base name) while Abbey opens a **directory** — Abbey's `<state>/wdbx/` is `<state>/wdbx/wdbx` to `abi`. `wdbx_bridge` translates; passing the bare directory silently reads one level up and reports an empty store.
-- Self-learn's `train_candidate` path requires provenance; don't add silent deletes to the reflect/digest flow.
-- State (`~/.local/state/abbey`, including `memory.sqlite`) is runtime data — never commit it, and don't assume it exists in a fresh checkout.
-
-## Docs map
-
-- [docs/brand.md](docs/brand.md) — IWL umbrella; Abbey/ABI only, not Quesar
-- [docs/identity.md](docs/identity.md) — persona/role spec, Current vs. Proposed
-- [docs/architecture.md](docs/architecture.md) — layered module map, production rules, feature matrix
-- [docs/production.md](docs/production.md) — release gate, runtime deps, config/env vars, versioning, release checklist
-- [docs/runtime.md](docs/runtime.md) — protocol compatibility, durable runtime, delegated-execution, and evidence boundaries
-- [docs/claims.md](docs/claims.md) — generated claims evidence; refresh with `python3 tools/check_claims_sync.py --write`
-- `docs/superpowers/{plans,specs}/` — dated design and plan docs (currently the 2026-09-02 module-boundary hardening design, the Program 3 closeout, CI runner evidence)
-- `contracts/abbey/` — pinned Program 1 contract corpus + lock file; `tools/{ci,security}/` — CI helpers and `security/run-dep-scan.sh` (needs `cargo-audit`)
-- [tasks/goals.md](tasks/goals.md) / [tasks/todo.md](tasks/todo.md) / [tasks/lessons.md](tasks/lessons.md) — active goals and backlog
 
 <!-- machine-git-policy -->
 ## Git workflow (machine policy, 2026-08-27)
