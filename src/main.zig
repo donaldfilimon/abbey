@@ -3,6 +3,15 @@ const std = @import("std");
 const abbey = @import("abbey");
 const Io = std.Io; // std: lib/std/Io/File.zig (Writer.init, stdout/stderr)
 
+/// A panic while the TUI holds the terminal restores termios and leaves the
+/// alternate screen first. std: lib/std/debug.zig (FullPanic, defaultPanic).
+pub const panic = std.debug.FullPanic(restoreThenPanic);
+
+fn restoreThenPanic(msg: []const u8, first_trace_addr: ?usize) noreturn {
+    abbey.tui_term.emergencyRestore();
+    std.debug.defaultPanic(msg, first_trace_addr);
+}
+
 pub fn main(init: std.process.Init) !void {
     const io = init.io;
     const args = try init.minimal.args.toSlice(init.arena.allocator()); // std: lib/std/process/Args.zig

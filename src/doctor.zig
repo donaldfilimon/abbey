@@ -50,7 +50,7 @@ pub fn run(ctx: Ctx, arena: std.mem.Allocator, cfg: *const config.Config, st: *c
         try w.print("abi:        {s} (wdbx via `abi wdbx` when invoked; base {s})\n", .{ p, try wdbx.storeBase(arena, st.state_dir) });
     } else |_| try w.writeAll("abi:        (not found: the WDBX CLI bridge is unavailable)\n");
     try config.statusLines(cfg, w);
-    try w.writeAll("later:      TUI, daemon, MCP server, OS control, voice are Proposed (see `claims`)\n");
+    try w.writeAll("later:      MCP server, OS control, voice are Proposed (see `claims`)\n");
     return 0;
 }
 

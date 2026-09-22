@@ -21,6 +21,7 @@ const wdbx = @import("../wdbx_bridge.zig");
 const memory_cmd = @import("memory_cmd.zig");
 const fsx = @import("../util/fsx.zig");
 const daemon_cli = @import("../daemon/cli.zig");
+const tui = @import("../tui/run.zig");
 
 fn envFlag(ctx: Ctx, name: []const u8, default: bool) bool {
     const v = ctx.getEnv(name) orelse return default;
@@ -166,6 +167,12 @@ fn runArena(ctx: Ctx, arena: std.mem.Allocator, args: []const []const u8) !u8 {
         },
         .memory => memory_cmd.run(ctx, arena, st.state_dir, p.positionals),
         .wdbx => wdbx.run(ctx, arena, st.state_dir, cfg.abi_bin, p.positionals),
+        // After config and state: the App takes this live `agent` by
+        // pointer, and Ctrl-B mutates it for every later run.
+        .tui => blk: {
+            if (p.positionals.len != 0) return usageError(ctx, "unexpected argument '{s}' found", .{p.positionals[0]});
+            break :blk tui.cli(ctx, &cfg, &st, &agent, sel);
+        },
         .help, .version, .claims, .edition, .daemon => unreachable, // handled above
     };
 }

@@ -18,6 +18,7 @@ pub const Command = enum {
     memory,
     wdbx,
     daemon,
+    tui,
     edition,
     version,
     help,

@@ -1,0 +1,26 @@
+Seven-tab terminal UI (Home, Chats, Personas, Memory, Skills, Models, Doctor)
+
+Usage: abbey-zig tui [OPTIONS]
+
+Needs an interactive terminal. Enter runs the prompt through the canonical
+path (resume); Ctrl-N starts a fresh chat; Ctrl-B cycles to the next
+executor backend that resolves (ollama, grok, fm, abi, claude, cursor), and
+the next run uses it; Ctrl-K palette; Ctrl-T theme (ABBEY_TUI_THEME,
+<state>/tui-theme); ? help; Ctrl-Q quits. Slash commands, prediction, and
+please-fix are Proposed (see `claims`).
+
+Global options:
+  -m, --model <MODEL>        Model id or alias (fable, opus, local, ...) [env: ABBEY_MODEL]
+      --mode <MODE>          Execution mode [possible values: ask, plan]
+      --plan                 Plan mode shorthand
+      --ask                  Ask mode shorthand
+  -p, --print                Headless print (capture, then emit)
+      --output-format <FMT>  Output format with --print
+  -f, --force                Force / always-approve [aliases: --yolo, --always-approve]
+      --add-dir <DIR>        Extra workspace root (repeatable)
+      --sandbox <MODE>       Sandbox: enabled|disabled
+      --debug                Forward --debug to cursor-style backends
+      --approve-mcps         Forward --approve-mcps to cursor-style backends
+      --max-turns <N>        Forward --max-turns to cursor-style backends
+  -h, --help                 Print help
+  -V, --version              Print version

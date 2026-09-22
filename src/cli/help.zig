@@ -4,7 +4,7 @@ const std = @import("std");
 const Command = @import("args.zig").Command;
 const bin = @import("../edition.zig").id.binary_name;
 
-pub const version = "0.2.0-p2";
+pub const version = "0.3.0-p3";
 
 const globals =
     \\Global options:
@@ -25,7 +25,7 @@ const globals =
     \\
 ;
 
-pub const top = "Abbey (Zig): agent CLI over subprocess executors (P1 CLI core, P2 daemon v1)\n\n" ++
+pub const top = "Abbey (Zig): agent CLI over subprocess executors (P1 CLI core, P2 daemon v1, P3 TUI)\n\n" ++
     "Usage: " ++ bin ++ " [OPTIONS] <COMMAND> [ARGS]...\n\n" ++
     \\Commands:
     \\  ask      Read-only Q&A through the canonical hybrid path (route-logged)
@@ -39,6 +39,7 @@ pub const top = "Abbey (Zig): agent CLI over subprocess executors (P1 CLI core, 
     \\  memory   Memory store: search <query> | similar <query>
     \\  wdbx     Bridge to the `abi wdbx` CLI (query gets --json and Abbey's store)
     \\  daemon   abbeyd protocol v1: serve | status | claims | routes (read-only)
+    \\  tui      Seven-tab terminal UI; Ctrl-B switches the live executor backend
     \\  edition  Compiled edition identity and namespaces
     \\  version  Print version
     \\  help     Print this help or the help of a command
@@ -46,7 +47,7 @@ pub const top = "Abbey (Zig): agent CLI over subprocess executors (P1 CLI core, 
     \\
 ++ globals ++
     \\
-    \\The TUI and MCP server are later phases (see `claims`).
+    \\The MCP server is a later phase (see `claims`).
     \\
 ;
 
@@ -100,6 +101,16 @@ pub fn forCommand(c: Command) []const u8 {
             \\big-endian length plus at most 1 MiB of JSON. Routes are sanitized: no path,
             \\a ws-<digest> workspace, whole-percent confidence, at most 50 entries.
             \\Run control and protocol v2/v3 are Proposed (see `claims`).
+            \\
+        ),
+        .tui => cmd("tui [OPTIONS]", "Seven-tab terminal UI (Home, Chats, Personas, Memory, Skills, Models, Doctor)",
+            \\
+            \\Needs an interactive terminal. Enter runs the prompt through the canonical
+            \\path (resume); Ctrl-N starts a fresh chat; Ctrl-B cycles to the next
+            \\executor backend that resolves (ollama, grok, fm, abi, claude, cursor), and
+            \\the next run uses it; Ctrl-K palette; Ctrl-T theme (ABBEY_TUI_THEME,
+            \\<state>/tui-theme); ? help; Ctrl-Q quits. Slash commands, prediction, and
+            \\please-fix are Proposed (see `claims`).
             \\
         ),
         .edition => cmd("edition [OPTIONS]", "Compiled edition identity and state/config namespaces", ""),
