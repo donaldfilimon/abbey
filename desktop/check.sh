@@ -3,9 +3,11 @@
 #
 # Deliberately NOT called by the repository root `./check.sh`: `desktop/` is a
 # separate cargo workspace and a bun project, and the root gate must stay a
-# pure Rust-crate gate that needs neither bun nor a WebView toolchain. The cost
-# is that generated-type drift is only caught when someone runs this — so run it
-# before committing anything under `desktop/`.
+# pure Rust-crate gate that needs neither bun nor a WebView toolchain. The root
+# gate runs only the codegen drift check below, with `--locked` (it builds the
+# codegen crate, never the Tauri app), so generated-type drift from
+# `src/app_core/` is caught there; everything else here is caught only when
+# someone runs this — so run it before committing anything under `desktop/`.
 set -eu
 cd "$(dirname "$0")"
 

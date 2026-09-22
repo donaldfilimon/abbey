@@ -81,14 +81,14 @@ Brand: Intelligence Without Limits, Abbey/ABI only, never Quesar (`docs/brand.md
 
 ## Gates (exact commands)
 
-- `./check.sh` — production gate (toolchain probe → fmt → clippy/tests × 4 modes → rustdoc × 4 → Python tools → claims sync → Program 3 boundary → installer smoke → file-size guard → soft cross-compile → opt-in coverage)
+- `./check.sh` — production gate (toolchain probe → fmt → clippy/tests × 4 modes → rustdoc × 4 → Python tools → claims sync → desktop IPC codegen drift → Program 3 boundary → installer smoke → file-size guard → soft cross-compile → opt-in coverage)
 - `cargo build --features wdbx` — in-process WDBX backend (off by default)
 - `cargo build --features personal-edition` — separately named personal edition (distinct binary/config/credential namespace)
 - `cargo build --features accel` — Metal kernel verification (needs macOS Xcode toolchain)
 - `cargo test --features wdbx|personal-edition|accel` — run feature-gated tests
 - `python3 tools/check_claims_sync.py [--write]` — verify/generate claims ledger
 - `python3 tools/check_p3_readonly.py` — enforce Program 3 read-only boundary
-- `desktop/check.sh` — separate workspace; root gate does not touch it
+- `desktop/check.sh` — separate workspace; the root gate runs only its codegen drift check (`--locked`, no Tauri build)
 - `ABBEY_CARGO_FEATURES=personal-edition ./install.sh` — install personal edition
 
 ## Conventions
@@ -101,7 +101,7 @@ Brand: Intelligence Without Limits, Abbey/ABI only, never Quesar (`docs/brand.md
 - Abbey's `<state>/wdbx/` = `abi wdbx` base `<state>/wdbx/wdbx` — `wdbx_bridge` translates; passing bare directory reads one level up
 - Daemon: single owner-only Unix socket + one bearer source (`ABBEYD_BEARER_TOKEN_FILE`). Client failure never falls back in-process.
 - OS execution: allowlist + `--confirm` required in both editions. No shell bypass.
-- `desktop/` = Tauri 2 + React/TS workspace. Types generated from `src/app_core/` via `desktop/codegen`. Root `check.sh` does not build it.
+- `desktop/` = Tauri 2 + React/TS workspace. Types generated from `src/app_core/` via `desktop/codegen`. Root `check.sh` does not build it, but fails on generated-type drift; a stale `desktop/Cargo.lock` makes that step print WARN … UNMEASURED instead of passing.
 - `abbey wdbx` / `ABBEY_BACKEND=abi` need a real `abi` binary (not alias). Build: `./tools/cargo.sh build -p abi-cli` in `../abi`; set `ABBEY_ABI_BIN` or config `abi_bin`.
 - Learned embeddings: opt-in only; keys from `ABBEY_EMBEDDING_API_KEY` / `OPENAI_API_KEY` (not config.toml); provider/model change = new isolated vector space.
 

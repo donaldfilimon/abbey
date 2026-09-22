@@ -54,7 +54,7 @@ checks in `AGENTS.md`; the claims synchronizer itself invokes `cargo run`. In or
 2. `cargo fmt --all -- --check`.
 3. Clippy `-D warnings` + tests, interleaved per build mode for **all four build modes** (default · `wdbx` · `personal-edition` · `accel`).
 4. Warning-denied private-item rustdoc for each of the four modes.
-5. Python tool tests (`tools/tests/`), then claims synchronization (`tools/check_claims_sync.py`).
+5. Python tool tests (`tools/tests/`), then claims synchronization (`tools/check_claims_sync.py`), then the desktop IPC codegen drift check (`desktop/codegen -- --check`, `--locked`; builds only the codegen crate).
 6. Program 3 read-only boundary check (`tools/check_p3_readonly.py` fails closed if `src/app_core/guild_intelligence.rs` acquires network/process/fs/store/tool code).
 7. Installer checks (`sh -n` plus `tools/tests/smoke_accel_install.sh`).
 8. File-size guard.
@@ -187,7 +187,7 @@ Personas (Abbey/Aviva/Abi) and Max/Gemma worker roles are defined in the sibling
 - The lock does not extend to an `abi` you invoke directly against the same store, and `./install.sh` builds without `wdbx`, so an installed `abbey` asked for wdbx falls back to SQLite and says so in `doctor`. Installers name binaries from the compiled edition probe (`abbey edition --name`) so the two editions cannot clobber each other; `install.ps1`'s naming is proven by a parser test only, no Windows host has run it, so that claim is Partial.
 - Read-only callers should use `memory::backend_path` (pure) rather than opening, and interactive ones `open_backend_with_timeout` — `learn status` once created the very store it was meant to report on, and the TUI redraw would otherwise stall 10s on a lock (the TUI memory panel uses a 250 ms open timeout and renders `unavailable: …`).
 - **`abbey daemon` and `abbeyd` must use the same socket and exactly one bearer source** (`ABBEYD_SOCKET_PATH`; `ABBEYD_BEARER_TOKEN` xor `ABBEYD_BEARER_TOKEN_FILE`, owner-only). Client failures never fall back to in-process claims.
-- **`desktop/` is a second cargo workspace** (Tauri 2 + React/TypeScript client of the app core) with its own `Cargo.toml`, `check.sh`, and `package.json`, and its TypeScript IPC types are generated from `src/app_core/`. `./check.sh` does not build it; changing `app_core` without regenerating those types breaks it silently.
+- **`desktop/` is a second cargo workspace** (Tauri 2 + React/TypeScript client of the app core) with its own `Cargo.toml`, `check.sh`, and `package.json`, and its TypeScript IPC types are generated from `src/app_core/`. `./check.sh` does not build it, but runs `desktop/codegen --check` with `--locked`, so changing `app_core` without regenerating those types fails the root gate; when `desktop/Cargo.lock` is stale against the siblings that step cannot resolve and prints `WARN … UNMEASURED` instead of passing.
 - `abi wdbx` takes **base paths** (parent dir + base name) while Abbey opens a **directory** — Abbey's `<state>/wdbx/` is `<state>/wdbx/wdbx` to `abi`. `wdbx_bridge` translates; passing the bare directory silently reads one level up and reports an empty store.
 - Self-learn's `train_candidate` path requires provenance; don't add silent deletes to the reflect/digest flow.
 - State (`~/.local/state/abbey`, including `memory.sqlite`) is runtime data — never commit it, and don't assume it exists in a fresh checkout.

@@ -99,6 +99,34 @@ echo "== claims/docs synchronization =="
 python3 -m unittest discover -s tools/tests -p 'test_*.py'
 python3 tools/check_claims_sync.py
 
+# desktop/ is a separate cargo workspace whose TypeScript IPC types are
+# generated from src/app_core/ (and desktop/src-tauri/src/{ipc,v3_ipc}.rs) by
+# desktop/codegen. Changing those contracts without regenerating breaks the
+# desktop client silently, so the root gate runs the generator's `--check`
+# mode: it regenerates every output in memory and fails naming each stale file,
+# writing nothing. Only the codegen crate is built; the Tauri app, bun, and the
+# WebView toolchain are not needed here (the full client gate stays
+# desktop/check.sh). `--locked` is deliberate: this gate must never rewrite
+# desktop/Cargo.lock. If that lockfile is stale against ../abi or ../wdbx,
+# cargo refuses before the generator runs, and the drift check is reported as
+# UNMEASURED rather than passed; every other failure is a hard failure.
+echo "== desktop IPC codegen drift (--locked; does not build the Tauri app) =="
+if codegen_out=$(cargo run --manifest-path desktop/Cargo.toml -p abbey-desktop-codegen --locked --quiet -- --check 2>&1); then
+  printf '%s\n' "$codegen_out"
+else
+  case "$codegen_out" in
+    *"cannot update the lock file"*"because --locked was passed"*)
+      printf '%s\n' "$codegen_out" >&2
+      echo "WARN: desktop/Cargo.lock is stale relative to ../abi or ../wdbx; desktop IPC codegen drift is UNMEASURED, not passed (refresh: cargo update --manifest-path desktop/Cargo.toml --workspace)"
+      ;;
+    *)
+      printf '%s\n' "$codegen_out" >&2
+      echo "check.sh: desktop IPC codegen drift check failed (see above)" >&2
+      exit 1
+      ;;
+  esac
+fi
+
 echo "== Program 3 read-only boundary =="
 python3 tools/check_p3_readonly.py
 
