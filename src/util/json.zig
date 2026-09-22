@@ -50,13 +50,13 @@ pub fn writeF32(w: *Writer, v: f32) Writer.Error!void {
     if (v == 0) return w.writeAll(if (std.math.signbit(v)) "-0.0" else "0.0");
     // Zig's `{e}` prints the shortest round-trip f32 digits as d.ddde[-]x.
     var buf: [64]u8 = undefined;
-    const sci = std.fmt.bufPrint(&buf, "{e}", .{v}) catch unreachable; // 64 bytes always fits an f32
+    const sci = std.fmt.bufPrint(&buf, "{e}", .{v}) catch return error.WriteFailed;
     var rest = sci;
     const negative = rest[0] == '-';
     if (negative) rest = rest[1..];
-    const e_at = std.mem.indexOfScalar(u8, rest, 'e') orelse unreachable; // `{e}` always emits an exponent
+    const e_at = std.mem.indexOfScalar(u8, rest, 'e') orelse return error.WriteFailed;
     const mant = rest[0..e_at];
-    const exp = std.fmt.parseInt(i32, rest[e_at + 1 ..], 10) catch unreachable; // `{e}` exponent is decimal
+    const exp = std.fmt.parseInt(i32, rest[e_at + 1 ..], 10) catch return error.WriteFailed;
     var digits_buf: [32]u8 = undefined;
     var n: usize = 0;
     for (mant) |c| {

@@ -35,11 +35,38 @@ run_tests() {
   done
 }
 
+stage "rebuild safe edition for the binary stages"
+zig build -Dpersonal=false > "$LOG_DIR/build-safe2.log" 2>&1 || { cat "$LOG_DIR/build-safe2.log"; exit 1; }
+
 stage "tests, safe edition (std.testing.allocator leak detection)"
 run_tests false abbey-zig
 
 stage "tests, personal edition (std.testing.allocator leak detection)"
 run_tests true abbey-zig-personal
+
+stage "help goldens"
+for g in tests/golden/help/*.txt; do
+  c=$(basename "$g" .txt)
+  ./zig-out/bin/abbey-zig "$c" --help > "$LOG_DIR/help-$c.txt" 2>&1 || { echo "FAIL: $c --help exit"; exit 1; }
+  diff "$g" "$LOG_DIR/help-$c.txt" > /dev/null || { diff "$g" "$LOG_DIR/help-$c.txt"; echo "FAIL: help golden $c"; exit 1; }
+done
+echo "ok: $(ls tests/golden/help/*.txt | wc -l | tr -d ' ') goldens"
+
+stage "contracts qualification"
+python3 tools/abbey_contracts.py verify contracts/abbey/corpus > "$LOG_DIR/contracts.log" 2>&1 || { cat "$LOG_DIR/contracts.log"; exit 1; }
+cat "$LOG_DIR/contracts.log"
+lock=$(python3 -c 'import json;print(json.load(open("contracts/abbey/abbey-contracts.lock.json"))["aggregate_digest"])')
+grep -q "digest=$lock" "$LOG_DIR/contracts.log" || { echo "FAIL: corpus digest does not match the lock ($lock)"; exit 1; }
+echo "ok: lock digest $lock"
+
+stage "claims sync"
+python3 tools/check_claims.py
+
+stage "rust route reader (oracle)"
+sh tools/stages/rust_oracle.sh "$PWD/zig-out/bin/abbey-zig"
+
+stage "e2e with a real abi binary"
+sh tools/stages/e2e_abi.sh "$PWD/zig-out/bin/abbey-zig"
 
 stage "size guard (main.zig <= 200, others <= 1000)"
 bad=0

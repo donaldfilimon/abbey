@@ -31,11 +31,35 @@ the gate through `tail`/`head` (that reports the pipe's exit code).
 - `zig build test-bin` installs the test executables; the gate runs them
   directly so the runner's `All N tests passed` line is quotable.
 
+Gate stages, in order: fmt, build both editions, leak-checked tests for both
+editions, help goldens (`tests/golden/help/<cmd>.txt` vs `<cmd> --help`),
+contracts qualification (`tools/abbey_contracts.py verify`, copied verbatim
+from `../abi`, plus the lock digest), claims sync (`tools/check_claims.py`),
+the Rust route-reader oracle (`tools/stages/rust_oracle.sh`, uses
+`ABBEY_ZIG_RUST_ORACLE` or `~/.local/bin/abbey`), the real-abi end to end
+run (`tools/stages/e2e_abi.sh`, needs `ABBEY_ZIG_E2E_ABI`), size guard.
+Oracle and e2e stages print `SKIP:` when their binary is absent; a SKIP is
+unmeasured, never a pass.
+
+Change help text: edit `src/cli/help.zig`, then regenerate the golden with
+`./zig-out/bin/abbey-zig <cmd> --help > tests/golden/help/<cmd>.txt` and
+review the diff. Change a claim: edit `src/claims.zig`, rebuild, run
+`python3 tools/check_claims.py --write`.
+
+## Layout
+
+`src/main.zig` entry; `src/root.zig` library root; `cli/` parser, help,
+dispatch; `agent/` backend selection, argv grammars, execution; `memory/`
+JSONL store, record shape, lexical similarity; `persona/` router and
+contracts; `session.zig` + `actions.zig` the canonical path; `capture.zig`
+the headless bypasses; `learn*.zig`; `route_log.zig`; `state/`; `config/`;
+`util/` JSON, time, uuid, file helpers. `contracts/abbey/` is a
+byte-identical copy of `../abbey/contracts/abbey`; never edit it here.
+
 ## Rules
 
 - Errors are named error sets per module; no `anyerror` at a public
-  boundary; no `catch unreachable` outside tests except where a comment
-  proves the branch impossible (fixed-size formatting).
+  boundary; no `catch unreachable` outside tests.
 - Every allocation has an owner and a `deinit`/`free` in the same scope or a
   documented transfer. Commands use an arena per invocation. Tests use
   `std.testing.allocator`, whose leak report fails the gate.

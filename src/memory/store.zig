@@ -164,7 +164,7 @@ pub const Store = struct {
         for (try self.filterWith(arena, .{}, std.math.maxInt(usize))) |r| {
             if (out.items.len >= limit) break;
             for ([_][]const u8{ r.summary, r.payload, r.provenance }) |field| {
-                if (std.ascii.indexOfIgnoreCase(field, needle) != null) {
+                if (std.ascii.findIgnoreCase(field, needle) != null) {
                     try out.append(arena, r);
                     break;
                 }
@@ -256,6 +256,30 @@ test "append-only fold: last snapshot wins, obsolete is retained not deleted" {
     var t = testRec("t", "t", "train_candidate");
     t.provenance = " ";
     try std.testing.expectError(error.MissingProvenance, s.store(a, t));
+}
+
+test "keyword search is case-insensitive over summary, payload, provenance" {
+    const gpa = std.testing.allocator;
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const root = try @import("../ctx.zig").tmpPath(gpa, io, tmp.dir);
+    defer gpa.free(root);
+    var arena: std.heap.ArenaAllocator = .init(gpa);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const s = try open(gpa, io, a, root);
+    var x = testRec("x", "2026-01-01T00:00:00Z", "ltm");
+    x.summary = "WDBX checkpoint";
+    try s.store(a, x);
+    var y = testRec("y", "2026-01-02T00:00:00Z", "ltm");
+    y.provenance = "user correction @ /Proj";
+    try s.store(a, y);
+    try std.testing.expectEqualStrings("x", (try s.searchKeyword(a, "wdbx", 10))[0].id);
+    try std.testing.expectEqualStrings("y", (try s.searchKeyword(a, "proj", 10))[0].id);
+    try std.testing.expectEqual(@as(usize, 0), (try s.searchKeyword(a, "absent", 10)).len);
+    try s.invalidate(a, "x");
+    try std.testing.expectEqual(@as(usize, 0), (try s.searchKeyword(a, "wdbx", 10)).len);
 }
 
 test "reflect ignores route duplicates and requires payload equality" {

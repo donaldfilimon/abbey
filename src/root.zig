@@ -28,10 +28,18 @@ pub const learn_improve = @import("learn_improve.zig");
 pub const session = @import("session.zig");
 pub const actions = @import("actions.zig");
 pub const capture = @import("capture.zig");
+pub const wdbx_bridge = @import("wdbx_bridge.zig");
+pub const claims = @import("claims.zig");
+pub const doctor = @import("doctor.zig");
+pub const cli_args = @import("cli/args.zig");
+pub const help = @import("cli/help.zig");
+pub const dispatch = @import("cli/dispatch.zig");
+pub const memory_cmd = @import("cli/memory_cmd.zig");
 
 test {
     _ = @import("learn_test.zig");
     _ = @import("session_test.zig");
+    _ = @import("cli/help_test.zig");
 }
 
 test {

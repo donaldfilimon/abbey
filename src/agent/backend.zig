@@ -374,7 +374,7 @@ test "abi resolution uses configured abi_bin and never falls through to cursor" 
     try std.testing.expectEqualStrings(abi, try resolveFor(p, .abi));
 }
 
-test "ollama probe requires the default model in `ollama list`" {
+test "ollama probe requires the default model in ollama list" {
     const T = @import("../ctx.zig").TestCtx;
     const gpa = std.testing.allocator;
     const io = std.testing.io;

@@ -138,3 +138,36 @@ test "second ask carries bounded transcript context and a nonzero exit is not re
     try std.testing.expect(std.mem.find(u8, f.t.errText(), "creating a new chat") == null);
     try std.testing.expectEqual(@as(usize, 3), try f.routeCount());
 }
+
+test "commit bypass captures a staged diff prompt without a route record" {
+    const f = try Fixture.init();
+    defer f.deinit();
+    const a = f.arena.allocator();
+    const io = std.testing.io;
+    const proc = @import("proc.zig");
+    const repo = try std.fs.path.join(a, &.{ f.root, "repo" });
+    try fsx.makePath(io, repo);
+    for ([_][]const []const u8{
+        &.{ "git", "init", "-q", "-b", "main" },
+        &.{ "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "init" },
+    }) |cmd| {
+        const r = try proc.capture(std.testing.allocator, io, cmd, .{ .cwd = repo, .env = &f.t.env });
+        defer r.deinit(std.testing.allocator);
+        try std.testing.expect(r.success());
+    }
+    var t2 = T.init(std.testing.allocator, repo);
+    defer t2.deinit();
+    var it = f.t.env.iterator();
+    while (it.next()) |kv| try t2.env.put(kv.key_ptr.*, kv.value_ptr.*);
+    const c = t2.ctx(std.testing.allocator, io);
+    var ag = try f.agent();
+    try std.testing.expectError(error.NothingStaged, capture.runCommit(c, a, &ag, &f.st, null));
+    try fsx.writeAll(io, try std.fs.path.join(a, &.{ repo, "hello.txt" }), "hello\n", .default_file);
+    const add = try proc.capture(std.testing.allocator, io, &.{ "git", "add", "hello.txt" }, .{ .cwd = repo, .env = &f.t.env });
+    add.deinit(std.testing.allocator);
+    try std.testing.expectEqual(@as(u8, 0), try capture.runCommit(c, a, &ag, &f.st, null));
+    const out = t2.outText();
+    try std.testing.expect(std.mem.find(u8, out, "[complete][--model][local][--][Write a concise conventional commit message") != null);
+    try std.testing.expect(std.mem.find(u8, out, "+hello") != null);
+    try std.testing.expectEqual(@as(usize, 0), try f.routeCount());
+}
