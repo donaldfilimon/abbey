@@ -104,6 +104,8 @@ pub fn identityLines(w: *std.Io.Writer, state_dir: []const u8) std.Io.Writer.Err
     try w.print("binary:    {s}\n", .{id.binary_name});
     try w.print("state env: {s} (root {s})\n", .{ id.state_dir_env, state_dir });
     try w.print("config env: {s}\n", .{id.config_path_env});
+    try w.print("daemon socket env: {s} (default <state>/daemon/{s})\n", .{ id.daemon_socket_env, id.daemon_socket_name });
+    try w.print("daemon bearer env: {s} | {s}\n", .{ id.daemon_bearer_env, id.daemon_bearer_file_env });
     try w.writeAll("unrestricted runtime implemented: false\n");
 }
 

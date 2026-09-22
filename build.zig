@@ -1,6 +1,6 @@
 const std = @import("std");
 
-/// abbey-zig: stdlib-only Zig rewrite of Abbey (P1 CLI core).
+/// abbey-zig: stdlib-only Zig rewrite of Abbey (P1 CLI core, P2 daemon v1).
 ///
 /// `-Dpersonal=true` compiles the personal edition. Editions differ only in
 /// identity and state/config namespaces; neither edition adds runtime
@@ -12,6 +12,14 @@ pub fn build(b: *std.Build) void {
 
     const options = b.addOptions();
     options.addOption(bool, "personal", personal);
+    // Build identity reported by `daemon status`, like the Rust build.rs
+    // ABBEY_BUILD_GIT / ABBEY_BUILD_TARGET. `-Dbuild-git=` overrides; a
+    // non-repository build reports "unknown" rather than guessing.
+    var git_code: u8 = 0;
+    const git_out = b.runAllowFail(&.{ "git", "rev-parse", "--short=12", "HEAD" }, &git_code, .ignore) catch "unknown";
+    const build_git = b.option([]const u8, "build-git", "Build identity reported by `daemon status`") orelse std.mem.trim(u8, git_out, " \t\r\n");
+    options.addOption([]const u8, "build_git", if (build_git.len == 0) "unknown" else build_git);
+    options.addOption([]const u8, "build_target", b.fmt("{t}-{t}", .{ target.result.cpu.arch, target.result.os.tag }));
 
     const lib_mod = b.addModule("abbey", .{
         .root_source_file = b.path("src/root.zig"),
@@ -32,6 +40,19 @@ pub fn build(b: *std.Build) void {
         .root_module = exe_mod,
     });
     b.installArtifact(exe);
+
+    // `abbeyd-zig` is the daemon entry point; it serves the same protocol v1
+    // as `abbey-zig daemon serve` and shares every module with the CLI.
+    const daemon_mod = b.createModule(.{
+        .root_source_file = b.path("src/abbeyd.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{.{ .name = "abbey", .module = lib_mod }},
+    });
+    b.installArtifact(b.addExecutable(.{
+        .name = if (personal) "abbeyd-zig-personal" else "abbeyd-zig",
+        .root_module = daemon_mod,
+    }));
 
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());

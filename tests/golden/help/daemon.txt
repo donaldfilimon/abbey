@@ -1,0 +1,27 @@
+abbeyd protocol v1 over an owner-only Unix socket: read-only status, claims, routes
+
+Usage: abbey-zig daemon <serve|status|claims|routes> [--json] [--status S] [--contains TEXT] [--limit N]
+
+`serve` (also the abbeyd daemon binary) binds <state>/daemon/abbey-zig-daemon.sock
+(0600, parent directory 0700) and answers until SIGINT/SIGTERM. The socket
+path and the bearer (inline token or owner-only token file, exactly one) come
+from edition-scoped variables; `edition` lists them. Frames are a u32
+big-endian length plus at most 1 MiB of JSON. Routes are sanitized: no path,
+a ws-<digest> workspace, whole-percent confidence, at most 50 entries.
+Run control and protocol v2/v3 are Proposed (see `claims`).
+
+Global options:
+  -m, --model <MODEL>        Model id or alias (fable, opus, local, ...) [env: ABBEY_MODEL]
+      --mode <MODE>          Execution mode [possible values: ask, plan]
+      --plan                 Plan mode shorthand
+      --ask                  Ask mode shorthand
+  -p, --print                Headless print (capture, then emit)
+      --output-format <FMT>  Output format with --print
+  -f, --force                Force / always-approve [aliases: --yolo, --always-approve]
+      --add-dir <DIR>        Extra workspace root (repeatable)
+      --sandbox <MODE>       Sandbox: enabled|disabled
+      --debug                Forward --debug to cursor-style backends
+      --approve-mcps         Forward --approve-mcps to cursor-style backends
+      --max-turns <N>        Forward --max-turns to cursor-style backends
+  -h, --help                 Print help
+  -V, --version              Print version

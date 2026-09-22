@@ -4,7 +4,7 @@ const std = @import("std");
 const Command = @import("args.zig").Command;
 const bin = @import("../edition.zig").id.binary_name;
 
-pub const version = "0.1.0-p1";
+pub const version = "0.2.0-p2";
 
 const globals =
     \\Global options:
@@ -25,7 +25,7 @@ const globals =
     \\
 ;
 
-pub const top = "Abbey (Zig): agent CLI over subprocess executors (P1 CLI core)\n\n" ++
+pub const top = "Abbey (Zig): agent CLI over subprocess executors (P1 CLI core, P2 daemon v1)\n\n" ++
     "Usage: " ++ bin ++ " [OPTIONS] <COMMAND> [ARGS]...\n\n" ++
     \\Commands:
     \\  ask      Read-only Q&A through the canonical hybrid path (route-logged)
@@ -38,6 +38,7 @@ pub const top = "Abbey (Zig): agent CLI over subprocess executors (P1 CLI core)\
     \\  claims   Capability ledger: Current / Partial / Proposed / Out of scope [aliases: roadmap, scope]
     \\  memory   Memory store: search <query> | similar <query>
     \\  wdbx     Bridge to the `abi wdbx` CLI (query gets --json and Abbey's store)
+    \\  daemon   abbeyd protocol v1: serve | status | claims | routes (read-only)
     \\  edition  Compiled edition identity and namespaces
     \\  version  Print version
     \\  help     Print this help or the help of a command
@@ -45,7 +46,7 @@ pub const top = "Abbey (Zig): agent CLI over subprocess executors (P1 CLI core)\
     \\
 ++ globals ++
     \\
-    \\The TUI, daemon, and MCP server are later phases (see `claims`).
+    \\The TUI and MCP server are later phases (see `claims`).
     \\
 ;
 
@@ -90,6 +91,15 @@ pub fn forCommand(c: Command) []const u8 {
             \\
             \\`abi` paths are BASE paths: Abbey's <state>/wdbx/ directory is
             \\<state>/wdbx/wdbx to `abi`.
+            \\
+        ),
+        .daemon => cmd("daemon <serve|status|claims|routes> [--json] [--status S] [--contains TEXT] [--limit N]", "abbeyd protocol v1 over an owner-only Unix socket: read-only status, claims, routes", "\n`serve` (also the abbeyd daemon binary) binds <state>/daemon/" ++ @import("../edition.zig").id.daemon_socket_name ++ "\n" ++
+            \\(0600, parent directory 0700) and answers until SIGINT/SIGTERM. The socket
+            \\path and the bearer (inline token or owner-only token file, exactly one) come
+            \\from edition-scoped variables; `edition` lists them. Frames are a u32
+            \\big-endian length plus at most 1 MiB of JSON. Routes are sanitized: no path,
+            \\a ws-<digest> workspace, whole-percent confidence, at most 50 entries.
+            \\Run control and protocol v2/v3 are Proposed (see `claims`).
             \\
         ),
         .edition => cmd("edition [OPTIONS]", "Compiled edition identity and state/config namespaces", ""),

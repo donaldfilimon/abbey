@@ -17,6 +17,7 @@ pub const Command = enum {
     claims,
     memory,
     wdbx,
+    daemon,
     edition,
     version,
     help,

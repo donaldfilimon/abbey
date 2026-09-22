@@ -20,6 +20,7 @@ const edition = @import("../edition.zig");
 const wdbx = @import("../wdbx_bridge.zig");
 const memory_cmd = @import("memory_cmd.zig");
 const fsx = @import("../util/fsx.zig");
+const daemon_cli = @import("../daemon/cli.zig");
 
 fn envFlag(ctx: Ctx, name: []const u8, default: bool) bool {
     const v = ctx.getEnv(name) orelse return default;
@@ -120,6 +121,9 @@ fn runArena(ctx: Ctx, arena: std.mem.Allocator, args: []const []const u8) !u8 {
             try edition.identityLines(ctx.out, try edition.stateRoot(ctx, arena));
             return 0;
         },
+        // Before config/state load: the daemon verbs must not create state
+        // directories, and `serve` resolves its own socket path.
+        .daemon => return daemon_cli.run(ctx, arena, p.positionals),
         else => {},
     }
 
@@ -162,6 +166,6 @@ fn runArena(ctx: Ctx, arena: std.mem.Allocator, args: []const []const u8) !u8 {
         },
         .memory => memory_cmd.run(ctx, arena, st.state_dir, p.positionals),
         .wdbx => wdbx.run(ctx, arena, st.state_dir, cfg.abi_bin, p.positionals),
-        .help, .version, .claims, .edition => unreachable, // handled above
+        .help, .version, .claims, .edition, .daemon => unreachable, // handled above
     };
 }

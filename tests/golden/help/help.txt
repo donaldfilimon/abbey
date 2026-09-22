@@ -1,4 +1,4 @@
-Abbey (Zig): agent CLI over subprocess executors (P1 CLI core)
+Abbey (Zig): agent CLI over subprocess executors (P1 CLI core, P2 daemon v1)
 
 Usage: abbey-zig [OPTIONS] <COMMAND> [ARGS]...
 
@@ -13,6 +13,7 @@ Commands:
   claims   Capability ledger: Current / Partial / Proposed / Out of scope [aliases: roadmap, scope]
   memory   Memory store: search <query> | similar <query>
   wdbx     Bridge to the `abi wdbx` CLI (query gets --json and Abbey's store)
+  daemon   abbeyd protocol v1: serve | status | claims | routes (read-only)
   edition  Compiled edition identity and namespaces
   version  Print version
   help     Print this help or the help of a command
@@ -33,4 +34,4 @@ Global options:
   -h, --help                 Print help
   -V, --version              Print version
 
-The TUI, daemon, and MCP server are later phases (see `claims`).
+The TUI and MCP server are later phases (see `claims`).

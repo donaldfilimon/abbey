@@ -42,6 +42,7 @@ pub const daemon_sys = @import("daemon/sys.zig");
 pub const daemon_config = @import("daemon/config.zig");
 pub const daemon_server = @import("daemon/server.zig");
 pub const daemon_client = @import("daemon/client.zig");
+pub const daemon_cli = @import("daemon/cli.zig");
 
 test {
     _ = @import("learn_test.zig");
