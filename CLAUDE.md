@@ -35,6 +35,8 @@ python3 tools/check_claims_sync.py           # verify; `--write` regenerates doc
 python3 -m unittest discover -s tools/tests -p 'test_*.py'   # Python tool tests (also a gate step)
 python3 tools/check_p3_readonly.py           # Program 3 read-only boundary (gate step)
 cargo check --target x86_64-pc-windows-gnu   # the soft cross-compile checks, run standalone
+./desktop/check.sh                           # separate Tauri+bun workspace gate; root ./check.sh runs only its codegen --check
+(cd desktop && bun run codegen)              # regenerate desktop IPC types after changing src/app_core/ contracts
 ABBEY_COVERAGE=1 ./check.sh                  # opt-in report; needs cargo-llvm-cov
 ABBEY_CARGO_FEATURES=personal-edition ./install.sh   # install the separately named personal edition
 abbey doctor                       # build stamp + persona/role/memory/os honesty check

@@ -21,6 +21,8 @@ class InstructionDriftTest(unittest.TestCase):
             shutil.copy(ROOT / name, self.root / name)
         shutil.copytree(ROOT / "tools", self.root / "tools", ignore=shutil.ignore_patterns("__pycache__"))
         shutil.copytree(ROOT / "src", self.root / "src")
+        (self.root / "desktop").mkdir()
+        shutil.copy(ROOT / "desktop" / "check.sh", self.root / "desktop" / "check.sh")
 
     def tearDown(self):
         self._dir.cleanup()
