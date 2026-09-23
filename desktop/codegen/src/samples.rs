@@ -276,6 +276,7 @@ import type {
     }
     desktop_caps.push(serde_json::to_value(V3Capability::ReadMemory)?);
     desktop_caps.push(serde_json::to_value(V3Capability::ReadModels)?);
+    desktop_caps.push(serde_json::to_value(V3Capability::ReadClaimsById)?);
 
     writeln!(
         out,

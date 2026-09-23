@@ -27,6 +27,16 @@ use abbey::daemon::V3DaemonSession;
 use super::{Route, bearer_source, from_client_error, route};
 use crate::ipc::{IpcError, IpcErrorKind};
 
+/// The exact, sorted set of v3 grants this process ever requests. Shared by
+/// [`v3_read_session`] (what is actually negotiated) and the
+/// `requested_v3_grants_are_read_only` guard test (what is asserted safe),
+/// so the two can never drift apart.
+const REQUESTED_V3_GRANTS: &[V3Capability] = &[
+    V3Capability::ReadMemory,
+    V3Capability::ReadModels,
+    V3Capability::ReadClaimsById,
+];
+
 fn v3_read_session() -> Result<V3DaemonSession, IpcError> {
     if bearer_source().is_none() {
         return Err(IpcError::new(
@@ -40,12 +50,8 @@ fn v3_read_session() -> Result<V3DaemonSession, IpcError> {
             "protocol-v3 reads are daemon-only and never open the in-process store",
         )),
         Route::Daemon(client) => {
-            let requested = V3CapabilitySet::from_sorted(vec![
-                V3Capability::ReadMemory,
-                V3Capability::ReadModels,
-                V3Capability::ReadClaimsById,
-            ])
-            .expect("read-only ReadMemory + ReadModels + ReadClaimsById set is canonical");
+            let requested = V3CapabilitySet::from_sorted(REQUESTED_V3_GRANTS.to_vec())
+                .expect("read-only ReadMemory + ReadModels + ReadClaimsById set is canonical");
             client.negotiate_v3(requested).map_err(from_client_error)
         }
     }
@@ -136,28 +142,78 @@ mod tests {
         assert_eq!(claim_error.kind, IpcErrorKind::Rejected);
     }
 
+    /// Exhaustive read/mutate classification for every `V3Capability`
+    /// variant. This match has no wildcard arm: adding a new variant to
+    /// `abbey::app_core::V3Capability` fails this function to compile until
+    /// it is explicitly placed in one arm or the other, so a new mutating
+    /// grant cannot silently slip past `requested_v3_grants_are_read_only`.
+    ///
+    /// Read (never mutates durable state, never spends a model/tool/training
+    /// authority): `ListTools` (enumeration only), `ReadMemory`, `ReadModels`,
+    /// `ReadTraining`, `ReadWorkers`, `ReadClaimsById`, `PollEvents` (drains
+    /// an event queue but changes no Abbey state observable to another
+    /// caller).
+    ///
+    /// Not read (mutates state, spends compute, or grants control):
+    /// `InvokeTools`, `DecideToolApprovals`, `CancelTools`, `DownloadModels`,
+    /// `ManageModels`, `ManageTraining`, `CancelJobs`, `InferModels` (runs
+    /// inference — consumes compute and is not a passive read).
+    const fn is_read_only_capability(capability: V3Capability) -> bool {
+        match capability {
+            V3Capability::ListTools
+            | V3Capability::ReadMemory
+            | V3Capability::ReadModels
+            | V3Capability::ReadTraining
+            | V3Capability::ReadWorkers
+            | V3Capability::ReadClaimsById
+            | V3Capability::PollEvents => true,
+            V3Capability::InvokeTools
+            | V3Capability::DecideToolApprovals
+            | V3Capability::CancelTools
+            | V3Capability::DownloadModels
+            | V3Capability::ManageModels
+            | V3Capability::ManageTraining
+            | V3Capability::CancelJobs
+            | V3Capability::InferModels => false,
+        }
+    }
+
     /// The negotiated request must stay read-only. If a later change adds a
     /// mutating model grant to `v3_read_session`, this fails rather than
-    /// silently handing the webview download/load/unload authority.
+    /// silently handing the webview download/load/unload authority. Unlike
+    /// the previous version of this test, the forbidden set is not named by
+    /// hand: every non-read `V3Capability` variant (per
+    /// `is_read_only_capability`) is checked, so a variant added to the enum
+    /// but never classified fails to compile, and a variant classified as
+    /// non-read is always covered here even if nobody remembers to add it to
+    /// a manual forbidden list.
     #[test]
     fn requested_v3_grants_are_read_only() {
-        let requested = V3CapabilitySet::from_sorted(vec![
+        let requested = V3CapabilitySet::from_sorted(REQUESTED_V3_GRANTS.to_vec())
+            .expect("canonical read-only set");
+        for capability in [
+            V3Capability::ListTools,
+            V3Capability::InvokeTools,
+            V3Capability::DecideToolApprovals,
+            V3Capability::CancelTools,
             V3Capability::ReadMemory,
             V3Capability::ReadModels,
-            V3Capability::ReadClaimsById,
-        ])
-        .expect("canonical read-only set");
-        for forbidden in [
             V3Capability::DownloadModels,
             V3Capability::ManageModels,
-            V3Capability::InvokeTools,
+            V3Capability::ReadTraining,
             V3Capability::ManageTraining,
+            V3Capability::ReadWorkers,
+            V3Capability::CancelJobs,
+            V3Capability::ReadClaimsById,
+            V3Capability::PollEvents,
             V3Capability::InferModels,
         ] {
-            assert!(
-                !requested.contains(forbidden),
-                "desktop must never request {forbidden:?}"
-            );
+            if !is_read_only_capability(capability) {
+                assert!(
+                    !requested.contains(capability),
+                    "desktop must never request {capability:?}"
+                );
+            }
         }
     }
 

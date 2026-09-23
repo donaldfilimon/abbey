@@ -51,11 +51,12 @@ export interface Surface {
 
 const CONTRACT_SHAPE =
   "The desktop exposes read-only Status, Claims, Routes, protocol-v2 run " +
-  "status/events, and protocol-v3 memory summary search/metadata. In-process " +
-  "`CapabilitySet::standard()` grants `ReadStatus`, `ReadClaims`, and " +
-  "`ReadRoutes`. `ReadRun`/`ReadRunEvents` appear only on a protocol-v2 " +
-  "daemon. `ReadMemory` is a v3 grant, never an in-process store open. " +
-  "Submit, cancel, invoke, and obsolete stay off this invoke surface.";
+  "status/events, and protocol-v3 memory summary search/metadata, model " +
+  "inventory, and exact-ID claim lookup. In-process `CapabilitySet::standard()` " +
+  "grants `ReadStatus`, `ReadClaims`, and `ReadRoutes`. `ReadRun`/`ReadRunEvents` " +
+  "appear only on a protocol-v2 daemon. `ReadMemory`, `ReadModels`, and " +
+  "`ReadClaimsById` are v3 grants, never an in-process store open. Submit, " +
+  "cancel, invoke, and obsolete stay off this invoke surface.";
 
 export const SURFACES: readonly Surface[] = [
   {

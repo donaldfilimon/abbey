@@ -128,6 +128,89 @@ pub struct V3StableClaim {
 mod tests {
     use super::*;
 
+    /// Exhaustive: the `mirror_for` match has no wildcard arm, so a new
+    /// `abbey::app_core::V3Capability` variant fails this test file to
+    /// compile until it is placed here in the same declaration position,
+    /// keeping this module's `V3Capability` mirror (and its `#[serde]`
+    /// order, per the module doc comment) locked to core's.
+    #[test]
+    fn capability_declaration_order_matches_core_exactly() {
+        fn mirror_for(core: abbey::app_core::V3Capability) -> V3Capability {
+            match core {
+                abbey::app_core::V3Capability::ListTools => V3Capability::ListTools,
+                abbey::app_core::V3Capability::InvokeTools => V3Capability::InvokeTools,
+                abbey::app_core::V3Capability::DecideToolApprovals => {
+                    V3Capability::DecideToolApprovals
+                }
+                abbey::app_core::V3Capability::CancelTools => V3Capability::CancelTools,
+                abbey::app_core::V3Capability::ReadMemory => V3Capability::ReadMemory,
+                abbey::app_core::V3Capability::ReadModels => V3Capability::ReadModels,
+                abbey::app_core::V3Capability::DownloadModels => V3Capability::DownloadModels,
+                abbey::app_core::V3Capability::ManageModels => V3Capability::ManageModels,
+                abbey::app_core::V3Capability::ReadTraining => V3Capability::ReadTraining,
+                abbey::app_core::V3Capability::ManageTraining => V3Capability::ManageTraining,
+                abbey::app_core::V3Capability::ReadWorkers => V3Capability::ReadWorkers,
+                abbey::app_core::V3Capability::CancelJobs => V3Capability::CancelJobs,
+                abbey::app_core::V3Capability::ReadClaimsById => V3Capability::ReadClaimsById,
+                abbey::app_core::V3Capability::PollEvents => V3Capability::PollEvents,
+                abbey::app_core::V3Capability::InferModels => V3Capability::InferModels,
+            }
+        }
+
+        // Declaration order, exactly as `src/app_core/v3.rs` lists it. This
+        // array is not itself exhaustiveness-checked, but `mirror_for` is:
+        // an unclassified new variant fails compilation above, not silently
+        // falls out of this list.
+        let core_variants = [
+            abbey::app_core::V3Capability::ListTools,
+            abbey::app_core::V3Capability::InvokeTools,
+            abbey::app_core::V3Capability::DecideToolApprovals,
+            abbey::app_core::V3Capability::CancelTools,
+            abbey::app_core::V3Capability::ReadMemory,
+            abbey::app_core::V3Capability::ReadModels,
+            abbey::app_core::V3Capability::DownloadModels,
+            abbey::app_core::V3Capability::ManageModels,
+            abbey::app_core::V3Capability::ReadTraining,
+            abbey::app_core::V3Capability::ManageTraining,
+            abbey::app_core::V3Capability::ReadWorkers,
+            abbey::app_core::V3Capability::CancelJobs,
+            abbey::app_core::V3Capability::ReadClaimsById,
+            abbey::app_core::V3Capability::PollEvents,
+            abbey::app_core::V3Capability::InferModels,
+        ];
+
+        for (index, core) in core_variants.into_iter().enumerate() {
+            let mirror = mirror_for(core);
+            let core_json = serde_json::to_string(&core).expect("serialize core capability");
+            let mirror_json =
+                serde_json::to_string(&mirror).expect("serialize mirror capability");
+            assert_eq!(core_json, mirror_json, "wire mismatch for {core:?}");
+            // `#[serde(rename_all = "snake_case")]` on a fieldless enum
+            // serializes each variant to its own name regardless of
+            // declaration position, so the string check above cannot by
+            // itself detect a reordering. The discriminant of a fieldless
+            // enum without an explicit `= N` is its declaration position, so
+            // comparing `as usize` against this loop's core-declared index
+            // is what actually proves the mirror's variant order matches
+            // core's, not just its variant spellings.
+            assert_eq!(
+                mirror as usize, index,
+                "mirror declaration position for {core:?} does not match core's"
+            );
+        }
+
+        // Order proof, not just per-variant equality: serialize the full
+        // ordered set from each side and assert the JSON strings match.
+        let core_set = abbey::app_core::V3CapabilitySet::from_sorted(core_variants.to_vec())
+            .expect("core accepts declaration-ordered set");
+        let mirror_set = V3CapabilitySet {
+            capabilities: core_variants.into_iter().map(mirror_for).collect(),
+        };
+        let core_set_json = serde_json::to_string(&core_set).expect("serialize core set");
+        let mirror_set_json = serde_json::to_string(&mirror_set).expect("serialize mirror set");
+        assert_eq!(core_set_json, mirror_set_json);
+    }
+
     #[test]
     fn memory_wire_matches_app_core_serde() {
         let core_search = abbey::app_core::V3SearchRequest {

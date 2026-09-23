@@ -14,6 +14,10 @@ import type {
   V3Capability,
   V3CapabilitySet,
 } from "./ipc/generated";
+import {
+  ALL_APP_CAPABILITIES,
+  DESKTOP_READ_CAPABILITIES,
+} from "./ipc/generated.samples";
 import { SURFACES, type Surface, type SurfaceId } from "./surfaces";
 import { ClaimsView } from "./views/ClaimsView";
 import { DoctorView } from "./views/DoctorView";
@@ -31,14 +35,25 @@ interface Bootstrap {
   v3Grants: V3Capability[];
 }
 
+// `DESKTOP_READ_CAPABILITIES` mixes protocol-v1/v2 `AppCapability` reads with
+// protocol-v3 `V3Capability` reads. `ALL_APP_CAPABILITIES` is the exhaustive
+// v1/v2 set, so anything in the former but not the latter is a v3 grant. This
+// keeps `available()` derived from the generated capability lists instead of
+// a hardcoded pair that silently misses a new v3 read (e.g. `ReadClaimsById`).
+const V3_GATED_CAPABILITIES = new Set<string>(
+  DESKTOP_READ_CAPABILITIES.filter(
+    (capability) => !(ALL_APP_CAPABILITIES as readonly string[]).includes(capability),
+  ),
+);
+
 function available(
   surface: Surface,
   status: RuntimeStatus | null,
   v3Grants: V3Capability[],
 ): boolean {
   if (surface.requires === null) return false;
-  if (surface.requires === "read_memory" || surface.requires === "read_models") {
-    return v3Grants.includes(surface.requires);
+  if (V3_GATED_CAPABILITIES.has(surface.requires)) {
+    return (v3Grants as readonly string[]).includes(surface.requires);
   }
   if (status === null) return false;
   return (status.capabilities.capabilities as readonly string[]).includes(
