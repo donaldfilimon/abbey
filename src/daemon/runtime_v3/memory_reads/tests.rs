@@ -188,3 +188,29 @@ fn unknown_space_record_and_unavailable_backend_fail_closed() {
         "runtime_unavailable"
     );
 }
+
+#[test]
+fn not_found_failures_carry_a_memory_specific_message() {
+    let (root, authority) = authority("message");
+    assert_eq!(
+        authority
+            .search(V3SearchRequest {
+                space_id: "different-space".to_owned(),
+                query: "query".to_owned(),
+                page: V3PageQuery::default(),
+            })
+            .unwrap_err()
+            .message(),
+        "memory record was not found"
+    );
+    assert_eq!(
+        authority
+            .metadata(V3ResourceQuery {
+                resource_id: format!("memory-{}", "0".repeat(64)),
+            })
+            .unwrap_err()
+            .message(),
+        "memory record was not found"
+    );
+    std::fs::remove_dir_all(root).unwrap();
+}

@@ -17,7 +17,7 @@ use crate::app_core::{
 };
 use crate::memory::{MemoryFilter, MemoryRecord};
 
-use super::{HandlerFailure, internal_failure, invalid_command_failure, not_found_failure};
+use super::{HandlerFailure, internal_failure, invalid_command_failure};
 
 const SUMMARY_SPACE_ID: &str = "memory-v1-summary";
 const SUMMARY_SPACE_LABEL: &str = "Sanitized memory summaries";
@@ -277,6 +277,10 @@ fn path_segment(part: &str) -> bool {
             && part.as_bytes()[0].is_ascii_alphabetic()
             && part.as_bytes()[1] == b':'
             && matches!(part.as_bytes()[2], b'/' | b'\\'))
+}
+
+const fn not_found_failure() -> HandlerFailure {
+    HandlerFailure::new("not_found", "memory record was not found")
 }
 
 fn truncate(mut value: String, max_bytes: usize) -> String {
