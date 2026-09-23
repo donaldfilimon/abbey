@@ -13,7 +13,7 @@ their tests).
 The gate is the only evidence of green:
 
 ```sh
-./tools/check.sh > /private/tmp/abbey-zig-gate.log 2>&1; echo EXIT:$?
+./tools/check.sh >| /private/tmp/abbey-zig-gate.log 2>&1; echo EXIT:$?
 ```
 
 While iterating, from the repository root (goldens and fixtures resolve

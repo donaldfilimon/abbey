@@ -18,7 +18,7 @@ comment the first time an API is used. Do not write std calls from memory.
 
 ```sh
 zig version
-./tools/check.sh > /private/tmp/abbey-zig-gate.log 2>&1; echo EXIT:$?
+./tools/check.sh >| /private/tmp/abbey-zig-gate.log 2>&1; echo EXIT:$?
 ```
 
 `tools/check.sh` is the single gate. A green `zig build test` alone is weak
