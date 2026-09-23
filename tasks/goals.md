@@ -22,6 +22,18 @@ next-action: provision and enable the Linux ARM64 runner then obtain separate Li
 blocker-owner: repository owner with GitHub runner and VM administration access
 -->
 
+- **2026-09-23 17:3x EDT, `030aab2` + `5c1c773`:** pins moved to public ABI
+  `234cc7d2` and WDBX `3ac03f08` (ABI toolchain unchanged, nightly-2026-09-01).
+  The old-pin trio gate at `859d41d` failed once on a harness race, not the
+  pins: four daemon integration tests treated the socket file as readiness,
+  but `UnixListener::bind` creates it before listen(2), so a loaded host got
+  ECONNREFUSED. `030aab2` probes with a real connect. Evidence in the CI layout
+  (`tools/ci/checkout-public-revision.sh` siblings, `ABBEY_ABI_BIN` = pinned
+  abi-cli): abi `./tools/check.sh` at `234cc7d2` all green (867/0); abbey
+  `./check.sh` at `030aab2` and again at `5c1c773` `check.sh: OK` (3100/0,
+  92 binaries). Status unchanged: still no Linux ARM64 runner. Next: the first
+  self-hosted macOS run on the new pins, and a Linux runner.
+
 Captured 2026-08-08 after the repo gained a remote
 (`github.com/donaldfilimon/abbey`, private) and a web-authored
 `.github/workflows/rust.yml`.
