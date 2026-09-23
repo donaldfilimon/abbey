@@ -323,6 +323,81 @@ Body.
         with self.assertRaisesRegex(ValueError, "invalid stable id"):
             claims_sync.parse_goal_metadata(goals.replace("id: active", "id: ../not-kebab"))
 
+    def _test_ref_root(self, directory: str) -> Path:
+        root = Path(directory)
+        (root / "src").mkdir()
+        (root / "tests").mkdir()
+        (root / "desktop/src-tauri/src").mkdir(parents=True)
+        (root / "tools/tests").mkdir(parents=True)
+        (root / "src/example.rs").write_text(
+            "mod tests {\n    fn present_test_is_found() {}\n}\n",
+            encoding="utf-8",
+        )
+        (root / "tests/cli_surface.rs").write_text(
+            "fn top_level_integration_test() {}\n", encoding="utf-8"
+        )
+        (root / "desktop/src-tauri/src/v3.rs").write_text(
+            "mod tests {\n    fn desktop_backend_test() {}\n}\n",
+            encoding="utf-8",
+        )
+        (root / "tools/tests/test_thing.py").write_text(
+            "def test_python_thing():\n    pass\n", encoding="utf-8"
+        )
+        (root / "prove.sh").write_text("#!/bin/sh\n", encoding="utf-8")
+        return root
+
+    def test_test_reference_with_present_name_passes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = self._test_ref_root(directory)
+            claim = fixture_manifest()["claims"][0]
+            claim["evidence"]["automated_test_refs"] = [
+                "src/example.rs::tests::present_test_is_found",
+                "tests/cli_surface.rs::top_level_integration_test",
+                "desktop/src-tauri/src/v3.rs::tests::desktop_backend_test",
+                "tools/tests/test_thing.py::test_python_thing",
+                "prove.sh",
+            ]
+            self.assertEqual(
+                claims_sync.validate_test_references([claim], root=root), []
+            )
+
+    def test_test_reference_with_missing_name_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = self._test_ref_root(directory)
+            claim = fixture_manifest()["claims"][0]
+            claim["evidence"]["automated_test_refs"] = [
+                "src/example.rs::tests::this_test_was_renamed"
+            ]
+            problems = claims_sync.validate_test_references([claim], root=root)
+            self.assertEqual(len(problems), 1)
+            self.assertIn("example-current", problems[0])
+            self.assertIn("this_test_was_renamed", problems[0])
+
+    def test_test_reference_with_missing_file_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = self._test_ref_root(directory)
+            claim = fixture_manifest()["claims"][0]
+            claim["evidence"]["automated_test_refs"] = ["src/does_not_exist.rs"]
+            problems = claims_sync.validate_test_references([claim], root=root)
+            self.assertEqual(len(problems), 1)
+            self.assertIn("missing file", problems[0])
+
+    def test_test_reference_prose_with_whitespace_is_left_unresolved(self) -> None:
+        # "workflow job steps in .github/workflows/rust.yml" is real registry
+        # evidence: narrative text mentioning a filename, not a checkable
+        # path or test ref. A ref containing whitespace is never a real path
+        # or `path::name` ref, so it is deliberately skipped rather than
+        # reported as a missing file.
+        with tempfile.TemporaryDirectory() as directory:
+            root = self._test_ref_root(directory)
+            claim = fixture_manifest()["claims"][0]
+            claim["evidence"]["automated_test_refs"] = [
+                "workflow job steps in .github/workflows/rust.yml"
+            ]
+            self.assertEqual(
+                claims_sync.validate_test_references([claim], root=root), []
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

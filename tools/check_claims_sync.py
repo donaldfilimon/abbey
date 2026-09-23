@@ -85,6 +85,84 @@ FORBIDDEN_DRIFT = {
         "OOS honesty pack — lora/weights/accel/shell/host",
     ),
 }
+# (relative source dir, file extension, name-declaration pattern) triples
+# searched when resolving a claim's `automated_test_refs` entries.
+TEST_SOURCE_DIRS = (
+    ("src", ".rs", re.compile(r"\bfn\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(")),
+    ("tests", ".rs", re.compile(r"\bfn\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(")),
+    (
+        "desktop/src-tauri/src",
+        ".rs",
+        re.compile(r"\bfn\s+([A-Za-z_][A-Za-z0-9_]*)\s*\("),
+    ),
+    ("tools/tests", ".py", re.compile(r"\bdef\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(")),
+)
+
+
+def collect_test_names(root: Path) -> set[str]:
+    """Every `fn <name>`/`def <name>` declared under the allowed test dirs.
+
+    A claim's `automated_test_refs` entry is resolved against this set, not
+    against its own path segment: the registry's `path::mod::name` refs often
+    nest through a `tests` module that is not part of the file's own path, so
+    membership (not a path-plus-grep lookup) is what "resolves somewhere
+    under src/, tests/, desktop/src-tauri/src/, or tools/tests/" means.
+    """
+    names: set[str] = set()
+    for rel_dir, extension, pattern in TEST_SOURCE_DIRS:
+        base = root / rel_dir
+        if not base.is_dir():
+            continue
+        for file in base.rglob(f"*{extension}"):
+            try:
+                text = file.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                continue
+            names.update(pattern.findall(text))
+    return names
+
+
+def validate_test_references(
+    claims: list[dict[str, Any]], root: Path = ROOT
+) -> list[str]:
+    """Check every claim's `automated_test_refs` entries actually exist.
+
+    An entry is one of three shapes:
+      - `path::...::name` — `path` must be a real file and `name` must be a
+        declared test function/def somewhere under the allowed test dirs
+        (see `collect_test_names`).
+      - a bare file path with no whitespace (e.g. `./check.sh`, a whole
+        script or file used as evidence) — the file must exist.
+      - free-form prose that happens to mention a filename (e.g. "workflow
+        job steps in .github/workflows/rust.yml") — identified by containing
+        whitespace, since no real path or test ref does; left unresolved
+        deliberately, this is narrative evidence, not a checkable reference.
+    Returns one message per unresolved entry; it does not raise, so callers
+    can report every stale reference in one pass.
+    """
+    names = collect_test_names(root)
+    problems: list[str] = []
+    for claim in claims:
+        claim_id = str(claim["id"])
+        for ref in claim["evidence"]["automated_test_refs"]:
+            if any(ch.isspace() for ch in ref):
+                continue
+            parts = ref.split("::")
+            path = root / parts[0]
+            if not path.is_file():
+                problems.append(
+                    f"claim {claim_id} test reference names a missing file: {ref}"
+                )
+                continue
+            if len(parts) == 1:
+                continue
+            name = parts[-1]
+            if name not in names:
+                problems.append(
+                    f"claim {claim_id} test reference does not resolve to a "
+                    f"declared test: {ref}"
+                )
+    return problems
 
 
 def is_stable_kebab_id(value: object) -> bool:
@@ -791,6 +869,8 @@ def main() -> int:
         for phrase in forbidden_phrases:
             if phrase in text:
                 failures.append(f"{path.relative_to(ROOT)} contains stale `{phrase}`")
+
+    failures.extend(validate_test_references(manifest["claims"]))
 
     if failures:
         joined = ", ".join(failures)
