@@ -3,6 +3,7 @@
 #![cfg(unix)]
 
 use std::os::unix::fs::PermissionsExt as _;
+use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 use std::time::{Duration, Instant};
@@ -112,9 +113,16 @@ impl Harness {
     }
 
     fn wait_ready(&mut self) {
+        // UnixListener::bind (src/daemon/server/unix.rs) creates the socket path
+        // at bind(2) before it calls listen(2); a connect attempted in that gap
+        // gets ECONNREFUSED even though the path already exists. Probe with a
+        // real (immediately dropped) connect instead of just checking the path.
         let deadline = Instant::now() + Duration::from_secs(3);
-        while !self.socket.exists() {
-            assert!(Instant::now() < deadline, "abbeyd socket was not created");
+        while UnixStream::connect(&self.socket).is_err() {
+            assert!(
+                Instant::now() < deadline,
+                "abbeyd did not start accepting connections"
+            );
             assert!(
                 self.child.try_wait().unwrap().is_none(),
                 "abbeyd exited before creating its socket"

@@ -15,6 +15,7 @@ use abbey::daemon::{
 };
 use abbey::edition;
 use std::os::unix::fs::PermissionsExt as _;
+use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 use std::time::{Duration, Instant};
@@ -93,9 +94,16 @@ impl Harness {
         }
         let child = daemon.spawn().expect("start abbeyd");
 
+        // UnixListener::bind (src/daemon/server/unix.rs) creates the socket path
+        // at bind(2) before it calls listen(2); a connect attempted in that gap
+        // gets ECONNREFUSED even though the path already exists. Probe with a
+        // real (immediately dropped) connect instead of just checking the path.
         let deadline = Instant::now() + Duration::from_secs(3);
-        while !socket.exists() {
-            assert!(Instant::now() < deadline, "abbeyd socket was not created");
+        while UnixStream::connect(&socket).is_err() {
+            assert!(
+                Instant::now() < deadline,
+                "abbeyd did not start accepting connections"
+            );
             std::thread::sleep(Duration::from_millis(10));
         }
         Self {
