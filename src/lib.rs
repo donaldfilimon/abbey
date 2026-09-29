@@ -51,6 +51,9 @@ mod slash;
 mod slash_alias;
 mod slash_dispatch;
 mod state;
+// Consumed by the streaming run path (plan Task 7), which removes this allow.
+#[allow(dead_code)]
+mod stream;
 mod subagents;
 mod surfaces;
 mod tui;
