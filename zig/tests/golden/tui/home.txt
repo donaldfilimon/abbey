@@ -1,0 +1,30 @@
+╭ ✦ Abbey  ink ────────────────────────────────────────────────────────────────────────────────────╮
+│ Home │ Chats │ Personas │ Memory │ Skills │ Models │ Doctor                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+ backend abi   model local   chat 4f1c2a9e   persona abbey   role auto   last 0   mem jsonl /state/m
+╭ Session ────────────────────────────────────────────╮╭ Recent chats ─────────────────────────────╮
+│model  local                                         ││22:10:05 0b7e44d1 ~/dev/abbey              │
+│chat   4f1c2a9e-7b3d-4e21-9a55-0c1d2e3f4a5b          ││03:22:37 4f1c2a9e ~/dev/abbey-zig          │
+│cwd    ~/dev/abbey-zig                               ││03:40:11 9c2d7e60 ...-long-scratch-director│
+│                                                     ││                                           │
+│Keys                                                 ││                                           │
+│  Enter            run the prompt (resume chat)      ││                                           │
+│  `  Ctrl-L        toggle prompt <-> panel           ││                                           │
+│  Ctrl-K / Ctrl-T  palette / theme                   ││                                           │
+│  Ctrl-B           cycle executor backend            ││                                           │
+│  Tab 1-7 . ?      tabs . help                       ││                                           │
+│                                                     ││                                           │
+│Composer-first . dual focus . dashboard chips.       │╰───────────────────────────────────────────╯
+│                                                     │╭ Routes . audit ───────────────────────────╮
+│                                                     ││03:22 abbey/gemma local 0.95 -             │
+│                                                     ││03:40 aviva/max local 0.85 -               │
+│                                                     ││                                           │
+│                                                     ││                                           │
+│                                                     ││                                           │
+│                                                     ││                                           │
+│                                                     ││                                           │
+╰─────────────────────────────────────────────────────╯╰───────────────────────────────────────────╯
+╭ Prompt . Enter run . Up/Down history ────────────────────────────────────────────────────────────╮
+│                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+ ▸ prompt abi ink Enter run . ` focus . Ctrl-K palette . Ctrl-B backend . ? help last=0

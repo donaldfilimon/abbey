@@ -1,0 +1,30 @@
+╭ ✦ Abbey  ink ────────────────────────────────────────────────────────────────────────────────────╮
+│ Home │ Chats │ Personas │ Memory │ Skills │ Models │ Doctor                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭ Models . Enter select ───────────────────────────────────────────────────────────────────────────╮
+│local     deterministic persona-template completion (abi-ai, no network)                          │
+│claude-*  Anthropic via `abi complete --live` (needs abi credentials)                             │
+│live      Anthropic live transport with abi's default model                                       │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭ Prompt (Ctrl-L / ` to focus) ────────────────────────────────────────────────────────────────────╮
+│                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+ ▸ panel abi ink Enter run . ` focus . Ctrl-K palette . Ctrl-B backend . ? help last=0

@@ -1,0 +1,38 @@
+Abbey (Zig): agent CLI over subprocess executors (P1 CLI core, P2 daemon v1, P3 TUI)
+
+Usage: abbey-zig [OPTIONS] <COMMAND> [ARGS]...
+
+Commands:
+  ask      Read-only Q&A through the canonical hybrid path (route-logged)
+  print    Headless single-shot capture; no route record [aliases: p, e, exec]
+  commit   Conventional commit message for the staged diff (headless capture)
+  doctor   Paths, backend resolution, model, chat, memory [aliases: which, info]
+  learn    Self-learn: status|correction|train|preference|routes|digest|export|review|stats|improve
+  routes   Recent hybrid routing records
+  config   Show config (`--init` scaffolds config.toml if absent)
+  claims   Capability ledger: Current / Partial / Proposed / Out of scope [aliases: roadmap, scope]
+  memory   Memory store: search <query> | similar <query>
+  wdbx     Bridge to the `abi wdbx` CLI (query gets --json and Abbey's store)
+  daemon   abbeyd protocol v1: serve | status | claims | routes (read-only)
+  tui      Seven-tab terminal UI; Ctrl-B switches the live executor backend
+  edition  Compiled edition identity and namespaces
+  version  Print version
+  help     Print this help or the help of a command
+
+Global options:
+  -m, --model <MODEL>        Model id or alias (fable, opus, local, ...) [env: ABBEY_MODEL]
+      --mode <MODE>          Execution mode [possible values: ask, plan]
+      --plan                 Plan mode shorthand
+      --ask                  Ask mode shorthand
+  -p, --print                Headless print (capture, then emit)
+      --output-format <FMT>  Output format with --print
+  -f, --force                Force / always-approve [aliases: --yolo, --always-approve]
+      --add-dir <DIR>        Extra workspace root (repeatable)
+      --sandbox <MODE>       Sandbox: enabled|disabled
+      --debug                Forward --debug to cursor-style backends
+      --approve-mcps         Forward --approve-mcps to cursor-style backends
+      --max-turns <N>        Forward --max-turns to cursor-style backends
+  -h, --help                 Print help
+  -V, --version              Print version
+
+The MCP server is a later phase (see `claims`).

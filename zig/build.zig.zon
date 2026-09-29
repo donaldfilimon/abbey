@@ -1,0 +1,18 @@
+.{
+    .name = .abbey_zig,
+    .version = "0.1.0",
+    .fingerprint = 0x22ecb17368288d4d,
+    .minimum_zig_version = "0.17.0-dev.2251+1175a3e99",
+    .dependencies = .{},
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "tests",
+        "contracts",
+        "tools",
+        "docs",
+        "AGENTS.md",
+        "CLAUDE.md",
+    },
+}
