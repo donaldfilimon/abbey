@@ -48,20 +48,34 @@ impl PlainDecoder {
 impl StreamDecoder for PlainDecoder {
     fn feed(&mut self, chunk: &[u8]) -> Vec<StreamEvent> {
         self.carry.extend_from_slice(chunk);
-        let valid = match std::str::from_utf8(&self.carry) {
-            Ok(s) => s.len(),
-            Err(e) if e.error_len().is_some() => {
-                let text = String::from_utf8_lossy(&self.carry).into_owned();
-                self.carry.clear();
-                return self.emit(&text);
+        let mut text = String::new();
+        let mut pos = 0;
+        loop {
+            match std::str::from_utf8(&self.carry[pos..]) {
+                Ok(s) => {
+                    text.push_str(s);
+                    pos = self.carry.len();
+                    break;
+                }
+                Err(e) => {
+                    let valid = e.valid_up_to();
+                    text.push_str(
+                        std::str::from_utf8(&self.carry[pos..pos + valid])
+                            .expect("prefix validated as UTF-8"),
+                    );
+                    pos += valid;
+                    match e.error_len() {
+                        Some(n) => {
+                            text.push('\u{FFFD}');
+                            pos += n;
+                        }
+                        // Incomplete trailing code point: keep it for the next chunk.
+                        None => break,
+                    }
+                }
             }
-            Err(e) => e.valid_up_to(),
-        };
-        if valid == 0 {
-            return Vec::new();
         }
-        let bytes: Vec<u8> = self.carry.drain(..valid).collect();
-        let text = String::from_utf8(bytes).expect("prefix validated as UTF-8");
+        self.carry.drain(..pos);
         self.emit(&text)
     }
 
@@ -118,5 +132,14 @@ mod tests {
         let mut out = text(d.feed(b"ok\xffok"));
         out.push_str(&text(d.finish()));
         assert_eq!(out, "ok\u{FFFD}ok");
+    }
+
+    #[test]
+    fn plain_decoder_keeps_split_utf8_after_an_invalid_byte() {
+        let mut d = PlainDecoder::default();
+        let mut out = text(d.feed(b"\xffab\xf0\x9f"));
+        out.push_str(&text(d.feed(b"\x8c\x8d")));
+        out.push_str(&text(d.finish()));
+        assert_eq!(out, "\u{FFFD}ab🌍");
     }
 }
