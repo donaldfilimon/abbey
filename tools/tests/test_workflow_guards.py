@@ -226,7 +226,7 @@ class WorkflowGuards(unittest.TestCase):
         self.assertTrue(self.jobs, "no jobs parsed out of rust.yml")
 
     def test_trusted_jobs_run_only_on_self_hosted_runners(self) -> None:
-        for name in ("gate-linux", "gate-macos"):
+        for name in ("gate-macos",):
             body = self.jobs[name]
             self.assertIn(
                 "self-hosted",
@@ -235,7 +235,7 @@ class WorkflowGuards(unittest.TestCase):
             )
 
     def test_every_self_hosted_job_requires_same_repository(self) -> None:
-        for name in ("gate-linux", "gate-macos"):
+        for name in ("gate-macos",):
             body = self.jobs[name]
             self.assertIn(
                 "github.repository == 'donaldfilimon/abbey'",
@@ -248,10 +248,9 @@ class WorkflowGuards(unittest.TestCase):
         # scheduled. Each such job must be skippable via a repository variable
         # so the workflow degrades to "skipped", never to an unschedulable job.
         expected = {
-            "gate-linux": "vars.ABBEY_LINUX_ARM64_RUNNER == 'enabled'",
             "gate-macos": "vars.ABBEY_MACOS_ARM64_RUNNER == 'enabled'",
         }
-        self.assertEqual(set(self.jobs), {*expected, "gate-forks"})
+        self.assertEqual(set(self.jobs), set(expected))
         for name, guard in expected.items():
             body = self.jobs[name]
             self.assertIn(
@@ -269,7 +268,7 @@ class WorkflowGuards(unittest.TestCase):
             "ABI-backed local mesh proof",
             "Clean runner workspace",
         }
-        for name in ("gate-linux", "gate-macos"):
+        for name in ("gate-macos",):
             body = self.jobs[name]
             steps = set(re.findall(r"^ {6}- name: (.+)$", body, re.MULTILINE))
             self.assertFalse(required - steps, f"job {name!r} is missing required steps")
@@ -312,7 +311,7 @@ class ForkSafety(unittest.TestCase):
         )
 
     def test_pull_request_jobs_require_a_same_repo_head(self) -> None:
-        for name in ("gate-linux", "gate-macos"):
+        for name in ("gate-macos",):
             body = self.jobs[name]
             condition = job_field(body, "if")
             if "pull_request" not in condition:
@@ -323,16 +322,14 @@ class ForkSafety(unittest.TestCase):
                 f"job {name!r} accepts pull_request without pinning the head repo",
             )
 
-    def test_fork_job_uses_a_hosted_runner_and_foreign_head_guard(self) -> None:
-        body = self.jobs["gate-forks"]
-        self.assertEqual(job_field(body, "runs-on"), "ubuntu-latest")
-        condition = job_field(body, "if")
-        self.assertIn("github.event_name == 'pull_request'", condition)
-        self.assertIn(
+    def test_no_job_runs_for_a_foreign_pull_request_head(self) -> None:
+        # Fork pull requests get no job: the self-hosted runner must never see
+        # fork code, and GitHub-hosted jobs cannot start under the account's
+        # billing lock (the hosted fork gate was removed on 2026-09-28).
+        self.assertNotIn(
             "github.event.pull_request.head.repo.full_name != github.repository",
-            condition,
+            self.text,
         )
-        self.assertNotIn("self-hosted", body)
 
     def test_public_sibling_checkouts_never_use_a_secret(self) -> None:
         self.assertNotIn("WDBX_CHECKOUT_TOKEN", self.text)
@@ -355,9 +352,9 @@ class ForkSafety(unittest.TestCase):
             self.assertRegex(value, r"^[0-9a-f]{40}$")
 
     def test_actions_and_toolchains_are_exactly_pinned(self) -> None:
-        self.assertEqual(self.text.count(f"uses: {CHECKOUT_ACTION}"), 3)
-        self.assertEqual(self.text.count("persist-credentials: false"), 3)
-        self.assertEqual(self.text.count(f"uses: {TOOLCHAIN_ACTION}"), 6)
+        self.assertEqual(self.text.count(f"uses: {CHECKOUT_ACTION}"), 1)
+        self.assertEqual(self.text.count("persist-credentials: false"), 1)
+        self.assertEqual(self.text.count(f"uses: {TOOLCHAIN_ACTION}"), 2)
         self.assertIn("ABBEY_TOOLCHAIN: nightly-2026-09-01", self.text)
         self.assertIn("ABI_TOOLCHAIN: nightly-2026-09-01", self.text)
         self.assertNotRegex(
@@ -379,21 +376,6 @@ class ForkSafety(unittest.TestCase):
         self.assertIn("-c credential.helper= fetch", helper)
         self.assertNotIn("github.token", helper)
         self.assertNotIn("secrets.", helper)
-
-    def test_fork_job_runs_the_real_portable_gate(self) -> None:
-        body = self.jobs["gate-forks"]
-        steps = set(re.findall(r"^ {6}- name: (.+)$", body, re.MULTILINE))
-        self.assertTrue(
-            {
-                "Check out Abbey",
-                "Check out the verified ABI dependency",
-                "Check out the public WDBX substrate",
-                "Install pinned ABI toolchain",
-                "Install pinned Abbey toolchain",
-                "Build the real ABI binary",
-                "Gate all portable Abbey modes",
-            }.issubset(steps)
-        )
 
     def test_no_job_widens_token_permissions(self) -> None:
         # Job-level `permissions:` fully overrides the workflow-level default
