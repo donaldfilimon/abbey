@@ -119,6 +119,22 @@ A bare `cargo test` never compiles `src/memory/wdbx.rs` or the edition- and acce
 
 `tests/` includes process-level CLI suites plus `app_core_contract.rs`, which imports Abbey as an external library client. Process tests drive `CARGO_BIN_EXE_abbey` (the daemon suites also need `CARGO_BIN_EXE_abbeyd`, the second binary from `src/bin/abbeyd.rs`) because some guarantees only exist once the process runs — real exit codes, real stdout/stderr, and the SIGPIPE reset before `main`. `daemon_cli.rs` starts real `abbeyd` and `abbey` binaries against owner-only scratch state; it must never use a user's socket or bearer. `cli_surface.rs` uses a throwaway `ABBEY_STATE_DIR`; keep that property for state-mutating cases. `slash_parse.rs` is read-only/current-dir scoped. The app-core contract test must stay presentation-neutral and must not gain crate-private access.
 
+## `zig/` (stdlib-only Zig rewrite)
+
+`zig/` is abbey-zig, a ground-up Zig rewrite of this crate, folded in on
+2026-09-28 with `git subtree add` (full history; phase tags `zig/p1`..`zig/p3`).
+It has its own canonical `zig/AGENTS.md`, its own Zig master pin, and its own
+gate, `./zig/tools/check.sh`, which the root `./check.sh` does not run. Nothing
+in the Rust gate reads `zig/`: it is not a cargo target, and the rustfmt,
+clippy, file-size, claims, instruction, and Program 3 scans are all scoped to
+`src/`, `tests/`, `tools/`, `desktop/`, and named root files. The dependency
+runs one way: `zig/` treats this crate as a read-only oracle (it runs the
+already-built `target/debug/abbey`, never builds or edits the Rust side), and
+`zig/contracts/abbey` must stay byte-identical to `contracts/abbey`, so a
+contract corpus change here needs the same copy in `zig/` or the Zig gate
+fails. Do not run the two gates concurrently. Keep Rust and `zig/` changes in
+separate commits.
+
 ## Toolchain
 
 Rust **nightly-2026-09-01** (`rustc 1.100.0-nightly`), edition **2024**, pinned via `rust-toolchain.toml` (`rustfmt` + `clippy` components). Rust has no edition 2026; edition 2024 is the current language edition, while the dated toolchain makes the 2026 compiler baseline reproducible. `Cargo.toml` sets `unsafe_code = "deny"` as a manifest lint (clippy `-D warnings` alone would not catch it), so every `unsafe` needs a justified `#[allow(unsafe_code)]` with a SAFETY comment.

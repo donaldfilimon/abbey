@@ -38,6 +38,7 @@ cargo check --target x86_64-pc-windows-gnu   # the soft cross-compile checks, ru
 ./desktop/check.sh                           # separate Tauri+bun workspace gate; root ./check.sh runs only its codegen --check
 (cd desktop && bun run codegen)              # regenerate desktop IPC types after changing src/app_core/ contracts
 ABBEY_COVERAGE=1 ./check.sh                  # opt-in report; needs cargo-llvm-cov
+./zig/tools/check.sh >| /private/tmp/abbey-zig-gate.log 2>&1; echo EXIT:$?   # separate Zig gate for zig/ (see zig/AGENTS.md)
 ABBEY_CARGO_FEATURES=personal-edition ./install.sh   # install the separately named personal edition
 abbey doctor                       # build stamp + persona/role/memory/os honesty check
 abbey claims [partial|proposed|blocked|oos|manifest] · abbey claims refuse lora|multinode
