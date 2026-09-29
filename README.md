@@ -369,6 +369,7 @@ does not extend to an `abi` invoked directly by you against the same store.
   locked store shows `unavailable: …` rather than reporting an empty store.
 - Personas, Max/Gemma bindings, memory, hybrid-loop, fm, and the 3-D map are **Current** —
   local production weights and LoRA are Proposed, not implemented.
+- The 2026-09-29 WDBX completion design (`../abi/docs/superpowers/specs/2026-09-29-wdbx-completion-design.md`) is **not implemented** in Abbey. Provable member erasure and encrypted member-fact custody are not Current. This line does not promote C3–C7, COSE envelopes, or evidence-weighted retrieval. Abbey's in-process WDBX memory stays the v2 durable store behind `--features wdbx`, not a second canonical member-fact store. Sibling crates stay `path = "../wdbx/..."` and `path = "../abi/..."`.
 - `abbey learn review`/`stats` curate `train_candidate` provenance; they are not yet a trainer.
 - `/cost` is **N/A** (use Cursor account dashboard).
 - MCP/plugin management names its provider (`cursor|codex|claude`, plus `abi` for plugins);
