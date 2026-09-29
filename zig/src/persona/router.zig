@@ -1,4 +1,4 @@
-//! Persona routing and frozen response contracts, ported from `../abi`
+//! Persona routing and frozen response contracts, ported from `../../abi`
 //! `crates/abi-ai/src/{router,keywords,identity}.rs` (themselves ports of the
 //! original Zig `router_*.zig`). Routing compares f32 sums accumulated in
 //! declaration order as `score * 0.1` in f32, so near-ties match bit for bit.

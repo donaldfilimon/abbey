@@ -2,12 +2,15 @@
 
 Canonical agent guidance for abbey-zig. `CLAUDE.md` points here.
 
-abbey-zig is a ground-up, stdlib-only Zig rewrite of `../abbey` (Rust). The
-Rust checkout, `../abi`, and `../wdbx` are READ-ONLY oracles: read their
-source and run their already-built binaries, never edit, stage, build in, or
-clean them. Every executor (`abi`, `ollama`, `claude`, `fm`, `grok`,
-`cursor-agent`, `git`) is a subprocess with its own argv grammar; nothing
-from `../abi` is linked.
+abbey-zig is a ground-up, stdlib-only Zig rewrite of the Rust `abbey` crate.
+Since 2026-09-28 it lives in the `zig/` subdirectory of the abbey repository
+(folded in with `git subtree add`, full history kept), so the parent crate
+(`..` from `zig/`) is its oracle. The Rust side of this repository (every path
+outside `zig/`), `../../abi`, and `../../wdbx` are READ-ONLY oracles for
+`zig/` work: read their source and run their already-built binaries, never
+edit, stage, build in, or clean them from here. Every executor (`abi`,
+`ollama`, `claude`, `fm`, `grok`, `cursor-agent`, `git`) is a subprocess with
+its own argv grammar; nothing from `../../abi` is linked.
 
 ## Toolchain and gate
 
@@ -18,8 +21,13 @@ comment the first time an API is used. Do not write std calls from memory.
 
 ```sh
 zig version
-./tools/check.sh >| /private/tmp/abbey-zig-gate.log 2>&1; echo EXIT:$?
+./tools/check.sh >| /private/tmp/abbey-zig-gate.log 2>&1; echo EXIT:$?     # from zig/
+./zig/tools/check.sh >| /private/tmp/abbey-zig-gate.log 2>&1; echo EXIT:$? # from the abbey root
 ```
+
+The parent `./check.sh` (Rust) does not run this gate, and this gate never
+runs cargo. Never run the two gates at once: the parent's cargo rewrites
+`../target/debug/abbey`, which this gate executes as its oracle.
 
 `tools/check.sh` is the single gate. A green `zig build test` alone is weak
 evidence; quote the gate's exit code and its `check.sh: OK` line. Never pipe
@@ -34,16 +42,23 @@ the gate through `tail`/`head` (that reports the pipe's exit code).
 Gate stages, in order: fmt, build both editions, leak-checked tests for both
 editions, help goldens (`tests/golden/help/<cmd>.txt` vs `<cmd> --help`),
 contracts qualification (`tools/abbey_contracts.py verify`, copied verbatim
-from `../abi`, plus the lock digest), claims sync (`tools/check_claims.py`),
-the Rust route-reader oracle (`tools/stages/rust_oracle.sh`, uses
-`ABBEY_ZIG_RUST_ORACLE` or `~/.local/bin/abbey`), the Rust daemon client
-against the Zig abbeyd (`tools/stages/rust_daemon_client.sh`, same binary;
-a recording proxy proves its v2 -> v1 downgrade), the TUI live-backend grep
+from `../../abi`, plus the lock digest and a `diff -r` of `contracts/abbey`
+against the parent's `../contracts/abbey`), claims sync
+(`tools/check_claims.py`), the Rust route-reader oracle
+(`tools/stages/rust_oracle.sh`), the Rust daemon client against the Zig
+abbeyd (`tools/stages/rust_daemon_client.sh`, same binary; a recording proxy
+proves its v2 -> v1 downgrade), the TUI live-backend grep
 guard, the TUI in a real pty (`tools/stages/tui_pty.sh`: `stty -g` identical
 before and after a quit and a SIGTERM), the real-abi end to end
-run (`tools/stages/e2e_abi.sh`, needs `ABBEY_ZIG_E2E_ABI`), size guard.
-Oracle and e2e stages print `SKIP:` when their binary is absent; a SKIP is
-unmeasured, never a pass.
+run (`tools/stages/e2e_abi.sh`), size guard. `tools/check.sh` resolves the
+oracle binaries once, prints them under `== oracle roots ==`, and exports
+them: the Rust oracle is `ABBEY_ZIG_RUST_ORACLE`, else the parent's
+already-built `../target/debug/abbey`, then `../target/release/abbey`, then
+`~/.local/bin/abbey`; the e2e abi is `ABBEY_ZIG_E2E_ABI`, else
+`../../abi/target/release/abi`, then `../../abi/target/debug/abi`. The gate
+never builds them; build in the parent or in `../../abi` first if a fresh
+oracle is wanted. Oracle and e2e stages print `SKIP:` when their binary is
+absent; a SKIP is unmeasured, never a pass.
 
 Change help text: edit `src/cli/help.zig`, then regenerate the golden with
 `./zig-out/bin/abbey-zig <cmd> --help > tests/golden/help/<cmd>.txt` and
@@ -73,7 +88,8 @@ edit `ui.zig`, run the lib tests, review `.zig-cache/tmp/tui-golden/<name>.txt`,
 copy it over `tests/golden/tui/<name>.txt`. Daemon sockets in tests and stages live under short
 paths (`/private/tmp/abz-*` or the repo's `.zig-cache/tmp`): Darwin's
 `sun_path` holds 104 bytes. `contracts/abbey/` is a
-byte-identical copy of `../abbey/contracts/abbey`; never edit it here.
+byte-identical copy of the parent's `../contracts/abbey` (the gate diffs
+them); never edit it here, re-copy it when the parent changes.
 
 ## Rules
 
@@ -95,9 +111,9 @@ byte-identical copy of `../abbey/contracts/abbey`; never edit it here.
 
 ## Git policy
 
-Work on `main` in this checkout. Branches and worktrees only when a task
-needs isolation. This repository has NO remote: every commit exists only on
-this disk until Donald adds one. Commit locally per phase and tag the phase
-(`p1`, ...); never push. When a backup is needed, `git bundle` to
-`~/at-risk-bundles/` and add it to that directory's README. Stage by exact
-path, never `git add -A`.
+`zig/` is part of the abbey repository: its commits land on abbey's `main`,
+and abbey's remote and push policy govern them (`../AGENTS.md`). Branches
+and worktrees only when a task needs isolation. Keep `zig/` commits separate
+from Rust-side commits. Phase tags are `zig/p1`, `zig/p2`, `zig/p3` (the
+original standalone `p1`..`p3` are bundled in `~/at-risk-bundles/`); tag a
+new phase `zig/pN`. Stage by exact path, never `git add -A`.

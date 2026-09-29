@@ -2,7 +2,8 @@
 # Rust oracle: route.jsonl written by the Zig binary must be read by the Rust
 # `abbey routes` reader exactly as the Zig reader formats it. Read-only use of
 # an already-built Rust binary with temp HOME/state/config; SKIPs loudly when
-# the Rust binary is absent.
+# the Rust binary is absent. tools/check.sh resolves ABBEY_ZIG_RUST_ORACLE to
+# the parent tree's own build (../target/{debug,release}/abbey) first.
 set -eu
 ZIG_BIN="$1"
 RUST_BIN="${ABBEY_ZIG_RUST_ORACLE:-$HOME/.local/bin/abbey}"
@@ -25,4 +26,4 @@ HOME="$T/home" ABBEY_STATE_DIR="$T/state" ABBEY_CONFIG="$T/none.toml" "$RUST_BIN
 n=$(wc -l < "$T/rust-routes.txt" | tr -d ' ')
 [ "$n" -eq 5 ] || { cat "$T/rust-routes.txt"; echo "FAIL: rust reader saw $n of 5 records"; exit 1; }
 diff "$T/zig-routes.txt" "$T/rust-routes.txt" || { echo "FAIL: Rust and Zig readers disagree"; exit 1; }
-echo "ok: $("$RUST_BIN" --version) read all 5 Zig-written records identically"
+echo "ok: $("$RUST_BIN" --version) at $RUST_BIN read all 5 Zig-written records identically"

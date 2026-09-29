@@ -9,7 +9,8 @@
 # Isolation: temp HOME, temp Zig and Rust state roots, and the Rust client's
 # ABBEYD_SOCKET_PATH / ABBEYD_BEARER_TOKEN pointed at the temp socket and a
 # random token. Donald's live Rust state and ~/.abi are never touched.
-# SKIPs loudly when the Rust binary is absent.
+# SKIPs loudly when the Rust binary is absent. tools/check.sh resolves
+# ABBEY_ZIG_RUST_ORACLE to the parent tree's own build first.
 set -eu
 ZIG_DAEMON="$1"
 ZIG_BIN="$2"
@@ -142,4 +143,4 @@ kill -TERM "$PID"
 wait "$PID" || { cat "$T/daemon.log"; echo "FAIL: Zig daemon exited nonzero on SIGTERM"; exit 1; }
 PID=""
 [ ! -e "$SOCK" ] || { echo "FAIL: socket left behind after SIGTERM"; exit 1; }
-echo "ok: $("$RUST_BIN" --version) client talked to the Zig daemon (v2 -> v1 downgrade), wrong bearer refused, socket removed on SIGTERM"
+echo "ok: $("$RUST_BIN" --version) at $RUST_BIN client talked to the Zig daemon (v2 -> v1 downgrade), wrong bearer refused, socket removed on SIGTERM"

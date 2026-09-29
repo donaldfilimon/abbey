@@ -16,8 +16,8 @@ The gate is the only evidence of green:
 ./tools/check.sh >| /private/tmp/abbey-zig-gate.log 2>&1; echo EXIT:$?
 ```
 
-While iterating, from the repository root (goldens and fixtures resolve
-against the cwd):
+While iterating, from `zig/` (goldens and fixtures resolve against the
+cwd):
 
 ```sh
 zig build test                        # lib + entry tests, safe edition
@@ -47,7 +47,8 @@ bypasses in `capture.zig`. The daemon (`daemon/`, `abbeyd-zig`) and the TUI
 so a behavior change in `session`/`actions` reaches CLI, TUI and daemon at
 once.
 
-Most files are ports of a named Rust file in `../abbey` (the header comment
-says which, e.g. `session.rs`, `actions.rs`). When behavior is in question,
-read the Rust source and run the Rust binary as the oracle; never build in
-or edit `../abbey`, `../abi`, or `../wdbx`.
+Most files are ports of a named Rust file in the parent crate (`../src/`
+from `zig/`; the header comment says which, e.g. `session.rs`,
+`actions.rs`). When behavior is in question, read the Rust source and run the
+already-built Rust binary as the oracle; never build in or edit the Rust side
+of this repository (anything outside `zig/`), `../../abi`, or `../../wdbx`.

@@ -1,5 +1,6 @@
 #!/bin/sh
-# End-to-end P1 criteria against a real `abi` built from ../abi:
+# End-to-end P1 criteria against a real, already-built `abi` from ../../abi
+# (tools/check.sh resolves ABBEY_ZIG_E2E_ABI; this stage never builds it):
 # doctor, ask, print, commit, learn status with ABBEY_BACKEND=abi.
 # abi resolves its store as ABI_WDBX_PERSIST off > ABI_WDBX_PATH >
 # $XDG_DATA_HOME/abi/wdbx > $HOME/.abi/wdbx (wdbx 62ac490), so a temp HOME alone
@@ -11,7 +12,7 @@ set -eu
 ZIG_BIN="$1"
 ABI="${ABBEY_ZIG_E2E_ABI:-}"
 if [ -z "$ABI" ] || [ ! -x "$ABI" ]; then
-  echo "SKIP: e2e with a real abi binary: set ABBEY_ZIG_E2E_ABI to an abi built from ../abi"
+  echo "SKIP: e2e with a real abi binary: set ABBEY_ZIG_E2E_ABI, or build abi in ../../abi (never from zig/)"
   exit 0
 fi
 T=$(mktemp -d /private/tmp/abbey-zig-e2e.XXXXXX)

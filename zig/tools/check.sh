@@ -8,6 +8,26 @@ mkdir -p "$LOG_DIR"
 
 stage() { printf '== %s ==\n' "$1"; }
 
+# Oracle roots. zig/ lives inside the Rust abbey checkout (folded 2026-09-28):
+# the parent tree is the Rust oracle, and abi and wdbx are its siblings. All
+# three are read-only here: the gate runs binaries that are already built and
+# never builds, edits, or cleans the Rust side. An explicit env var wins.
+ABBEY_ZIG_RUST_ROOT=$(cd .. && pwd)
+ABBEY_ZIG_ABI_ROOT=$(cd "$ABBEY_ZIG_RUST_ROOT/.." && pwd)/abi
+first_exe() { for c in "$@"; do if [ -x "$c" ]; then printf '%s\n' "$c"; return 0; fi; done; }
+if [ -z "${ABBEY_ZIG_RUST_ORACLE:-}" ]; then
+  ABBEY_ZIG_RUST_ORACLE=$(first_exe "$ABBEY_ZIG_RUST_ROOT/target/debug/abbey" "$ABBEY_ZIG_RUST_ROOT/target/release/abbey" "$HOME/.local/bin/abbey")
+fi
+if [ -z "${ABBEY_ZIG_E2E_ABI:-}" ]; then
+  ABBEY_ZIG_E2E_ABI=$(first_exe "$ABBEY_ZIG_ABI_ROOT/target/release/abi" "$ABBEY_ZIG_ABI_ROOT/target/debug/abi")
+fi
+export ABBEY_ZIG_RUST_ROOT ABBEY_ZIG_RUST_ORACLE ABBEY_ZIG_E2E_ABI
+
+stage "oracle roots"
+echo "rust tree: $ABBEY_ZIG_RUST_ROOT"
+echo "rust oracle: ${ABBEY_ZIG_RUST_ORACLE:-(none found)}"
+echo "abi for e2e: ${ABBEY_ZIG_E2E_ABI:-(none found)}"
+
 stage "zig version"
 zig version
 
@@ -60,6 +80,9 @@ cat "$LOG_DIR/contracts.log"
 lock=$(python3 -c 'import json;print(json.load(open("contracts/abbey/abbey-contracts.lock.json"))["aggregate_digest"])')
 grep -q "digest=$lock" "$LOG_DIR/contracts.log" || { echo "FAIL: corpus digest does not match the lock ($lock)"; exit 1; }
 echo "ok: lock digest $lock"
+diff -r contracts/abbey "$ABBEY_ZIG_RUST_ROOT/contracts/abbey" > "$LOG_DIR/contracts-mirror.log" 2>&1 \
+  || { cat "$LOG_DIR/contracts-mirror.log"; echo "FAIL: contracts/abbey differs from the parent's ../contracts/abbey (re-copy it; never edit it here)"; exit 1; }
+echo "ok: contracts/abbey byte-identical to the parent's ../contracts/abbey"
 
 stage "claims sync"
 python3 tools/check_claims.py
