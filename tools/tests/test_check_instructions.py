@@ -23,6 +23,8 @@ class InstructionDriftTest(unittest.TestCase):
         shutil.copytree(ROOT / "src", self.root / "src")
         (self.root / "desktop").mkdir()
         shutil.copy(ROOT / "desktop" / "check.sh", self.root / "desktop" / "check.sh")
+        (self.root / "zig" / "tools").mkdir(parents=True)
+        shutil.copy(ROOT / "zig" / "tools" / "check.sh", self.root / "zig" / "tools" / "check.sh")
 
     def tearDown(self):
         self._dir.cleanup()
