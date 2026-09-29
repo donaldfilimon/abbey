@@ -316,7 +316,19 @@ pub(crate) fn run_with_checkpoint(
     limits: &SupervisorLimits,
     checkpoint: impl FnMut() -> bool,
 ) -> Result<SupervisorOutcome, SupervisorError> {
-    unix::run_with_checkpoint(spec, *limits, checkpoint)
+    unix::run_with_checkpoint(spec, *limits, checkpoint, None)
+}
+
+// Consumed by the streaming run path (plan Task 7), which removes this allow.
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn run_tapped(
+    spec: &ProcessSpec,
+    limits: &SupervisorLimits,
+    checkpoint: impl FnMut() -> bool,
+    stdout_tap: std::sync::mpsc::Sender<Vec<u8>>,
+) -> Result<SupervisorOutcome, SupervisorError> {
+    unix::run_with_checkpoint(spec, *limits, checkpoint, Some(stdout_tap))
 }
 
 #[cfg(not(unix))]

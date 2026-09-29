@@ -402,3 +402,74 @@ fn non_unix_fails_closed() {
         Err(SupervisorError::Unsupported)
     ));
 }
+
+#[cfg(unix)]
+mod tap {
+    use super::super::*;
+    use std::sync::mpsc;
+    use std::time::{Duration, Instant};
+
+    fn sh(script: &str) -> ProcessSpec {
+        ProcessSpec::inherited(
+            std::path::PathBuf::from("/bin/sh"),
+            vec!["-c".into(), script.into()],
+        )
+    }
+
+    fn limits(stdout_bytes: usize) -> SupervisorLimits {
+        SupervisorLimits {
+            timeout: Duration::from_secs(10),
+            terminate_grace: Duration::from_millis(200),
+            stdout_bytes,
+            stderr_bytes: 4096,
+            poll_interval: Duration::from_millis(5),
+        }
+    }
+
+    #[test]
+    fn tapped_run_streams_every_chunk_in_order() {
+        let (tx, rx) = mpsc::channel();
+        let outcome = run_tapped(
+            &sh("printf abc; sleep 0.05; printf def"),
+            &limits(4096),
+            || false,
+            tx,
+        )
+        .expect("tapped run");
+        let streamed: Vec<u8> = rx.iter().flatten().collect();
+        assert_eq!(streamed, b"abcdef");
+        match outcome {
+            SupervisorOutcome::Exited { status, stdout, .. } => {
+                assert!(status.success());
+                assert_eq!(stdout, b"abcdef");
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[test]
+    fn tapped_run_keeps_only_a_tail_and_never_overflows() {
+        let (tx, rx) = mpsc::channel();
+        let outcome = run_tapped(&sh("printf abcdefgh"), &limits(4), || false, tx).expect("run");
+        assert_eq!(rx.iter().flatten().collect::<Vec<u8>>(), b"abcdefgh");
+        match outcome {
+            SupervisorOutcome::Exited { stdout, .. } => assert_eq!(stdout, b"efgh"),
+            other => panic!("expected Exited with tail, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn tapped_run_cancels_promptly() {
+        let (tx, _rx) = mpsc::channel();
+        let started = Instant::now();
+        let outcome = run_tapped(
+            &sh("printf x; sleep 30"),
+            &limits(4096),
+            move || started.elapsed() > Duration::from_millis(100),
+            tx,
+        )
+        .expect("run");
+        assert!(matches!(outcome, SupervisorOutcome::Cancelled));
+        assert!(started.elapsed() < Duration::from_secs(5));
+    }
+}

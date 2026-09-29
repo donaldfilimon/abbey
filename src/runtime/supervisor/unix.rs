@@ -190,6 +190,7 @@ pub(super) fn run_with_checkpoint(
     spec: &ProcessSpec,
     limits: SupervisorLimits,
     mut checkpoint: impl FnMut() -> bool,
+    stdout_tap: Option<Sender<Vec<u8>>>,
 ) -> Result<SupervisorOutcome, SupervisorError> {
     let (canonical_program, canonical_current_dir) = spec.validate()?;
     limits.validate()?;
@@ -230,8 +231,15 @@ pub(super) fn run_with_checkpoint(
         StreamName::Stdout,
         limits.stdout_bytes,
         reader_tx.clone(),
+        stdout_tap,
     )?;
-    let stderr_reader = spawn_reader(stderr, StreamName::Stderr, limits.stderr_bytes, reader_tx)?;
+    let stderr_reader = spawn_reader(
+        stderr,
+        StreamName::Stderr,
+        limits.stderr_bytes,
+        reader_tx,
+        None,
+    )?;
 
     supervise(
         &mut guard,
@@ -317,14 +325,48 @@ fn spawn_reader<R: Read + Send + 'static>(
     name: StreamName,
     cap: usize,
     sender: Sender<ReaderMessage>,
+    tap: Option<Sender<Vec<u8>>>,
 ) -> Result<JoinHandle<()>, SupervisorError> {
     thread::Builder::new()
         .name(format!("abbey-supervisor-{name}"))
         .spawn(move || {
-            let result = read_bounded(reader, name, cap);
+            let result = match tap {
+                Some(tap) => read_tapped(reader, name, cap, &tap),
+                None => read_bounded(reader, name, cap),
+            };
             let _ = sender.send(ReaderMessage { name, result });
         })
         .map_err(SupervisorError::Spawn)
+}
+
+/// Stream every chunk to `tap` and retain only the last `cap` bytes. A tapped
+/// stream is consumed live, so its retained copy is a diagnostic tail and can
+/// never overflow.
+fn read_tapped<R: Read>(
+    mut reader: R,
+    name: StreamName,
+    cap: usize,
+    tap: &Sender<Vec<u8>>,
+) -> std::io::Result<CapturedStream> {
+    let mut tail: Vec<u8> = Vec::new();
+    let mut buffer = [0_u8; 8 * 1024];
+    loop {
+        let read = reader.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        let _ = tap.send(buffer[..read].to_vec());
+        tail.extend_from_slice(&buffer[..read]);
+        if tail.len() > cap {
+            let excess = tail.len() - cap;
+            tail.drain(..excess);
+        }
+    }
+    Ok(CapturedStream {
+        name,
+        bytes: tail,
+        overflowed: false,
+    })
 }
 
 fn read_bounded<R: Read>(
