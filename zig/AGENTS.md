@@ -15,7 +15,7 @@ its own argv grammar; nothing from `../../abi` is linked.
 ## Toolchain and gate
 
 Zig master, pinned by `build.zig.zon` `.minimum_zig_version`
-(`0.17.0-dev.2251+1175a3e99`). The std API moves: read the source under
+(`0.17.0-dev.2320+1e770dbef`). The std API moves: read the source under
 `zig env` -> `std_dir` before writing any std call, and cite the file in a
 comment the first time an API is used. Do not write std calls from memory.
 
