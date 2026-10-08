@@ -28,3 +28,20 @@ pub enum StreamEvent {
     },
     Failed(String),
 }
+
+impl StreamEvent {
+    pub(crate) fn payload_bytes(&self) -> usize {
+        match self {
+            Self::TextDelta(s)
+            | Self::ThinkingDelta(s)
+            | Self::SessionId(s)
+            | Self::Notice(s)
+            | Self::Failed(s) => s.len(),
+            Self::ToolStart { id, name, input } => {
+                id.len() + name.len() + serde_json::to_vec(input).map_or(0, |v| v.len())
+            }
+            Self::ToolEnd { id, output, .. } => id.len() + output.len(),
+            Self::Usage { .. } | Self::Done { .. } => 0,
+        }
+    }
+}

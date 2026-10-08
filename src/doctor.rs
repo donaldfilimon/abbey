@@ -37,16 +37,24 @@ pub fn cmd_init(
         return Ok(0);
     }
     if !print_only {
-        let _ = output::println(&status_or_md);
+        if cfg.stream.is_some() {
+            cfg.output_line(&status_or_md);
+        } else {
+            let _ = output::println(&status_or_md);
+        }
     } else {
         // print + agent: draft on stderr so stdout stays for agent capture paths
-        eprint!("{status_or_md}");
-        if !status_or_md.ends_with('\n') {
+        if cfg.stream.is_some() {
+            cfg.notice(&status_or_md);
+        } else {
+            eprint!("{status_or_md}");
+        }
+        if cfg.stream.is_none() && !status_or_md.ends_with('\n') {
             eprintln!();
         }
     }
     if let Some(prompt) = agent_prompt {
-        eprintln!("abbey: refining AGENTS.md with agent…");
+        cfg.notice("abbey: refining AGENTS.md with agent…");
         let mut cfg = cfg.clone();
         cfg.print = true;
         return run_resilient(&cfg, state, false, &[prompt]);
@@ -542,10 +550,10 @@ pub fn cmd_doctor(state: &AbbeyState, cfg: &AgentConfig) -> Result<i32> {
         .read_chat_for(cfg.backend)
         .unwrap_or_else(|| "(none)".into());
     for line in build_info::lines() {
-        let _ = output::println(line);
+        let _ = doctor_line(cfg, line);
     }
     for line in crate::edition::identity_lines(&state.state_dir) {
-        let _ = output::println(line);
+        let _ = doctor_line(cfg, line);
     }
     let agent_path = if cfg.agent_path.as_os_str().is_empty() {
         // Honest, not broken: local verbs (this one included) need no
@@ -556,7 +564,14 @@ pub fn cmd_doctor(state: &AbbeyState, cfg: &AgentConfig) -> Result<i32> {
     };
     let lines = [
         format!("agent:     {agent_path}"),
-        format!("agent ver: {}", cfg.agent_version()),
+        format!(
+            "agent ver: {}",
+            if cfg.stream.is_some() {
+                cfg.version_owned()?
+            } else {
+                cfg.agent_version()
+            }
+        ),
         format!("model:     {}", cfg.model),
         format!("chat:      {chat}"),
         format!("chat file: {}", state.active_chat_file().display()),
@@ -571,84 +586,99 @@ pub fn cmd_doctor(state: &AbbeyState, cfg: &AgentConfig) -> Result<i32> {
         "parity:    Grok · Codex · Claude · ABI personas · parallel lanes · OS control".into(),
         format!(
             "backend:   {} (from {})",
-            agent::AgentBackend::from_env().label(),
-            backend_source()
+            cfg.backend.label(),
+            if cfg.stream.is_some() {
+                "live TUI configuration".into()
+            } else {
+                backend_source()
+            }
         ),
     ];
     for line in &lines {
-        let _ = output::println(line);
+        let _ = doctor_line(cfg, line);
     }
     let abbey_cfg = config::AbbeyConfig::load().unwrap_or_default();
     for line in persona::persona_status_lines("") {
-        let _ = output::println(line);
+        let _ = doctor_line(cfg, line);
     }
     for line in roles::role_status_lines(&abbey_cfg.roles.max, &abbey_cfg.roles.gemma) {
-        let _ = output::println(line);
+        let _ = doctor_line(cfg, line);
     }
-    let _ = output::println(
+    let _ = doctor_line(
+        cfg,
         "routing:    confidence/alternate/fallback on route.jsonl (audit only — no auto second agent)",
     );
-    let _ = output::println(
+    let _ = doctor_line(
+        cfg,
         "learn:      review|stats (+ aliases; LoRA pipeline Proposed, unavailable)",
     );
-    let _ = output::println(
+    let _ = doctor_line(
+        cfg,
         "os:         allowlist + dry-run; execute --confirm only (`abbey allowlist`)",
     );
-    let _ = output::println(
+    let _ = doctor_line(
+        cfg,
         "media:      --image/--video/--media or /image|/video attach paths (workspace read; no local vision)",
     );
-    let _ = output::println(
+    let _ = doctor_line(
+        cfg,
         "generate:   abbey imagine|generate video|/imagine|/gen-video via cursor-agent tools (not local models)",
     );
-    let _ = output::println(
+    let _ = doctor_line(
+        cfg,
         "reasoning:  abbey reason|/reason + --thinking|/think → Cursor *-thinking-* (structured wrap)",
     );
-    let _ = output::println(
+    let _ = doctor_line(
+        cfg,
         "tools/mcp:  abbey mcp status|paths|view + explicit provider management; not an MCP host",
     );
-    let _ = output::println(
+    let _ = doctor_line(
+        cfg,
         "acp:        abbey acp list|run gemini|opencode (peer ACP servers; Abbey is not an ACP host)",
     );
     if let Ok(groups) = crate::protocols::load_mcp_servers(&state.cwd) {
         let n: usize = groups.iter().map(|(_, s)| s.len()).sum();
         let files = groups.len();
-        let _ = output::println(format!(
-            "mcp cfg:    {n} server(s) across {files} config file(s)"
-        ));
+        let _ = doctor_line(
+            cfg,
+            format!("mcp cfg:    {n} server(s) across {files} config file(s)"),
+        );
     }
     let acp_n = crate::protocols::acp_peers()
         .iter()
         .filter(|p| p.path.is_some() && !p.acp_args.is_empty())
         .count();
-    let _ = output::println(format!(
-        "acp peers:  {acp_n} ACP-capable binary(ies) on PATH"
-    ));
-    let _ = output::println(crate::highlight::status_line());
-    let _ = output::println(crate::subagents::status_line());
-    let _ = output::println(crate::improve::status_line());
-    let _ = output::println(crate::claims::status_line());
-    let _ = output::println(crate::platform::status_line());
+    let _ = doctor_line(
+        cfg,
+        format!("acp peers:  {acp_n} ACP-capable binary(ies) on PATH"),
+    );
+    let _ = doctor_line(cfg, crate::highlight::status_line());
+    let _ = doctor_line(cfg, crate::subagents::status_line());
+    let _ = doctor_line(cfg, crate::improve::status_line());
+    let _ = doctor_line(cfg, crate::claims::status_line());
+    let _ = doctor_line(cfg, crate::platform::status_line());
     for line in crate::surfaces::status_lines() {
-        let _ = output::println(line);
+        let _ = doctor_line(cfg, line);
     }
     for line in crate::deferred::status_lines() {
-        let _ = output::println(line);
+        let _ = doctor_line(cfg, line);
     }
     #[cfg(target_os = "macos")]
     {
-        let _ = output::println(
+        let _ = doctor_line(
+            cfg,
             "voice:      abbey voice speak|listen|ask — Premium/Enhanced say TTS + on-device Speech STT",
         );
     }
     #[cfg(not(target_os = "macos"))]
     {
-        let _ = output::println("voice:      macOS only (say + Speech.framework)");
+        let _ = doctor_line(cfg, "voice:      macOS only (say + Speech.framework)");
     }
-    let _ = output::println(memory::backend_status(
-        &state.state_dir,
-        &abbey_cfg.memory_backend,
-    ));
-    let _ = output::println(memory::feature_status());
+    let _ = doctor_line(
+        cfg,
+        memory::backend_status(&state.state_dir, &abbey_cfg.memory_backend),
+    );
+    let _ = doctor_line(cfg, memory::feature_status());
     let embedding_line = match memory::build_embedder(&abbey_cfg.embeddings) {
         Ok(embedder) if embedder.space().provider == "none" => {
             "semantic:  disabled (embedding provider none; lexical search remains available)"
@@ -669,80 +699,115 @@ pub fn cmd_doctor(state: &AbbeyState, cfg: &AgentConfig) -> Result<i32> {
         },
         Err(error) => format!("semantic:  configured but provider unavailable: {error}"),
     };
-    let _ = output::println(embedding_line);
+    let _ = doctor_line(cfg, embedding_line);
     let mesh = crate::mesh::status(&abbey_cfg);
-    let _ = output::println(format!(
-        "mesh proof: {} (authenticated Unix local multi-process only; not production multi-host)",
-        if mesh.available {
-            "available"
-        } else {
-            "unavailable — set ABBEY_ABI_BIN"
-        }
-    ));
-    let backend = agent::AgentBackend::from_env();
+    let _ = doctor_line(
+        cfg,
+        format!(
+            "mesh proof: {} (authenticated Unix local multi-process only; not production multi-host)",
+            if mesh.available {
+                "available"
+            } else {
+                "unavailable — set ABBEY_ABI_BIN"
+            }
+        ),
+    );
+    let backend = cfg.backend;
     if backend == agent::AgentBackend::Fm {
-        let _ = output::println(format!("on-device: {}", cfg.fm_availability()));
-        let _ =
-            output::println("on-device: no cursor-agent and no network required for generation");
+        let _ = doctor_line(
+            cfg,
+            format!(
+                "on-device: {}",
+                if cfg.stream.is_some() {
+                    cfg.fm_availability_owned()?
+                } else {
+                    cfg.fm_availability()
+                }
+            ),
+        );
+        let _ = doctor_line(
+            cfg,
+            "on-device: no cursor-agent and no network required for generation",
+        );
     } else if backend == agent::AgentBackend::Ollama {
-        let _ = output::println(format!(
-            "ollama: local daemon selected with tag {}; Abbey does not verify model provenance or remote delegation",
-            crate::agent::ollama_normalize_model(&cfg.model)
-        ));
-        let _ = output::println(
+        let _ = doctor_line(
+            cfg,
+            format!(
+                "ollama: local daemon selected with tag {}; Abbey does not verify model provenance or remote delegation",
+                crate::agent::ollama_normalize_model(&cfg.model)
+            ),
+        );
+        let _ = doctor_line(
+            cfg,
             "ollama: no cursor-agent required; automatic selection also requires the default tag to appear in `ollama list`",
         );
     } else {
-        let _ = output::println(format!(
-            "local options: ABBEY_BACKEND=ollama ({}) or ABBEY_BACKEND=fm ({})",
-            if agent::which_bin("ollama").is_some() {
-                "ollama present"
-            } else {
-                "ollama not installed"
-            },
-            if agent::which_bin("fm").is_some() {
-                "fm present"
-            } else {
-                "fm not installed — needs macOS 26+"
-            }
-        ));
+        let _ = doctor_line(
+            cfg,
+            format!(
+                "local options: ABBEY_BACKEND=ollama ({}) or ABBEY_BACKEND=fm ({})",
+                if agent::which_bin("ollama").is_some() {
+                    "ollama present"
+                } else {
+                    "ollama not installed"
+                },
+                if agent::which_bin("fm").is_some() {
+                    "fm present"
+                } else {
+                    "fm not installed — needs macOS 26+"
+                }
+            ),
+        );
     }
-    let _ = output::println(match config::resolve_abi_bin(&abbey_cfg) {
-        // Name the real source: this line used to hardcode `ABBEY_BACKEND=abi`
-        // and so lied whenever the backend came from the config key — the same
-        // defect `backend_source()` was written to fix one line above.
-        Some(p) if backend == agent::AgentBackend::Abi => format!(
-            "abi backend: active (from {} → {}) — local persona-template; \
+    let abi_path = if cfg.stream.is_some() && backend == agent::AgentBackend::Abi {
+        (!cfg.agent_path.as_os_str().is_empty()).then(|| cfg.agent_path.clone())
+    } else {
+        config::resolve_abi_bin(&abbey_cfg)
+    };
+    let _ = doctor_line(
+        cfg,
+        match abi_path {
+            // Name the real source: this line used to hardcode `ABBEY_BACKEND=abi`
+            // and so lied whenever the backend came from the config key — the same
+            // defect `backend_source()` was written to fix one line above.
+            Some(p) if backend == agent::AgentBackend::Abi => format!(
+                "abi backend: active (from {} → {}) — local persona-template; \
              claude-*/live models use abi's Anthropic transport; Abbey-side transcript continuity",
-            backend_source(),
-            p.display()
-        ),
-        Some(p) => format!(
-            "abi backend: available via ABBEY_BACKEND=abi ({})",
-            p.display()
-        ),
-        None if backend == agent::AgentBackend::Abi => {
-            "abi backend: ACTIVE BUT NO BINARY — build with `cargo build -p abi-cli` \
+                if cfg.stream.is_some() {
+                    "live TUI configuration".into()
+                } else {
+                    backend_source()
+                },
+                p.display()
+            ),
+            Some(p) => format!(
+                "abi backend: available via ABBEY_BACKEND=abi ({})",
+                p.display()
+            ),
+            None if backend == agent::AgentBackend::Abi => {
+                "abi backend: ACTIVE BUT NO BINARY — build with `cargo build -p abi-cli` \
              in ../abi, then set ABBEY_ABI_BIN"
-                .into()
-        }
-        None => "abi backend: unavailable (no `abi` binary; alias won't do)".into(),
-    });
-    let _ = output::println(config::wdbx_cli_status(&abbey_cfg));
+                    .into()
+            }
+            None => "abi backend: unavailable (no `abi` binary; alias won't do)".into(),
+        },
+    );
+    let _ = doctor_line(cfg, config::wdbx_cli_status(&abbey_cfg));
     let hist = state.history(5);
     if !hist.is_empty() {
-        println!("recent chats:");
+        cfg.output_line("recent chats:");
         for e in hist {
-            println!("  {}\t{}\t{}", e.timestamp, e.chat_id, e.cwd);
+            cfg.output_line(format!("  {}\t{}\t{}", e.timestamp, e.chat_id, e.cwd));
         }
     }
+    cfg.check_cancelled()?;
     Ok(0)
 }
 
 pub fn cmd_debug(state: &AbbeyState, cfg: &AgentConfig) -> Result<i32> {
     cmd_doctor(state, cfg)?;
-    println!("--- debug ---");
-    println!("PATH agent candidates:");
+    cfg.output_line("--- debug ---");
+    cfg.output_line("PATH agent candidates:");
     for name in [
         "cursor-agent",
         "agent",
@@ -753,10 +818,19 @@ pub fn cmd_debug(state: &AbbeyState, cfg: &AgentConfig) -> Result<i32> {
         "fm",
     ] {
         match agent::which_bin(name) {
-            Some(p) => println!("  {name}: {}", p.display()),
-            None => println!("  {name}: (not found)"),
+            Some(p) => cfg.output_line(format!("  {name}: {}", p.display())),
+            None => cfg.output_line(format!("  {name}: (not found)")),
         }
     }
-    println!("git repo: {}", gitops::is_repo());
+    cfg.output_line(format!("git repo: {}", gitops::is_repo()));
     Ok(0)
+}
+
+fn doctor_line(cfg: &AgentConfig, text: impl AsRef<str>) -> std::io::Result<()> {
+    if cfg.stream.is_some() {
+        cfg.output_line(text.as_ref());
+        Ok(())
+    } else {
+        output::println(text)
+    }
 }

@@ -19,8 +19,22 @@ pub use catalog::{
     LaneKind, LanePlan, LaneResult, build_plan, default_lane_names, find_spec, print_catalog,
     status_line,
 };
-pub use execute::{print_merged, run_plans, synthesize};
+pub(crate) use execute::report_merged;
+pub use execute::{run_plans, synthesize};
 pub use parsing::{RunOptions, parse_args};
+
+pub(crate) fn build_plan_for(
+    cfg: &AgentConfig,
+    opts: &RunOptions,
+    max_model: &str,
+    gemma_model: &str,
+) -> Result<Vec<LanePlan>> {
+    if cfg.stream.is_some() {
+        catalog::build_plan_reported(opts, max_model, gemma_model, |message| cfg.notice(message))
+    } else {
+        build_plan(opts, max_model, gemma_model)
+    }
+}
 
 fn record_swarm(state: &AbbeyState, correlation: &str, plans: &[LanePlan], results: &[LaneResult]) {
     let reason = format!(
@@ -95,14 +109,14 @@ pub fn run_with_options(
             .iter()
             .any(|p| find_spec(p).is_some_and(|s| s.kind == LaneKind::Peer))
     {
-        eprintln!(
-            "abbey: peer lanes need external CLIs; under ABBEY_BACKEND=fm only Abbey lanes run"
+        cfg.notice(
+            "abbey: peer lanes need external CLIs; under ABBEY_BACKEND=fm only Abbey lanes run",
         );
     }
 
-    let plans = build_plan(opts, max_model, gemma_model)?;
+    let plans = build_plan_for(cfg, opts, max_model, gemma_model)?;
     let correlation = Uuid::new_v4().to_string();
-    eprintln!(
+    cfg.notice(format!(
         "abbey: subagents {correlation}\n  lanes -> {}",
         plans
             .iter()
@@ -113,38 +127,49 @@ pub fn run_with_options(
             })
             .collect::<Vec<_>>()
             .join(", ")
-    );
-    eprintln!("  jobs={} synthesize={}", opts.jobs, opts.synthesize);
+    ));
+    cfg.notice(format!(
+        "  jobs={} synthesize={}",
+        opts.jobs, opts.synthesize
+    ));
 
     let mut results = run_plans(cfg, &plans, &user, opts.jobs);
-    print_merged(&results);
+    cfg.check_cancelled()?;
+    report_merged(cfg, &results);
 
     if opts.synthesize {
-        eprintln!("abbey: synthesize pass (abi persona)...");
+        cfg.notice("abbey: synthesize pass (abi persona)...");
+        cfg.check_cancelled()?;
         let syn = synthesize(cfg, max_model, &user, &results);
-        println!(
+        cfg.check_cancelled()?;
+        cfg.output_line(format!(
             "===== subagent:synthesize kind:abbey via:{} exit:{} =====",
             syn.model_or_peer, syn.exit
-        );
+        ));
         if !syn.stdout.trim().is_empty() {
-            crate::highlight::emit_agent_stdout(syn.stdout.trim_end());
-            println!();
+            if cfg.stream.is_some() {
+                cfg.emit_captured(syn.stdout.trim_end(), "");
+            } else {
+                crate::highlight::emit_agent_stdout(syn.stdout.trim_end());
+            }
+            cfg.output_line("");
         }
         if !syn.stderr.trim().is_empty() {
-            eprintln!("{}", syn.stderr.trim_end());
+            cfg.notice(syn.stderr.trim_end());
         }
         results.push(syn);
     } else {
-        println!(
+        cfg.output_line(format!(
             "===== merge note =====\n\
              Multi-subagent run finished. Prefer Max for code, Gemma for tone/visual, \
              Aviva for terse expert, reviewer/security for audit, peers for second opinions.\n\
              Re-run with --synthesize for an Abi merge pass.\n\
              correlation {correlation} - `abbey routes --correlation` (swarm audit)\n\
              honesty: local PATH peers only - not a multi-node agent mesh."
-        );
+        ));
     }
 
+    cfg.check_cancelled()?;
     record_swarm(state, &correlation, &plans, &results);
     let worst = results.iter().map(|r| r.exit).max().unwrap_or(1);
     Ok(worst)

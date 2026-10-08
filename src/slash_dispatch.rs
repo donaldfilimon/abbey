@@ -307,7 +307,13 @@ pub fn dispatch_slash(input: &str, state: &AbbeyState, cfg: &mut AgentConfig) ->
         }
         "learn" => {
             let args = slash::split_args(rest);
-            learn::dispatch(state, &args)
+            if cfg.stream.is_some()
+                && matches!(args.first().map(String::as_str), Some("distill" | "teach"))
+            {
+                crate::distill::dispatch_owned(state, &args[1..], cfg)
+            } else {
+                learn::dispatch(state, &args)
+            }
         }
         "learn-review" | "train-review" => {
             let n: usize = rest
@@ -406,7 +412,7 @@ pub fn dispatch_slash(input: &str, state: &AbbeyState, cfg: &mut AgentConfig) ->
         "pr" => run_pr(cfg, state),
         "please-fix" | "fix" => {
             let text = if rest.is_empty() {
-                please_fix::build_prompt(&[])?
+                please_fix::build_prompt_reported(&[], |message| cfg.notice(message))?
             } else {
                 rest.to_string()
             };

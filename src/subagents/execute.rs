@@ -44,14 +44,18 @@ fn run_abbey_lane(base: &AgentConfig, plan: &LanePlan, user: &str) -> LaneResult
             name: plan.name.clone(),
             kind: LaneKind::Abbey,
             model_or_peer: plan.model.clone(),
-            exit: 1,
+            exit: if error.is::<crate::agent::CaptureCancelled>() {
+                130
+            } else {
+                1
+            },
             stdout: String::new(),
             stderr: format!("{error:#}"),
         },
     }
 }
 
-fn run_peer_lane(plan: &LanePlan, user: &str) -> LaneResult {
+fn run_peer_lane(base: &AgentConfig, plan: &LanePlan, user: &str) -> LaneResult {
     let Some(bin) = &plan.peer_path else {
         return LaneResult {
             name: plan.name.clone(),
@@ -63,11 +67,10 @@ fn run_peer_lane(plan: &LanePlan, user: &str) -> LaneResult {
         };
     };
     let peer = plan.peer_bin.as_deref().unwrap_or(plan.name.as_str());
-    let output = match peer {
-        "gemini" => Command::new(bin).args(["-p", user]).output(),
-        "opencode" => Command::new(bin).args(["run", user]).output(),
-        "claude" => Command::new(bin).args(["-p", user]).output(),
-        "codex" => Command::new(bin).args(["exec", user]).output(),
+    let args = match peer {
+        "gemini" | "claude" => vec!["-p".into(), user.into()],
+        "opencode" => vec!["run".into(), user.into()],
+        "codex" => vec!["exec".into(), user.into()],
         other => {
             return LaneResult {
                 name: plan.name.clone(),
@@ -79,22 +82,41 @@ fn run_peer_lane(plan: &LanePlan, user: &str) -> LaneResult {
             };
         }
     };
-    match output {
-        Ok(output) => LaneResult {
+    let result = if base.stream.is_some() {
+        base.capture_command(bin, &args, None)
+    } else {
+        Command::new(bin)
+            .args(&args)
+            .output()
+            .map(|out| {
+                (
+                    out.status,
+                    String::from_utf8_lossy(&out.stdout).into_owned(),
+                    String::from_utf8_lossy(&out.stderr).into_owned(),
+                )
+            })
+            .map_err(anyhow::Error::from)
+    };
+    match result {
+        Ok((status, stdout, stderr)) => LaneResult {
             name: plan.name.clone(),
             kind: LaneKind::Peer,
             model_or_peer: bin.display().to_string(),
-            exit: output.status.code().unwrap_or(1),
-            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
-            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+            exit: status.code().unwrap_or(1),
+            stdout,
+            stderr,
         },
         Err(error) => LaneResult {
             name: plan.name.clone(),
             kind: LaneKind::Peer,
             model_or_peer: bin.display().to_string(),
-            exit: 1,
+            exit: if error.is::<crate::agent::CaptureCancelled>() {
+                130
+            } else {
+                1
+            },
             stdout: String::new(),
-            stderr: error.to_string(),
+            stderr: format!("{error:#}"),
         },
     }
 }
@@ -111,6 +133,9 @@ pub fn run_plans(
     let base = Arc::new(base.clone());
     let mut results = Vec::with_capacity(plans.len());
     for chunk in plans.chunks(jobs) {
+        if base.check_cancelled().is_err() {
+            break;
+        }
         thread::scope(|scope| {
             let handles = chunk
                 .iter()
@@ -120,7 +145,7 @@ pub fn run_plans(
                     let base = Arc::clone(&base);
                     scope.spawn(move || match plan.kind {
                         LaneKind::Abbey => run_abbey_lane(&base, &plan, &user),
-                        LaneKind::Peer => run_peer_lane(&plan, &user),
+                        LaneKind::Peer => run_peer_lane(&base, &plan, &user),
                     })
                 })
                 .collect::<Vec<_>>();
@@ -195,4 +220,26 @@ pub fn synthesize(
         peer_path: None,
     };
     run_abbey_lane(base, &plan, &format!("{user}\n\n{dossier}"))
+}
+
+/// Report only after admitted lane owners have joined.
+pub(crate) fn report_merged(cfg: &AgentConfig, results: &[LaneResult]) {
+    if cfg.stream.is_none() {
+        print_merged(results);
+        return;
+    }
+    for result in results {
+        cfg.output_line(format!(
+            "===== subagent:{} kind:{} via:{} exit:{} =====",
+            result.name,
+            if result.kind == LaneKind::Abbey {
+                "abbey"
+            } else {
+                "peer"
+            },
+            result.model_or_peer,
+            result.exit
+        ));
+        cfg.emit_captured(&result.stdout, &result.stderr);
+    }
 }

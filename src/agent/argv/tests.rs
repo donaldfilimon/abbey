@@ -47,6 +47,8 @@ fn maximal_cursor_config() -> AgentConfig {
         media_prefers_gemma: false,
         force_capture: false,
         cot_path: None,
+        stream: None,
+        permission_mode: None,
     }
 }
 
@@ -582,4 +584,98 @@ fn build_args_clamps_a_please_fix_sized_prompt() {
         "prompt argv still too long: {}",
         last.len()
     );
+}
+
+fn streaming(backend: AgentBackend) -> AgentConfig {
+    let (tx, _rx) = std::sync::mpsc::channel();
+    AgentConfig {
+        backend,
+        print: true,
+        output_format: crate::stream::stream_output_format(backend).map(str::to_string),
+        stream: Some(crate::stream::StreamTap::new(tx)),
+        auto_review: false,
+        trust: false,
+        ..AgentConfig::default()
+    }
+}
+
+#[test]
+fn stream_flags_stay_inside_their_backend() {
+    let p = ["hi".to_string()];
+    let claude = streaming(AgentBackend::Claude).build_args(None, &p);
+    for f in [
+        "--print",
+        "stream-json",
+        "--verbose",
+        "--include-partial-messages",
+    ] {
+        assert!(
+            claude.contains(&f.to_string()),
+            "claude missing {f}: {claude:?}"
+        );
+    }
+    assert!(!claude.contains(&"--stream-partial-output".to_string()));
+
+    let cursor = streaming(AgentBackend::Cursor).build_args(None, &p);
+    assert!(cursor.contains(&"--stream-partial-output".to_string()));
+    assert!(!cursor.contains(&"--include-partial-messages".to_string()));
+
+    let grok = streaming(AgentBackend::Grok).build_args(None, &p);
+    assert!(grok.contains(&"streaming-json".to_string()));
+    assert!(!grok.contains(&"--stream-partial-output".to_string()));
+
+    let fm = streaming(AgentBackend::Fm).build_args(None, &p);
+    assert!(
+        !fm.contains(&"--no-stream".to_string()),
+        "stream mode must let fm stream: {fm:?}"
+    );
+
+    for b in [AgentBackend::Ollama, AgentBackend::Abi] {
+        let a = streaming(b).build_args(None, &p);
+        assert!(
+            !a.iter().any(|x| x.contains("stream")),
+            "{b:?} leaked a stream flag: {a:?}"
+        );
+    }
+}
+
+#[test]
+fn non_stream_argv_is_unchanged_by_the_new_fields() {
+    let p = ["hi".to_string()];
+    let plain = AgentConfig {
+        backend: AgentBackend::Claude,
+        print: true,
+        ..AgentConfig::default()
+    };
+    let args = plain.build_args(None, &p);
+    assert!(!args.contains(&"--verbose".to_string()));
+    let fm = AgentConfig {
+        backend: AgentBackend::Fm,
+        print: true,
+        ..AgentConfig::default()
+    };
+    assert!(fm.build_args(None, &p).contains(&"--no-stream".to_string()));
+}
+
+#[test]
+fn claude_permission_mode_is_forwarded_unless_force_or_plan() {
+    let p = ["hi".to_string()];
+    let cfg = AgentConfig {
+        backend: AgentBackend::Claude,
+        permission_mode: Some("acceptEdits".into()),
+        ..AgentConfig::default()
+    };
+    let args = cfg.build_args(None, &p);
+    let i = args
+        .iter()
+        .position(|a| a == "--permission-mode")
+        .expect("flag");
+    assert_eq!(args[i + 1], "acceptEdits");
+    let forced = AgentConfig { force: true, ..cfg };
+    let args = forced.build_args(None, &p);
+    let i = args
+        .iter()
+        .position(|a| a == "--permission-mode")
+        .expect("flag");
+    assert_eq!(args[i + 1], "bypassPermissions");
 }

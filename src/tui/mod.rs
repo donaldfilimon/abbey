@@ -1,13 +1,26 @@
-//! Abbey custom TUI (ratatui + crossterm).
+//! Abbey chat-first TUI (ratatui + crossterm).
 
 mod app;
-mod keys;
-mod overlay;
+mod completion;
+mod composer;
+mod keymap;
+pub(crate) mod markdown;
+mod overlays;
+mod permission;
 mod predict;
+mod prediction_owner;
 mod refresh;
-mod tabs;
+mod render;
+mod run_loop;
+mod terminal;
 mod theme;
-mod ui;
+mod transcript;
 mod widgets;
+mod worker;
 
-pub use app::run_tui;
+#[cfg(test)]
+mod tests;
+
+pub use run_loop::run_tui;
+
+pub(crate) mod local_recipe;

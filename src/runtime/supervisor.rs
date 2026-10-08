@@ -319,9 +319,7 @@ pub(crate) fn run_with_checkpoint(
     unix::run_with_checkpoint(spec, *limits, checkpoint, None)
 }
 
-// Consumed by the streaming run path (plan Task 7), which removes this allow.
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn run_tapped(
     spec: &ProcessSpec,
     limits: &SupervisorLimits,

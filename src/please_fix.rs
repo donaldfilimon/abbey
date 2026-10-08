@@ -120,6 +120,10 @@ fn summarize_capture(body: &str) -> String {
 }
 
 pub fn build_prompt(explicit: &[String]) -> Result<String> {
+    build_prompt_reported(explicit, |message| eprintln!("{message}"))
+}
+
+pub(crate) fn build_prompt_reported(explicit: &[String], report: impl Fn(&str)) -> Result<String> {
     let cap = max_prompt_argv_bytes();
     if !explicit.is_empty() {
         return Ok(truncate_utf8_bytes(&explicit.join(" "), cap));
@@ -133,11 +137,11 @@ pub fn build_prompt(explicit: &[String]) -> Result<String> {
             let code = lines[lines.len() - 1];
             let raw = lines[1..lines.len() - 1].join("\n");
             let out = summarize_capture(&raw);
-            eprintln!(
+            report(&format!(
                 "abbey: please-fix capture {} bytes → {} bytes summarized",
                 raw.len(),
                 out.len()
-            );
+            ));
             return Ok(truncate_utf8_bytes(
                 &format!(
                     "I just ran the command: \"{cmd}\", which exited with code {code}. The output was:\n\n{out}\n\nPlease help me fix it."
@@ -158,7 +162,7 @@ pub fn build_prompt(explicit: &[String]) -> Result<String> {
         }
     }
     if let Some(cmd) = last_shell_command() {
-        eprintln!("abbey: using last history command (no Cursor capture found)");
+        report("abbey: using last history command (no Cursor capture found)");
         return Ok(format!(
             "The last shell command was: \"{cmd}\"\n\nIt likely failed. Please diagnose and fix it in this workspace."
         ));
@@ -170,12 +174,12 @@ pub fn build_prompt(explicit: &[String]) -> Result<String> {
 }
 
 /// Soft variant for TUI (never bails — always returns something runnable).
-pub fn build_prompt_soft(explicit: &str) -> String {
+pub(crate) fn build_prompt_soft_reported(explicit: &str, report: impl Fn(&str)) -> String {
     let t = explicit.trim();
     if !t.is_empty() {
         return truncate_utf8_bytes(t, max_prompt_argv_bytes());
     }
-    match build_prompt(&[]) {
+    match build_prompt_reported(&[], report) {
         Ok(p) => p,
         Err(_) => "Please help me fix the last failure in this workspace.".into(),
     }

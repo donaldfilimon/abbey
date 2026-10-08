@@ -13,7 +13,8 @@ mod conversation;
 #[cfg(unix)]
 pub(crate) use conversation::lock_legacy_capture;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AbbeyState {
     pub state_dir: PathBuf,
     pub chat_file: PathBuf,

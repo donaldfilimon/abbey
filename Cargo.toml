@@ -63,6 +63,7 @@ abi-compute = { path = "../wdbx/crates/abi-compute", optional = true }
 # Cross-platform advisory lock for WDBX and canonical identity writes
 # (Unix flock / Windows LockFileEx).
 fs4 = "0.13"
+pulldown-cmark = { version = "0.13.4", default-features = false }
 
 [dev-dependencies]
 ed25519-dalek = "3"

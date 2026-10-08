@@ -24,14 +24,14 @@ pub enum GenKind {
     Video,
 }
 
-fn refuse_no_tools(backend: AgentBackend, kind: &str) -> Result<i32> {
-    eprintln!(
+fn refuse_no_tools(cfg: &AgentConfig, kind: &str) -> Result<i32> {
+    cfg.notice(format!(
         "abbey: `{kind}` needs an executor with image/video tool access.\n\
          The `{}` backend (ABBEY_BACKEND={}) has no image/video generation surface.\n\
          Select ABBEY_BACKEND=cursor only if you explicitly want cursor-agent tools.",
-        backend.label(),
-        backend.label(),
-    );
+        cfg.backend.label(),
+        cfg.backend.label(),
+    ));
     Ok(2)
 }
 
@@ -115,7 +115,7 @@ pub fn run_generate(
         AgentBackend::Fm | AgentBackend::Abi | AgentBackend::Ollama
     ) {
         return refuse_no_tools(
-            cfg.backend,
+            cfg,
             match kind {
                 GenKind::Image => "imagine/generate image",
                 GenKind::Video => "generate video",
@@ -165,14 +165,14 @@ pub fn run_generate(
         GenKind::Video => video_prompt(&desc, &out_abs),
     };
 
-    eprintln!(
+    cfg.notice(format!(
         "abbey: {} → {} (via cursor-agent tools; not a local model)",
         match kind {
             GenKind::Image => "imagine",
             GenKind::Video => "generate-video",
         },
         out_abs.display()
-    );
+    ));
 
     run_agent(cfg, state, &[prompt], RunSpec::gemma())
 }
@@ -193,10 +193,10 @@ pub fn run_reason(
     cfg.force_capture = true;
     cfg.cot_path = Some(crate::surfaces::cot_path(state));
     let prompt = reason_prompt(&task);
-    eprintln!(
+    cfg.notice(format!(
         "abbey: reason with {} (Cursor thinking model; structured wrap + cot save)",
         cfg.model
-    );
+    ));
     run_agent(cfg, state, &[prompt], RunSpec::max())
 }
 

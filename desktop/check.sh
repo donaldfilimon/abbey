@@ -15,7 +15,7 @@ echo "== native Routes acceptance assertion tests =="
 python3 -m unittest discover -s scripts/tests -p 'test_*.py'
 
 echo "== codegen drift =="
-cargo run --quiet -p abbey-desktop-codegen -- --check
+cargo run --quiet --locked -p abbey-desktop-codegen -- --check
 
 echo "== typecheck =="
 bun run --silent typecheck
@@ -46,7 +46,7 @@ echo "== cargo test (live scratch abbeyd — desktop reads, no in-process fallba
 
 echo "== cargo test (bearer configured — proves no silent fallback) =="
 ABBEYD_BEARER_TOKEN="$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')" \
-  cargo test --quiet -p abbey-desktop a_configured_daemon_never_falls_back
+  cargo test --quiet --locked -p abbey-desktop a_configured_daemon_never_falls_back
 
 # `cargo check` does not link. A Tauri binary that type-checks can still fail to
 # link against the platform WebView frameworks, so build a real binary.

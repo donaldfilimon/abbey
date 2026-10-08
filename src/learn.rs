@@ -218,6 +218,8 @@ fn print_learn_usage() {
          \x20  abbey learn review [n]         # list candidates (provenance gate)\n\
          \x20  abbey learn stats              # curation counts\n\
          \x20  abbey learn train <text>       # add train_candidate with provenance\n\
+         \x20  abbey learn distill <prompt>   # fm:system → ollama → fm:pcc teacher pairs\n\
+         \x20  abbey learn sft                # distill pairs as chat-messages JSONL\n\
          \x20  abbey learn correction <text>  # LTM correction\n\
          \x20  abbey learn preference <text>  # LTM standing directive\n\
          \x20  abbey learn routes [n]         # route.jsonl → activity\n\
@@ -560,10 +562,12 @@ pub fn dispatch(state: &AbbeyState, args: &[String]) -> Result<i32> {
             improve(state, n, apply)?;
             Ok(0)
         }
+        "distill" | "teach" => crate::distill::dispatch(state, &args[1..]),
+        "sft" => crate::distill::export_sft(state),
         "lora" | "finetune" | "fine-tune" | "fine_tune" => crate::claims::refuse("lora"),
         other => bail!(
             "unknown learn subcommand `{other}`\n\
-             usage: abbey learn [status|correction|train|preference|routes|digest|export|review|stats|improve]\n\
+             usage: abbey learn [status|correction|train|distill|sft|preference|routes|digest|export|review|stats|improve]\n\
              (LoRA/fine-tune is Proposed — see `abbey claims proposed`)"
         ),
     }

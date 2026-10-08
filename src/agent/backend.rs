@@ -16,7 +16,7 @@ use crate::runtime::supervisor::{
 };
 
 /// Backend preference, or auto path via `ABBEY_AGENT`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum AgentBackend {
     Cursor,
     Grok,
@@ -119,26 +119,42 @@ impl AgentBackend {
     }
 
     /// The unchosen default: ollama when it resolves, otherwise the first
-    /// other installed executor in the fixed TUI cycle order, with cursor
-    /// last. ollama is preferred, never required — a machine with only
-    /// `abi` (or `grok`/`fm`) still works out of the box. The legacy
-    /// `ABBEY_AGENT` path is handled before this unchosen-default path.
+    /// other installed executor in [`Self::LOCAL_FIRST_FALLBACK`] order —
+    /// the on-device `fm` model first when it is actually ready, with cursor
+    /// last. ollama is preferred, never
+    /// required — a machine with only `abi` (or `grok`/`fm`) still works out
+    /// of the box. The legacy `ABBEY_AGENT` path is handled before this
+    /// unchosen-default path.
     fn default_with_fallback() -> (Self, &'static str) {
-        Self::pick_default_backend(&|backend| resolve_agent_for(backend).is_ok(), &|| {
-            resolve_agent_for(Self::Ollama).is_ok_and(|path| ollama_default_ready(&path))
-        })
+        Self::pick_default_backend(
+            &|backend| resolve_agent_for(backend).is_ok(),
+            &|| resolve_agent_for(Self::Ollama).is_ok_and(|path| ollama_default_ready(&path)),
+            &|| resolve_agent_for(Self::Fm).is_ok_and(|path| fm_system_ready(&path)),
+        )
     }
+
+    /// Automatic fallback order after ollama: local model first. `fm` serves
+    /// the on-device `system` model (only when [`fm_system_ready`] says so),
+    /// then `grok`; `abi` stays behind it because its default completion is a
+    /// deterministic persona template, not a model; `claude` next and
+    /// cursor-agent the last resort. Decoupled from the TUI's Ctrl-B
+    /// [`Self::cycle_next`] order on purpose.
+    pub const LOCAL_FIRST_FALLBACK: [AgentBackend; 5] =
+        [Self::Fm, Self::Grok, Self::Abi, Self::Claude, Self::Cursor];
 
     fn pick_default_backend(
         resolves: &dyn Fn(AgentBackend) -> bool,
         ollama_ready: &dyn Fn() -> bool,
+        fm_ready: &dyn Fn() -> bool,
     ) -> (Self, &'static str) {
         let ollama_installed = resolves(Self::Ollama);
         if ollama_installed && ollama_ready() {
             return (Self::Ollama, "default");
         }
-        for candidate in [Self::Grok, Self::Fm, Self::Abi, Self::Claude, Self::Cursor] {
-            if resolves(candidate) {
+        for candidate in Self::LOCAL_FIRST_FALLBACK {
+            // A resolvable `fm` with Apple Intelligence off (or unsupported
+            // hardware) fails at spawn; only a ready on-device model may win.
+            if resolves(candidate) && (candidate != Self::Fm || fm_ready()) {
                 return (
                     candidate,
                     if ollama_installed {
@@ -270,6 +286,66 @@ fn legacy_agent_path() -> Option<PathBuf> {
 
 fn ollama_default_ready(path: &Path) -> bool {
     ollama_lists_model(path, crate::models::OLLAMA_DEFAULT_MODEL)
+}
+
+/// Parsed `fm models` answer: which Apple Foundation Models can serve now.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct FmModels {
+    pub system: bool,
+    pub pcc: bool,
+}
+
+/// Parse de-coloured `fm models` (or deprecated `fm available`) output.
+///
+/// Current `fm` prints one `✓ system (…)` / `✗ pcc (…)` line per model and
+/// exits non-zero whenever any model is unavailable, so the exit code is
+/// never the answer. Older builds printed "System model available" plus a
+/// Private Cloud Compute sentence; both grammars are accepted.
+pub fn parse_fm_models(text: &str) -> FmModels {
+    let mut out = FmModels::default();
+    for line in text.lines() {
+        let mut words = line.split_whitespace();
+        if words.next() == Some("✓") {
+            match words.next() {
+                Some("system") => out.system = true,
+                Some("pcc") => out.pcc = true,
+                _ => {}
+            }
+        }
+    }
+    let lower = text.to_ascii_lowercase();
+    out.system |= lower.contains("system model available");
+    out.pcc |= lower.contains("private cloud compute")
+        && !lower.contains("not available")
+        && !text.contains('✗');
+    out
+}
+
+/// Bounded `fm models` probe. `None` when it did not run to completion.
+pub(crate) fn fm_models_probe(path: &Path) -> Option<FmModels> {
+    let spec = ProcessSpec::inherited(path.to_path_buf(), vec![OsString::from("models")]);
+    let limits = SupervisorLimits {
+        timeout: Duration::from_millis(3_000),
+        terminate_grace: Duration::from_millis(100),
+        stdout_bytes: 64 * 1024,
+        stderr_bytes: 16 * 1024,
+        poll_interval: Duration::from_millis(10),
+    };
+    match run_with_checkpoint(&spec, &limits, || false) {
+        Ok(SupervisorOutcome::Exited { stdout, stderr, .. }) => {
+            Some(parse_fm_models(&strip_ansi(&format!(
+                "{}{}",
+                String::from_utf8_lossy(&stdout),
+                String::from_utf8_lossy(&stderr)
+            ))))
+        }
+        _ => None,
+    }
+}
+
+/// True only when `fm models` reports the on-device `system` model ready.
+fn fm_system_ready(path: &Path) -> bool {
+    fm_models_probe(path).is_some_and(|m| m.system)
 }
 
 /// True only when `ollama list` already contains `model`. Used to refuse
@@ -434,14 +510,17 @@ mod tests {
     #[test]
     fn default_backend_prefers_ollama_but_never_requires_cursor() {
         // ollama wins whenever it resolves, even if cursor-agent is also present.
-        let (b, src) = AgentBackend::pick_default_backend(&|_| true, &|| true);
+        let (b, src) = AgentBackend::pick_default_backend(&|_| true, &|| true, &|| true);
         assert_eq!(b, AgentBackend::Ollama);
         assert_eq!(src, "default");
 
         // cursor present without ollama is a last-resort auto fallback, never
         // the preferred default.
-        let (b, src) =
-            AgentBackend::pick_default_backend(&|b| matches!(b, AgentBackend::Cursor), &|| false);
+        let (b, src) = AgentBackend::pick_default_backend(
+            &|b| matches!(b, AgentBackend::Cursor),
+            &|| false,
+            &|| true,
+        );
         assert_eq!(b, AgentBackend::Cursor);
         assert!(
             src.starts_with("auto"),
@@ -450,38 +529,108 @@ mod tests {
 
         // otherwise the first other installed executor serves, in the fixed
         // cycle order, and the source string says the choice was automatic.
-        let (b, src) =
-            AgentBackend::pick_default_backend(&|b| matches!(b, AgentBackend::Abi), &|| false);
+        let (b, src) = AgentBackend::pick_default_backend(
+            &|b| matches!(b, AgentBackend::Abi),
+            &|| false,
+            &|| true,
+        );
         assert_eq!(b, AgentBackend::Abi);
         assert!(
             src.starts_with("auto"),
             "auto choice must be visible: {src}"
         );
 
+        // Local first: an installed local executor beats a cloud CLI.
         let (b, _) = AgentBackend::pick_default_backend(
             &|b| matches!(b, AgentBackend::Grok | AgentBackend::Abi),
             &|| false,
+            &|| true,
         );
-        assert_eq!(b, AgentBackend::Grok, "cycle order breaks the tie");
+        assert_eq!(
+            b,
+            AgentBackend::Grok,
+            "abi's default is a template, not a model: grok precedes it"
+        );
+        let (b, _) = AgentBackend::pick_default_backend(
+            &|b| {
+                matches!(
+                    b,
+                    AgentBackend::Grok | AgentBackend::Fm | AgentBackend::Claude
+                )
+            },
+            &|| false,
+            &|| true,
+        );
+        assert_eq!(b, AgentBackend::Fm, "on-device fm beats every cloud CLI");
+        let (b, _) = AgentBackend::pick_default_backend(
+            &|b| matches!(b, AgentBackend::Fm | AgentBackend::Abi),
+            &|| false,
+            &|| true,
+        );
+        assert_eq!(b, AgentBackend::Fm, "fm precedes abi");
+        // fm resolves but its on-device model is not ready: skip it.
+        let (b, _) = AgentBackend::pick_default_backend(
+            &|b| matches!(b, AgentBackend::Fm | AgentBackend::Grok),
+            &|| false,
+            &|| false,
+        );
+        assert_eq!(b, AgentBackend::Grok, "an unready fm never wins");
 
-        let (b, src) =
-            AgentBackend::pick_default_backend(&|b| matches!(b, AgentBackend::Claude), &|| false);
+        let (b, src) = AgentBackend::pick_default_backend(
+            &|b| matches!(b, AgentBackend::Claude),
+            &|| false,
+            &|| true,
+        );
         assert_eq!(b, AgentBackend::Claude);
         assert!(src.starts_with("auto"));
 
         // Nothing installed: stay on ollama so the spawn-time error names the
         // preferred install first — never a panic, never a random pick, never
         // cursor-agent.
-        let (b, src) = AgentBackend::pick_default_backend(&|_| false, &|| false);
+        let (b, src) = AgentBackend::pick_default_backend(&|_| false, &|| false, &|| true);
         assert_eq!(b, AgentBackend::Ollama);
         assert_eq!(src, "default — no ready executor found");
 
         let (b, src) = AgentBackend::pick_default_backend(
             &|backend| matches!(backend, AgentBackend::Ollama | AgentBackend::Abi),
             &|| false,
+            &|| true,
         );
         assert_eq!(b, AgentBackend::Abi);
         assert!(src.contains("default model unavailable"));
+    }
+
+    #[test]
+    fn fm_models_parser_reads_both_grammars() {
+        let current = "  Apple Foundation Models\n  ✓ system (AFM 3 Core Advanced)\n  \
+                       ✗ pcc   (Private Cloud Compute is not available in this context.)\n";
+        assert_eq!(
+            parse_fm_models(current),
+            FmModels {
+                system: true,
+                pcc: false
+            }
+        );
+        let both = "✓ system (AFM)\n✓ pcc\n";
+        assert_eq!(
+            parse_fm_models(both),
+            FmModels {
+                system: true,
+                pcc: true
+            }
+        );
+        assert_eq!(
+            parse_fm_models("✗ system (Apple Intelligence is off)\n✗ pcc\n"),
+            FmModels::default()
+        );
+        let legacy = "error: Private Cloud Compute is not available\nSystem model available\n";
+        assert_eq!(
+            parse_fm_models(legacy),
+            FmModels {
+                system: true,
+                pcc: false
+            }
+        );
     }
 
     #[test]

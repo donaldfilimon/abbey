@@ -3,24 +3,21 @@
 mod argv;
 #[cfg(not(unix))]
 mod capture;
+mod diagnostics;
+mod owned;
+pub(crate) use owned::CaptureCancelled;
+mod streaming;
 
 use anyhow::{Context, Result, bail};
 use argv::{map_exec_err, warn_if_prompt_looks_like_flags};
 use fs4::fs_std::FileExt as _;
-use std::fs::{File, OpenOptions};
+use std::fs::OpenOptions;
 use std::io::{Seek as _, Write as _};
 use std::path::PathBuf;
 use std::process::{Command, ExitStatus, Stdio};
-#[cfg(unix)]
-use std::time::Duration;
-
-#[cfg(unix)]
-use crate::runtime::supervisor::{
-    ProcessSpec, SupervisorLimits, SupervisorOutcome, run_with_checkpoint,
-};
 
 pub(crate) use argv::looks_like_flags;
-pub use argv::{abi_normalize_model, ollama_normalize_model, truncate_utf8_bytes};
+pub use argv::{abi_normalize_model, ollama_normalize_model, truncate_utf8_bytes, utf8_tail};
 
 const MAX_LOCAL_TRANSCRIPT_BYTES: u64 = 1024 * 1024;
 const MAX_TRANSCRIPT_PROMPT_BYTES: usize = 16 * 1024;
@@ -28,7 +25,7 @@ const MAX_TRANSCRIPT_OUTPUT_BYTES: usize = 48 * 1024;
 const MAX_CAPTURE_BYTES: usize = 4 * 1024 * 1024;
 
 /// Grok `--worktree` with optional name (`-w` vs `-w mybranch`).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Worktree {
     /// Pass `--worktree` with no name (agent picks).
     Auto,
@@ -36,7 +33,8 @@ pub enum Worktree {
     Named(String),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 #[allow(clippy::struct_excessive_bools)] // mirrors cursor-agent / env knobs 1:1
 pub struct AgentConfig {
     pub agent_path: PathBuf,
@@ -66,6 +64,12 @@ pub struct AgentConfig {
     pub force_capture: bool,
     /// When set, captured stdout is also written here as a CoT transcript.
     pub cot_path: Option<PathBuf>,
+    /// Streaming sink for the chat TUI; `None` keeps every CLI path unchanged.
+    #[serde(skip)]
+    pub stream: Option<crate::stream::StreamTap>,
+    /// Claude `--permission-mode` chosen in the TUI (Shift-Tab); `force` and
+    /// plan mode still win.
+    pub permission_mode: Option<String>,
 }
 
 impl Default for AgentConfig {
@@ -91,11 +95,21 @@ impl Default for AgentConfig {
             media_prefers_gemma: false,
             force_capture: false,
             cot_path: None,
+            stream: None,
+            permission_mode: None,
         }
     }
 }
 
 impl AgentConfig {
+    /// Diagnostic line: to the TUI tap when streaming, else stderr as before.
+    pub(crate) fn notice(&self, msg: impl Into<String>) {
+        match &self.stream {
+            Some(tap) => tap.notice(msg),
+            None => eprintln!("{}", msg.into()),
+        }
+    }
+
     /// Build the least-authority, one-shot configuration used by Abbey's
     /// provider-contract adapters. The caller owns the executable, backend,
     /// model, workspace, environment, and limits at startup; none are derived
@@ -126,6 +140,8 @@ impl AgentConfig {
             media_prefers_gemma: false,
             force_capture: false,
             cot_path: None,
+            stream: None,
+            permission_mode: None,
         }
     }
 }
@@ -169,14 +185,7 @@ impl AgentConfig {
     }
 
     pub fn agent_version(&self) -> String {
-        Command::new(&self.agent_path)
-            .arg("--version")
-            .output()
-            .ok()
-            .and_then(|o| String::from_utf8(o.stdout).ok())
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .unwrap_or_else(|| "unknown".into())
+        diagnostics::version(&self.agent_path)
     }
 
     pub fn create_chat(&self) -> Result<String> {
@@ -192,17 +201,23 @@ impl AgentConfig {
             return Ok(id);
         }
         let agent = self.exec_path()?;
-        let out = Command::new(&agent)
-            .arg("create-chat")
-            .output()
-            .with_context(|| format!("exec {}", agent.display()))?;
-        if !out.status.success() {
-            bail!(
-                "create-chat failed: {}",
-                String::from_utf8_lossy(&out.stderr)
-            );
+        let (status, stdout, stderr) = if self.stream.is_some() {
+            self.capture_command(&agent, &["create-chat".into()], None)?
+        } else {
+            let out = Command::new(&agent)
+                .arg("create-chat")
+                .output()
+                .with_context(|| format!("exec {}", agent.display()))?;
+            (
+                out.status,
+                String::from_utf8_lossy(&out.stdout).into_owned(),
+                String::from_utf8_lossy(&out.stderr).into_owned(),
+            )
+        };
+        if !status.success() {
+            bail!("create-chat failed: {}", stderr);
         }
-        let id = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        let id = stdout.trim().to_string();
         if id.is_empty() {
             bail!("create-chat returned empty id");
         }
@@ -281,26 +296,6 @@ impl AgentConfig {
         }
     }
 
-    fn lock_local_turn(&self, chat_id: &str) -> Result<Option<File>> {
-        let Some(path) = self.transcript_path(chat_id) else {
-            return Ok(None);
-        };
-        if let Some(dir) = path.parent() {
-            std::fs::create_dir_all(dir)?;
-        }
-        let lock_path = path.with_extension("transcript.lock");
-        let lock = OpenOptions::new()
-            .create(true)
-            .read(true)
-            .write(true)
-            .truncate(false)
-            .open(&lock_path)
-            .with_context(|| format!("open conversation turn lock {}", lock_path.display()))?;
-        lock.lock_exclusive()
-            .with_context(|| format!("lock conversation turn {}", lock_path.display()))?;
-        Ok(Some(lock))
-    }
-
     /// Interactive hand-off: inherit stdio (full TUI agent session).
     pub fn run_interactive(
         &self,
@@ -336,50 +331,18 @@ impl AgentConfig {
         let agent = self.exec_path()?;
         let mut cfg = self.clone();
         cfg.print = true;
+        // The original tap owns cancellation; captured argv stays headless.
+        cfg.stream = None;
         let args = cfg.build_args(resume_id, prompt_and_rest);
-        #[cfg(unix)]
-        {
-            let spec = ProcessSpec::inherited(
-                agent.clone(),
-                args.iter().map(std::ffi::OsString::from).collect(),
-            );
-            let limits = SupervisorLimits {
-                timeout: Duration::from_secs(30 * 60),
-                terminate_grace: Duration::from_secs(1),
-                stdout_bytes: MAX_CAPTURE_BYTES,
-                stderr_bytes: MAX_CAPTURE_BYTES,
-                poll_interval: Duration::from_millis(20),
-            };
-            match run_with_checkpoint(&spec, &limits, || false) {
-                Ok(SupervisorOutcome::Exited {
-                    status,
-                    stdout,
-                    stderr,
-                }) => Ok((
-                    status,
-                    String::from_utf8_lossy(&stdout).into_owned(),
-                    String::from_utf8_lossy(&stderr).into_owned(),
-                )),
-                Ok(SupervisorOutcome::TimedOut) => {
-                    bail!("agent capture exceeded the 30-minute limit")
-                }
-                Ok(SupervisorOutcome::StdoutLimit) => {
-                    bail!("agent stdout exceeded the {MAX_CAPTURE_BYTES}-byte limit")
-                }
-                Ok(SupervisorOutcome::StderrLimit) => {
-                    bail!("agent stderr exceeded the {MAX_CAPTURE_BYTES}-byte limit")
-                }
-                Ok(SupervisorOutcome::Cancelled) => bail!("agent capture was cancelled"),
-                Err(error) => bail!("supervise {}: {error}", agent.display()),
-            }
-        }
-        #[cfg(not(unix))]
-        {
-            capture::bounded_capture_output(&agent, &args)
-        }
+        self.capture_command(&agent, &args, None)
     }
 
     pub fn passthrough(&self, args: &[String]) -> Result<ExitStatus> {
+        if self.stream.is_some() {
+            let (status, out, err) = self.capture_command(&self.exec_path()?, args, None)?;
+            self.emit_captured(&out, &err);
+            return Ok(status);
+        }
         let status = Command::new(self.exec_path()?)
             .args(args)
             .stdin(Stdio::inherit())
@@ -421,23 +384,13 @@ impl AgentConfig {
         Ok(String::from_utf8_lossy(&out.stdout).into_owned())
     }
 
-    /// Ask `fm` what it can actually serve.
-    ///
-    /// `fm available` prints an error about Private Cloud Compute *and*
-    /// "System model available" in the same run, and exits non-zero — so this
-    /// parses de-coloured stdout rather than trusting the exit code.
+    /// Ask `fm models` what it can actually serve (bounded; see
+    /// [`backend::parse_fm_models`] for why the exit code is ignored).
     pub fn fm_availability(&self) -> String {
-        let Ok(out) = Command::new(&self.agent_path).arg("available").output() else {
+        let Some(backend::FmModels { system, pcc }) = backend::fm_models_probe(&self.agent_path)
+        else {
             return "fm: not runnable".into();
         };
-        let text = strip_ansi(&format!(
-            "{}{}",
-            String::from_utf8_lossy(&out.stdout),
-            String::from_utf8_lossy(&out.stderr)
-        ));
-        let lower = text.to_ascii_lowercase();
-        let system = lower.contains("system model available");
-        let pcc = lower.contains("private cloud compute") && !lower.contains("not available");
         format!(
             "on-device system model: {} · private cloud compute: {}",
             if system { "available" } else { "unavailable" },
@@ -459,12 +412,26 @@ pub fn run_resilient(
         && cfg.output_format.is_none()
         && (cfg.force_capture || crate::highlight::enabled() || cfg.cot_path.is_some());
 
+    if cfg
+        .stream
+        .as_ref()
+        .is_some_and(|tap| tap.cancel.is_cancelled() && !tap.failed())
+    {
+        return Ok(streaming::CANCELLED_EXIT);
+    }
+    cfg.check_cancelled()?;
     if fresh || cfg.no_resume {
         state.ensure_conversation_ready(cfg.backend)?;
         if fresh {
             let id = cfg.create_chat()?;
+            if cfg.stream.is_some() {
+                cfg.notice(format!("abbey: new chat {id}"));
+                cfg.check_cancelled()?;
+            }
             state.save_chat(&id)?;
-            eprintln!("abbey: new chat {id}");
+            if cfg.stream.is_none() {
+                cfg.notice(format!("abbey: new chat {id}"));
+            }
             return run_once(cfg, Some(&id), prompt_and_rest, capture_print);
         }
         return run_once(cfg, None, prompt_and_rest, capture_print);
@@ -475,12 +442,21 @@ pub fn run_resilient(
     } else {
         state.ensure_conversation_ready(cfg.backend)?;
         let id = cfg.create_chat()?;
+        if cfg.stream.is_some() {
+            cfg.notice(format!("abbey: created chat {id}"));
+            cfg.check_cancelled()?;
+        }
         state.save_chat(&id)?;
-        eprintln!("abbey: created chat {id}");
+        if cfg.stream.is_none() {
+            cfg.notice(format!("abbey: created chat {id}"));
+        }
         id
     };
 
     let code = run_once(cfg, Some(&chat), prompt_and_rest, capture_print)?;
+    if cfg.stream.as_ref().is_some_and(|t| t.cancel.is_cancelled()) {
+        return Ok(code);
+    }
     if code == 0 {
         state.save_chat(&chat)?;
         return Ok(0);
@@ -493,12 +469,15 @@ pub fn run_resilient(
     if !cfg.backend.has_server_sessions() {
         return Ok(code);
     }
-    eprintln!("abbey: resume of {chat} failed (exit {code}); creating a new chat…");
+    cfg.notice(format!(
+        "abbey: resume of {chat} failed (exit {code}); creating a new chat…"
+    ));
     state.ensure_conversation_ready(cfg.backend)?;
     let id = cfg.create_chat()?;
-    eprintln!("abbey: new chat {id}");
+    cfg.notice(format!("abbey: new chat {id}"));
     let retry_code = run_once(cfg, Some(&id), prompt_and_rest, capture_print)?;
 
+    cfg.check_cancelled()?;
     // Persist the new chat only if it actually worked. When the retry fails too
     // the cause is not a stale chat — it is something a new chat cannot fix
     // (account/plan rejection, a bad flag, the agent being down). Saving the
@@ -508,7 +487,9 @@ pub fn run_resilient(
     // the `fm` early-return above.
     state.save_chat(chat_to_persist(&chat, &id, retry_code))?;
     if retry_code != 0 {
-        eprintln!("abbey: new chat also failed (exit {retry_code}); keeping {chat}");
+        cfg.notice(format!(
+            "abbey: new chat also failed (exit {retry_code}); keeping {chat}"
+        ));
     }
     Ok(retry_code)
 }
@@ -527,6 +508,12 @@ fn run_once(
     prompt_and_rest: &[String],
     capture_print: bool,
 ) -> Result<i32> {
+    if let Some(tap) = &cfg.stream
+        && !capture_print
+        && cfg.cot_path.is_none()
+    {
+        return streaming::run_once_streaming(cfg, tap, resume_id, prompt_and_rest);
+    }
     // Local one-shot CLIs (`abi complete`, `ollama run`) are non-interactive
     // — always capture, both for clean emit and so the turn can be recorded
     // for Abbey-side continuity.
@@ -541,7 +528,13 @@ fn run_once(
             None
         };
         let (st, out, err) = cfg.run_capture(resume_id, prompt_and_rest)?;
-        eprint!("{err}");
+        cfg.check_cancelled()?;
+        if cfg.stream.is_none() {
+            eprint!("{err}");
+        } else {
+            cfg.emit_captured(&out, &err);
+            cfg.check_cancelled()?;
+        }
         if cfg.backend.is_oneshot_local()
             && st.success()
             && let Some(id) = resume_id.filter(|i| !i.is_empty())
@@ -554,17 +547,21 @@ fn run_once(
         {
             cfg.touch_claude_session_marker(id);
         }
-        if let Some(path) = &cfg.cot_path {
+        if (cfg.stream.is_none() || st.success())
+            && let Some(path) = &cfg.cot_path
+        {
             if let Err(e) = crate::surfaces::save_cot(path, &out) {
-                eprintln!("abbey: cot save failed: {e:#}");
-            } else {
-                eprintln!("abbey: cot transcript → {}", path.display());
+                cfg.notice(format!("abbey: cot save failed: {e:#}"));
+            } else if cfg.stream.is_none() {
+                cfg.notice(format!("abbey: cot transcript → {}", path.display()));
             }
         }
-        if cfg.cot_path.is_some() {
-            let _ = crate::output::print(crate::surfaces::render_cot(&out));
-        } else {
-            crate::highlight::emit_agent_stdout(&out);
+        if cfg.stream.is_none() {
+            if cfg.cot_path.is_some() {
+                let _ = crate::output::print(crate::surfaces::render_cot(&out));
+            } else {
+                crate::highlight::emit_agent_stdout(&out);
+            }
         }
         return Ok(st.code().unwrap_or(1));
     }
@@ -754,3 +751,9 @@ mod tests {
         assert_eq!(strip_ansi(coloured), "Error: System model available");
     }
 }
+
+#[cfg(all(test, unix))]
+mod turn_lock_tests;
+
+#[cfg(all(test, unix))]
+mod owned_budget_tests;

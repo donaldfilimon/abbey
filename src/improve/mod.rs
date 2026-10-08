@@ -17,7 +17,7 @@ use crate::route_log::{self, RouteRecord};
 use crate::state::AbbeyState;
 use crate::subagents::{self, LaneResult, RunOptions};
 use anyhow::{Result, bail};
-use gate::{GateReport, run_gate, wants_security_lane};
+use gate::{GateReport, run_gate_owned, wants_security_lane};
 use ledger::{GoalStatus, Ledger, WorkFocus, pick_work, require_tasks_root};
 use report::{RunReport, latest_report_path, report_path, write_report};
 use std::time::{Duration, Instant};
@@ -323,7 +323,7 @@ fn cmd_run(cfg: &AgentConfig, state: &AbbeyState, opts: &ImproveOpts) -> Result<
     let budget = Duration::from_secs(opts.max_minutes.saturating_mul(60));
     let ac = AbbeyConfig::load().unwrap_or_default();
 
-    eprintln!(
+    cfg.notice(format!(
         "abbey: improve {correlation}\n  focus → {}\n  confirm={} max_rounds={} max_minutes={} jobs={}\n  \
          honesty: local PATH peers only — not a multi-node mesh",
         focus.summary(),
@@ -331,16 +331,16 @@ fn cmd_run(cfg: &AgentConfig, state: &AbbeyState, opts: &ImproveOpts) -> Result<
         opts.max_rounds,
         opts.max_minutes,
         opts.jobs
-    );
+    ));
     if !opts.confirm {
-        eprintln!("abbey: diagnose-only (no Max force). Re-run with --confirm to apply fixes.");
+        cfg.notice("abbey: diagnose-only (no Max force). Re-run with --confirm to apply fixes.");
     }
 
     let mut report = RunReport::new(&correlation, &focus, opts);
 
     // Round 0: gate first so diagnose is failure-grounded.
-    eprintln!("abbey: improve gate (round 0)…");
-    let gate0 = run_gate(&root)?;
+    cfg.notice("abbey: improve gate (round 0)…");
+    let gate0 = run_gate_owned(&root, cfg)?;
     log_improve_stage(
         state,
         &correlation,
@@ -349,21 +349,23 @@ fn cmd_run(cfg: &AgentConfig, state: &AbbeyState, opts: &ImproveOpts) -> Result<
         &gate0.kinds_csv(),
     )?;
     report.note_gate(0, &gate0);
-    print_gate_summary(&gate0);
+    print_gate_summary(cfg, &gate0);
     let mut last_gate = Some(gate0.clone());
 
     if gate0.ok && focus_complete(&focus, &ledger, opts) {
         report.outcome = "already production-ready (gate green · no open slice)".into();
-        write_report(state, &report)?;
-        println!("abbey: improve done — {}", report.outcome);
+        cfg.check_cancelled()?;
+        write_report(state, &report, cfg)?;
+        cfg.output_line(format!("abbey: improve done — {}", report.outcome));
         return Ok(0);
     }
 
     // If gate is green and we're not ledger-driving, stabilize focus is already done.
     if gate0.ok && matches!(focus, WorkFocus::Stabilize) && !opts.ledger_only {
         report.outcome = "gate green · stabilize focus complete".into();
-        write_report(state, &report)?;
-        println!("abbey: improve done — {}", report.outcome);
+        cfg.check_cancelled()?;
+        write_report(state, &report, cfg)?;
+        cfg.output_line(format!("abbey: improve done — {}", report.outcome));
         return Ok(0);
     }
 
@@ -375,13 +377,15 @@ fn cmd_run(cfg: &AgentConfig, state: &AbbeyState, opts: &ImproveOpts) -> Result<
     };
 
     for round in 1..=max_rounds {
+        cfg.check_cancelled()?;
         if started.elapsed() >= budget {
             report.outcome = format!(
                 "stopped: wall-clock budget ({} min) exhausted",
                 opts.max_minutes
             );
-            write_report(state, &report)?;
-            eprintln!("abbey: {}", report.outcome);
+            cfg.check_cancelled()?;
+            write_report(state, &report, cfg)?;
+            cfg.notice(format!("abbey: {}", report.outcome));
             return Ok(1);
         }
 
@@ -406,10 +410,10 @@ fn cmd_run(cfg: &AgentConfig, state: &AbbeyState, opts: &ImproveOpts) -> Result<
             lanes.push("security".into());
         }
         let diag_prompt = diagnose_prompt(&focus, gate_excerpt);
-        eprintln!(
+        cfg.notice(format!(
             "abbey: improve diagnose (round {round}) lanes={}…",
             lanes.join(",")
-        );
+        ));
         let diag_opts = RunOptions {
             lanes,
             peers: opts.peers.clone(),
@@ -418,7 +422,7 @@ fn cmd_run(cfg: &AgentConfig, state: &AbbeyState, opts: &ImproveOpts) -> Result<
             prompt: vec![diag_prompt.clone()],
         };
         let diag_results = run_diagnose(cfg, &diag_opts, &ac.roles.max, &ac.roles.gemma)?;
-        subagents::print_merged(&diag_results);
+        subagents::report_merged(cfg, &diag_results);
         log_improve_stage(
             state,
             &correlation,
@@ -436,24 +440,27 @@ fn cmd_run(cfg: &AgentConfig, state: &AbbeyState, opts: &ImproveOpts) -> Result<
         if !opts.confirm {
             report.outcome =
                 "diagnose-only complete — pass --confirm to apply Max force rounds".into();
-            println!(
+            cfg.output_line(format!(
                 "\n===== improve advise (no apply) =====\n{}",
                 dossier.trim()
-            );
-            write_report(state, &report)?;
-            println!("abbey: {}", report.outcome);
-            println!(
+            ));
+            cfg.check_cancelled()?;
+            write_report(state, &report, cfg)?;
+            cfg.output_line(format!("abbey: {}", report.outcome));
+            cfg.output_line(format!(
                 "correlation {correlation} — report → {}",
                 report_path(&state.state_dir, &correlation).display()
-            );
+            ));
             return Ok(0);
         }
 
         // ---- implement (force) ----
         let impl_prompt = implement_prompt(&focus, &dossier, gate_excerpt, true);
-        eprintln!("abbey: improve implement (round {round}) lane=max force…");
+        cfg.notice(format!(
+            "abbey: improve implement (round {round}) lane=max force…"
+        ));
         let impl_result = run_implement(cfg, &ac.roles.max, &impl_prompt)?;
-        subagents::print_merged(std::slice::from_ref(&impl_result));
+        subagents::report_merged(cfg, std::slice::from_ref(&impl_result));
         log_improve_stage(
             state,
             &correlation,
@@ -464,8 +471,8 @@ fn cmd_run(cfg: &AgentConfig, state: &AbbeyState, opts: &ImproveOpts) -> Result<
         report.note_implement(round, &impl_result);
 
         // ---- gate ----
-        eprintln!("abbey: improve gate (round {round})…");
-        let g = run_gate(&root)?;
+        cfg.notice(format!("abbey: improve gate (round {round})…"));
+        let g = run_gate_owned(&root, cfg)?;
         log_improve_stage(
             state,
             &correlation,
@@ -474,25 +481,27 @@ fn cmd_run(cfg: &AgentConfig, state: &AbbeyState, opts: &ImproveOpts) -> Result<
             &g.kinds_csv(),
         )?;
         report.note_gate(round, &g);
-        print_gate_summary(&g);
+        print_gate_summary(cfg, &g);
         last_gate = Some(g.clone());
 
         let fresh = Ledger::load(&root).unwrap_or_else(|_| ledger.clone());
         if g.ok && (opts.gate_only || focus_complete(&focus, &fresh, opts)) {
             report.outcome =
                 format!("production-ready after round {round} (gate green · focus satisfied)");
-            write_report(state, &report)?;
-            println!("abbey: improve done — {}", report.outcome);
-            println!(
+            cfg.check_cancelled()?;
+            write_report(state, &report, cfg)?;
+            cfg.output_line(format!("abbey: improve done — {}", report.outcome));
+            cfg.output_line(format!(
                 "correlation {correlation} — close goals.md yourself after evidence · report → {}",
                 report_path(&state.state_dir, &correlation).display()
-            );
+            ));
             return Ok(0);
         }
         if g.ok && matches!(focus, WorkFocus::Stabilize) && !opts.ledger_only {
             report.outcome = format!("gate green after round {round}");
-            write_report(state, &report)?;
-            println!("abbey: improve done — {}", report.outcome);
+            cfg.check_cancelled()?;
+            write_report(state, &report, cfg)?;
+            cfg.output_line(format!("abbey: improve done — {}", report.outcome));
             return Ok(0);
         }
     }
@@ -505,12 +514,13 @@ fn cmd_run(cfg: &AgentConfig, state: &AbbeyState, opts: &ImproveOpts) -> Result<
             .map(|g| if g.ok { "green" } else { "red" })
             .unwrap_or("?")
     );
-    write_report(state, &report)?;
-    eprintln!("abbey: {}", report.outcome);
-    println!(
+    cfg.check_cancelled()?;
+    write_report(state, &report, cfg)?;
+    cfg.notice(format!("abbey: {}", report.outcome));
+    cfg.output_line(format!(
         "correlation {correlation} — report → {}",
         report_path(&state.state_dir, &correlation).display()
-    );
+    ));
     Ok(1)
 }
 
@@ -608,11 +618,13 @@ fn run_diagnose(
     max_model: &str,
     gemma_model: &str,
 ) -> Result<Vec<LaneResult>> {
-    let plans = subagents::build_plan(opts, max_model, gemma_model)?;
+    let plans = subagents::build_plan_for(cfg, opts, max_model, gemma_model)?;
     let user = opts.prompt.join(" ");
     let mut results = subagents::run_plans(cfg, &plans, &user, opts.jobs);
+    cfg.check_cancelled()?;
     if opts.synthesize {
         let syn = subagents::synthesize(cfg, max_model, &user, &results);
+        cfg.check_cancelled()?;
         results.push(syn);
     }
     Ok(results)
@@ -626,11 +638,12 @@ fn run_implement(cfg: &AgentConfig, max_model: &str, prompt: &str) -> Result<Lan
         synthesize: false,
         prompt: vec![prompt.to_string()],
     };
-    let plans = subagents::build_plan(&opts, max_model, max_model)?;
+    let plans = subagents::build_plan_for(cfg, &opts, max_model, max_model)?;
     let mut force_cfg = cfg.clone();
     force_cfg.force = true;
     force_cfg.print = true;
     let results = subagents::run_plans(&force_cfg, &plans, prompt, 1);
+    cfg.check_cancelled()?;
     Ok(results.into_iter().next().unwrap_or(LaneResult {
         name: "max".into(),
         kind: subagents::LaneKind::Abbey,
@@ -654,22 +667,22 @@ fn merge_dossier(results: &[LaneResult]) -> String {
     out
 }
 
-fn print_gate_summary(g: &GateReport) {
+fn print_gate_summary(cfg: &AgentConfig, g: &GateReport) {
     if g.ok {
-        println!(
+        cfg.output_line(format!(
             "===== gate:ok cmd:{} elapsed_ms:{} =====",
             g.cmd, g.elapsed_ms
-        );
+        ));
     } else {
-        println!(
+        cfg.output_line(format!(
             "===== gate:FAIL exit:{} kinds:{} cmd:{} elapsed_ms:{} =====",
             g.exit,
             g.kinds_csv(),
             g.cmd,
             g.elapsed_ms
-        );
+        ));
         if !g.excerpt.trim().is_empty() {
-            eprintln!("{}", g.excerpt.trim_end());
+            cfg.notice(g.excerpt.trim_end());
         }
     }
 }

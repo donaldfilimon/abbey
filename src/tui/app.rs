@@ -1,48 +1,93 @@
-//! TUI application state and event loop.
+//! Chat-first TUI state. Drawing lives in `render.rs`, keys in `keymap.rs`,
+//! the terminal loop in `run_loop.rs`.
 
+use super::completion::{Completion, FileIndex};
+use super::composer::{Composer, History};
+use super::theme::{Theme, ThemeId};
+use super::transcript::Transcript;
+use super::worker::{self, RunHandle, RunKind, SlashRoute};
 use crate::agent::AgentConfig;
 use crate::models;
 use crate::state::AbbeyState;
 use anyhow::Result;
-use crossterm::event::{self, DisableMouseCapture, EnableMouseCapture, Event};
-use crossterm::execute;
-use crossterm::terminal::{
-    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
-};
-use ratatui::Terminal;
-use ratatui::backend::CrosstermBackend;
-use std::io::stdout;
-use std::time::Duration;
+use std::time::Instant;
 
-use super::predict::Prediction;
-use super::theme::{Theme, ThemeId};
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Panel {
+    Memory,
+    Routes,
+    Skills,
+    Doctor,
+    Personas,
+    Claims,
+}
 
-pub use super::tabs::{Focus, OverlayKind, PendingAction, Tab};
+impl Panel {
+    pub(crate) const ALL: [Panel; 6] = [
+        Panel::Memory,
+        Panel::Routes,
+        Panel::Skills,
+        Panel::Doctor,
+        Panel::Personas,
+        Panel::Claims,
+    ];
+
+    pub(crate) fn title(self) -> &'static str {
+        match self {
+            Panel::Memory => "Memory",
+            Panel::Routes => "Routes",
+            Panel::Skills => "Skills",
+            Panel::Doctor => "Doctor",
+            Panel::Personas => "Personas",
+            Panel::Claims => "Claims",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Overlay {
+    None,
+    Palette { query: String, idx: usize },
+    Help,
+    Panel(Panel),
+    ModelPicker { idx: usize },
+    ResumePicker { idx: usize },
+    Confirm { command: Vec<String> },
+    Search { query: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Suspend {
+    Editor,
+    InteractiveSlash(String),
+}
 
 pub struct App {
     pub state: AbbeyState,
     pub cfg: AgentConfig,
-    pub tab: Tab,
-    pub focus: Focus,
     pub theme_id: ThemeId,
     pub theme: Theme,
-    pub input: String,
-    pub cursor: usize,
+    pub transcript: Transcript,
+    pub composer: Composer,
+    pub history_log: History,
+    pub files: FileIndex,
+    pub completion: Option<Completion>,
+    pub completion_idx: usize,
+    pub completion_basis: Option<(String, usize)>,
+    pub prediction: super::prediction_owner::PredictionOwner,
+    pub run: Option<RunHandle>,
+    pub queued: Vec<String>,
+    pub overlay: Overlay,
+    pub panel_view: super::overlays::PanelView,
+    pub scroll_from_bottom: usize,
     pub status: String,
-    pub list_idx: usize,
-    pub scroll: usize,
-    pub filter: String,
-    pub filtering: bool,
-    pub input_history: Vec<String>,
-    pub history_idx: Option<usize>,
-    pub tick: u64,
-    pub overlay: OverlayKind,
-    pub overlay_query: String,
-    pub overlay_idx: usize,
     pub should_quit: bool,
-    pub pending: PendingAction,
-    pub last_agent_code: Option<i32>,
-    /// Compact tail of `route.jsonl` for the Home Routes pane (audit only).
+    pub ctrl_c_armed: bool,
+    pub last_esc: Option<Instant>,
+    pub last_submitted: Option<String>,
+    pub pending_suspend: Option<Suspend>,
+    pub tick: u64,
+    pub claims_lines: Vec<String>,
     pub route_lines: Vec<String>,
     pub doctor_lines: Vec<String>,
     pub history: Vec<crate::state::HistoryEntry>,
@@ -51,72 +96,65 @@ pub struct App {
     pub persona_lines: Vec<String>,
     pub memory_lines: Vec<String>,
     pub skill_lines: Vec<String>,
-    /// Ranked slash/command predictions for the composer overlay.
-    pub predictions: Vec<Prediction>,
-    pub predict_gen: u64,
-    pub predict_idle: u8,
-    pub llm_attempt_gen: Option<u64>,
-    pub llm_boost: Option<&'static str>,
-    pub predict_rx: Option<std::sync::mpsc::Receiver<super::predict::LlmHint>>,
 }
 
 impl App {
     pub fn new(state: AbbeyState, mut cfg: AgentConfig) -> Result<Self> {
         cfg.model = state.read_model();
-        let history = state.history(40);
-        let aliases = models::alias_table()
-            .iter()
-            .map(|(a, b)| ((*a).to_string(), (*b).to_string()))
-            .collect();
         let theme_id = ThemeId::resolve(&state.state_dir);
+        let history_log = History::load(&state.state_dir);
+        let files = FileIndex::load(&state.cwd);
         let mut app = Self {
+            history: state.history(40),
+            aliases: models::alias_table()
+                .iter()
+                .map(|(a, b)| ((*a).to_string(), (*b).to_string()))
+                .collect(),
             state,
             cfg,
-            tab: Tab::Home,
-            focus: Focus::Prompt,
             theme_id,
             theme: Theme::from_id(theme_id),
-            input: String::new(),
-            cursor: 0,
-            status: "Enter run · Tab predict · ` focus · Ctrl-K palette · ? help".into(),
-            list_idx: 0,
-            scroll: 0,
-            filter: String::new(),
-            filtering: false,
-            input_history: Vec::new(),
-            history_idx: None,
-            tick: 0,
-            overlay: OverlayKind::None,
-            overlay_query: String::new(),
-            overlay_idx: 0,
+            transcript: Transcript::default(),
+            composer: Composer::default(),
+            history_log,
+            files,
+            completion: None,
+            completion_idx: 0,
+            completion_basis: None,
+            prediction: super::prediction_owner::PredictionOwner::default(),
+            run: None,
+            queued: Vec::new(),
+            overlay: Overlay::None,
+            panel_view: super::overlays::PanelView::default(),
+            scroll_from_bottom: 0,
+            status: "Enter send · Shift-Enter newline · Esc interrupt · Ctrl-K palette · F1 help"
+                .into(),
             should_quit: false,
-            pending: PendingAction::None,
-            last_agent_code: None,
+            ctrl_c_armed: false,
+            last_esc: None,
+            last_submitted: None,
+            pending_suspend: None,
+            tick: 0,
+            claims_lines: Vec::new(),
             route_lines: Vec::new(),
             doctor_lines: Vec::new(),
-            history,
-            aliases,
             live_models: Vec::new(),
             persona_lines: Vec::new(),
             memory_lines: Vec::new(),
             skill_lines: Vec::new(),
-            predictions: Vec::new(),
-            predict_gen: 0,
-            predict_idle: 0,
-            llm_attempt_gen: None,
-            llm_boost: None,
-            predict_rx: None,
         };
         app.refresh_doctor();
         app.refresh_personas();
         app.refresh_memory();
         app.refresh_skills();
-        // Non-cursor backends answer `models` statically (no exec) — prefetch
-        // so the Models tab never falls back to the cursor alias table there.
         if !app.cfg.backend.supports_account_surface() {
             app.refresh_models_live();
         }
         Ok(app)
+    }
+
+    pub fn is_running(&self) -> bool {
+        self.run.is_some()
     }
 
     pub fn cycle_theme(&mut self) {
@@ -137,15 +175,8 @@ impl App {
     }
 
     /// Switch to the next executor backend whose binary actually resolves.
-    ///
-    /// Unresolvable backends (no `fm` on this OS, `abi` only a shell alias)
-    /// are skipped with no state change; if nothing else resolves the current
-    /// backend stays and the status line says so. Chat ids are per-backend
-    /// artifacts — the next run under a server backend simply resumes or
-    /// mints as usual; `fm`/`abi` mint locally and Claude uses its own store.
     pub fn cycle_backend(&mut self) {
         let mut next = self.cfg.backend;
-        // Six backends means at most five alternatives before wrapping.
         for _ in 0..5 {
             next = next.cycle_next();
             let Ok(path) = crate::agent::resolve_agent_for(next) else {
@@ -153,8 +184,6 @@ impl App {
             };
             self.cfg.backend = next;
             self.cfg.agent_path = path;
-            // Transcripts are per-backend; without this a switch to abi would
-            // append abi turns into the fm directory chosen at startup.
             self.cfg.transcript_dir = Some(self.state.state_dir.join(next.transcript_subdir()));
             self.live_models.clear();
             if !next.supports_account_surface() {
@@ -172,229 +201,225 @@ impl App {
         self.refresh_personas();
         self.refresh_memory();
         self.refresh_skills();
+        self.history = self.state.history(40);
         self.status = "refreshed".into();
     }
 
-    pub fn filtered_lines(&self) -> Vec<String> {
-        let raw: Vec<String> = match self.tab {
-            Tab::Home => self
-                .history
-                .iter()
-                .map(|e| format!("{}  {}  {}", e.timestamp, e.chat_id, e.cwd))
-                .collect(),
-            Tab::Chats => self
-                .history
-                .iter()
-                .map(|e| format!("{}  {}  {}", e.timestamp, e.chat_id, e.cwd))
-                .collect(),
-            Tab::Personas => self.persona_lines.clone(),
-            Tab::Memory => self.memory_lines.clone(),
-            Tab::Skills => self.skill_lines.clone(),
-            Tab::Models => {
-                if self.live_models.is_empty() {
-                    self.aliases
-                        .iter()
-                        .map(|(a, full)| format!("{a:<12} {full}"))
-                        .collect()
-                } else {
-                    self.live_models.clone()
-                }
-            }
-            Tab::Doctor => self.doctor_lines.clone(),
-        };
-        let f = self.filter.trim().to_ascii_lowercase();
-        if f.is_empty() || !matches!(self.tab, Tab::Home | Tab::Chats | Tab::Models | Tab::Skills) {
-            return raw;
-        }
-        raw.into_iter()
-            .filter(|l| l.to_ascii_lowercase().contains(&f))
-            .collect()
-    }
-
-    pub fn list_len(&self) -> usize {
-        self.filtered_lines().len()
-    }
-
-    pub fn ensure_visible(&mut self, viewport: usize) {
-        let len = self.list_len();
-        if len == 0 {
-            self.list_idx = 0;
-            self.scroll = 0;
+    /// Submit the composer: slash is routed, `!cmd` confirms, anything else is a turn.
+    pub fn submit(&mut self) {
+        let text = self.composer.text.trim_end().to_string();
+        if text.trim().is_empty() {
             return;
         }
-        if self.list_idx >= len {
-            self.list_idx = len - 1;
+        if self.is_running() {
+            self.queued.push(text);
+            self.composer.take();
+            self.completion = None;
+            self.status = format!("queued ({})", self.queued.len());
+            return;
         }
-        if self.list_idx < self.scroll {
-            self.scroll = self.list_idx;
-        } else if viewport > 0 && self.list_idx >= self.scroll + viewport {
-            self.scroll = self.list_idx + 1 - viewport;
+        self.composer.take();
+        self.completion = None;
+        self.submit_text(text);
+    }
+
+    fn submit_text(&mut self, text: String) {
+        self.history_log.push(&text);
+        self.last_submitted = Some(text.clone());
+        self.scroll_from_bottom = 0;
+        if let Some(cmd) = text.strip_prefix('!') {
+            let command: Vec<String> = cmd.split_whitespace().map(str::to_string).collect();
+            if !command.is_empty() {
+                self.overlay = Overlay::Confirm { command };
+            }
+            return;
+        }
+        if text.starts_with('/') {
+            self.run_slash(&text);
+            return;
+        }
+        self.transcript.push_user(&text);
+        self.start(RunKind::Prompt { text, fresh: false });
+    }
+
+    pub(crate) fn start(&mut self, kind: RunKind) {
+        if self.is_running() {
+            self.status = "a run is already active".into();
+            return;
+        }
+        if let Err(error) = self.prediction.dismiss() {
+            self.transcript.push_error(format!("prediction: {error:#}"));
+            return;
+        }
+        match worker::spawn_run(self.cfg.clone(), self.state.clone(), kind) {
+            Ok(handle) => {
+                self.transcript.begin_turn();
+                self.run = Some(handle);
+                self.status = "running · Esc to interrupt".into();
+            }
+            Err(e) => self
+                .transcript
+                .push_error(format!("could not start run: {e}")),
         }
     }
 
-    pub fn kpi_chips(&self) -> Vec<(String, String)> {
-        let chat = self
-            .state
-            .read_chat_for(self.cfg.backend)
-            .map(|c| c.chars().take(8).collect::<String>())
-            .unwrap_or_else(|| "—".into());
-        let persona = self
-            .persona_lines
-            .first()
-            .and_then(|l| l.split_whitespace().nth(1))
-            .unwrap_or("abbey")
-            .to_string();
-        let role = self
-            .persona_lines
-            .iter()
-            .find(|l| l.starts_with("default_role:"))
-            .map(|l| l.trim_start_matches("default_role:").trim().to_string())
-            .unwrap_or_else(|| "auto".into());
-        let mem = self
-            .memory_lines
-            .first()
-            .map(|s| {
-                if s.len() > 18 {
-                    format!("{}…", &s[..16])
-                } else {
-                    s.clone()
+    fn run_slash(&mut self, text: &str) {
+        self.transcript.push_user(text);
+        match worker::route_slash(text) {
+            SlashRoute::Agent => self.start(RunKind::AgentSlash(text.to_string())),
+            SlashRoute::Interactive => {
+                self.pending_suspend = Some(Suspend::InteractiveSlash(text.to_string()));
+            }
+            SlashRoute::Local => self.run_local(&[text.to_string()]),
+        }
+    }
+
+    /// Captured `abbey …` child; output lands in the transcript.
+    pub(crate) fn run_local(&mut self, args: &[String]) {
+        self.start(RunKind::Local(args.to_vec()));
+    }
+
+    /// Execute a confirmed `!cmd` through the OS allowlist gate.
+    pub(crate) fn run_confirmed(&mut self, command: Vec<String>) {
+        let mut args = vec!["os".to_string(), "execute".into(), "--confirm".into()];
+        args.extend(command);
+        self.run_local(&args);
+    }
+
+    /// Apply at most 128 events per tick, then finalize only after the queue
+    /// is drained. Completion is a worker outcome, never an executor event.
+    pub fn pump(&mut self) {
+        let allowed = !self.is_running() && matches!(self.overlay, Overlay::None);
+        match self.prediction.pump(
+            &self.composer.text,
+            self.composer.cursor,
+            &self.cfg,
+            self.tick,
+            allowed,
+        ) {
+            Ok(Some(hint)) => {
+                self.completion = super::completion::complete(
+                    &self.composer.text,
+                    self.composer.cursor,
+                    self.history_log.entries(),
+                    &self.files,
+                    Some(hint),
+                );
+                self.completion_idx = 0;
+                self.completion_basis = Some((self.composer.text.clone(), self.composer.cursor));
+            }
+            Ok(None) => {}
+            Err(error) => self.transcript.push_error(format!("prediction: {error:#}")),
+        }
+        use crate::stream::StreamEvent;
+        use std::sync::mpsc::TryRecvError;
+        let Some(run) = &mut self.run else {
+            return;
+        };
+        if run.completion.is_none() {
+            match run.done.try_recv() {
+                Ok(result) => run.completion = Some(result),
+                Err(TryRecvError::Disconnected) => {
+                    run.cancel.cancel();
+                    let message = run
+                        .join()
+                        .err()
+                        .unwrap_or("run worker disconnected before completion");
+                    run.completion = Some((1, Some(message.into())));
                 }
-            })
-            .unwrap_or_else(|| "—".into());
-        let last = self
-            .last_agent_code
-            .map(|c| c.to_string())
-            .unwrap_or_else(|| "—".into());
-        vec![
-            ("backend".into(), self.cfg.backend.label().to_string()),
-            ("model".into(), self.cfg.model.clone()),
-            ("chat".into(), chat),
-            ("persona".into(), persona),
-            ("role".into(), role),
-            ("last".into(), last),
-            ("mem".into(), mem),
-        ]
-    }
-}
-
-pub fn run_tui(state: AbbeyState, cfg: AgentConfig) -> Result<i32> {
-    enable_raw_mode()?;
-    let mut stdout = stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
-
-    let mut app = App::new(state, cfg)?;
-    let mut code = 0i32;
-
-    let result = (|| -> Result<i32> {
-        loop {
-            app.ensure_visible(12);
-            terminal.draw(|f| super::ui::draw(f, &app))?;
-
-            match app.pending {
-                PendingAction::None => {}
-                action => {
-                    app.pending = PendingAction::None;
-                    disable_raw_mode()?;
-                    execute!(
-                        terminal.backend_mut(),
-                        LeaveAlternateScreen,
-                        DisableMouseCapture
-                    )?;
-                    terminal.show_cursor()?;
-
-                    let prompt: Vec<String> = if app.input.trim().is_empty() {
-                        Vec::new()
-                    } else {
-                        vec![app.input.trim().to_string()]
-                    };
-
-                    let mut was_slash = false;
-                    let run_code = match action {
-                        PendingAction::RunSession { fresh } => {
-                            let spec = if fresh {
-                                crate::actions::RunSpec::fresh()
-                            } else {
-                                crate::actions::RunSpec::resume()
-                            };
-                            crate::actions::run_agent(&mut app.cfg, &app.state, &prompt, spec)?
-                        }
-                        PendingAction::RunPleaseFix => {
-                            let text = crate::please_fix::build_prompt_soft(&app.input);
-                            crate::actions::run_agent(
-                                &mut app.cfg,
-                                &app.state,
-                                &[text],
-                                crate::actions::RunSpec::max(),
-                            )?
-                        }
-                        PendingAction::Slash(cmd) => {
-                            was_slash = true;
-                            match crate::slash_dispatch::dispatch_slash(
-                                &cmd,
-                                &app.state,
-                                &mut app.cfg,
-                            ) {
-                                Ok(c) => {
-                                    app.status = format!("{cmd} → exit {c}");
-                                    c
-                                }
-                                Err(e) => {
-                                    app.status = format!("slash error: {e}");
-                                    1
-                                }
-                            }
-                        }
-                        PendingAction::None => 0,
-                    };
-
-                    app.last_agent_code = Some(run_code);
-                    if !was_slash {
-                        app.status = format!("agent exited {run_code} · Enter to run again");
+                Err(TryRecvError::Empty) => {}
+            }
+        }
+        // Observe completion before draining events: the worker sends its
+        // outcome last. Joining first also closes every event producer after
+        // a forced cancellation, so an empty queue cannot race a final send.
+        if run.completion.is_some()
+            && let Err(message) = run.join()
+        {
+            run.completion = Some((1, Some(message.into())));
+        }
+        let completed_before_drain = run.completion.is_some();
+        let mut drained = false;
+        for _ in 0..128 {
+            match run.events.try_recv() {
+                Ok(StreamEvent::Done { .. }) => {}
+                Ok(ev) => {
+                    if !self.transcript.apply(ev) {
+                        run.cancel.cancel();
+                        run.completion = Some((
+                            1,
+                            Some("active transcript exceeded its retention limit".into()),
+                        ));
                     }
-                    app.input.clear();
-                    app.cursor = 0;
-                    app.overlay = OverlayKind::None;
-                    app.refresh_doctor();
-                    app.refresh_memory();
-                    code = run_code;
-
-                    enable_raw_mode()?;
-                    execute!(
-                        terminal.backend_mut(),
-                        EnterAlternateScreen,
-                        EnableMouseCapture
-                    )?;
-                    terminal.hide_cursor()?;
-                    terminal.clear()?;
+                }
+                Err(_) => {
+                    drained = true;
+                    break;
                 }
             }
-
-            if app.should_quit {
-                break;
-            }
-
-            if event::poll(Duration::from_millis(100))? {
-                match event::read()? {
-                    Event::Key(key) => app.handle_key(key),
-                    Event::Mouse(m) => app.handle_mouse(m.kind),
-                    _ => {}
-                }
-            }
-            app.tick = app.tick.wrapping_add(1);
-            app.poll_command_prediction();
         }
-        Ok(code)
-    })();
+        if !drained || !completed_before_drain {
+            return;
+        }
+        let mut run = self.run.take().expect("active run");
+        let (mut code, mut err) = run.completion.take().expect("worker completed");
+        if let Err(message) = run.join() {
+            code = 1;
+            err = Some(message.into());
+        }
+        // An interrupt received before finalization also stops the queue even
+        // if the executor happened to exit successfully at the same instant.
+        if code == 0 && run.cancel.is_cancelled() {
+            code = 130;
+        }
+        if let Some(e) = err
+            && !matches!(self.transcript.cells.last(), Some(super::transcript::Cell::Error(s)) if s == &e)
+        {
+            self.transcript.push_error(e);
+        }
+        self.transcript.apply(StreamEvent::Done { exit: code });
+        self.status = format!("done · exit {code} · {}s", run.started.elapsed().as_secs());
+        self.history = self.state.history(40);
+        if run.local {
+            self.cfg.model = self.state.read_model();
+            if code == 0 {
+                self.refresh_all();
+                self.status = format!("done · exit {code} · {}s", run.started.elapsed().as_secs());
+            } else {
+                self.refresh_memory();
+            }
+        } else {
+            self.refresh_memory();
+        }
+        if code != 0 || self.should_quit {
+            self.discard_queue();
+        } else if !self.queued.is_empty() {
+            let next = self.queued.remove(0);
+            self.submit_text(next);
+        }
+    }
 
-    disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    )?;
-    terminal.show_cursor()?;
+    pub(crate) fn discard_queue(&mut self) {
+        let count = self.queued.len();
+        self.queued.clear();
+        if count > 0 {
+            let notice = format!("discarded {count} queued prompt(s)");
+            self.transcript.push_notice(&notice);
+            self.status.push_str(&format!(" · {notice}"));
+        }
+    }
 
-    result
+    pub(crate) fn shutdown(&mut self) -> Result<()> {
+        let prediction = self.prediction.dismiss();
+        self.discard_queue();
+        if let Some(mut run) = self.run.take() {
+            run.cancel.cancel();
+            let run_result = run.join().map_err(anyhow::Error::msg);
+            prediction?;
+            run_result?;
+        } else {
+            prediction?;
+        }
+        Ok(())
+    }
 }

@@ -28,11 +28,24 @@ pub fn capture_chat(
     })
 }
 
+/// Capture one stateless run: no conversation is resolved or resumed. Used by
+/// `learn distill` teacher calls, which must never join or extend a chat.
+pub fn capture_oneshot(cfg: &mut AgentConfig, prompt: &[String]) -> Result<CapturedRun> {
+    cfg.print = true;
+    cfg.no_resume = true;
+    let (status, stdout, stderr) = cfg.run_capture(None, prompt)?;
+    Ok(CapturedRun {
+        status,
+        stdout,
+        stderr,
+    })
+}
+
 /// Capture and emit a print-mode run with consistent stderr/highlighting.
 pub fn run_print(cfg: &mut AgentConfig, state: &AbbeyState, prompt: &[String]) -> Result<i32> {
     let captured = capture_chat(cfg, state, prompt)?;
-    eprint!("{}", captured.stderr);
-    crate::highlight::emit_agent_stdout(&captured.stdout);
+    cfg.check_cancelled()?;
+    cfg.emit_captured(&captured.stdout, &captured.stderr);
     Ok(captured.status.code().unwrap_or(1))
 }
 

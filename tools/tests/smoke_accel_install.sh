@@ -87,9 +87,10 @@ assert_old_install_unchanged() {
   fi
 }
 
-# The first three otool calls verify the release source dylib, CLI, and daemon.
-# Fail the fourth call, which is the staged dylib check. Existing destination
-# bytes must remain exact and every staging/backup directory must be removed.
+# Resolve the native developer tool before adding wrappers. `command -v otool`
+# can select a Swiftly proxy that looks up otool again under the injected PATH.
+# Inject by the exact staged paths, so Cargo/build-tool invocations cannot
+# consume a fault intended for install.sh.
 FAIL_DIR="$SCRATCH/failure/bin"
 FAIL_HOME="$SCRATCH/failure/home"
 SNAPSHOT_DIR="$SCRATCH/failure/snapshot"
@@ -97,66 +98,120 @@ FAKE_BIN="$SCRATCH/fake-bin"
 mkdir -p "$FAIL_HOME" "$FAKE_BIN"
 prepare_old_install "$FAIL_DIR" "$SNAPSHOT_DIR"
 
-ABBEY_REAL_OTOOL=$(command -v otool)
+ABBEY_REAL_OTOOL=$(/usr/bin/xcrun --find otool)
+test -x "$ABBEY_REAL_OTOOL"
 export ABBEY_REAL_OTOOL
-ABBEY_OTOOL_STATE="$SCRATCH/otool-count"
-export ABBEY_OTOOL_STATE
-ABBEY_REAL_MV=$(command -v mv)
+ABBEY_REAL_MV=/bin/mv
 export ABBEY_REAL_MV
-ABBEY_MV_STATE="$SCRATCH/mv-count"
-export ABBEY_MV_STATE
-{
-  printf '%s\n' '#!/bin/sh' 'set -eu'
-  printf '%s\n' 'count=0'
-  printf '%s\n' 'if [ -f "$ABBEY_OTOOL_STATE" ]; then count=$(sed -n "1p" "$ABBEY_OTOOL_STATE"); fi'
-  printf '%s\n' 'count=$((count + 1))'
-  printf '%s\n' 'printf "%s\n" "$count" > "$ABBEY_OTOOL_STATE"'
-  printf '%s\n' 'if [ "${ABBEY_OTOOL_FAIL_AT:-0}" -eq "$count" ]; then exit 86; fi'
-  printf '%s\n' 'exec "$ABBEY_REAL_OTOOL" "$@"'
-} > "$FAKE_BIN/otool"
-{
-  printf '%s\n' '#!/bin/sh' 'set -eu'
-  printf '%s\n' 'count=0'
-  printf '%s\n' 'if [ -f "$ABBEY_MV_STATE" ]; then count=$(sed -n "1p" "$ABBEY_MV_STATE"); fi'
-  printf '%s\n' 'count=$((count + 1))'
-  printf '%s\n' 'printf "%s\n" "$count" > "$ABBEY_MV_STATE"'
-  printf '%s\n' 'if [ "${ABBEY_MV_FAIL_AT:-0}" -eq "$count" ]; then exit 87; fi'
-  printf '%s\n' 'exec "$ABBEY_REAL_MV" "$@"'
-} > "$FAKE_BIN/mv"
+cat > "$FAKE_BIN/otool" <<'WRAPPER'
+#!/bin/sh
+set -eu
+if [ "${ABBEY_FAIL_STAGED_DYLIB:-0}" -eq 1 ] &&
+  [ "$#" -eq 2 ] && [ "$1" = -D ]; then
+  case "$2" in
+    "$ABBEY_FAULT_DEST"/.abbey-install.*/libabi_metal_dot.dylib)
+      printf '%s\n' staged-dylib > "$ABBEY_FAULT_MARKER"
+      exit 86
+      ;;
+  esac
+fi
+exec "$ABBEY_REAL_OTOOL" "$@"
+WRAPPER
+cat > "$FAKE_BIN/mv" <<'WRAPPER'
+#!/bin/sh
+set -eu
+if [ "${ABBEY_FAIL_RELOCATION:-0}" -eq 1 ] && [ "$#" -eq 2 ] &&
+  [ "$2" = "$ABBEY_FAULT_DEST/abbeyd" ]; then
+  case "$1" in
+    "$ABBEY_FAULT_DEST"/.abbey-install.*/abbeyd)
+      # Prove all old files are already backed up and the replacement dylib
+      # is published before refusing the staged-daemon publication.
+      backup_dir=""
+      for candidate in "$ABBEY_FAULT_DEST"/.abbey-backup.*; do
+        test -d "$candidate"
+        test -z "$backup_dir"
+        backup_dir="$candidate"
+      done
+      cmp "$ABBEY_FAULT_SNAPSHOT/abbey" "$backup_dir/binary"
+      cmp "$ABBEY_FAULT_SNAPSHOT/abbeyd" "$backup_dir/daemon"
+      cmp "$ABBEY_FAULT_SNAPSHOT/libabi_metal_dot.dylib" "$backup_dir/dylib"
+      test ! -e "$ABBEY_FAULT_DEST/abbey"
+      test ! -e "$ABBEY_FAULT_DEST/abbeyd"
+      test -f "$ABBEY_FAULT_DEST/libabi_metal_dot.dylib"
+      if cmp -s "$ABBEY_FAULT_SNAPSHOT/libabi_metal_dot.dylib" \
+        "$ABBEY_FAULT_DEST/libabi_metal_dot.dylib"; then
+        echo "accelerator install smoke: replacement dylib was not published" >&2
+        exit 88
+      fi
+      printf '%s\n' mid-relocation > "$ABBEY_FAULT_MARKER"
+      exit 87
+      ;;
+  esac
+fi
+exec "$ABBEY_REAL_MV" "$@"
+WRAPPER
 chmod 755 "$FAKE_BIN/otool" "$FAKE_BIN/mv"
 
+STAGED_FAULT_MARKER="$SCRATCH/staged-fault"
+STAGED_FAILURE_LOG="$SCRATCH/staged-failure.log"
 if PATH="$FAKE_BIN:$PATH" \
-  ABBEY_OTOOL_FAIL_AT=4 \
-  ABBEY_MV_FAIL_AT=0 \
+  ABBEY_FAIL_STAGED_DYLIB=1 \
+  ABBEY_FAIL_RELOCATION=0 \
+  ABBEY_FAULT_DEST="$FAIL_DIR" \
+  ABBEY_FAULT_MARKER="$STAGED_FAULT_MARKER" \
   ABBEY_CARGO_FEATURES=accel \
   ABBEY_INSTALL_DIR="$FAIL_DIR" \
   ABBEY_COMPLETION_HOME="$FAIL_HOME" \
-  ./install.sh; then
+  ./install.sh > "$STAGED_FAILURE_LOG" 2>&1; then
   echo "accelerator install smoke: expected staged verification failure" >&2
+  exit 1
+else
+  staged_status=$?
+fi
+if [ "$staged_status" -ne 1 ] ||
+  [ "$(cat "$STAGED_FAULT_MARKER" 2>/dev/null || true)" != staged-dylib ] ||
+  ! grep -Fqx 'install.sh: staged ABI Metal dylib identity verification failed' \
+    "$STAGED_FAILURE_LOG"; then
+  tail -c 4000 "$STAGED_FAILURE_LOG" >&2
+  echo "accelerator install smoke: staged verification fault was not established" >&2
   exit 1
 fi
 assert_old_install_unchanged "$FAIL_DIR" "$SNAPSHOT_DIR"
+echo "accelerator install smoke: staged verification fault reached (status $staged_status)"
+grep -Fx 'install.sh: staged ABI Metal dylib identity verification failed' "$STAGED_FAILURE_LOG"
 
-# With all verification enabled, fail the fifth move: three existing files
-# have been backed up and the new dylib has been published, but publishing the
-# daemon fails. The trap must remove the new dylib and restore all three old
-# files byte-for-byte.
+# Refuse publication of the staged daemon only after the three backups and
+# replacement dylib are verified by the wrapper. The trap must restore every
+# prior file byte-for-byte and remove all staging/backup directories.
 RELOCATE_DIR="$SCRATCH/relocate-failure/bin"
 RELOCATE_HOME="$SCRATCH/relocate-failure/home"
 RELOCATE_SNAPSHOT="$SCRATCH/relocate-failure/snapshot"
+RELOCATE_FAULT_MARKER="$SCRATCH/relocation-fault"
+RELOCATE_FAILURE_LOG="$SCRATCH/relocation-failure.log"
 mkdir -p "$RELOCATE_HOME"
 prepare_old_install "$RELOCATE_DIR" "$RELOCATE_SNAPSHOT"
-rm -f "$ABBEY_OTOOL_STATE" "$ABBEY_MV_STATE"
 if PATH="$FAKE_BIN:$PATH" \
-  ABBEY_OTOOL_FAIL_AT=0 \
-  ABBEY_MV_FAIL_AT=5 \
+  ABBEY_FAIL_STAGED_DYLIB=0 \
+  ABBEY_FAIL_RELOCATION=1 \
+  ABBEY_FAULT_DEST="$RELOCATE_DIR" \
+  ABBEY_FAULT_MARKER="$RELOCATE_FAULT_MARKER" \
+  ABBEY_FAULT_SNAPSHOT="$RELOCATE_SNAPSHOT" \
   ABBEY_CARGO_FEATURES=accel \
   ABBEY_INSTALL_DIR="$RELOCATE_DIR" \
   ABBEY_COMPLETION_HOME="$RELOCATE_HOME" \
-  ./install.sh; then
+  ./install.sh > "$RELOCATE_FAILURE_LOG" 2>&1; then
   echo "accelerator install smoke: expected relocation failure" >&2
+  exit 1
+else
+  relocation_status=$?
+fi
+if [ "$relocation_status" -ne 87 ] ||
+  [ "$(cat "$RELOCATE_FAULT_MARKER" 2>/dev/null || true)" != mid-relocation ]; then
+  tail -c 4000 "$RELOCATE_FAILURE_LOG" >&2
+  echo "accelerator install smoke: relocation fault was not established" >&2
   exit 1
 fi
 assert_old_install_unchanged "$RELOCATE_DIR" "$RELOCATE_SNAPSHOT"
+echo "accelerator install smoke: mid-relocation fault reached (status $relocation_status)"
 
 echo "accelerator install smoke: OK (isolated layout + verification/relocation rollback)"

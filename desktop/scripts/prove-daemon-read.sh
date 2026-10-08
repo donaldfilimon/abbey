@@ -17,13 +17,6 @@ fi
 
 echo "GUI limit: no WebView is opened; process-level desktop backend reads against a real abbeyd are the accepted bar."
 
-echo "== build abbeyd and abbey =="
-(cd "$REPO_ROOT" && cargo build --quiet --bin abbeyd --bin abbey)
-ABBEYD="$REPO_ROOT/target/debug/abbeyd"
-ABBEY="$REPO_ROOT/target/debug/abbey"
-test -x "$ABBEYD"
-test -x "$ABBEY"
-
 SCRATCH="$(mktemp -d /tmp/abbey-desktop-live.XXXXXX)"
 chmod 700 "$SCRATCH"
 SOCKET="$SCRATCH/abbeyd.sock"
@@ -44,6 +37,37 @@ cleanup() {
   rm -rf "$SCRATCH"
 }
 trap cleanup EXIT INT TERM
+
+# Cargo emits actual executable paths, including configured target triples.
+# A target_directory base alone can select stale host-profile artifacts.
+echo "== build abbeyd and abbey =="
+BUILD_JSON="$SCRATCH/build-artifacts.jsonl"
+if (cd "$REPO_ROOT" && cargo build --quiet --locked --message-format=json --bin abbeyd --bin abbey) >"$BUILD_JSON"; then
+  :
+else
+  status=$?
+  cat "$BUILD_JSON" >&2
+  exit "$status"
+fi
+artifact_path() {
+  python3 -c '
+import json,sys
+from pathlib import Path
+rows = [json.loads(line) for line in Path(sys.argv[1]).read_text().splitlines()]
+paths = [row["executable"] for row in rows
+         if row.get("reason") == "compiler-artifact"
+         and row.get("target", {}).get("name") == sys.argv[2]
+         and "bin" in row.get("target", {}).get("kind", [])
+         and row.get("executable")]
+if len(paths) != 1 or not isinstance(paths[0], str) or not Path(paths[0]).is_absolute():
+    raise SystemExit("expected exactly one absolute built executable for " + sys.argv[2])
+print(paths[0])
+' "$BUILD_JSON" "$1"
+}
+ABBEYD="$(artifact_path abbeyd)"
+ABBEY="$(artifact_path abbey)"
+test -x "$ABBEYD"
+test -x "$ABBEY"
 
 # Parent-process ABI/model/bearer-file leftovers must not change negotiated
 # capabilities. Unset rather than `env -u` so macOS /bin/env is enough.

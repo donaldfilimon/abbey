@@ -7,12 +7,10 @@
 //!
 //! ## Why there is a lock file here
 //!
-//! `DurableStore` has no cross-process concurrency control: each process
-//! recovers its own in-memory snapshot and appends to the shared WAL. Twenty
-//! `abbey` processes writing at once interleave their appends and leave the WAL
-//! permanently unreadable ("CRC mismatch at line 2" — every later open fails and
-//! the whole store reads as empty). SQLite survives the same load via file
-//! locking, so a WDBX backend without a lock is not a safe substitute.
+//! The sibling `DurableStore` acquires `<base>.writer.lock` before recovery and
+//! holds it for the store's lifetime. Abbey additionally takes its own session
+//! guard before opening the store; own-store `wdbx_bridge` subprocesses take
+//! that same guard. Preserve both coordination layers.
 //!
 //! An exclusive advisory lock on `<dir>/abbey.lock` (via `fs4`: `flock(2)` on
 //! Unix, `LockFileEx` on Windows) serializes whole open→write→drop sessions.
@@ -40,8 +38,8 @@ const EMBEDDING_MAP_PREFIX: &str = "map/";
 const LOCK_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub struct WdbxMemory {
-    // Field order is load-bearing: `store` drops (flushing) before `_lock`
-    // releases, so no other process can observe a half-finished session.
+    // Field order is load-bearing: `store` releases its writer lock before
+    // `_lock` releases the outer Abbey coordination guard.
     store: Mutex<DurableStore>,
     dir: PathBuf,
     _lock: File,

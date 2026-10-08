@@ -561,3 +561,17 @@ fn default_backend_falls_back_to_an_installed_executor() {
         "doctor must show the automatic backend choice: {out}"
     );
 }
+
+#[test]
+fn plain_help_retains_cli_text_without_stream_json() {
+    let s = Scratch::new("plain-help-contract");
+    let (code, out, err) = run(&s, &["/help"]);
+    assert_eq!(code, 0, "{err}");
+    assert!(out.contains("/help") && out.contains("/review"), "{out}");
+    assert!(
+        !out.contains("text_delta")
+            && !out.contains("stream-json")
+            && !out.contains("\u{1b}[?1049"),
+        "CLI help adopted TUI framing: {out}"
+    );
+}

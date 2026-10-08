@@ -22,6 +22,7 @@ dependencies = [
  "jsonschema 0.49.9",
  "libc",
  "nix 0.30.1",
+ "pulldown-cmark",
  "ratatui",
  "rusqlite",
  "serde",
@@ -78,6 +79,7 @@ dependencies = [
  "abi-telemetry",
  "serde",
  "serde_json",
+ "sha2 0.11.0",
 ]
 
 [[package]]

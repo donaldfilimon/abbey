@@ -27,18 +27,24 @@ pub fn run_cli() -> ExitCode {
 
 fn real_main() -> Result<i32> {
     let cli = Cli::parse();
-    let state = AbbeyState::load()?;
-    let mut cfg = AgentConfig::default();
-    // Best-effort only: a resolved path improves doctor/TUI display, but no
-    // command fails here. Verbs that actually execute a backend resolve at
-    // spawn time (`AgentConfig::exec_path`), so every local verb — claims,
-    // memory, os, routes, the installer probes — works on a machine with no
-    // executor installed. That is exactly when installs and audits happen.
-    if let Ok(resolved) = cfg.clone().with_resolved_agent() {
-        cfg = resolved;
-    }
+    let (mut cfg, state) = if let Some(context) = crate::tui::local_recipe::from_environment()? {
+        context
+    } else {
+        let state = AbbeyState::load()?;
+        let mut cfg = AgentConfig::default();
+        // Best-effort only: a resolved path improves doctor/TUI display, but no
+        // command fails here. Verbs that actually execute a backend resolve at
+        // spawn time (`AgentConfig::exec_path`), so every local verb — claims,
+        // memory, os, routes, the installer probes — works on a machine with no
+        // executor installed. That is exactly when installs and audits happen.
+        if let Ok(resolved) = cfg.clone().with_resolved_agent() {
+            cfg = resolved;
+        }
 
-    apply_global_flags(&cli, &state, &mut cfg)?;
+        apply_global_flags(&cli, &state, &mut cfg)?;
+
+        (cfg, state)
+    };
 
     if let Some(ws) = &cli.workspace {
         std::env::set_current_dir(ws)?;

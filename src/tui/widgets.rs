@@ -37,6 +37,7 @@ fn chip_spans(label: &str, value: &str, theme: &Theme) -> Vec<Span<'static>> {
 }
 
 /// Render a horizontal row of KPI chips.
+#[allow(dead_code)] // the chat layout does not draw the old KPI strip
 pub fn draw_kpi_strip(f: &mut Frame, area: Rect, chips: &[(&str, &str)], theme: &Theme) {
     if chips.is_empty() || area.width == 0 || area.height == 0 {
         return;
@@ -88,6 +89,7 @@ pub fn scrollbar_for(
 }
 
 /// Draw a vertical scrollbar when content exceeds the viewport.
+#[allow(dead_code)] // the chat transcript scrolls by line window, not this widget
 pub fn draw_vertical_scrollbar(
     f: &mut Frame,
     area: Rect,

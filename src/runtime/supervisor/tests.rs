@@ -448,14 +448,12 @@ mod tap {
     }
 
     #[test]
-    fn tapped_run_keeps_only_a_tail_and_never_overflows() {
+    fn tapped_run_bounds_cumulative_output_and_reports_overflow() {
         let (tx, rx) = mpsc::channel();
-        let outcome = run_tapped(&sh("printf abcdefgh"), &limits(4), || false, tx).expect("run");
-        assert_eq!(rx.iter().flatten().collect::<Vec<u8>>(), b"abcdefgh");
-        match outcome {
-            SupervisorOutcome::Exited { stdout, .. } => assert_eq!(stdout, b"efgh"),
-            other => panic!("expected Exited with tail, got {other:?}"),
-        }
+        let outcome =
+            run_tapped(&sh("printf abcdefgh; sleep 30"), &limits(4), || false, tx).expect("run");
+        assert_eq!(rx.iter().flatten().collect::<Vec<u8>>(), b"abcd");
+        assert!(matches!(outcome, SupervisorOutcome::StdoutLimit));
     }
 
     #[test]

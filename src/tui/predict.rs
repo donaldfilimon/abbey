@@ -7,8 +7,7 @@
 
 use std::ffi::OsString;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::runtime::supervisor::{
     ProcessSpec, SupervisorLimits, SupervisorOutcome, run_with_checkpoint,
@@ -18,56 +17,11 @@ use crate::slash_alias::{self, SLASH_ALIASES};
 
 /// Small local tag used only for command rerank. The default generation
 /// model (`gemma4:26b-mlx`) is too slow for keystroke prediction.
-pub const PREDICT_MODEL: &str = "gemma4:12b-mlx";
+pub(crate) const PREDICT_MODEL: &str = "gemma4:12b-mlx";
 
 const MAX_RESULTS: usize = 8;
 const LLM_TIMEOUT: Duration = Duration::from_millis(1_500);
 const MAX_LLM_OUTPUT_BYTES: usize = 4 * 1024;
-static LLM_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
-
-/// Background Ollama rerank result. Stale generations are ignored.
-pub(super) struct LlmHint {
-    pub generation: u64,
-    pub name: Option<&'static str>,
-}
-
-struct InFlightGuard;
-
-impl Drop for InFlightGuard {
-    fn drop(&mut self) {
-        LLM_IN_FLIGHT.store(false, Ordering::Release);
-    }
-}
-
-/// Start at most one process-wide rerank. Lexical predictions remain available
-/// while an older generation finishes or times out.
-pub(super) fn spawn_llm_hint(
-    ollama: std::path::PathBuf,
-    model: &'static str,
-    input: String,
-    generation: u64,
-) -> Option<std::sync::mpsc::Receiver<LlmHint>> {
-    LLM_IN_FLIGHT
-        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-        .ok()?;
-    let (tx, rx) = std::sync::mpsc::channel();
-    let spawned = std::thread::Builder::new()
-        .name("abbey-predict-rerank".into())
-        .spawn(move || {
-            let _guard = InFlightGuard;
-            let name = llm_hint(&ollama, model, &input);
-            let _ = tx.send(LlmHint { generation, name });
-        });
-    match spawned {
-        Ok(_) => Some(rx),
-        // A failed spawn leaves no worker to drop the guard, so reset the flag
-        // instead of silently disabling all reranks for the rest of the session.
-        Err(_) => {
-            LLM_IN_FLIGHT.store(false, Ordering::Release);
-            None
-        }
-    }
-}
 
 /// One ranked suggestion.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -323,12 +277,54 @@ fn parse_llm_name(raw: &str) -> Option<&'static str> {
 
 /// Bounded one-shot Ollama rerank. Fail-closed: timeout, missing binary,
 /// unknown name, and non-zero exit all return `None`.
+#[cfg(test)]
 pub fn llm_hint(ollama: &Path, model: &str, input: &str) -> Option<&'static str> {
-    if input.trim().len() < 4 {
-        return None;
+    llm_hint_owned(
+        ollama,
+        model,
+        input,
+        &crate::runtime::CancellationToken::new(),
+    )
+    .ok()
+    .flatten()
+}
+
+/// Probe and rerank share one work deadline and cancellation owner.
+/// Supervisor termination and observed joins have their own bounded grace.
+pub(crate) fn llm_hint_owned(
+    ollama: &Path,
+    model: &str,
+    input: &str,
+    cancel: &crate::runtime::CancellationToken,
+) -> anyhow::Result<Option<&'static str>> {
+    if input.trim().len() < 4 || cancel.is_cancelled() {
+        return Ok(None);
     }
-    if !crate::agent::ollama_lists_model(ollama, model) {
-        return None;
+    let deadline = Instant::now() + LLM_TIMEOUT;
+    let probe = ProcessSpec::inherited(ollama.to_path_buf(), vec![OsString::from("list")]);
+    let limits = SupervisorLimits {
+        timeout: LLM_TIMEOUT,
+        terminate_grace: Duration::from_millis(100),
+        stdout_bytes: 64 * 1024,
+        stderr_bytes: 4096,
+        poll_interval: Duration::from_millis(10),
+    };
+    let SupervisorOutcome::Exited { status, stdout, .. } =
+        run_with_checkpoint(&probe, &limits, || {
+            cancel.is_cancelled() || Instant::now() >= deadline
+        })?
+    else {
+        return Ok(None);
+    };
+    if !status.success()
+        || !String::from_utf8_lossy(&stdout)
+            .lines()
+            .skip(1)
+            .any(|line| line.split_whitespace().next() == Some(model))
+        || cancel.is_cancelled()
+        || Instant::now() >= deadline
+    {
+        return Ok(None);
     }
     let names: String = SLASH_CATALOG
         .iter()
@@ -354,21 +350,26 @@ pub fn llm_hint(ollama: &Path, model: &str, input: &str) -> Option<&'static str>
         ],
     );
     let limits = SupervisorLimits {
-        timeout: LLM_TIMEOUT,
+        timeout: deadline
+            .saturating_duration_since(Instant::now())
+            .max(Duration::from_nanos(1)),
         terminate_grace: Duration::from_millis(100),
         stdout_bytes: MAX_LLM_OUTPUT_BYTES,
         stderr_bytes: 1024,
         poll_interval: Duration::from_millis(10),
     };
     let SupervisorOutcome::Exited { status, stdout, .. } =
-        run_with_checkpoint(&spec, &limits, || false).ok()?
+        run_with_checkpoint(&spec, &limits, || {
+            cancel.is_cancelled() || Instant::now() >= deadline
+        })?
     else {
-        return None;
+        return Ok(None);
     };
-    status
-        .success()
-        .then(|| parse_llm_name(&String::from_utf8_lossy(&stdout)))
-        .flatten()
+    Ok(
+        (!cancel.is_cancelled() && Instant::now() < deadline && status.success())
+            .then(|| parse_llm_name(&String::from_utf8_lossy(&stdout)))
+            .flatten(),
+    )
 }
 
 #[cfg(test)]

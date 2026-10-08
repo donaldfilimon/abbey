@@ -48,7 +48,8 @@ desktop/
 `desktop/Cargo.toml` is a **separate workspace**. The root `abbey` manifest has
 no `[workspace]` table, so nothing here is absorbed into Abbey's build,
 lockfile, `cargo clippy --all-targets`, or `check.sh`'s `src/**/*.rs` file-size
-guard. `./check.sh` at the repo root is unaffected.
+guard. The root gate runs the locked IPC codegen drift check; the remaining
+client checks belong to the separate desktop gate.
 
 ## Commands
 
@@ -68,9 +69,10 @@ bun run tauri dev      # requires the Rust toolchain and a WebView
 
 `desktop/check.sh` is deliberately **not** called by the repository root
 `./check.sh`, which must stay a pure Rust-crate gate needing neither bun nor a
-WebView toolchain. The cost is real and worth stating: generated-type drift,
-the bundle scan, and the personal-edition build are caught only when somebody
-runs `desktop/check.sh`. Nothing automatic enforces them.
+WebView toolchain. The root gate checks generated IPC types using the desktop codegen crate with
+`--locked`; a stale desktop lockfile makes that check explicitly UNMEASURED.
+Frontend type checking, the bundle scan, desktop tests and native linking run
+only in `desktop/check.sh`.
 
 Two verification notes:
 

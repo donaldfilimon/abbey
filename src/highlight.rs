@@ -118,6 +118,31 @@ fn normalize_lang(lang: &str) -> &str {
     }
 }
 
+/// One highlighted run: RGB and the text it covers.
+pub type CodeRun = ((u8, u8, u8), String);
+
+/// Syntax-highlighted lines as [`CodeRun`]s for non-ANSI renderers (TUI).
+pub fn code_lines(code: &str, lang: Option<&str>) -> Vec<Vec<CodeRun>> {
+    let ps = syntaxes();
+    let syntax = find_syntax(ps, lang, None);
+    let mut h = HighlightLines::new(syntax, theme());
+    let mut out = Vec::new();
+    for line in LinesWithEndings::from(code) {
+        let runs = match h.highlight_line(line, ps) {
+            Ok(ranges) => ranges
+                .into_iter()
+                .map(|(style, text)| {
+                    let c = style.foreground;
+                    ((c.r, c.g, c.b), text.trim_end_matches('\n').to_string())
+                })
+                .collect(),
+            Err(_) => vec![((200, 200, 200), line.trim_end_matches('\n').to_string())],
+        };
+        out.push(runs);
+    }
+    out
+}
+
 /// Highlight a bare code blob (no markdown wrapper).
 pub fn colorize_code(code: &str, lang: Option<&str>, path: Option<&Path>) -> String {
     let ps = syntaxes();

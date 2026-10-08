@@ -90,6 +90,17 @@ fn shell_split(s: &str) -> Vec<String> {
 }
 
 pub fn run_gate(root: &Path) -> Result<GateReport> {
+    run_gate_impl(root, None)
+}
+
+pub(super) fn run_gate_owned(root: &Path, cfg: &crate::agent::AgentConfig) -> Result<GateReport> {
+    if cfg.stream.is_none() {
+        return run_gate(root);
+    }
+    run_gate_impl(root, Some(cfg))
+}
+
+fn run_gate_impl(root: &Path, owner: Option<&crate::agent::AgentConfig>) -> Result<GateReport> {
     let (prog, args) = resolve_check_cmd(root)?;
     let cmd_display = if args.is_empty() {
         prog.clone()
@@ -97,13 +108,27 @@ pub fn run_gate(root: &Path) -> Result<GateReport> {
         format!("{prog} {}", args.join(" "))
     };
     let started = Instant::now();
-    let out = Command::new(&prog)
-        .args(&args)
-        .current_dir(root)
-        .output()
-        .with_context(|| format!("spawn gate `{cmd_display}`"))?;
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    let stderr = String::from_utf8_lossy(&out.stderr);
+    let (status, stdout, stderr) = if let Some(cfg) = owner {
+        let program = if Path::new(&prog).is_absolute() {
+            Path::new(&prog).to_path_buf()
+        } else if prog.contains(std::path::MAIN_SEPARATOR) {
+            root.join(&prog)
+        } else {
+            crate::host::which_bin(&prog).context("gate executable is unavailable")?
+        };
+        cfg.capture_command(&program, &args, Some(root))?
+    } else {
+        let out = Command::new(&prog)
+            .args(&args)
+            .current_dir(root)
+            .output()
+            .with_context(|| format!("spawn gate `{cmd_display}`"))?;
+        (
+            out.status,
+            String::from_utf8_lossy(&out.stdout).into_owned(),
+            String::from_utf8_lossy(&out.stderr).into_owned(),
+        )
+    };
     let mut combined = String::new();
     if !stdout.is_empty() {
         combined.push_str(&stdout);
@@ -114,8 +139,8 @@ pub fn run_gate(root: &Path) -> Result<GateReport> {
         }
         combined.push_str(&stderr);
     }
-    let exit = out.status.code().unwrap_or(1);
-    let ok = out.status.success();
+    let exit = status.code().unwrap_or(1);
+    let ok = status.success();
     let kinds = if ok {
         Vec::new()
     } else {

@@ -297,7 +297,7 @@ impl AgentConfig {
                 other => format!("Mode: {other}."),
             });
         }
-        if self.print {
+        if self.print && self.stream.is_none() {
             // Streaming interleaves partial output; capture wants one clean body.
             args.push("--no-stream".into());
         }
@@ -394,6 +394,10 @@ impl AgentConfig {
                 args.push("--output-format".into());
                 args.push(fmt.clone());
             }
+            if self.stream.is_some() {
+                args.push("--verbose".into());
+                args.push("--include-partial-messages".into());
+            }
         }
         // One permission mode: Abbey's explicit --force (always-approve) wins;
         // otherwise plan mode maps onto claude's own plan permission mode.
@@ -403,6 +407,9 @@ impl AgentConfig {
         } else if self.mode.as_deref() == Some("plan") {
             args.push("--permission-mode".into());
             args.push("plan".into());
+        } else if let Some(pm) = &self.permission_mode {
+            args.push("--permission-mode".into());
+            args.push(pm.clone());
         }
         if let Some(mode) = &self.mode {
             // ask has no claude flag; the note rides as an appended system prompt.
@@ -508,6 +515,9 @@ impl AgentConfig {
             if let Some(fmt) = &self.output_format {
                 args.push("--output-format".into());
                 args.push(fmt.clone());
+            }
+            if self.stream.is_some() && self.backend == AgentBackend::Cursor {
+                args.push("--stream-partial-output".into());
             }
         }
         if let Some(wt) = &self.worktree {

@@ -211,6 +211,17 @@ pub fn print_catalog() {
 }
 
 pub fn build_plan(opts: &RunOptions, max_model: &str, gemma_model: &str) -> Result<Vec<LanePlan>> {
+    build_plan_reported(opts, max_model, gemma_model, |message| {
+        eprintln!("{message}")
+    })
+}
+
+pub(super) fn build_plan_reported(
+    opts: &RunOptions,
+    max_model: &str,
+    gemma_model: &str,
+    report: impl Fn(&str),
+) -> Result<Vec<LanePlan>> {
     let mut names = Vec::new();
     if opts.lanes.is_empty() && opts.peers.is_empty() {
         names.extend(default_lane_names());
@@ -239,10 +250,10 @@ pub fn build_plan(opts: &RunOptions, max_model: &str, gemma_model: &str) -> Resu
         };
         let peer_path = spec.peer_bin.and_then(crate::agent::which_bin);
         if spec.kind == LaneKind::Peer && peer_path.is_none() {
-            eprintln!(
+            report(&format!(
                 "abbey: peer `{}` not on PATH - skipping",
                 spec.peer_bin.unwrap_or(spec.name)
-            );
+            ));
             continue;
         }
         plans.push(LanePlan {

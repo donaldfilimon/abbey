@@ -17,6 +17,8 @@ pub struct RunSpec {
     pub print: bool,
     /// Gemma interpret → Max implement, correlated in the route log.
     pub hybrid_loop: bool,
+    /// Live decode sink. `None` keeps the CLI path byte-identical.
+    pub stream: Option<crate::stream::StreamTap>,
 }
 
 impl RunSpec {
@@ -68,6 +70,11 @@ impl RunSpec {
             ..Self::default()
         }
     }
+
+    pub fn streaming(mut self, tap: crate::stream::StreamTap) -> Self {
+        self.stream = Some(tap);
+        self
+    }
 }
 
 /// Single entry used by clap + slash. Always goes through `hybrid_run`
@@ -78,17 +85,29 @@ pub fn run_agent(
     prompt: &[String],
     spec: RunSpec,
 ) -> Result<i32> {
-    if let Some(mode) = spec.mode {
-        cfg.mode = Some(mode.into());
+    let stream = spec.stream.clone().or_else(|| cfg.stream.clone());
+    let result = (|| {
+        if let Some(tap) = spec.stream.clone() {
+            cfg.stream = Some(tap);
+        }
+        if let Some(mode) = spec.mode {
+            cfg.mode = Some(mode.into());
+        }
+        if spec.print {
+            cfg.print = true;
+        }
+        if spec.hybrid_loop {
+            let ac = AbbeyConfig::load().unwrap_or_default();
+            return hybrid_loop_run(cfg, state, prompt, &ac.roles.max, &ac.roles.gemma);
+        }
+        hybrid_run(cfg, state, spec.fresh, prompt, spec.role)
+    })();
+    if let Some(tap) = stream {
+        tap.emit(crate::stream::StreamEvent::Done {
+            exit: result.as_ref().copied().unwrap_or(1),
+        });
     }
-    if spec.print {
-        cfg.print = true;
-    }
-    if spec.hybrid_loop {
-        let ac = AbbeyConfig::load().unwrap_or_default();
-        return hybrid_loop_run(cfg, state, prompt, &ac.roles.max, &ac.roles.gemma);
-    }
-    hybrid_run(cfg, state, spec.fresh, prompt, spec.role)
+    result
 }
 
 pub fn run_review(

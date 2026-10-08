@@ -98,12 +98,16 @@ pub(super) fn report_path(state_dir: &Path, correlation: &str) -> PathBuf {
     state_dir.join("improve").join(format!("{correlation}.md"))
 }
 
-pub(super) fn write_report(state: &AbbeyState, report: &RunReport) -> Result<()> {
+pub(super) fn write_report(
+    state: &AbbeyState,
+    report: &RunReport,
+    cfg: &crate::agent::AgentConfig,
+) -> Result<()> {
     let dir = state.state_dir.join("improve");
     fs::create_dir_all(&dir)?;
     let path = report_path(&state.state_dir, &report.correlation);
     fs::write(&path, report.render())?;
-    eprintln!("abbey: improve report → {}", path.display());
+    cfg.notice(format!("abbey: improve report → {}", path.display()));
     Ok(())
 }
 

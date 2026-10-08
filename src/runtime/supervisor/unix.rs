@@ -205,7 +205,9 @@ pub(super) fn run_with_checkpoint(
         command.current_dir(current_dir);
     }
     match &spec.environment {
-        ProcessEnvironment::Inherit => {}
+        ProcessEnvironment::Inherit => {
+            command.env_remove(crate::tui::local_recipe::ENV);
+        }
         ProcessEnvironment::ClearAndSet(environment) => {
             command.env_clear().envs(environment.iter().cloned());
         }
@@ -339,32 +341,38 @@ fn spawn_reader<R: Read + Send + 'static>(
         .map_err(SupervisorError::Spawn)
 }
 
-/// Stream every chunk to `tap` and retain only the last `cap` bytes. A tapped
-/// stream is consumed live, so its retained copy is a diagnostic tail and can
-/// never overflow.
+/// Forward at most `cap` cumulative bytes, then signal overflow so the
+/// supervisor tears down the complete process group rather than dropping data.
 fn read_tapped<R: Read>(
     mut reader: R,
     name: StreamName,
     cap: usize,
     tap: &Sender<Vec<u8>>,
 ) -> std::io::Result<CapturedStream> {
-    let mut tail: Vec<u8> = Vec::new();
+    let mut bytes = Vec::new();
     let mut buffer = [0_u8; 8 * 1024];
     loop {
-        let read = reader.read(&mut buffer)?;
+        let remaining = cap.saturating_sub(bytes.len());
+        let read = reader.read(&mut buffer[..remaining.saturating_add(1).min(8 * 1024)])?;
         if read == 0 {
             break;
         }
-        let _ = tap.send(buffer[..read].to_vec());
-        tail.extend_from_slice(&buffer[..read]);
-        if tail.len() > cap {
-            let excess = tail.len() - cap;
-            tail.drain(..excess);
+        let accepted = read.min(remaining);
+        if accepted > 0 {
+            let _ = tap.send(buffer[..accepted].to_vec());
+            bytes.extend_from_slice(&buffer[..accepted]);
+        }
+        if read > remaining {
+            return Ok(CapturedStream {
+                name,
+                bytes,
+                overflowed: true,
+            });
         }
     }
     Ok(CapturedStream {
         name,
-        bytes: tail,
+        bytes,
         overflowed: false,
     })
 }
