@@ -173,7 +173,7 @@ def run(binary):
     with tempfile.TemporaryDirectory(prefix="abbey-tui-pty-") as scratch:
         root = Path(scratch)
         executable(root / "agent", "#!/bin/sh\n"
-                   'case "$1" in --version|version) printf "fixture-version\\n"; exit 0 ;; esac\n' 
+                   'case "$1" in --version|version) printf "fixture-version\\n"; exit 0 ;; esac\n'
                    "printf '%s' \"$$\" > agent.pid\n"
                    "printf '%s\\n' \"$*\" >> calls.log\n"
                    "case \"$*\" in\n"
