@@ -2,7 +2,7 @@
     .name = .abbey_zig,
     .version = "0.1.0",
     .fingerprint = 0x22ecb17368288d4d,
-    .minimum_zig_version = "0.17.0-dev.2320+1e770dbef",
+    .minimum_zig_version = "0.18.0-dev.120+9fe22a29b",
     .dependencies = .{},
     .paths = .{
         "build.zig",

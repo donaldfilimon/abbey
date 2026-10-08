@@ -29,7 +29,10 @@ echo "rust oracle: ${ABBEY_ZIG_RUST_ORACLE:-(none found)}"
 echo "abi for e2e: ${ABBEY_ZIG_E2E_ABI:-(none found)}"
 
 stage "zig version"
-zig version
+expected_zig="0.18.0-dev.120+9fe22a29b"
+actual_zig=$(zig version)
+printf "%s\n" "$actual_zig"
+[ "$actual_zig" = "$expected_zig" ] || { echo "FAIL: expected Zig $expected_zig"; exit 1; }
 
 stage "fmt --check"
 zig fmt --check src build.zig
