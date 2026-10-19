@@ -20,14 +20,14 @@ env:
   # This must match rust-toolchain.toml at ABI_REVISION until that immutable
   # integration pin advances.
   ABI_TOOLCHAIN: nightly-2026-09-01
-  ABI_REVISION: 5c275dd62a9786e1deca2963f787f25c0fc97fe3
+  ABI_REVISION: ca4a725c07ff75f885eb60bd59fe9797e12e4d2c
   # WDBX was extracted from abi on 2026-08-22. abbey consumes abi-wdbx and
   # abi-compute from it directly, and also transitively through abi-worker and
   # abi-sea, so all three checkouts must be siblings or Cargo resolves two
   # non-unifying copies of abi-wdbx. The workflow fetches both siblings as
   # tokenless public source and fails closed if either becomes private; the
   # immutable pins remain mandatory.
-  WDBX_REVISION: 7ddeb3d1389ec0e9fab5ac5397acf0da91a01174
+  WDBX_REVISION: cf2e326786c0054ac99c48bf512647c13e2bc3b1
 
 # The only job runs on the macOS ARM64 self-hosted runner and is restricted to
 # trusted same-repository events. Fork code must never run on machines that can
