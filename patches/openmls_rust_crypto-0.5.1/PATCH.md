@@ -21,4 +21,4 @@ On 2026-10-08 the prior 0.7 line was replaced because its exact
 `libcrux-kem = 0.0.9` pin carried RUSTSEC-2026-0330 and RUSTSEC-2026-0331.
 The 0.8 update changes the three existing HPKE dependencies and their
 transitive cryptographic dependencies; it adds no direct application dependency.
-The five previously reviewed RustSec vulnerabilities remain accepted debt.
+The separately patched Serenity transport now removes the former Rustls/WebPKI debt path. Only the previously reviewed Songbird Ringbuf vulnerability remains accepted debt.

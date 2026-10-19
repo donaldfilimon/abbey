@@ -54,6 +54,8 @@ tokio = { version = "1.53.1", features = ["test-util"] }
 regex = "1.13.1"
 
 [patch.crates-io]
+# Keep Serenity 0.12 API while moving its WebSocket transport to patched Rustls.
+serenity = { path = "patches/serenity-0.12.5" }
 # openmls_rust_crypto 0.5.1 is the API line required by davey 0.1.4, but its
 # published manifest pins the vulnerable HPKE 0.6/libcrux SHA3 stack. The
 # reviewed local copy changes only those three dependency versions to the

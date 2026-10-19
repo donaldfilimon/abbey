@@ -21,22 +21,9 @@ RESOLUTION_SCOPE = "all-resolved-targets"
 # Each accepted debt is one locked dependency path ending at the vulnerable
 # package, plus the exact advisories that path carries. Adding a path or an
 # advisory is a reviewed change to this table, never a policy-file edit alone.
+# The Serenity transport patch removes the retired Rustls/WebPKI debt path.
+# Only the previously approved Songbird ringbuf path remains; no new debt is admitted.
 APPROVED_DEPENDENCY_PATHS = (
-    (
-        (
-            "RUSTSEC-2026-0049",
-            "RUSTSEC-2026-0098",
-            "RUSTSEC-2026-0099",
-            "RUSTSEC-2026-0104",
-        ),
-        (
-            ("serenity", "0.12.5"),
-            ("tokio-tungstenite", "0.21.0"),
-            ("rustls", "0.22.4"),
-            ("rustls-webpki", "0.102.8"),
-        ),
-        ("tokio_tungstenite", "rustls", "webpki"),
-    ),
     (
         ("RUSTSEC-2026-0293",),
         (
