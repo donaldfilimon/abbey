@@ -91,48 +91,9 @@ impl RuntimeStore {
         &self,
         request: NewToolApproval,
     ) -> Result<ToolApprovalRecord, StoreError> {
-        validate_id(&request.call_id, "tool approval call id is invalid")?;
-        validate_id(&request.tool_id, "tool approval tool id is invalid")?;
-        validate_digest(&request.call_digest)?;
-        let ttl = request
-            .expires_at_ms
-            .checked_sub(request.created_at_ms)
-            .ok_or(StoreError::InvalidInput("tool approval expiry is invalid"))?;
-        if ttl == 0 || ttl > MAX_TOOL_APPROVAL_TTL_MS {
-            return Err(StoreError::InvalidInput(
-                "tool approval expiry exceeds the server bound",
-            ));
-        }
-        let created_at = sql_u64(request.created_at_ms)?;
-        let expires_at = sql_u64(request.expires_at_ms)?;
         let mut conn = self.conn.lock().expect("runtime sqlite lock poisoned");
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let inserted = tx.execute(
-            "INSERT OR IGNORE INTO tool_approvals(
-                call_id, tool_id, call_digest, state, decision_id, cancellation_id,
-                created_at_ms, expires_at_ms, updated_at_ms
-             ) VALUES (?1, ?2, ?3, 'pending', NULL, NULL, ?4, ?5, ?4)",
-            params![
-                request.call_id,
-                request.tool_id,
-                request.call_digest,
-                created_at,
-                expires_at
-            ],
-        )?;
-        if inserted == 0 {
-            return Err(StoreError::ToolApprovalConflict);
-        }
-        insert_event(
-            &tx,
-            &request.call_id,
-            ToolApprovalState::Pending,
-            None,
-            None,
-            created_at,
-        )?;
-        let record = read_record(&tx, &request.call_id)?
-            .ok_or(StoreError::CorruptData("created tool approval is missing"))?;
+        let record = create_on(&tx, request)?;
         tx.commit()?;
         Ok(record)
     }
@@ -285,14 +246,14 @@ pub(super) fn expire_if_needed(
 }
 
 pub(super) fn require_record(
-    tx: &Transaction<'_>,
+    tx: &rusqlite::Connection,
     call_id: &str,
 ) -> Result<ToolApprovalRecord, StoreError> {
     read_record(tx, call_id)?.ok_or_else(|| StoreError::ToolApprovalNotFound(call_id.to_owned()))
 }
 
 fn read_record(
-    tx: &Transaction<'_>,
+    tx: &rusqlite::Connection,
     call_id: &str,
 ) -> Result<Option<ToolApprovalRecord>, StoreError> {
     tx.query_row(
@@ -362,6 +323,8 @@ pub(super) fn resolution_exists(tx: &Transaction<'_>, id: &str) -> Result<bool, 
             SELECT 1 FROM tool_approvals WHERE decision_id=?1 OR cancellation_id=?1
             UNION ALL
             SELECT 1 FROM tool_executions WHERE execution_id=?1
+            UNION ALL
+            SELECT 1 FROM governed_tool_intents WHERE execution_id=?1
          )",
         [id],
         |row| row.get(0),
@@ -626,4 +589,58 @@ mod tests {
         }
         std::fs::remove_dir_all(root).unwrap();
     }
+}
+
+pub(super) fn create_on(
+    tx: &Transaction<'_>,
+    request: NewToolApproval,
+) -> Result<ToolApprovalRecord, StoreError> {
+    validate_id(&request.call_id, "tool approval call id is invalid")?;
+    validate_id(&request.tool_id, "tool approval tool id is invalid")?;
+    validate_digest(&request.call_digest)?;
+    let ttl = request
+        .expires_at_ms
+        .checked_sub(request.created_at_ms)
+        .ok_or(StoreError::InvalidInput("tool approval expiry is invalid"))?;
+    if ttl == 0 || ttl > MAX_TOOL_APPROVAL_TTL_MS {
+        return Err(StoreError::InvalidInput(
+            "tool approval expiry exceeds the server bound",
+        ));
+    }
+    let created_at = sql_u64(request.created_at_ms)?;
+    let expires_at = sql_u64(request.expires_at_ms)?;
+    if tx.query_row(
+        "SELECT EXISTS(SELECT 1 FROM governed_tool_intents WHERE call_id=?1)",
+        [&request.call_id],
+        |r| r.get::<_, bool>(0),
+    )? {
+        return Err(StoreError::ToolApprovalConflict);
+    }
+    let inserted = tx.execute(
+        "INSERT OR IGNORE INTO tool_approvals(
+                call_id, tool_id, call_digest, state, decision_id, cancellation_id,
+                created_at_ms, expires_at_ms, updated_at_ms
+             ) VALUES (?1, ?2, ?3, 'pending', NULL, NULL, ?4, ?5, ?4)",
+        params![
+            request.call_id,
+            request.tool_id,
+            request.call_digest,
+            created_at,
+            expires_at
+        ],
+    )?;
+    if inserted == 0 {
+        return Err(StoreError::ToolApprovalConflict);
+    }
+    insert_event(
+        tx,
+        &request.call_id,
+        ToolApprovalState::Pending,
+        None,
+        None,
+        created_at,
+    )?;
+    let record = read_record(tx, &request.call_id)?
+        .ok_or(StoreError::CorruptData("created tool approval is missing"))?;
+    Ok(record)
 }

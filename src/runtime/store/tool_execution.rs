@@ -106,6 +106,9 @@ impl RuntimeStore {
         let now = sql_u64(now_ms)?;
         let mut conn = self.conn.lock().expect("runtime sqlite lock poisoned");
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        if tx.query_row("SELECT EXISTS(SELECT 1 FROM governed_tool_intents WHERE call_id=?1 OR execution_id=?2 UNION ALL SELECT 1 FROM governed_approval_previews WHERE call_id=?1)",params![call_id,execution_id],|r|r.get::<_,bool>(0))? {
+            return Err(StoreError::ToolExecutionConflict);
+        }
         let current = require_approval(&tx, call_id)?;
         require_digest(&current, call_digest)?;
         if let Some(expired) = expire_if_needed(&tx, &current, now)? {
@@ -168,6 +171,13 @@ impl RuntimeStore {
         let now = sql_u64(now_ms)?;
         let mut conn = self.conn.lock().expect("runtime sqlite lock poisoned");
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        if tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM governed_tool_intents WHERE call_id=?1)",
+            [call_id],
+            |r| r.get::<_, bool>(0),
+        )? {
+            return Err(StoreError::ToolExecutionConflict);
+        }
         let current = require_execution(&tx, call_id)?;
         if current.execution_id != execution_id
             || current.state != ToolExecutionState::Prepared

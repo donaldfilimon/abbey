@@ -415,7 +415,13 @@ def cancelled_case(binary, root, name, quit_run=False, teacher=False):
 
 
 def selected_backend_case(binary, root):
-    f = Fixture(root)
+    f = Fixture(root, teacher=True)
+    f.set_control("teacher", marker="selected-learning-answer")
+    f.cli(binary, ["learn", "distill", "--teacher", "fm", "selected-learning-prompt"])
+    # The teacher exists only to seed a real candidate; preserve the original
+    # backend-cycle control where only ABI resolves among the next probes.
+    (root / "bin" / "fm").unlink()
+    original_chat = (root / "state" / "chat-id").read_bytes()
     # Direct ambient Cursor is a positive control for the two distinct ids.
     out, _ = f.cli(binary, ["/memory"])
     require(b"chat: ambient-owned-cursor-chat" in out,
@@ -433,6 +439,20 @@ def selected_backend_case(binary, root):
             mismatches.append("local child did not use selected ABI chat owner")
         if b"chat: ambient-owned-cursor-chat" in s.screen():
             mismatches.append("local child adopted original provider's chat id")
+        provider_calls = len(f.events())
+        for command, marker in [
+            ("/learn review ", b"selected-learning-answer"),
+            ("/learn sft ", b'"assistant"'),
+        ]:
+            s.submit(command)
+            s.wait_output(marker, timeout=WAIT)
+            s.wait_join(0)
+            s.redraw()
+            require(marker in s.screen(), "learning output vanished after redraw")
+            require(len(f.events()) == provider_calls,
+                    "read-only learning command unexpectedly contacted a provider")
+            require((root / "state" / "chat-id").read_bytes() == original_chat,
+                    "read-only learning command changed conversation identity")
         f.set_control(marker="selected-abi-reason-output")
         s.submit("/cot run synthetic-selected-owned-task ")
         record = f.wait_call(s, "generation")

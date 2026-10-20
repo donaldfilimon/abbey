@@ -3,7 +3,7 @@
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 use thiserror::Error;
 
-pub(super) const CURRENT_SCHEMA_VERSION: i64 = 7;
+pub(super) const CURRENT_SCHEMA_VERSION: i64 = 8;
 
 const CREATE_LEDGER: &str = r#"
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -24,6 +24,8 @@ const MIGRATION_5: &str = include_str!("migration_5_tool_approvals.sql");
 const MIGRATION_6: &str = include_str!("migration_6_tool_executions.sql");
 const MIGRATION_7: &str = include_str!("migration_7_model_operations.sql");
 
+const MIGRATION_8: &str = include_str!("migration_8_governed_tools.sql");
+
 const MIGRATIONS: &[(i64, &str)] = &[
     (1, MIGRATION_1),
     (2, MIGRATION_2),
@@ -32,6 +34,7 @@ const MIGRATIONS: &[(i64, &str)] = &[
     (5, MIGRATION_5),
     (6, MIGRATION_6),
     (7, MIGRATION_7),
+    (8, MIGRATION_8),
 ];
 
 #[derive(Debug, Error)]
@@ -273,6 +276,13 @@ fn apply_set(
         });
     }
 
+    let count: i64 = conn.query_row("SELECT COUNT(*) FROM schema_migrations", [], |row| {
+        row.get(0)
+    })?;
+    if count != found {
+        return Err(MigrationError::LegacyInvariant);
+    }
+
     for &(version, sql) in migrations {
         if version <= found {
             continue;
@@ -318,7 +328,7 @@ mod tests {
             conn.query_row("SELECT COUNT(*) FROM schema_migrations", [], |row| row
                 .get::<_, i64>(0))
                 .unwrap(),
-            7
+            8
         );
     }
 

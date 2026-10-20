@@ -48,6 +48,7 @@ uuid = { version = "1", features = ["v4"] }
 url = "2"
 # CI checks the sibling ABI checkout out at the immutable revision declared in
 # .github/workflows/rust.yml. Local path dependencies preserve the same layout.
+abi-capability = { path = "../abi/crates/abi-capability" }
 abi-ai = { path = "../abi/crates/abi-ai" }
 abi-agent-host = { path = "../abi/crates/abi-agent-host" }
 abi-agent-runtime = { path = "../abi/crates/abi-agent-runtime" }
@@ -66,6 +67,9 @@ fs4 = "0.13"
 pulldown-cmark = { version = "0.13.4", default-features = false }
 
 [dev-dependencies]
+candle-core = { git = "https://github.com/huggingface/candle.git", rev = "70f72e9cfdbfc570846ca363ead2135394af3e9a", version = "0.11", default-features = false }
+tokenizers = { version = "0.22.2", default-features = false, features = ["fancy-regex"] }
+abi-sea = { path = "../abi/crates/abi-sea" }
 ed25519-dalek = "3"
 
 # SIGPIPE reset only — already in the tree transitively, so this costs no extra

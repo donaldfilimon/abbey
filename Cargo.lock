@@ -9,13 +9,16 @@ dependencies = [
  "abi-agent-host",
  "abi-agent-runtime",
  "abi-ai",
+ "abi-capability",
  "abi-compute",
  "abi-gpu",
  "abi-model-runtime",
  "abi-models",
+ "abi-sea",
  "abi-wdbx",
  "abi-worker",
  "anyhow",
+ "candle-core",
  "chrono",
  "clap",
  "clap_complete",
@@ -34,6 +37,7 @@ dependencies = [
  "sha2 0.10.9",
  "syntect",
  "thiserror 2.0.20",
+ "tokenizers 0.22.2",
  "unicode-width",
  "url",
  "uuid",
@@ -44,8 +48,11 @@ name = "abi-agent-host"
 version = "0.1.0"
 dependencies = [
  "abi-agent-runtime",
+ "abi-capability",
  "jsonschema 0.52.1",
+ "serde",
  "serde_json",
+ "sha2 0.11.0",
 ]
 
 [[package]]
@@ -61,6 +68,18 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.0",
+]
+
+[[package]]
+name = "abi-capability"
+version = "0.1.0"
+dependencies = [
+ "abi-agent-runtime",
+ "jsonschema 0.52.1",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -112,6 +131,21 @@ dependencies = [
  "sha2 0.11.0",
  "thiserror 2.0.20",
  "ureq",
+]
+
+[[package]]
+name = "abi-sea"
+version = "0.1.0"
+dependencies = [
+ "abi-agent-host",
+ "abi-agent-runtime",
+ "abi-ai",
+ "abi-capability",
+ "abi-foundation",
+ "abi-wdbx",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
 ]
 
 [[package]]

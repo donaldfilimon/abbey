@@ -341,3 +341,146 @@ fn wdbx_sft_exports_all_candidates_beyond_ten_thousand() {
         "WDBX regression must not silently use SQLite"
     );
 }
+
+// Every command opens and closes the backend in its own real CLI process.
+fn lifecycle_acceptance(backend: &str) {
+    let s = Scratch::new(&format!("lifecycle-{backend}"));
+    s.stub("fm", r#"echo 'fixture answer'"#);
+    let prompt = "curated fixture question";
+    let (code, receipt, err) =
+        s.run_with_backend(&["learn", "distill", "--teacher", "fm", prompt], backend);
+    assert_eq!(code, 0, "{err}");
+    let (id, teacher) = receipt.trim().split_once('\t').expect("id/teacher receipt");
+    assert!(uuid::Uuid::parse_str(id).is_ok());
+    assert_eq!(teacher, "fm:system");
+    let (code, export, err) = s.run_with_backend(&["learn", "export", "train_candidate"], backend);
+    assert_eq!(code, 0, "{err}");
+    let record: serde_json::Value = serde_json::from_str(export.trim()).unwrap();
+    assert_eq!(record["id"], id);
+    assert_eq!(record["source_ref"], teacher);
+    assert_eq!(record["origin"], "teacher");
+    assert_eq!(record["retention"], "train_candidate");
+    assert!(
+        record["provenance"]
+            .as_str()
+            .unwrap()
+            .starts_with("teacher fm:system @ ")
+    );
+    let (code, review, err) = s.run_with_backend(&["learn", "review"], backend);
+    assert_eq!(code, 0, "{err}");
+    assert!(review.contains(id), "{review}");
+    assert!(
+        review.contains("prov=ok\tready=no"),
+        "unreviewed teacher: {review}"
+    );
+    let (code, export, err) = s.run_with_backend(&["learn", "sft"], backend);
+    assert_eq!(code, 0, "{err}");
+    let pair: serde_json::Value = serde_json::from_str(export.trim()).unwrap();
+    assert_eq!(pair["id"], id);
+    assert_eq!(pair["teacher"], teacher);
+    assert_eq!(pair["on_device"], true);
+    assert_eq!(
+        pair["messages"],
+        serde_json::json!([
+            {"role":"user", "content":prompt},
+            {"role":"assistant", "content":"fixture answer"}
+        ])
+    );
+    let (code, _, err) = s.run_with_backend(&["memory", "invalidate", id], backend);
+    assert_eq!(code, 0, "{err}");
+    let (code, export, err) = s.run_with_backend(&["learn", "sft"], backend);
+    assert_eq!(code, 0, "{err}");
+    assert!(export.is_empty(), "obsolete pair exported: {export}");
+    let (code, review, err) = s.run_with_backend(&["learn", "review"], backend);
+    assert_eq!(code, 0, "{err}");
+    assert!(
+        !review.contains(id),
+        "obsolete pair still reviewable: {review}"
+    );
+    assert!(
+        !s.0.join("route.jsonl").exists(),
+        "teacher must bypass route audit"
+    );
+    if backend == "wdbx" {
+        assert!(s.0.join("wdbx").is_dir());
+        assert!(
+            !s.0.join("memory.sqlite").exists(),
+            "silent SQLite fallback"
+        );
+    } else {
+        assert!(s.0.join("memory.sqlite").is_file());
+    }
+}
+
+#[test]
+fn sqlite_real_teacher_capture_curation_lifecycle() {
+    lifecycle_acceptance("sqlite");
+}
+
+#[cfg(feature = "wdbx")]
+#[test]
+fn wdbx_real_teacher_capture_curation_lifecycle() {
+    lifecycle_acceptance("wdbx");
+}
+
+fn unsuccessful_capture_acceptance(backend: &str) {
+    use std::os::unix::process::ExitStatusExt as _;
+    for (tag, script, interrupted) in [
+        (
+            "failed",
+            "echo 'partial answer'; echo 'fixture failure' >&2; exit 7",
+            false,
+        ),
+        ("empty", "printf '   '", false),
+        // Terminate the owning CLI while capture is active, before any answer
+        // completes. The fixture exits immediately and leaves no sleeper behind.
+        ("interrupted", "kill -TERM \"$PPID\"; exit 0", true),
+    ] {
+        let s = Scratch::new(&format!("{tag}-{backend}"));
+        s.stub("fm", &format!("[ \"$1\" = respond ] || exit 3\n{script}"));
+        let out = Command::new(BIN)
+            .args(["learn", "distill", "--teacher", "fm", "cancel fixture"])
+            .env_clear()
+            .env(abbey::edition::ACTIVE.state_dir_env(), &s.0)
+            .env("ABBEY_MEMORY_BACKEND", backend)
+            .env("HOME", &s.0)
+            .env("PATH", s.0.join("bin"))
+            .env("ABBEY_TEST_HOME_AGENTS_ONLY", "1")
+            .output()
+            .unwrap();
+        if interrupted {
+            assert_eq!(
+                out.status.signal(),
+                Some(15),
+                "fixture must interrupt actual CLI"
+            );
+        } else {
+            assert_eq!(out.status.code(), Some(1));
+        }
+        assert!(
+            out.stdout.is_empty(),
+            "no durable-success receipt: {:?}",
+            out.stdout
+        );
+        let (code, export, err) = s.run_with_backend(&["learn", "sft"], backend);
+        assert_eq!(code, 0, "reopen after {tag}: {err}");
+        assert!(export.is_empty(), "{tag} persisted a candidate: {export}");
+        if backend == "wdbx" {
+            assert!(
+                !s.0.join("memory.sqlite").exists(),
+                "silent SQLite fallback"
+            );
+        }
+    }
+}
+
+#[test]
+fn sqlite_failed_empty_and_interrupted_captures_have_no_durable_success() {
+    unsuccessful_capture_acceptance("sqlite");
+}
+
+#[cfg(feature = "wdbx")]
+#[test]
+fn wdbx_failed_empty_and_interrupted_captures_have_no_durable_success() {
+    unsuccessful_capture_acceptance("wdbx");
+}

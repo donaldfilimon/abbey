@@ -81,3 +81,25 @@ final source-only receipts live outside the checkout under
 Automated PTY and owned scratch-daemon fixtures do not establish live vendor wire
 formats, model quality or training, installed artifact identity, a native GUI,
 managed services, Linux/Windows runtime, or human acceptance.
+
+## 2026-10-20 retained Rust focused acceptance
+
+The earlier receipts remain historical evidence. The current test-only finishing
+work adds selected-ABI `/learn review` and `/learn sft` PTY acceptance: synthetic
+candidate output survives resize/redraw, provider receipts remain unchanged,
+and exact conversation-mirror bytes are preserved. The private PTY configuration
+uses SQLite; WDBX acceptance is separately process-level CLI learning coverage.
+No production defect was demonstrated or repaired.
+
+Pinned focused checks passed: 105 TUI, 59 agent, 1 capture, and 15 tests across
+six PTY/notice suites, followed by one explicit selected-backend case repeat.
+Independent review passed with an optional stronger SFT-content assertion.
+See the [current receipt](verification/2026-10-20-rust-finishing.md) for commands,
+limits and preserved unsuccessful attempts. The isolated bounded snapshot now
+passes pinned `check.sh` with 3,747 Rust executions and unchanged complete
+Abbey/ABI/WDBX source/index manifests. Concurrent shared WIP remains unqualified;
+the receipt identifies exactly which sibling source was tested. This appended
+reconciliation follows the frozen gate and receives separate scoped doc checks.
+No desktop gate is required for this test-only change because shared contracts
+and desktop behavior are unchanged. This adds no live-service, Windows runtime,
+packaged desktop, training, production-weight or owned-runtime acceptance.

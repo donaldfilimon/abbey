@@ -19,6 +19,7 @@ const MAX_EVENT_PAYLOAD_BYTES: usize = 16 * 1024;
 
 mod audit;
 mod codec;
+mod governed;
 mod identity;
 mod model_operation;
 #[cfg(unix)]
@@ -163,6 +164,10 @@ impl RuntimeStore {
         configure(&conn)?;
         let timestamp = now();
         migrations::apply(&mut conn, &timestamp)?;
+        governed::validate_on(&conn)?;
+        if recover_interrupted {
+            governed::recover_on(&mut conn)?;
+        }
         let legacy_imported = legacy
             .map(|import| migrations::import_legacy(&mut conn, import, &timestamp))
             .transpose()?
