@@ -115,6 +115,40 @@ impl RuntimeStore {
 }
 
 impl DurableLifecycle for RuntimeStore {
+    fn refuse_replay(&mut self, execution_id: Digest) -> Result<bool, LifecycleError> {
+        let mut conn = self.conn.lock().map_err(unavailable)?;
+        let tx = conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(unavailable)?;
+        validate_on(&tx).map_err(invalid)?;
+        let stored: Option<String> = tx
+            .query_row(
+                "SELECT binding_json FROM governed_tool_intents WHERE execution_id=?1",
+                [execution_id.to_string()],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(unavailable)?;
+        let Some(stored) = stored else {
+            return Ok(false);
+        };
+        let binding: AuthorizationBinding = serde_json::from_str(&stored).map_err(invalid)?;
+        append(
+            &tx,
+            &StageAudit {
+                version: 1,
+                execution_id,
+                stage: 11,
+                binding_digest: binding_digest(&binding),
+                decision: Decision::Deny,
+                reason: LifecycleReason::Authorization(ReasonCode::ApprovalReplayed),
+            },
+            false,
+        )?;
+        tx.commit().map_err(unavailable)?;
+        Ok(true)
+    }
+
     fn append_stage(&mut self, record: &StageAudit) -> Result<(), LifecycleError> {
         let mut conn = self.conn.lock().map_err(unavailable)?;
         let tx = conn

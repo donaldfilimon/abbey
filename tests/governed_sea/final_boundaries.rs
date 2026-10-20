@@ -29,6 +29,9 @@ struct BoundaryLedger {
     prepared: Option<PreparedExecution>,
 }
 impl DurableLifecycle for BoundaryLedger {
+    fn refuse_replay(&mut self, id: Digest) -> Result<bool, LifecycleError> {
+        self.store.refuse_replay(id)
+    }
     fn append_stage(&mut self, record: &StageAudit) -> Result<(), LifecycleError> {
         self.store.append_stage(record)?;
         if record.stage == 12 && self.boundary == Boundary::Stage12Cancel {
@@ -326,6 +329,33 @@ fn boundary_case(boundary: Boundary, human: bool) {
         let mut clean_facts = Facts(base);
         let mut replay_actuator = RecordingActuator::new(Vec::<String>::new());
         let before_replay = audits(&path, "governed_stage_events");
+        let before_denials = audits(&path, "governed_admission_refusals");
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute_batch("CREATE TRIGGER fail_replay BEFORE INSERT ON governed_admission_refusals BEGIN SELECT RAISE(ABORT,'test'); END;").unwrap();
+        let failed_replay = host
+            .run(
+                &model,
+                &mut CollectingSink::default(),
+                &clean_token,
+                options(approval.clone()),
+                &mut clean_facts,
+                &mut store,
+                &mut replay_actuator,
+            )
+            .unwrap();
+        assert_eq!(
+            failed_replay.governance,
+            GovernedStop::Infrastructure(LifecycleError::Unavailable)
+        );
+        assert_eq!(replay_actuator.records(), []);
+        assert_eq!(audits(&path, "governed_admission_refusals"), before_denials);
+        assert_eq!(audits(&path, "governed_stage_events"), before_replay);
+        assert_eq!(
+            store.lookup(prepared.execution_id()).unwrap().as_ref(),
+            Some(outcome)
+        );
+        conn.execute_batch("DROP TRIGGER fail_replay").unwrap();
+        drop(conn);
         let replay = host
             .run(
                 &model,
@@ -339,7 +369,7 @@ fn boundary_case(boundary: Boundary, human: bool) {
             .unwrap();
         assert_eq!(
             replay.governance,
-            GovernedStop::Infrastructure(LifecycleError::InvalidState)
+            GovernedStop::Refused(LifecycleReason::Authorization(ReasonCode::ApprovalReplayed))
         );
         assert_eq!(replay_actuator.records(), []);
         assert_eq!(audits(&path, "governed_stage_events"), before_replay);

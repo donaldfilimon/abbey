@@ -7,7 +7,7 @@ Donald canceled the Zig rewrite and continuation plans on 2026-10-19. This decis
 
 Current: retained Rust application in Cargo.toml and src/. Resume product work there; check.sh is its gate.
 
-See REWRITE-DECISION-2026-10-19.md. Rust 1.99.1 stable is the upgrade candidate; installed-toolchain updates do not qualify this project on a new compiler. Retain exact repository pins until their own gates pass on a candidate.
+See REWRITE-DECISION-2026-10-19.md. Rust 1.99.1 stable is the qualified compiler baseline for the bounded retained-Rust migration; exact clean and combined cohort evidence is recorded in docs/verification/2026-10-20-rust-1991.md. The bounded migration is now on main; the receipt excludes separately active dependency-upgrade and prototype work from qualification. Installed-toolchain updates alone do not qualify a different compiler; retain exact repository pins until their own candidate gates pass.
 <!-- END 2026-10-19 rewrite decision -->
 
 <!-- BEGIN abbey-generated:claims-table -->
@@ -94,7 +94,7 @@ Brand: **Intelligence Without Limits** — with a claims ledger. IWL is Abbey/AB
 
 ## Need to know (the three things that bite)
 
-1. **Toolchain**: pinned `nightly-2026-09-01` (Rust 1.100.0). Homebrew `rust` shadows `rustup` — run `rustup run nightly-2026-09-01 cargo ...` or `brew unlink rust`.
+1. **Toolchain**: pinned Rust `1.99.1` stable. Use `./tools/cargo.sh ...` to select matched Cargo/compiler tools even when Homebrew Rust shadows rustup on PATH; use `./check.sh` for qualification.
 2. **Sibling repos required**: `../abi` and `../wdbx` are path dependencies. Even default builds fail without them. CI pins revisions in `.github/workflows/rust.yml`.
 3. **Gate is `./check.sh`, not `cargo test`**. It runs all four feature modes (default, `wdbx`, `personal-edition`, `accel`) plus Python claims/program-3 checks. A bare `cargo test` compiles none of the three feature-gated modes.
 
@@ -131,25 +131,22 @@ A bare `cargo test` never compiles `src/memory/wdbx.rs` or the edition- and acce
 
 `tests/` includes process-level CLI suites plus `app_core_contract.rs`, which imports Abbey as an external library client. Process tests drive `CARGO_BIN_EXE_abbey` (the daemon suites also need `CARGO_BIN_EXE_abbeyd`, the second binary from `src/bin/abbeyd.rs`) because some guarantees only exist once the process runs — real exit codes, real stdout/stderr, and the SIGPIPE reset before `main`. `daemon_cli.rs` starts real `abbeyd` and `abbey` binaries against owner-only scratch state; it must never use a user's socket or bearer. `cli_surface.rs` uses a throwaway `ABBEY_STATE_DIR`; keep that property for state-mutating cases. `slash_parse.rs` is read-only/current-dir scoped. The app-core contract test must stay presentation-neutral and must not gain crate-private access.
 
-## `zig/` (stdlib-only Zig rewrite)
+## `zig/` (retained history)
 
-`zig/` is abbey-zig, a ground-up Zig rewrite of this crate, folded in on
-2026-09-28 with `git subtree add` (full history; phase tags `zig/p1`..`zig/p3`).
-It has its own canonical `zig/AGENTS.md`, its own Zig master pin, and its own
-gate, `./zig/tools/check.sh`, which the root `./check.sh` does not run. Nothing
-in the Rust gate reads `zig/`: it is not a cargo target, and the rustfmt,
-clippy, file-size, claims, instruction, and Program 3 scans are all scoped to
-`src/`, `tests/`, `tools/`, `desktop/`, and named root files. The dependency
-runs one way: `zig/` treats this crate as a read-only oracle (it runs the
-already-built `target/debug/abbey`, never builds or edits the Rust side), and
-`zig/contracts/abbey` must stay byte-identical to `contracts/abbey`, so a
-contract corpus change here needs the same copy in `zig/` or the Zig gate
-fails. Do not run the two gates concurrently. Keep Rust and `zig/` changes in
-separate commits.
+`zig/` is abbey-zig, a ground-up Zig rewrite folded in on 2026-09-28 with
+`git subtree add` (full history; phase tags `zig/p1`..`zig/p3`). The 2026-10-19
+cancellation and the 2026-10-20 Rust 1.99.1 instruction make it retained
+history, not an active product. The product is Rust `src/`. Do not extend the
+Zig rewrite, do not run `./zig/tools/check.sh` as a product gate, and do not
+delete the tree. `zig/AGENTS.md` describes that historical port. Nothing in the
+Rust gate reads `zig/`. `zig/contracts/abbey` was required to stay byte-identical
+to `contracts/abbey` only while the Zig gate was active; do not copy the corpus
+again for this retained tree. Project detection that recognizes a user's
+`zig build` command is unrelated and stays.
 
 ## Toolchain
 
-Rust **nightly-2026-09-01** (`rustc 1.100.0-nightly`), edition **2024**, pinned via `rust-toolchain.toml` (`rustfmt` + `clippy` components). Rust has no edition 2026; edition 2024 is the current language edition, while the dated toolchain makes the 2026 compiler baseline reproducible. `Cargo.toml` sets `unsafe_code = "deny"` as a manifest lint (clippy `-D warnings` alone would not catch it), so every `unsafe` needs a justified `#[allow(unsafe_code)]` with a SAFETY comment.
+Rust **1.99.1 stable**, edition **2024**, pinned via `rust-toolchain.toml` (`rustfmt` + `clippy` components). Rust has no edition 2026; edition 2024 is the current language edition, while the exact toolchain pin makes the compiler baseline reproducible. `Cargo.toml` sets `unsafe_code = "deny"` as a manifest lint (clippy `-D warnings` alone would not catch it), so every `unsafe` needs a justified `#[allow(unsafe_code)]` with a SAFETY comment.
 
 **Both sibling checkouts are required even for default builds.** `Cargo.toml`
 unconditionally consumes `abi-ai`, `abi-agent-host`, `abi-agent-runtime`,

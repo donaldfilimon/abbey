@@ -40,8 +40,14 @@ cargo build --release
 # by a parser test — no Windows host has run it (Partial, see docs/claims.md).
 ```
 
-Requires the exact **Rust nightly-2026-09-01** toolchain (`rustc 1.100.0-nightly`)
-from `rust-toolchain.toml`, using Rust edition 2024. Generation commands require an
+Requires exact **Rust 1.99.1 stable** from `rust-toolchain.toml`, qualified against
+the captured clean and combined cohorts described in the receipt. Uses Rust
+edition 2024. Use `./tools/cargo.sh build --locked` for matched Cargo, rustc,
+rustdoc, rustfmt and Clippy selection despite a conflicting PATH. The production
+gate is `./check.sh`; desktop qualification additionally runs `./desktop/check.sh`.
+Gate policy inspection uses an existing structural TOML parser: `tomllib`,
+`tomli`, or `pip._vendor.tomli`; system Python 3.9 was tested. No Python
+installation is performed. See [the stable qualification receipt](docs/verification/2026-10-20-rust-1991.md). Generation commands require an
 executor; local verbs (claims, memory/inventory, os, doctor, mesh, daemon-client,
 installer probes) run with none installed. `ollama` is the preferred default
 (local `gemma4:26b-mlx`, alias `gemma:27b-mlx`); when its daemon or default model

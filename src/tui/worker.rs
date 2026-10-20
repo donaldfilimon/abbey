@@ -236,7 +236,7 @@ mod tests {
         let root =
             std::env::temp_dir().join(format!("abbey-local-cancel-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir(&root).unwrap();
-        let script = "sleep 30 & child=$!; printf '%s' \"$child\" > child.pid; wait";
+        let script = "sleep 30 & child=$!; printf '%s' \"$child\" > child.pid.tmp; mv child.pid.tmp child.pid; wait";
         let cancel = CancellationToken::new();
         let thread_cancel = cancel.clone();
         let thread_root = root.clone();

@@ -80,8 +80,10 @@ nix = { version = "0.30", features = ["process", "signal", "user"] }
 
 [features]
 default = []
-# In-process WDBX memory backend. Off by default: pulls the abi-wdbx crate and
-# its portable_simd/sha2/num-bigint tree. Gate with `--features wdbx`.
+# In-process WDBX memory backend. Optional and off by default: uses the sibling
+# path crates (`../wdbx/crates/abi-wdbx` and, through it, `abi-compute`). Those
+# crates build on stable Rust 1.99.1 without a `portable_simd` feature gate.
+# Gate with `--features wdbx`.
 wdbx = ["dep:abi-wdbx"]
 # Compile-time edition selector. OFF by default: the default build is the SAFE
 # public edition (allowlist + --confirm, unchanged paths). Enabling it builds a

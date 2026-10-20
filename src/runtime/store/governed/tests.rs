@@ -819,3 +819,87 @@ fn refusal_history_is_append_only_and_post_admission_binding_is_checked_on_reope
     drop(conn);
     assert!(RuntimeStore::open(&path).is_err());
 }
+
+#[test]
+fn replay_denial_preserves_terminal_authority_and_rolls_back_on_insert_failure() {
+    for human in [false, true] {
+        for state in [
+            OutcomeState::Succeeded,
+            OutcomeState::NotDispatched,
+            OutcomeState::Uncertain,
+        ] {
+            let scratch = Scratch::new();
+            let path = scratch.path().join("replay.sqlite");
+            let mut store = RuntimeStore::open(&path).unwrap();
+            let r = if human {
+                approved(&store, "replay", 71)
+            } else {
+                request("replay", 71)
+            };
+            let proof = prepared(&mut store, &r);
+            let terminal = TerminalOutcome {
+                version: 1,
+                state,
+                result_digest: (state == OutcomeState::Succeeded)
+                    .then_some(Digest::from_bytes([8; 32])),
+                reason: if state == OutcomeState::NotDispatched {
+                    LifecycleReason::CancelledBeforeDispatch
+                } else if state == OutcomeState::Uncertain {
+                    LifecycleReason::OutcomeUnknown
+                } else {
+                    LifecycleReason::Authorization(ReasonCode::Authorized)
+                },
+            };
+            store.finish(&proof, &terminal).unwrap();
+            drop(store);
+            let mut store = RuntimeStore::open(&path).unwrap();
+            let original = store.lookup(r.execution_id).unwrap();
+            let approval = store.tool_approval("replay", 1200).unwrap();
+            assert!(!store.refuse_replay(Digest::from_bytes([72; 32])).unwrap());
+            store.conn.lock().unwrap().execute_batch("CREATE TRIGGER fail_replay BEFORE INSERT ON governed_admission_refusals BEGIN SELECT RAISE(ABORT,'test'); END;").unwrap();
+            assert_eq!(
+                store.refuse_replay(r.execution_id),
+                Err(LifecycleError::Unavailable)
+            );
+            let count: i64 = store
+                .conn
+                .lock()
+                .unwrap()
+                .query_row(
+                    "SELECT COUNT(*) FROM governed_admission_refusals",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(count, 0);
+            store
+                .conn
+                .lock()
+                .unwrap()
+                .execute_batch("DROP TRIGGER fail_replay")
+                .unwrap();
+            assert!(store.refuse_replay(r.execution_id).unwrap());
+            assert_eq!(store.lookup(r.execution_id).unwrap(), original);
+            assert_eq!(store.tool_approval("replay", 1200).unwrap(), approval);
+            drop(store);
+            let mut store = RuntimeStore::open(&path).unwrap();
+            assert_eq!(store.lookup(r.execution_id).unwrap(), original);
+            let text: String = store
+                .conn
+                .lock()
+                .unwrap()
+                .query_row(
+                    "SELECT record_json FROM governed_admission_refusals",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            let denial: StageAudit = serde_json::from_str(&text).unwrap();
+            assert_eq!(denial.binding_digest, binding_digest(&r.binding));
+            assert_eq!(
+                denial.reason,
+                LifecycleReason::Authorization(ReasonCode::ApprovalReplayed)
+            );
+        }
+    }
+}
