@@ -475,8 +475,22 @@ fn socket_readiness_requires_an_accepting_listener() {
     let listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
     std::fs::set_permissions(&socket, std::fs::Permissions::from_mode(0o600)).unwrap();
     assert!(socket_is_ready(&socket));
+    let mut closure_probe = UnixStream::connect(&socket).unwrap();
+    closure_probe
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
     drop(listener);
     assert!(std::fs::metadata(&socket).unwrap().file_type().is_socket());
+    // Concurrent process fixtures can briefly inherit a listening descriptor
+    // across fork, so dropping our listener need not stop it accepting yet.
+    // A read on one queued connection observes closure without filling the
+    // unaccepted backlog with repeated blocking connection attempts.
+    let closure = closure_probe.read(&mut [0]);
+    assert!(
+        matches!(closure, Ok(0))
+            || matches!(&closure, Err(error) if error.kind() == std::io::ErrorKind::ConnectionReset),
+        "closed listener did not close its queued connection within the fixture scheduler budget: {closure:?}"
+    );
     let closed_is_ready = socket_is_ready(&socket);
     std::fs::remove_dir_all(root).unwrap();
     assert!(

@@ -3,7 +3,7 @@
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 use thiserror::Error;
 
-pub(super) const CURRENT_SCHEMA_VERSION: i64 = 8;
+pub(super) const CURRENT_SCHEMA_VERSION: i64 = 9;
 
 const CREATE_LEDGER: &str = r#"
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -26,6 +26,8 @@ const MIGRATION_7: &str = include_str!("migration_7_model_operations.sql");
 
 const MIGRATION_8: &str = include_str!("migration_8_governed_tools.sql");
 
+const MIGRATION_9: &str = include_str!("migration_9_governed_refusals.sql");
+
 const MIGRATIONS: &[(i64, &str)] = &[
     (1, MIGRATION_1),
     (2, MIGRATION_2),
@@ -35,6 +37,7 @@ const MIGRATIONS: &[(i64, &str)] = &[
     (6, MIGRATION_6),
     (7, MIGRATION_7),
     (8, MIGRATION_8),
+    (9, MIGRATION_9),
 ];
 
 #[derive(Debug, Error)]
@@ -328,7 +331,7 @@ mod tests {
             conn.query_row("SELECT COUNT(*) FROM schema_migrations", [], |row| row
                 .get::<_, i64>(0))
                 .unwrap(),
-            8
+            CURRENT_SCHEMA_VERSION
         );
     }
 

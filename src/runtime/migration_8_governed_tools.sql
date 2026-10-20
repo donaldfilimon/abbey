@@ -5,11 +5,16 @@ CREATE TABLE governed_tool_intents (
     tool_id TEXT NOT NULL CHECK(length(tool_id) BETWEEN 1 AND 128),
     approval_call_id TEXT UNIQUE REFERENCES tool_approvals(call_id) ON DELETE RESTRICT,
     legacy_execution_call_id TEXT UNIQUE REFERENCES tool_executions(call_id) ON DELETE RESTRICT,
+    original_execution_id TEXT UNIQUE REFERENCES governed_tool_intents(execution_id) ON DELETE RESTRICT,
+    original_binding_digest TEXT,
     binding_json TEXT NOT NULL CHECK(length(binding_json) <= 2048),
     approval_json TEXT CHECK(length(approval_json) <= 8192),
     outcome_json TEXT NOT NULL CHECK(length(outcome_json) <= 1024),
     state TEXT NOT NULL CHECK(state IN ('prepared','interrupted','succeeded','failed')),
     started_at_ms INTEGER NOT NULL CHECK(started_at_ms >= 0),
+    CHECK ((original_execution_id IS NULL AND original_binding_digest IS NULL)
+        OR (original_execution_id IS NOT NULL AND original_binding_digest IS NOT NULL
+            AND length(original_binding_digest)=71)),
     CHECK ((approval_call_id IS NULL AND legacy_execution_call_id IS NULL AND approval_json IS NULL)
       OR (approval_call_id=call_id AND legacy_execution_call_id=call_id AND approval_json IS NOT NULL))
 );
@@ -52,6 +57,8 @@ WHEN OLD.execution_id IS NOT NEW.execution_id
   OR OLD.tool_id IS NOT NEW.tool_id
   OR OLD.approval_call_id IS NOT NEW.approval_call_id
   OR OLD.legacy_execution_call_id IS NOT NEW.legacy_execution_call_id
+  OR OLD.original_execution_id IS NOT NEW.original_execution_id
+  OR OLD.original_binding_digest IS NOT NEW.original_binding_digest
   OR OLD.binding_json IS NOT NEW.binding_json
   OR OLD.approval_json IS NOT NEW.approval_json
   OR OLD.started_at_ms IS NOT NEW.started_at_ms

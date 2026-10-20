@@ -84,22 +84,54 @@ managed services, Linux/Windows runtime, or human acceptance.
 
 ## 2026-10-20 retained Rust focused acceptance
 
-The earlier receipts remain historical evidence. The current test-only finishing
-work adds selected-ABI `/learn review` and `/learn sft` PTY acceptance: synthetic
-candidate output survives resize/redraw, provider receipts remain unchanged,
-and exact conversation-mirror bytes are preserved. The private PTY configuration
-uses SQLite; WDBX acceptance is separately process-level CLI learning coverage.
-No production defect was demonstrated or repaired.
+The earlier receipts remain historical evidence. **The bounded captured finishing cohort is complete:** full root and separate
+desktop gates passed against identical unchanged complete Abbey/ABI/WDBX
+source/index manifests. Later canonical producer changes remain separately
+unqualified, and the broader completion program stays in_progress.
 
-Pinned focused checks passed: 105 TUI, 59 agent, 1 capture, and 15 tests across
-six PTY/notice suites, followed by one explicit selected-backend case repeat.
-Independent review passed with an optional stronger SFT-content assertion.
-See the [current receipt](verification/2026-10-20-rust-finishing.md) for commands,
-limits and preserved unsuccessful attempts. The isolated bounded snapshot now
-passes pinned `check.sh` with 3,747 Rust executions and unchanged complete
-Abbey/ABI/WDBX source/index manifests. Concurrent shared WIP remains unqualified;
-the receipt identifies exactly which sibling source was tested. This appended
-reconciliation follows the frozen gate and receives separate scoped doc checks.
-No desktop gate is required for this test-only change because shared contracts
-and desktop behavior are unchanged. This adds no live-service, Windows runtime,
-packaged desktop, training, production-weight or owned-runtime acceptance.
+Selected-ABI `/learn review` and `/learn sft` PTY acceptance uses a synthetic
+candidate seeded before FM is removed. It requires fresh assistant output,
+successful child completion, exact seeded review/SFT strings surviving
+resize/redraw, unchanged provider-event count, and exact conversation-mirror
+bytes. The later content assertions address the earlier optional stronger-content
+suggestion. The private PTY configuration uses SQLite; WDBX acceptance remains
+separate process-level CLI coverage, now also checking raw train-candidate export
+absence after failed, empty and externally interrupted captures.
+
+Historical pinned focused checks passed: 105 TUI, 59 agent, 1 capture, and 15
+tests across six PTY/notice suites, followed by one selected-backend repeat.
+The isolated bounded snapshot passed pinned `check.sh` with 3,747 overlapping
+Rust executions and unchanged complete manifests. Those results qualify only
+that snapshot. Later canonical focused learning/slash checks passed 15 tests
+with ABI drift; the full desktop gate exited 0 with ABI/WDBX drift. Scoped later
+repairs synchronize desktop's local path lock edges, relocate an unchanged
+helper for clippy, and correct the strict schema fixture first from 7 to 8, then
+from 8 to 9 as the migration set advanced. Both focused fixture receipts exit 0
+with unchanged cohorts; the later schema-9 check passed one test. Root05 exited
+0 with final `check.sh: OK`: 949 default, 968 WDBX, 940 personal and 961
+accelerator passes (3,818 overlapping Rust executions), all four clippy/rustdoc
+modes, 82 Python tests, codegen and installer/rollback checks passed. All three
+full manifests changed, so it remains intermediate evidence. Doctor/registry/
+governed-test soft size warnings, absent Windows/Linux GNU targets and the
+existing release LLVM dylib warning remain recorded in the receipt.
+
+See the [receipt](verification/2026-10-20-rust-finishing.md) for commands,
+source stability, unsuccessful attempts and remaining paired-gate requirements.
+Root IPC codegen is insufficient desktop evidence. Receipt-only reconciliation
+requires separate scoped documentation checks without replacing frozen manifests.
+This adds no live-service, Windows runtime, packaged desktop, training,
+production-weight or owned-runtime acceptance. Exact pins and retained Zig
+evidence remain unchanged.
+
+The final captured current-cohort root gate passed 3,827 overlapping Rust
+executions (950 default, 974 WDBX, 941 personal, 962 accelerator), all four
+clippy/rustdoc modes, Python82, codegen5, and actual copied-layout installer
+verification/rollback. The separate desktop final result also exits 0 on the
+same unchanged three-repository manifests; exact identities are in the receipt.
+The capture includes current WDBX429318 plus dirty inputs and exact schema9
+producer source and passed independent audit. A socket-readiness fixture repair
+now uses one queued stream, a two-second read timeout and EOF/reset-only closure
+evidence; focused review and execution passed stably. The rejected repeated-
+connect approach and stopped -15 gate remain historical failed evidence.
+Nightly pins, size warnings, missing cross targets and release LLVM stripping
+warning remain; stable-candidate packaging is separately unqualified.

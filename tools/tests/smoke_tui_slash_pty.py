@@ -449,6 +449,11 @@ def selected_backend_case(binary, root):
             s.wait_join(0)
             s.redraw()
             require(marker in s.screen(), "learning output vanished after redraw")
+            if command == "/learn sft ":
+                require(b"selected-learning-prompt" in s.screen(),
+                        "SFT output omitted the exact seeded prompt after redraw")
+                require(b"selected-learning-answer" in s.screen(),
+                        "SFT output omitted the exact captured answer after redraw")
             require(len(f.events()) == provider_calls,
                     "read-only learning command unexpectedly contacted a provider")
             require((root / "state" / "chat-id").read_bytes() == original_chat,

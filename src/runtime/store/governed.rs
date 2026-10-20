@@ -50,7 +50,10 @@ fn room(conn: &Connection, table: &str) -> Result<(), LifecycleError> {
     }
 }
 fn append(conn: &Connection, record: &StageAudit, admitted: bool) -> Result<(), LifecycleError> {
-    if record.version != 1 || record.stage > 16 || (record.stage == 11 && !admitted) {
+    if record.version != 1
+        || record.stage > 16
+        || (record.stage == 11 && !admitted && record.decision != Decision::Deny)
+    {
         return Err(LifecycleError::InvalidState);
     }
     if let Some(binding) = conn
@@ -66,6 +69,14 @@ fn append(conn: &Connection, record: &StageAudit, admitted: bool) -> Result<(), 
         if record.binding_digest != binding_digest(&binding) {
             return Err(LifecycleError::InvalidState);
         }
+    } else if record.stage >= 12 {
+        return Err(LifecycleError::InvalidState);
+    }
+    if record.stage == 11 && !admitted {
+        room(conn, "governed_admission_refusals")?;
+        conn.execute("INSERT INTO governed_admission_refusals(execution_id,stage,record_json) VALUES(?1,11,?2)",
+            params![record.execution_id.to_string(),json(record,1024)?]).map_err(unavailable)?;
+        return Ok(());
     }
     room(conn, "governed_stage_events")?;
     let id = record.execution_id.to_string();
@@ -140,6 +151,15 @@ impl DurableLifecycle for RuntimeStore {
             return Ok(PrepareOutcome::Uncertain);
         }
         room(&tx, "governed_tool_intents")?;
+        if let Some(origin) = &request.binding.compensation_origin {
+            if !valid_origin(&tx, &request.binding).map_err(invalid)? {
+                return Ok(PrepareOutcome::Refused(ReasonCode::ApprovalInsufficient));
+            }
+            let reserved: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM governed_tool_intents WHERE original_execution_id=?1)",[origin.original_execution_id.to_string()],|r|r.get(0)).map_err(unavailable)?;
+            if reserved {
+                return Ok(PrepareOutcome::Uncertain);
+            }
+        }
         let legacy = if let Some(exact) = &request.approval {
             let preview: Option<String> = tx
                 .query_row(
@@ -209,8 +229,8 @@ impl DurableLifecycle for RuntimeStore {
             }
             None
         };
-        tx.execute("INSERT INTO governed_tool_intents(execution_id,call_id,tool_id,approval_call_id,legacy_execution_call_id,binding_json,approval_json,outcome_json,state,started_at_ms) VALUES (?1,?2,?3,?4,?4,?5,?6,?7,'prepared',?8)",
-            params![request.execution_id.to_string(),request.call_id,request.tool_id,legacy,binding_json,approval_json,json(&outcome(OutcomeState::Prepared,LifecycleReason::Authorization(ReasonCode::Authorized)),1024)?,now]).map_err(unavailable)?;
+        tx.execute("INSERT INTO governed_tool_intents(execution_id,call_id,tool_id,approval_call_id,legacy_execution_call_id,binding_json,approval_json,outcome_json,state,started_at_ms,original_execution_id,original_binding_digest) VALUES (?1,?2,?3,?4,?4,?5,?6,?7,'prepared',?8,?9,?10)",
+            params![request.execution_id.to_string(),request.call_id,request.tool_id,legacy,binding_json,approval_json,json(&outcome(OutcomeState::Prepared,LifecycleReason::Authorization(ReasonCode::Authorized)),1024)?,now,request.binding.compensation_origin.as_ref().map(|o|o.original_execution_id.to_string()),request.binding.compensation_origin.as_ref().map(|o|o.original_binding_digest.to_string())]).map_err(unavailable)?;
         tx.execute("INSERT INTO governed_outcome_events(execution_id,outcome_json) SELECT execution_id,outcome_json FROM governed_tool_intents WHERE execution_id=?1",[request.execution_id.to_string()]).map_err(unavailable)?;
         append(
             &tx,
@@ -258,7 +278,7 @@ impl DurableLifecycle for RuntimeStore {
             .map_err(invalid)?
             .max(started);
         if let Some(call) = legacy {
-            let digest = terminal.result_digest.map(hex);
+            let digest = legacy_result_digest(terminal);
             tx.execute("UPDATE tool_executions SET state=?1,result_digest=?2,finished_at_ms=?3 WHERE call_id=?4 AND state='prepared'",params![base,digest,finished,call]).map_err(unavailable)?;
             tx.execute("INSERT INTO tool_execution_events(call_id,execution_id,state,result_digest,occurred_at_ms) VALUES (?1,?2,?3,?4,?5)",params![call,prepared.execution_id().to_string(),base,digest,finished]).map_err(unavailable)?;
         }
@@ -294,30 +314,47 @@ fn base_state(state: OutcomeState) -> &'static str {
     match state {
         OutcomeState::Prepared => "prepared",
         OutcomeState::Succeeded => "succeeded",
-        OutcomeState::Uncertain => "interrupted",
+        OutcomeState::Uncertain | OutcomeState::NotDispatched => "interrupted",
         _ => "failed",
     }
 }
 fn valid_terminal(value: &TerminalOutcome) -> bool {
-    value.version == 1
-        && match value.state {
-            OutcomeState::Succeeded => {
-                value.result_digest.is_some()
-                    && value.reason == LifecycleReason::Authorization(ReasonCode::Authorized)
-            }
-            OutcomeState::Unverifiable
-            | OutcomeState::Failed
-            | OutcomeState::Compensated
-            | OutcomeState::CompensationFailed => value.result_digest.is_some(),
-            OutcomeState::Uncertain => {
-                value.result_digest.is_none()
-                    && matches!(
-                        value.reason,
-                        LifecycleReason::Interrupted | LifecycleReason::OutcomeUnknown
-                    )
-            }
-            _ => false,
-        }
+    value.is_valid_terminal()
+}
+// Existing legacy interrupted records cannot carry result evidence. Preserve the
+// full evidence and known no-dispatch distinction in the governed extension.
+fn legacy_result_digest(value: &TerminalOutcome) -> Option<String> {
+    if matches!(
+        value.state,
+        OutcomeState::Uncertain | OutcomeState::NotDispatched
+    ) {
+        None
+    } else {
+        value.result_digest.map(hex)
+    }
+}
+
+/// The original terminal row is immutable; inverse admission reserves it atomically.
+fn valid_origin(conn: &Connection, binding: &AuthorizationBinding) -> Result<bool, StoreError> {
+    let Some(origin) = &binding.compensation_origin else {
+        return Ok(true);
+    };
+    let row: Option<(String, String)> = conn
+        .query_row(
+            "SELECT binding_json,outcome_json FROM governed_tool_intents WHERE execution_id=?1",
+            [origin.original_execution_id.to_string()],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()?;
+    let Some((original, terminal)) = row else {
+        return Ok(false);
+    };
+    let original: AuthorizationBinding = serde_json::from_str(&original)?;
+    let terminal: TerminalOutcome = serde_json::from_str(&terminal)?;
+    Ok(terminal.state == OutcomeState::Failed
+        && terminal.version == 1
+        && origin.original_binding_digest == binding_digest(&original)
+        && binding.scope_digest == original.scope_digest)
 }
 
 pub(super) fn validate_on(conn: &Connection) -> Result<(), StoreError> {
@@ -332,6 +369,7 @@ pub(super) fn validate_on(conn: &Connection) -> Result<(), StoreError> {
     for table in [
         "governed_tool_intents",
         "governed_stage_events",
+        "governed_admission_refusals",
         "governed_approval_previews",
     ] {
         let count: i64 =
@@ -350,8 +388,11 @@ pub(super) fn validate_on(conn: &Connection) -> Result<(), StoreError> {
             return Err(StoreError::CorruptData("invalid governed preview"));
         }
     }
-    let mut audit_stmt =
-        conn.prepare("SELECT execution_id,stage,record_json FROM governed_stage_events")?;
+    let invalid_refusals: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM governed_admission_refusals WHERE stage != 11 OR json_extract(record_json,'$.decision') IS NOT 'deny')",[],|row|row.get(0))?;
+    if invalid_refusals {
+        return Err(StoreError::CorruptData("invalid governed refusal"));
+    }
+    let mut audit_stmt = conn.prepare("SELECT execution_id,stage,record_json FROM governed_stage_events UNION ALL SELECT execution_id,stage,record_json FROM governed_admission_refusals")?;
     let audits = audit_stmt.query_map([], |r| {
         Ok((
             r.get::<_, String>(0)?,
@@ -368,6 +409,20 @@ pub(super) fn validate_on(conn: &Connection) -> Result<(), StoreError> {
             || stage > 16
         {
             return Err(StoreError::CorruptData("invalid governed audit"));
+        }
+    }
+    // Every post-admission event is bound to the durable prepared authority.
+    let mut stmt = conn.prepare("SELECT e.record_json,i.binding_json FROM governed_stage_events e LEFT JOIN governed_tool_intents i ON e.execution_id=i.execution_id WHERE e.stage>=12")?;
+    for row in stmt.query_map([], |r| {
+        Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?))
+    })? {
+        let (record, binding) = row?;
+        let record: StageAudit = serde_json::from_str(&record)?;
+        let binding: AuthorizationBinding = serde_json::from_str(
+            &binding.ok_or(StoreError::CorruptData("orphan post-admission audit"))?,
+        )?;
+        if record.binding_digest != binding_digest(&binding) {
+            return Err(StoreError::CorruptData("unbound post-admission audit"));
         }
     }
     let mut stmt = conn.prepare("SELECT execution_id,call_id,tool_id,binding_json,approval_json,outcome_json,state,started_at_ms,legacy_execution_call_id FROM governed_tool_intents")?;
@@ -394,6 +449,21 @@ pub(super) fn validate_on(conn: &Connection) -> Result<(), StoreError> {
             ));
         }
         let terminal: TerminalOutcome = serde_json::from_str(&terminal)?;
+        let stored_origin: (Option<String>,Option<String>) = conn.query_row("SELECT original_execution_id,original_binding_digest FROM governed_tool_intents WHERE execution_id=?1",[&id],|r|Ok((r.get(0)?,r.get(1)?)))?;
+        let expected_origin = binding
+            .compensation_origin
+            .as_ref()
+            .map(|o| {
+                (
+                    Some(o.original_execution_id.to_string()),
+                    Some(o.original_binding_digest.to_string()),
+                )
+            })
+            .unwrap_or((None, None));
+        if stored_origin != expected_origin || !valid_origin(conn, &binding)? {
+            return Err(StoreError::CorruptData("invalid compensation origin"));
+        }
+
         let count: i64 = conn.query_row(
             "SELECT COUNT(*) FROM governed_outcome_events WHERE execution_id=?1",
             [&id],
@@ -476,7 +546,7 @@ pub(super) fn validate_on(conn: &Connection) -> Result<(), StoreError> {
             if pair.0 != "consumed"
                 || pair.1 != state
                 || pair.2 != id
-                || pair.3 != terminal.result_digest.map(hex)
+                || pair.3 != legacy_result_digest(&terminal)
             {
                 return Err(StoreError::CorruptData(
                     "inconsistent governed legacy state",

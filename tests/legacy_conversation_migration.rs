@@ -158,7 +158,7 @@ fn assert_database(database: &Path) {
             0
         ))
         .unwrap(),
-        7
+        9
     );
     for (table, expected) in [
         ("legacy_conversation_imports", 1),

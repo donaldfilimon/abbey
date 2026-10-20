@@ -45,7 +45,9 @@ impl ModelProvider for Provider {
                 "call", "observe", "{}",
             )));
         } else {
-            run.emit(&ModelEvent::TextDelta { text: "Recorded local observation.".into() });
+            run.emit(&ModelEvent::TextDelta {
+                text: "Recorded local observation.".into(),
+            });
         }
         Ok(())
     }
@@ -55,8 +57,16 @@ impl GovernedFactProvider for Facts {
     fn observe(&mut self, _: &Request) -> Result<GovernedFacts, LifecycleError> {
         Ok(self.0.clone())
     }
-    fn postconditions(&mut self, _: &Request, _: &BTreeSet<String>) -> Postconditions {
-        Postconditions::Verified
+    fn postconditions(
+        &mut self,
+        _: &Request,
+        required: &BTreeSet<String>,
+    ) -> Result<Vec<PostconditionObservation>, LifecycleError> {
+        assert!(
+            required.is_empty(),
+            "this local observation fixture has no postcondition predicates"
+        );
+        Ok(vec![])
     }
 }
 fn digest(value: &serde_json::Value) -> Digest {
@@ -64,8 +74,8 @@ fn digest(value: &serde_json::Value) -> Digest {
 }
 fn request(source: &CompiledSource, principal: &Principal, parameter: Digest) -> Request {
     Request::new(
-        &source.source().id,
-        &source.source().id,
+        "attempt",
+        "call",
         principal.clone(),
         source.source().resource_scope.clone(),
         &source.source().id,
@@ -81,7 +91,7 @@ fn request(source: &CompiledSource, principal: &Principal, parameter: Digest) ->
 }
 fn grant(source: &CompiledSource, principal: &Principal) -> Grant {
     Grant::active(
-        &source.source().id,
+        "grant",
         Principal::new("owner", PrincipalKind::OrganizationOwner).unwrap(),
         principal.clone(),
         source.source().resource_scope.clone(),
@@ -269,6 +279,29 @@ fn normalized_authorized_recall_recording_and_atomic_persistence_survive_reopen(
         .0,
         PersistenceOutcome::Disabled
     );
+    // A success tag alone is not evidence: reject malformed public receipts
+    // before the atomic pair transaction, including misleading success reasons.
+    for variant in 0..4 {
+        let mut malformed = report.clone();
+        match variant {
+            0 => malformed.outcomes[0].version = 2,
+            1 => malformed.outcomes[0].result_digest = None,
+            2 => {
+                malformed.outcomes[0].reason = LifecycleReason::Authorization(ReasonCode::Cancelled)
+            }
+            _ => malformed.outcomes[0].state = OutcomeState::Unverifiable,
+        }
+        let transactions = output.snapshot().committed_transactions();
+        let (status, ids) = persist_turn(&mut output, &turn, &malformed, policy, 100);
+        assert_eq!(
+            status,
+            PersistenceOutcome::Refused,
+            "malformed receipt variant {variant}"
+        );
+        assert!(ids.is_none());
+        assert_eq!(output.stats(), before);
+        assert_eq!(output.snapshot().committed_transactions(), transactions);
+    }
     let mut uncertain = report.clone();
     uncertain.governance = GovernedStop::Uncertain;
     assert_eq!(
@@ -483,7 +516,11 @@ fn generated_cpu_provider_runs_through_governed_host_without_tool_claims() {
         fn observe(&mut self, _: &Request) -> Result<GovernedFacts, LifecycleError> {
             panic!("text-only fixture must not acquire actuator authority")
         }
-        fn postconditions(&mut self, _: &Request, _: &BTreeSet<String>) -> Postconditions {
+        fn postconditions(
+            &mut self,
+            _: &Request,
+            _: &BTreeSet<String>,
+        ) -> Result<Vec<PostconditionObservation>, LifecycleError> {
             panic!("no effect")
         }
     }
@@ -614,3 +651,6 @@ fn canonical_proposal_gate_preserves_signed_bytes_and_reports_refusal() {
     );
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[path = "governed_sea/final_boundaries.rs"]
+mod final_boundaries;

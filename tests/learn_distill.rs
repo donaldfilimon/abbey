@@ -462,6 +462,13 @@ fn unsuccessful_capture_acceptance(backend: &str) {
             "no durable-success receipt: {:?}",
             out.stdout
         );
+        let (code, export, err) =
+            s.run_with_backend(&["learn", "export", "train_candidate"], backend);
+        assert_eq!(code, 0, "raw candidate reopen after {tag}: {err}");
+        assert!(
+            export.is_empty(),
+            "{tag} persisted a raw candidate: {export}"
+        );
         let (code, export, err) = s.run_with_backend(&["learn", "sft"], backend);
         assert_eq!(code, 0, "reopen after {tag}: {err}");
         assert!(export.is_empty(), "{tag} persisted a candidate: {export}");
