@@ -82,10 +82,12 @@ def control(binary, root):
     fixture = MetadataFixture(root)
     # This proves the unchanged ordinary CLI protocol separately from the TUI.
     fixture.set_control("metadata", marker="owned-doctor-version-control")
-    output, _ = fixture.cli(binary, ["/doctor"])
-    harness.require(fixture.marker.encode() in output,
-                    "control: ordinary doctor omitted the actual version response")
+    output, stderr = fixture.cli(binary, ["/doctor"])
     rows = fixture.events(fixture.nonce)
+    harness.require(fixture.marker.encode() in output,
+                    "control: ordinary doctor omitted the actual version response; "
+                    f"stdout={output[-4096:]!r}; stderr={stderr[-4096:]!r}; "
+                    f"owned_events={json.dumps(rows, sort_keys=True)[:4096]}")
     metadata = [r for r in rows if r["action"] == "metadata"]
     harness.require(len(metadata) == 1,
                     "control: ordinary doctor did not use one actual metadata probe")

@@ -279,6 +279,10 @@ esac
 
     fn pid_receipt(&self, name: &str) -> Option<Pid> {
         let raw = fs::read_to_string(self.root.join(name)).ok()?;
+        // A redirect can expose the file before printf finishes the receipt.
+        if !raw.ends_with('\n') {
+            return None;
+        }
         let mut parts = raw.split_whitespace();
         if parts.next()? != self.nonce {
             return None;
@@ -289,14 +293,18 @@ esac
     }
 
     fn ready(&mut self, phase: &str) -> OwnedGroup {
-        let receipt = self.root.join(format!("{phase}-ready"));
-        assert!(
-            drive_until(&mut self.app, |_| receipt.is_file()),
-            "eligible actual App producer did not start its owned {phase} process"
-        );
-        let leader = self
-            .pid_receipt(&format!("{phase}-ready"))
-            .expect("owned nonce/PID");
+        let receipt = format!("{phase}-ready");
+        let deadline = Instant::now() + DRIVE_LIMIT;
+        let leader = loop {
+            tick(&mut self.app);
+            if let Some(leader) = self.pid_receipt(&receipt) {
+                break leader;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "eligible actual App producer did not publish its owned {phase} nonce/PID"
+            );
+        };
         let group = getpgid(Some(leader)).expect("held owned producer group");
         assert_eq!(
             group, leader,
@@ -541,6 +549,8 @@ fn changing_the_selected_backend_invalidates_a_held_prediction() {
 #[test]
 fn dismissing_completion_joins_the_held_prediction_and_does_not_rearm() {
     let mut fixture = Fixture::new(Mode::HeldRun, AgentBackend::Ollama);
+    // Model the shell redirect having created the receipt before printf writes.
+    fs::write(fixture.root.join("run-ready"), "").unwrap();
     fixture.app.handle_paste("/rev");
     let old = fixture.ready("run");
     let requested = SystemTime::now();

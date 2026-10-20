@@ -582,7 +582,7 @@ pub fn cmd_doctor(state: &AbbeyState, cfg: &AgentConfig) -> Result<i32> {
         format!("trust:     {}", cfg.trust),
         format!("force:     {}", cfg.force),
         format!("no-resume: {}", cfg.no_resume),
-        "tui:       ratatui (rust nightly, edition 2024)".into(),
+        "tui:       ratatui (Rust, edition 2024)".into(),
         "parity:    Grok · Codex · Claude · ABI personas · parallel lanes · OS control".into(),
         format!(
             "backend:   {} (from {})",

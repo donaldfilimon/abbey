@@ -355,8 +355,10 @@ class ForkSafety(unittest.TestCase):
         self.assertEqual(self.text.count(f"uses: {CHECKOUT_ACTION}"), 1)
         self.assertEqual(self.text.count("persist-credentials: false"), 1)
         self.assertEqual(self.text.count(f"uses: {TOOLCHAIN_ACTION}"), 2)
-        self.assertIn("ABBEY_TOOLCHAIN: nightly-2026-09-01", self.text)
-        self.assertIn("ABI_TOOLCHAIN: nightly-2026-09-01", self.text)
+        self.assertIn("ABBEY_TOOLCHAIN: 1.99.1", self.text)
+        self.assertIn("ABI_TOOLCHAIN: 1.99.1", self.text)
+        self.assertIn("ABI_REVISION: 6322c0f57f3008e544f0b9db96bd3c846c6157a0", self.text)
+        self.assertIn("WDBX_REVISION: 5182bc3a60300e1dd152611025e774c4b906638b", self.text)
         self.assertNotRegex(
             self.text,
             r"(?m)^\s*(?:toolchain:\s*|rustup toolchain install )nightly\s*(?:$|--)",

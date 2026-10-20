@@ -3,6 +3,10 @@
 set -eu
 cd "$(dirname "$0")"
 
+ABBEY_INSTALL_PATH=$PATH
+ABBEY_TOOLCHAIN_ROOT=$(pwd)
+. "$ABBEY_TOOLCHAIN_ROOT/tools/toolchain-env.sh"
+
 # Extra cargo features, e.g. `ABBEY_CARGO_FEATURES=personal-edition ./install.sh`
 # to build and install the separately named personal edition (src/edition.rs).
 if [ -n "${ABBEY_CARGO_FEATURES:-}" ]; then
@@ -10,6 +14,9 @@ if [ -n "${ABBEY_CARGO_FEATURES:-}" ]; then
 else
   cargo build --release --locked
 fi
+# Compiler/linker precedence is scoped to the build. Verification/publication
+# retain the caller's PATH tool contract, including staged rollback fault tools.
+export PATH="$ABBEY_INSTALL_PATH"
 
 # Cargo accepts comma- or space-separated feature lists. Keep accelerator
 # packaging explicit: a build that links the ABI Metal dylib must never be

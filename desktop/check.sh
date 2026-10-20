@@ -10,9 +10,15 @@
 # someone runs this — so run it before committing anything under `desktop/`.
 set -eu
 cd "$(dirname "$0")"
+if [ -z "${ABBEY_PYTHON:-}" ]; then ABBEY_PYTHON=$(command -v python3); fi
+export ABBEY_PYTHON
+
+ABBEY_TOOLCHAIN_ROOT=$(CDPATH= cd .. && pwd)
+"$ABBEY_TOOLCHAIN_ROOT/tools/cargo.sh" --abbey-qualify-toolchain
+. "$ABBEY_TOOLCHAIN_ROOT/tools/toolchain-env.sh"
 
 echo "== native Routes acceptance assertion tests =="
-python3 -m unittest discover -s scripts/tests -p 'test_*.py'
+"$ABBEY_PYTHON" -m unittest discover -s scripts/tests -p 'test_*.py'
 
 echo "== codegen drift =="
 cargo run --quiet --locked -p abbey-desktop-codegen -- --check
