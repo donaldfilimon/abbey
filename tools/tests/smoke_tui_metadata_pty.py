@@ -50,7 +50,10 @@ class MetadataFixture(harness.Fixture):
         super().__init__(root, backend="abi")
         harness.require(harness.STUB.count(VERSION_BLOCK) == 1,
                         "fixture compatibility: original version response block changed")
-        stub = "#!" + sys.executable + "\n" + harness.STUB.replace(
+        # This fixture uses only the standard library. Skip unrelated installed
+        # site hooks: cold package discovery can consume the real 500 ms probe
+        # deadline before this owned executable reaches its first instruction.
+        stub = "#!" + sys.executable + " -S\n" + harness.STUB.replace(
             VERSION_BLOCK, OWNED_VERSION_BLOCK, 1)
         binary = root / "bin" / "abi"
         binary.write_text(stub)

@@ -132,7 +132,8 @@ fn real_daemon_serves_only_sanitized_fixed_snapshot_memory_reads() {
         let session = harness.session();
         assert_eq!(
             session.negotiation().granted.as_slice(),
-            &[V3Capability::ReadMemory]
+            &[V3Capability::ReadMemory],
+            "startup-selected backend {backend} must grant exact memory-read authority"
         );
 
         let spaces = session

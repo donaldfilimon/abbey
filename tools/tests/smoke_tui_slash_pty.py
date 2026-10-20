@@ -54,7 +54,8 @@ if args == ["--fixture-leaf"]:
 if name == "git":
     if "rev-parse" in args:
         print("true" if "--is-inside-work-tree" in args else "fixture-main")
-    elif "ls-files" in args: print("fixture.txt")
+    elif "ls-files" in args:
+        sys.stdout.write("fixture.txt\0" if "-z" in args else "fixture.txt\n")
     elif "diff" in args:
         print(" fixture.txt | 1 +" if "--stat" in args else
               "diff --git a/fixture.txt b/fixture.txt\n+synthetic-owned-change")
@@ -245,14 +246,15 @@ class Fixture:
 
 
 class OwnedSession(Session):
-    def __init__(self, binary, fixture):
+    def __init__(self, binary, fixture, args=None):
         self.root = fixture.root
         self.master, self.slave = os.openpty()
         self.resize(30, 110)
         self.before = termios.tcgetattr(self.slave)
         self.output, self.query_offset, self.cursor = bytearray(), 0, (1, 1)
         self.closed = False
-        self.proc = subprocess.Popen([str(binary), "tui"], cwd=self.root,
+        argv = [str(binary), *(args if args is not None else ["tui"])]
+        self.proc = subprocess.Popen(argv, cwd=self.root,
                                      env=fixture.env, stdin=self.slave,
                                      stdout=self.slave, stderr=self.slave,
                                      start_new_session=True)

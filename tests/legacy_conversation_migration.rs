@@ -66,7 +66,7 @@ fn real_daemon_retains_imports_and_reopens_canonical_legacy_metadata() {
     write_private(&wdbx.join("sentinel"), WDBX_CANARY);
 
     let mut first = spawn(&root, &socket, &stdout, &stderr, &ignored);
-    wait_ready(&socket);
+    wait_ready(&mut first, &socket, &stderr);
     terminate(&mut first);
 
     let database = root.join("daemon/runtime.sqlite");
@@ -106,7 +106,7 @@ fn real_daemon_retains_imports_and_reopens_canonical_legacy_metadata() {
 
     let captured_at = manifest["captured_at"].as_str().unwrap().to_owned();
     let mut second = spawn(&root, &socket, &stdout, &stderr, &ignored);
-    wait_ready(&socket);
+    wait_ready(&mut second, &socket, &stderr);
     terminate(&mut second);
     assert_database(&database);
     assert_eq!(
@@ -244,6 +244,7 @@ fn spawn(root: &Path, socket: &Path, stdout: &Path, stderr: &Path, ignored: &Pat
         .env(edition::ACTIVE.config_path_env(), root.join("config.toml"))
         .env(edition::ACTIVE.daemon_socket_env(), socket)
         .env(edition::ACTIVE.daemon_bearer_env(), BEARER)
+        .env_remove(edition::ACTIVE.daemon_bearer_file_env())
         .env("ABBEY_MEMORY_BACKEND", "sqlite")
         .env(
             edition::ACTIVE.scoped_env("CHAT_FILE"),
@@ -259,7 +260,7 @@ fn spawn(root: &Path, socket: &Path, stdout: &Path, stderr: &Path, ignored: &Pat
         .unwrap()
 }
 
-fn wait_ready(socket: &Path) {
+fn wait_ready(child: &mut Child, socket: &Path, stderr: &Path) {
     let client = DaemonClient::new(DaemonConfig::local(
         socket,
         BearerSecret::parse(BEARER).unwrap(),
@@ -270,7 +271,21 @@ fn wait_ready(socket: &Path) {
         {
             return;
         }
-        assert!(Instant::now() < deadline, "abbeyd did not become ready");
+        if let Some(status) = child.try_wait().unwrap() {
+            panic!(
+                "scratch abbeyd exited before readiness ({status}): {}",
+                fs::read_to_string(stderr).unwrap_or_default()
+            );
+        }
+        if Instant::now() >= deadline {
+            // This is the child started by this fixture, never a user's daemon.
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!(
+                "scratch abbeyd did not become ready: {}",
+                fs::read_to_string(stderr).unwrap_or_default()
+            );
+        }
         std::thread::sleep(Duration::from_millis(10));
     }
 }
