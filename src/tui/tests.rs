@@ -3,6 +3,8 @@ use crate::agent::{AgentBackend, AgentConfig};
 use crate::state::AbbeyState;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 
+mod model_selection;
+
 pub(super) fn scratch_app(tag: &str, backend: AgentBackend) -> App {
     let dir = std::env::temp_dir().join(format!(
         "abbey-tui-{tag}-{}-{}",

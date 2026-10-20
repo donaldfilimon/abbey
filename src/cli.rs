@@ -16,10 +16,14 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
     name = "abbey",
     version = VERSION,
     about = "Abbey — agent CLI/TUI with Grok Build · Codex · Claude Code parity",
-    long_about = "Abbey wraps cursor-agent with resilient chats and a ratatui TUI.\n\
-Parity targets: Grok Build (session/TUI/worktree), Codex (exec/review/doctor/mcp),\n\
-Claude Code (slash commands, plan/ask, init/diff/pr/commit/review).\n\
-Run with no args to open the TUI. Type /help inside the TUI for slash commands."
+    long_about = "Abbey is a hybrid CLI/TUI with selectable executor backends.\n\
+Ollama is preferred when ready; Apple Foundation Models, Grok, ABI, Claude, and\n\
+Cursor are alternatives. Local commands need no executor. Generation and tools\n\
+depend on the selected backend; Abbey does not reimplement vendor runtimes.\n\
+Select explicitly with ABBEY_BACKEND=ollama|fm|grok|abi|claude|cursor.\n\
+Run with no args to open the TUI: Ctrl-S providers, Ctrl-K commands, F1 help.\n\
+Apple Foundation Models requires the fm CLI on supported macOS: system is\n\
+on-device; explicitly selected pcc is off-device Private Cloud Compute."
 )]
 pub struct Cli {
     /// Model id or alias (fable, opus, grok, codex, …)
@@ -46,7 +50,7 @@ pub struct Cli {
     #[arg(long = "output-format", global = true)]
     pub output_format: Option<String>,
 
-    /// Force / yolo / always-approve (Codex bypass / Claude skip-permissions)
+    /// Provider-specific permission mode; never bypasses Abbey's OS allowlist
     #[arg(
         short = 'f',
         long = "force",
@@ -339,18 +343,18 @@ pub enum Commands {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         text: Vec<String>,
     },
-    /// Self-learn: correction|preference|routes|digest|export|review|stats|improve (LoRA Proposed)
+    /// Self-learn: ...|review|stats|improve (TUI owned; doctor + stats enhanced visibility; LoRA Proposed)
     Learn {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Alias for `learn review` (train_candidate curation)
+    /// Alias for `learn review` (train_candidate curation; TUI owned)
     #[command(name = "learn-review", visible_alias = "train-review")]
     LearnReview {
         #[arg(default_value_t = 50)]
         n: usize,
     },
-    /// Alias for `learn stats` (train_candidate counts)
+    /// Alias for `learn stats` (train_candidate counts + % + TUI/doctor)
     #[command(name = "learn-stats", visible_alias = "train-stats")]
     LearnStats,
     /// Parallel Max/Gemma/Aviva lanes (alias of `subagents run` defaults)
@@ -499,4 +503,27 @@ pub enum Commands {
     /// Pass-through to cursor-agent
     #[command(external_subcommand)]
     External(Vec<String>),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::CommandFactory;
+
+    #[test]
+    fn long_help_explains_backend_choice_and_authority_boundaries() {
+        let help = Cli::command().render_long_help().to_string();
+        for text in [
+            "ABBEY_BACKEND=ollama|fm|grok|abi|claude|cursor",
+            "Local commands need no executor",
+            "does not reimplement vendor runtimes",
+            "Ctrl-S providers",
+            "on-device",
+            "off-device Private Cloud Compute",
+            "never bypasses Abbey's OS allowlist",
+        ] {
+            assert!(help.contains(text), "missing {text}: {help}");
+        }
+        assert!(!help.contains("wraps cursor-agent"));
+    }
 }

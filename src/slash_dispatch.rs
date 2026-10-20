@@ -114,14 +114,12 @@ pub fn dispatch_slash(input: &str, state: &AbbeyState, cfg: &mut AgentConfig) ->
         }
         "model" => {
             if rest.is_empty() {
-                println!("{}", state.read_model());
+                cfg.output_line(&cfg.model);
             } else if rest == "clear" {
                 state.clear_model()?;
                 println!("model reset to auto");
             } else {
-                let m = resolve_model(rest);
-                state.save_model(&m)?;
-                cfg.model = m.clone();
+                let m = crate::models::select_model(state, cfg, rest)?;
                 println!("{m}");
             }
             Ok(0)
@@ -312,7 +310,7 @@ pub fn dispatch_slash(input: &str, state: &AbbeyState, cfg: &mut AgentConfig) ->
             {
                 crate::distill::dispatch_owned(state, &args[1..], cfg)
             } else {
-                learn::dispatch(state, &args)
+                learn::dispatch(state, &args, Some(cfg))
             }
         }
         "learn-review" | "train-review" => {
@@ -321,11 +319,11 @@ pub fn dispatch_slash(input: &str, state: &AbbeyState, cfg: &mut AgentConfig) ->
                 .next()
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(50);
-            learn::review_train(state, n)?;
+            learn::review_train(state, n, Some(cfg))?;
             Ok(0)
         }
         "learn-stats" | "train-stats" => {
-            learn::train_stats(state)?;
+            learn::train_stats(state, Some(cfg))?;
             Ok(0)
         }
         "allowlist" | "policy" => os_control::print_policy(false),
@@ -363,14 +361,8 @@ pub fn dispatch_slash(input: &str, state: &AbbeyState, cfg: &mut AgentConfig) ->
             println!("abbey: cost N/A for cursor-agent — use Cursor account dashboard");
             Ok(0)
         }
-        "status" => {
-            let st = cfg.passthrough(&["status".into()])?;
-            Ok(st.code().unwrap_or(1))
-        }
-        "models" => {
-            let st = cfg.passthrough(&["models".into()])?;
-            Ok(st.code().unwrap_or(1))
-        }
+        "status" => crate::commands::passthrough_or_refuse(cfg, "status", &["status".into()]),
+        "models" => crate::commands::list_models(cfg),
         "mcp" => {
             let args = slash::split_args(rest);
             protocols::dispatch_mcp(cfg, &state.cwd, &args)

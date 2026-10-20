@@ -29,7 +29,7 @@ use crate::improve;
 use crate::inventory;
 use crate::learn;
 use crate::mesh;
-use crate::models::{alias_table, resolve_model};
+use crate::models::alias_table;
 use crate::os_control;
 use crate::output;
 use crate::parallel;
@@ -50,7 +50,7 @@ use clap_complete::{Shell as ClapShell, generate};
 use std::io;
 
 /// Refuse account/session/MCP verbs under backends that have no such surface.
-fn passthrough_or_refuse(cfg: &AgentConfig, verb: &str, args: &[String]) -> Result<i32> {
+pub(crate) fn passthrough_or_refuse(cfg: &AgentConfig, verb: &str, args: &[String]) -> Result<i32> {
     if !cfg.backend.supports_account_surface() {
         eprintln!(
             "abbey: `{verb}` is not applicable under the `{}` backend (ABBEY_BACKEND={}).\n\
@@ -63,6 +63,15 @@ fn passthrough_or_refuse(cfg: &AgentConfig, verb: &str, args: &[String]) -> Resu
     }
     let st = cfg.passthrough(args)?;
     Ok(st.code().unwrap_or(1))
+}
+
+/// The CLI and slash inventory share backend-specific local/refusal behavior.
+pub(crate) fn list_models(cfg: &AgentConfig) -> Result<i32> {
+    if !cfg.backend.supports_account_surface() {
+        print!("{}", cfg.list_models_text()?);
+        return Ok(0);
+    }
+    passthrough_or_refuse(cfg, "models", &["models".into()])
 }
 
 pub fn run_cli(cli: Cli, state: AbbeyState, mut cfg: AgentConfig) -> Result<i32> {
@@ -156,7 +165,7 @@ pub fn run_cli(cli: Cli, state: AbbeyState, mut cfg: AgentConfig) -> Result<i32>
         }
         Some(Commands::Model { name }) => match name.as_deref() {
             None => {
-                println!("{}", state.read_model());
+                cfg.output_line(&cfg.model);
                 Ok(0)
             }
             Some("clear" | "default" | "auto") => {
@@ -165,19 +174,9 @@ pub fn run_cli(cli: Cli, state: AbbeyState, mut cfg: AgentConfig) -> Result<i32>
                 Ok(0)
             }
             Some(m) => {
-                // Under abi, do not persist cursor-expanded `claude-*-thinking-*`
-                // ids — they would look like live requests / get collapsed wrongly.
-                if cfg.backend == crate::agent::AgentBackend::Abi {
-                    let resolved = crate::agent::abi_normalize_model(m);
-                    state.save_model_literal(&resolved)?;
-                    eprintln!("abbey: default model set to {resolved}");
-                    println!("{resolved}");
-                } else {
-                    let resolved = resolve_model(m);
-                    state.save_model(&resolved)?;
-                    eprintln!("abbey: default model set to {resolved}");
-                    println!("{resolved}");
-                }
+                let resolved = crate::models::select_model(&state, &mut cfg, m)?;
+                eprintln!("abbey: default model set to {resolved}");
+                println!("{resolved}");
                 Ok(0)
             }
         },
@@ -334,13 +333,13 @@ pub fn run_cli(cli: Cli, state: AbbeyState, mut cfg: AgentConfig) -> Result<i32>
         }
         Some(Commands::Os { args }) => os_control::run_os(&args, true),
         Some(Commands::Allowlist) => os_control::print_policy(false),
-        Some(Commands::Learn { args }) => learn::dispatch(&state, &args),
+        Some(Commands::Learn { args }) => learn::dispatch(&state, &args, Some(&cfg)),
         Some(Commands::LearnReview { n }) => {
-            learn::review_train(&state, n)?;
+            learn::review_train(&state, n, Some(&cfg))?;
             Ok(0)
         }
         Some(Commands::LearnStats) => {
-            learn::train_stats(&state)?;
+            learn::train_stats(&state, Some(&cfg))?;
             Ok(0)
         }
         Some(Commands::Parallel { prompt }) => {
@@ -411,13 +410,7 @@ pub fn run_cli(cli: Cli, state: AbbeyState, mut cfg: AgentConfig) -> Result<i32>
             Ok(0)
         }
         Some(Commands::Status) => passthrough_or_refuse(&cfg, "status", &["status".into()]),
-        Some(Commands::Models) => {
-            if !cfg.backend.supports_account_surface() {
-                print!("{}", cfg.list_models_text()?);
-                return Ok(0);
-            }
-            passthrough_or_refuse(&cfg, "models", &["models".into()])
-        }
+        Some(Commands::Models) => list_models(&cfg),
         Some(Commands::Ls) => passthrough_or_refuse(&cfg, "ls", &["ls".into()]),
         Some(Commands::Login) => passthrough_or_refuse(&cfg, "login", &["login".into()]),
         Some(Commands::Logout) => passthrough_or_refuse(&cfg, "logout", &["logout".into()]),

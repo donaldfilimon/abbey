@@ -1,5 +1,101 @@
 use super::*;
+use crate::tui::app::ModelMutation;
 use crate::tui::app::{PROVIDERS, ProviderChoice};
+
+fn finish_local(app: &mut App, command: &str, code: i32, cancelled: bool) {
+    let (_events, done) = fixture_run(app);
+    app.run.as_mut().unwrap().local = true;
+    app.pending_model_mutation = ModelMutation::for_local(&[command.into()]);
+    if cancelled {
+        app.run.as_ref().unwrap().cancel.cancel();
+    }
+    done.send((code, None)).unwrap();
+    app.pump();
+    assert!(!app.is_running());
+    assert!(app.pending_model_mutation.is_none());
+}
+
+#[test]
+fn only_successful_explicit_model_mutations_update_the_live_model() {
+    let mut app = isolated_app();
+    app.cfg.backend = AgentBackend::Fm;
+    app.cfg.model = "system".into();
+    app.state.save_model_literal("pcc").unwrap();
+    for command in ["/help", "/model", "/think", "/doctor"] {
+        finish_local(&mut app, command, 0, false);
+        assert_eq!(app.cfg.model, "system", "unrelated command {command}");
+    }
+    for (code, cancelled) in [(1, false), (130, false), (0, true)] {
+        finish_local(&mut app, "/model pcc", code, cancelled);
+        assert_eq!(app.cfg.model, "system");
+    }
+    finish_local(&mut app, "/model pcc", 0, false);
+    assert_eq!(app.cfg.model, "pcc");
+    app.state.save_model_literal("system").unwrap();
+    finish_local(&mut app, "/model system", 0, false);
+    assert_eq!(app.cfg.model, "system");
+    app.cfg.backend = AgentBackend::Claude;
+    app.state
+        .save_model_literal("persisted-catalog-id")
+        .unwrap();
+    finish_local(&mut app, "/thinking high", 0, false);
+    assert_eq!(
+        app.cfg.model, "persisted-catalog-id",
+        "use persisted result, not guessed argv"
+    );
+    app.state.clear_model().unwrap();
+    finish_local(&mut app, "/model clear", 0, false);
+    assert_eq!(app.cfg.model, "auto");
+}
+
+#[test]
+fn ambient_pcc_does_not_override_live_selections_after_local_commands() {
+    const CHILD: &str = "ABBEY_TEST_PROVIDER_MODEL_CHILD";
+    if std::env::var_os(CHILD).is_none() {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "tui::tests::providers::ambient_pcc_does_not_override_live_selections_after_local_commands", "--nocapture"])
+            .env(CHILD, "1")
+            .env("ABBEY_MODEL", "pcc")
+            .env("ABBEY_BACKEND", "cursor")
+            .stdin(std::process::Stdio::null())
+            .output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        return;
+    }
+    assert_eq!(std::env::var("ABBEY_MODEL").unwrap(), "pcc");
+    let mut app = isolated_app();
+    app.select_provider(
+        AgentBackend::Fm,
+        app.state.state_dir.join("missing-fixture-fm"),
+    );
+    assert_eq!(app.cfg.model, "system");
+    finish_local(&mut app, "/help", 0, false);
+    assert_eq!(app.cfg.model, "system");
+    app.overlay = Overlay::ModelPicker { idx: 1 };
+    press(&mut app, KeyCode::Enter);
+    assert_eq!(app.cfg.model, "pcc");
+    app.overlay = Overlay::ModelPicker { idx: 0 };
+    press(&mut app, KeyCode::Enter);
+    finish_local(&mut app, "/help", 0, false);
+    assert_eq!(app.cfg.model, "system");
+    app.state.save_model_literal("pcc").unwrap();
+    finish_local(&mut app, "/model pcc", 0, false);
+    assert_eq!(
+        app.cfg.model, "pcc",
+        "an explicit successful model mutation remains deliberate"
+    );
+    app.state.clear_model().unwrap();
+    finish_local(&mut app, "/model clear", 0, false);
+    assert_eq!(
+        app.cfg.model, "system",
+        "clear under FM must not select ambient PCC"
+    );
+}
 
 fn isolated_app() -> App {
     let dir = std::env::temp_dir().join(format!("abbey-provider-{}", uuid::Uuid::new_v4()));

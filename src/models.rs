@@ -7,6 +7,25 @@
 /// installed weight is Google Gemma 4 26.2B MLX (`gemma4:26b-mlx`).
 pub const OLLAMA_DEFAULT_MODEL: &str = "gemma4:26b-mlx";
 
+/// Select and persist a model using the live backend, never the startup cache.
+pub(crate) fn select_model(
+    state: &crate::state::AbbeyState,
+    cfg: &mut crate::agent::AgentConfig,
+    requested: &str,
+) -> anyhow::Result<String> {
+    use crate::agent::AgentBackend;
+    let selected = match cfg.backend {
+        AgentBackend::Fm => crate::agent::fm_model(requested).into(),
+        AgentBackend::Abi => crate::agent::abi_normalize_model(requested),
+        AgentBackend::Ollama => crate::agent::ollama_normalize_model(requested),
+        _ => resolve_model(requested),
+    };
+    // Do not expand a bare ABI catalog ID through Cursor's alias table again.
+    state.save_model_literal(&selected)?;
+    cfg.model = selected.clone();
+    Ok(selected)
+}
+
 /// Resolve a user-facing alias or pass through a full model id.
 pub fn resolve_model(raw: &str) -> String {
     let lower = raw.trim().to_ascii_lowercase();
@@ -124,6 +143,10 @@ pub fn alias_table() -> &'static [(&'static str, &'static str)] {
         ("kimi", "kimi-k3-high"),
     ]
 }
+
+#[cfg(test)]
+#[path = "models/selection_tests.rs"]
+mod selection_tests;
 
 #[cfg(test)]
 mod tests {

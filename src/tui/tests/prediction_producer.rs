@@ -225,6 +225,7 @@ esac
             completion_basis: None,
             prediction: crate::tui::prediction_owner::PredictionOwner::default(),
             run: None,
+            pending_model_mutation: None,
             queued: Vec::new(),
             overlay: Overlay::None,
             panel_view: crate::tui::overlays::PanelView::default(),
