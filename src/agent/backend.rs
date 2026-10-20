@@ -314,7 +314,12 @@ pub fn parse_fm_models(text: &str) -> FmModels {
         }
     }
     for line in text.lines() {
-        match line.trim().trim_end_matches('.').to_ascii_lowercase().as_str() {
+        match line
+            .trim()
+            .trim_end_matches('.')
+            .to_ascii_lowercase()
+            .as_str()
+        {
             "system model available" | "system model is available" => out.system = true,
             "private cloud compute available" | "private cloud compute is available" => {
                 out.pcc = true;
@@ -364,7 +369,11 @@ pub(crate) fn fm_models_probe(path: &Path) -> Option<FmModels> {
     for command in ["models", "available"] {
         let spec = ProcessSpec::inherited(path.to_path_buf(), vec![OsString::from(command)]);
         match run_with_checkpoint(&spec, &limits, || false) {
-            Ok(SupervisorOutcome::Exited { status, stdout, stderr }) => {
+            Ok(SupervisorOutcome::Exited {
+                status,
+                stdout,
+                stderr,
+            }) => {
                 let stdout = String::from_utf8_lossy(&stdout);
                 let stderr = String::from_utf8_lossy(&stderr);
                 if command == "models"

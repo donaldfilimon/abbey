@@ -133,6 +133,77 @@ fn provider_and_model_changes_are_guarded_while_running() {
     assert!(app.status.contains("active run"));
 }
 
+#[test]
+fn leaving_fm_resets_apple_models_to_persisted_auto_for_every_other_provider() {
+    let mut app = isolated_app();
+    let missing_cli = app.state.state_dir.join("missing-fixture-cli");
+    for backend in PROVIDERS.into_iter().filter(|b| *b != AgentBackend::Fm) {
+        for model in ["system", "pcc"] {
+            app.cfg.backend = AgentBackend::Fm;
+            app.cfg.model = model.into();
+            app.state.save_model_literal(model).unwrap();
+            app.select_provider(backend, missing_cli.clone());
+            assert_eq!(app.cfg.backend, backend);
+            assert_eq!(app.cfg.model, "auto");
+            assert_eq!(
+                std::fs::read_to_string(&app.state.model_file)
+                    .unwrap()
+                    .trim(),
+                "auto"
+            );
+            assert_eq!(
+                app.cfg.transcript_dir,
+                Some(app.state.state_dir.join(backend.transcript_subdir()))
+            );
+        }
+    }
+}
+
+#[test]
+fn same_provider_selection_preserves_the_explicit_model() {
+    let mut app = isolated_app();
+    let missing_cli = app.state.state_dir.join("missing-fixture-cli");
+    for (backend, model) in [
+        (AgentBackend::Fm, "pcc"),
+        (AgentBackend::Ollama, "custom:tag"),
+    ] {
+        app.cfg.backend = backend;
+        app.cfg.model = model.into();
+        app.state.save_model_literal(model).unwrap();
+        app.select_provider(backend, missing_cli.clone());
+        assert_eq!(app.cfg.model, model);
+        assert_eq!(
+            std::fs::read_to_string(&app.state.model_file)
+                .unwrap()
+                .trim(),
+            model
+        );
+    }
+}
+
+#[test]
+fn failed_transition_model_save_keeps_provider_model_and_identity_unchanged() {
+    let mut app = isolated_app();
+    // A directory at the model-file destination makes replacement fail without
+    // permissions assumptions, environment changes, or external executables.
+    std::fs::create_dir(&app.state.model_file).unwrap();
+    for (from, model, to) in [
+        (AgentBackend::Fm, "pcc", AgentBackend::Ollama),
+        (AgentBackend::Claude, "sonnet", AgentBackend::Fm),
+    ] {
+        app.cfg.backend = from;
+        app.cfg.model = model.into();
+        let old_path = app.cfg.agent_path.clone();
+        let old_transcripts = app.cfg.transcript_dir.clone();
+        app.select_provider(to, app.state.state_dir.join("replacement-cli"));
+        assert_eq!(app.cfg.backend, from);
+        assert_eq!(app.cfg.model, model);
+        assert_eq!(app.cfg.agent_path, old_path);
+        assert_eq!(app.cfg.transcript_dir, old_transcripts);
+        assert!(app.status.contains("provider unchanged: could not select"));
+    }
+}
+
 #[cfg(unix)]
 #[test]
 fn selecting_fake_fm_resets_vendor_or_cloud_model_without_querying_services() {

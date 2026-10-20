@@ -27,7 +27,11 @@ impl Probe {
     }
 
     fn config(&self) -> AgentConfig {
-        AgentConfig::fixed_provider_recipe(self.executable.clone(), AgentBackend::Fm, "system".into())
+        AgentConfig::fixed_provider_recipe(
+            self.executable.clone(),
+            AgentBackend::Fm,
+            "system".into(),
+        )
     }
 
     fn calls(&self) -> String {
@@ -42,8 +46,16 @@ impl Probe {
             self.config().fm_availability_owned().unwrap(),
             format!(
                 "on-device system model: {} · private cloud compute: {}",
-                if expected.system { "available" } else { "unavailable" },
-                if expected.pcc { "available" } else { "unavailable" }
+                if expected.system {
+                    "available"
+                } else {
+                    "unavailable"
+                },
+                if expected.pcc {
+                    "available"
+                } else {
+                    "unavailable"
+                }
             )
         );
         assert_eq!(self.calls(), calls);
@@ -64,7 +76,13 @@ fn fm_probe_current_grammar_accepts_partial_availability_without_fallback() {
     let probe = Probe::new(
         "printf '\\033[32m✓ system (AFM)\\033[0m\\n'\nprintf '✗ pcc (not available)\\n' >&2\nexit 1",
     );
-    probe.assert_both(FmModels { system: true, pcc: false }, "models\n");
+    probe.assert_both(
+        FmModels {
+            system: true,
+            pcc: false,
+        },
+        "models\n",
+    );
 }
 
 #[test]
@@ -76,7 +94,13 @@ fn fm_probe_unsupported_models_falls_back_once_on_either_stream() {
         let probe = Probe::new(&format!(
             "case \"$1\" in\nmodels) {diagnostic}; exit 1;;\navailable) printf 'System model available\\n' >&2;;\n*) exit 99;;\nesac"
         ));
-        probe.assert_both(FmModels { system: true, pcc: false }, "models\navailable\n");
+        probe.assert_both(
+            FmModels {
+                system: true,
+                pcc: false,
+            },
+            "models\navailable\n",
+        );
     }
 }
 
@@ -113,9 +137,7 @@ fn fm_probe_overflow_and_spawn_failure_never_fall_back() {
 
 #[test]
 fn fm_probe_owned_cancellation_reaps_without_compatibility_fallback() {
-    let probe = Probe::new(
-        "printf \"Error: Unknown command 'models'\\n\" >&2\nexec /bin/sleep 10",
-    );
+    let probe = Probe::new("printf \"Error: Unknown command 'models'\\n\" >&2\nexec /bin/sleep 10");
     let mut cfg = probe.config();
     let (sender, _receiver) = std::sync::mpsc::channel();
     let tap = crate::stream::StreamTap::new(sender);
@@ -130,16 +152,18 @@ fn fm_probe_owned_cancellation_reaps_without_compatibility_fallback() {
         }
         cancel.cancel();
         let error = worker.join().unwrap().unwrap_err();
-        assert!(error.downcast_ref::<crate::agent::CaptureCancelled>().is_some());
+        assert!(
+            error
+                .downcast_ref::<crate::agent::CaptureCancelled>()
+                .is_some()
+        );
     });
     assert_eq!(probe.calls(), "models\n");
 }
 
 #[test]
 fn fm_probe_timeout_never_falls_back() {
-    let probe = Probe::new(
-        "printf \"Error: Unknown command 'models'\\n\" >&2\nexec /bin/sleep 10",
-    );
+    let probe = Probe::new("printf \"Error: Unknown command 'models'\\n\" >&2\nexec /bin/sleep 10");
     assert_eq!(fm_models_probe(&probe.executable), None);
     assert_eq!(probe.calls(), "models\n");
     std::fs::remove_file(probe.dir.join("calls")).unwrap();
