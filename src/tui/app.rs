@@ -10,6 +10,7 @@ use crate::agent::{AgentBackend, AgentConfig};
 use crate::models;
 use crate::state::AbbeyState;
 use anyhow::Result;
+use std::io::Read;
 use std::time::Instant;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -91,6 +92,7 @@ pub struct App {
     pub completion_basis: Option<(String, usize)>,
     pub prediction: super::prediction_owner::PredictionOwner,
     pub run: Option<RunHandle>,
+    pub(crate) pending_model_mutation: Option<ModelMutation>,
     pub queued: Vec<String>,
     pub overlay: Overlay,
     pub panel_view: super::overlays::PanelView,
@@ -111,6 +113,26 @@ pub struct App {
     pub persona_lines: Vec<String>,
     pub memory_lines: Vec<String>,
     pub skill_lines: Vec<String>,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum ModelMutation {
+    Set,
+    Clear,
+}
+
+impl ModelMutation {
+    pub(crate) fn for_local(args: &[String]) -> Option<Self> {
+        let [input] = args else { return None };
+        let (name, rest) = crate::slash::parse_slash(input)?;
+        let name = crate::slash_alias::resolve_name(name).unwrap_or(name);
+        match (name, rest.trim()) {
+            ("model", "") | ("think" | "thinking", "") => None,
+            ("model", "clear") => Some(Self::Clear),
+            ("model" | "think" | "thinking", _) => Some(Self::Set),
+            _ => None,
+        }
+    }
 }
 
 /// A picker-open snapshot, not a readiness or account-entitlement claim.
@@ -140,7 +162,8 @@ fn fm_selection(model: &str) -> String {
 
 impl App {
     pub fn new(state: AbbeyState, mut cfg: AgentConfig) -> Result<Self> {
-        cfg.model = state.read_model();
+        // Startup already resolved CLI flags and backend-specific persisted models.
+        // Re-reading here would discard explicit selections (and ABI literal IDs).
         if cfg.backend == AgentBackend::Fm {
             cfg.model = fm_selection(&cfg.model);
         }
@@ -166,6 +189,7 @@ impl App {
             completion_basis: None,
             prediction: super::prediction_owner::PredictionOwner::default(),
             run: None,
+            pending_model_mutation: None,
             queued: Vec::new(),
             overlay: Overlay::None,
             panel_view: super::overlays::PanelView::default(),
@@ -361,8 +385,13 @@ impl App {
             self.transcript.push_error(format!("prediction: {error:#}"));
             return;
         }
+        let model_mutation = match &kind {
+            RunKind::Local(args) => ModelMutation::for_local(args),
+            _ => None,
+        };
         match worker::spawn_run(self.cfg.clone(), self.state.clone(), kind) {
             Ok(handle) => {
+                self.pending_model_mutation = model_mutation;
                 self.transcript.begin_turn();
                 self.run = Some(handle);
                 self.status = "running · Esc to interrupt".into();
@@ -490,10 +519,39 @@ impl App {
         self.transcript.apply(StreamEvent::Done { exit: code });
         self.status = format!("done · exit {code} · {}s", run.started.elapsed().as_secs());
         self.history = self.state.history(40);
+        let model_mutation = self.pending_model_mutation.take();
         if run.local {
-            self.cfg.model = self.state.read_model();
-            if self.cfg.backend == AgentBackend::Fm {
-                self.cfg.model = fm_selection(&self.cfg.model);
+            if code == 0
+                && let Some(mutation) = model_mutation
+            {
+                // Ambient ABBEY_MODEL is a startup preference, not the result
+                // of a live selection. Only explicit successful mutations may
+                // replace the model; failed/cancelled runs retain it.
+                let selected = match mutation {
+                    ModelMutation::Clear => Ok("auto".into()),
+                    ModelMutation::Set => {
+                        std::fs::File::open(&self.state.model_file).and_then(|file| {
+                            let mut text = String::new();
+                            file.take(64 * 1024 + 1).read_to_string(&mut text)?;
+                            if text.len() > 64 * 1024 {
+                                return Err(std::io::Error::other("selected model exceeds limit"));
+                            }
+                            Ok(text.lines().next().unwrap_or("").trim().to_string())
+                        })
+                    }
+                };
+                match selected {
+                    Ok(model) if !model.is_empty() => {
+                        self.cfg.model = if self.cfg.backend == AgentBackend::Fm {
+                            fm_selection(&model)
+                        } else {
+                            model
+                        };
+                    }
+                    _ => self
+                        .transcript
+                        .push_error("could not read selected model; live model unchanged"),
+                }
             }
             if code == 0 {
                 self.refresh_all();
