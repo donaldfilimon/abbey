@@ -107,7 +107,7 @@ abbey learn review                           # train_candidate provenance curati
 abbey learn stats                            # + ready%, doctor/TUI visibility
 abbey learn improve [n] [--apply]            # propose from routes/reflect; --apply promotes routes only
 abbey learn-review · abbey learn-stats       # aliases (TUI-owned direct dispatch)
-# doctor now integrates learn cur: counts; TUI doctor panel + /learn-* surface self-learn visibly (cross-ref specimen-studio 2026-10-20 usability for local proposal UX)
+# doctor integrates learn curation; TUI /learn-* is Abbey-owned. Specimen Studio's Agent desk does not write this store.
 abbey os · abbey allowlist                   # allowlist panel (execute needs --confirm)
 abbey wdbx query                             # → `abi wdbx query <abbey store> --json`
 abbey wdbx stats                             # in-process (needs --features wdbx)
