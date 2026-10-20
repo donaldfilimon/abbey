@@ -136,7 +136,7 @@ impl App {
             }
             Err(e) => lines.push(format!("unavailable: {e}")),
         }
-        lines.push("CLI: abbey learn correction|preference|digest|review|stats".into());
+        lines.push("CLI/TUI: abbey learn ...|review|stats|improve (TUI-owned direct)".into());
         self.memory_lines = lines;
     }
 
@@ -190,7 +190,13 @@ impl App {
             "os-control: abbey os dry-run|execute --confirm (cross-platform allowlist)".into(),
             "subagents:  abbey subagents run --lanes max,reviewer [--peers gemini]".into(),
             "parallel:   alias of subagents with Max+Gemma+Aviva defaults".into(),
-            "learn:      abbey learn correction|preference|routes|digest|review|stats|improve"
+            // Enhanced self-learn visibility in TUI doctor (uses same curation_summary as CLI doctor).
+            format!(
+                "learn cur:  {}",
+                crate::learn::curation_summary(&self.state)
+                    .unwrap_or_else(|_| "n/a".into())
+            ),
+            "learn:      abbey learn correction|preference|routes|digest|review|stats|improve (TUI owned)"
                 .into(),
         ]);
         self.doctor_lines = lines;

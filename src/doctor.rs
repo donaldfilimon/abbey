@@ -610,8 +610,12 @@ pub fn cmd_doctor(state: &AbbeyState, cfg: &AgentConfig) -> Result<i32> {
     );
     let _ = doctor_line(
         cfg,
-        "learn:      review|stats (+ aliases; LoRA pipeline Proposed, unavailable)",
+        "learn:      review|stats|improve (+ aliases; TUI-owned; curation only — LoRA Proposed)",
     );
+    // Doctor integration for self-learn visibility (safe, read-only summary).
+    if let Ok(s) = crate::learn::curation_summary(state) {
+        let _ = doctor_line(cfg, format!("learn cur: {s}"));
+    }
     let _ = doctor_line(
         cfg,
         "os:         allowlist + dry-run; execute --confirm only (`abbey allowlist`)",

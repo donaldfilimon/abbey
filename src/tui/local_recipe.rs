@@ -29,10 +29,16 @@ pub(super) fn owned_slash(input: &str) -> bool {
         "doctor" | "debug" => true,
         "cot" => first == Some("run"),
         "learn" => {
-            matches!(first, Some("distill" | "teach"))
-                && !args
-                    .iter()
-                    .any(|arg| matches!(arg.as_str(), "-h" | "--help"))
+            // Extended for TUI ownership of self-learn: review, stats, improve now
+            // direct (stream emit) like doctor; distill kept for its owned path.
+            !args
+                .iter()
+                .any(|arg| matches!(arg.as_str(), "-h" | "--help"))
+                && matches!(
+                    first,
+                    Some("distill" | "teach" | "review" | "stats" | "improve" | "status" | "show")
+                        | None
+                )
         }
         "subagents" | "swarm" | "distribute" => {
             !matches!(
@@ -49,6 +55,7 @@ pub(super) fn owned_slash(input: &str) -> bool {
                 .any(|arg| matches!(arg.as_str(), "-h" | "--help"))
         }
         "init" => crate::init::parse_init_args(rest).agent,
+        "learn-review" | "train-review" | "learn-stats" | "train-stats" => true,
         _ => false,
     }
 }

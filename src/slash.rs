@@ -288,7 +288,7 @@ pub const SLASH_CATALOG: &[SlashCmd] = &[
     },
     SlashCmd {
         name: "learn",
-        help: "Self-learn: correction|preference|routes|digest|review|stats|improve",
+        help: "Self-learn: ... review|stats|improve (TUI owned; doctor shows cur counts)",
         kind: SlashKind::Local,
     },
     SlashCmd {

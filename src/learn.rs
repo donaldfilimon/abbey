@@ -1,17 +1,43 @@
 //! Self-learning from user corrections, routes, and activity → memory layers.
+//!
+//! Visibility enhancements: `abbey doctor` and TUI Doctor panel now surface
+//! `train_candidate` curation counts; `abbey learn stats|review|improve` (and
+//! aliases) are TUI-owned for direct execution (output lands cleanly in
+//! transcript); stats output includes readiness and next-action guidance.
+//! All via safe extension of dispatch/review/stats/improve to carry optional
+//! `&AgentConfig` for stream-aware output. Curation only — no weights.
 
 use crate::config;
 use crate::memory::{self, MemoryFilter, MemoryRecord, MemoryStore};
 use crate::route_log;
 use crate::state::AbbeyState;
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use sha2::{Digest, Sha256};
 use std::path::Path;
+
+use crate::agent::AgentConfig;
+use crate::output;
+
+#[path = "learn/args.rs"]
+mod args;
 
 fn configured_backend() -> String {
     config::AbbeyConfig::load()
         .unwrap_or_default()
         .memory_backend
+}
+
+/// Stream-aware or plain output for TUI-owned learn commands (review/stats/improve/status)
+/// vs CLI. When a live TUI stream is present, routes through cfg.output_line so the line
+/// appears in the transcript without polluting the alternate screen.
+fn emit(cfg: Option<&AgentConfig>, line: &str) {
+    if let Some(c) = cfg
+        && c.stream.is_some()
+    {
+        c.output_line(line);
+        return;
+    }
+    let _ = output::println(line);
 }
 
 pub fn open_mem(state: &AbbeyState) -> Result<Box<dyn MemoryStore>> {
@@ -25,6 +51,9 @@ pub fn capture_correction(
     detail: &str,
     as_train: bool,
 ) -> Result<String> {
+    if detail.trim().is_empty() {
+        bail!("correction / train candidate text must not be blank");
+    }
     let mem = open_mem(state)?;
     let mut rec = MemoryRecord::new_stm(summary, detail);
     rec.origin = "user".into();
@@ -56,9 +85,16 @@ fn route_activity_payload(r: &route_log::RouteRecord) -> String {
 
 /// Promote recent high-signal route records into activity/LTM digest.
 pub fn learn_from_routes(state: &AbbeyState, n: usize) -> Result<usize> {
-    let mem = open_mem(state)?;
     let routes = route_log::recent_routes(&state.state_dir, n)?;
-    store_route_activity(mem.as_ref(), &routes)
+    apply_routes(state, &routes)
+}
+
+fn apply_routes(state: &AbbeyState, routes: &[route_log::RouteRecord]) -> Result<usize> {
+    if routes.is_empty() {
+        return Ok(0);
+    }
+    let mem = open_mem(state)?;
+    store_route_activity(mem.as_ref(), routes)
 }
 
 fn route_provenance(r: &route_log::RouteRecord) -> Result<String> {
@@ -117,7 +153,11 @@ fn store_route_activity(mem: &dyn MemoryStore, routes: &[route_log::RouteRecord]
         rec.tags = vec!["activity".into(), "self-learn".into(), r.role.clone()];
         rec.confidence = r.confidence;
         rec.provenance = provenance.clone();
-        mem.store(rec)?;
+        mem.store(rec).with_context(|| {
+            format!(
+                "route promotion stopped after {stored} record(s) stored; earlier writes retained"
+            )
+        })?;
         already.insert(provenance);
         stored += 1;
     }
@@ -136,7 +176,9 @@ fn digest_memory(mem: &dyn MemoryStore) -> Result<String> {
     let mut promoted = 0;
     for r in activity {
         if r.confidence >= 0.8 && !report.low_confidence.contains(&r.id) {
-            mem.promote(&r.id, "ltm")?;
+            mem.promote(&r.id, "ltm").with_context(|| {
+                format!("digest stopped after {promoted} promotion(s); earlier writes retained")
+            })?;
             promoted += 1;
         }
     }
@@ -150,6 +192,9 @@ fn digest_memory(mem: &dyn MemoryStore) -> Result<String> {
 
 /// Preference standing directive into LTM.
 pub fn learn_preference(state: &AbbeyState, preference: &str) -> Result<String> {
+    if preference.trim().is_empty() {
+        bail!("preference text must not be blank");
+    }
     let mem = open_mem(state)?;
     let mut rec = MemoryRecord::new_stm(
         format!(
@@ -209,47 +254,60 @@ fn collect_train_curation(mem: &dyn MemoryStore) -> Result<TrainCuration> {
     })
 }
 
-pub fn status(state: &AbbeyState) -> Result<()> {
+pub fn status(state: &AbbeyState, cfg: Option<&AgentConfig>) -> Result<()> {
     let backend = configured_backend();
     let path = memory::backend_path(&state.state_dir, &backend);
-    println!("abbey learn — self-learn + train_candidate curation (not a LoRA runner)\n");
-    println!("store: {}", path.display());
+    emit(
+        cfg,
+        "abbey learn — self-learn + train_candidate curation (not a LoRA runner)\n",
+    );
+    emit(cfg, &format!("store: {}", path.display()));
     // `status` is read-only: opening a backend would create the store.
     if !path.exists() {
-        println!("(empty — capture corrections / run learn routes)");
-        println!();
-        print_learn_usage();
+        emit(cfg, "(empty — capture corrections / run learn routes)");
+        emit(cfg, "");
+        print_learn_usage_with(cfg);
         return Ok(());
     }
     let mem = open_mem(state)?;
     for layer in ["stm", "ltm", "activity", "train_candidate"] {
         let n = mem.filter(Some(layer), Some("self-learn"), 500)?.len();
-        println!("  {layer:<16} self-learn={n}");
+        emit(cfg, &format!("  {layer:<16} self-learn={n}"));
     }
     let report = mem.reflect()?;
-    println!(
-        "reflect: low={} dups={} superseded={}",
-        report.low_confidence.len(),
-        report.duplicate_summaries.len(),
-        report.superseded.len()
+    emit(
+        cfg,
+        &format!(
+            "reflect: low={} dups={} superseded={}",
+            report.low_confidence.len(),
+            report.duplicate_summaries.len(),
+            report.superseded.len()
+        ),
     );
     let cur = collect_train_curation(mem.as_ref())?;
-    println!(
-        "train_candidate: total={} prov_ok={} missing={} high_conf={} ready={}",
-        cur.stats.total,
-        cur.stats.with_provenance,
-        cur.stats.missing_provenance(),
-        cur.stats.high_confidence,
-        cur.ready
+    emit(
+        cfg,
+        &format!(
+            "train_candidate: total={} prov_ok={} missing={} high_conf={} ready={}",
+            cur.stats.total,
+            cur.stats.with_provenance,
+            cur.stats.missing_provenance(),
+            cur.stats.high_confidence,
+            cur.ready
+        ),
     );
-    println!();
-    println!("curate:  abbey learn review · abbey learn stats · abbey learn export");
-    println!("refuse:  abbey learn lora · abbey claims refuse lora");
+    emit(cfg, "");
+    emit(
+        cfg,
+        "curate:  abbey learn review · abbey learn stats · abbey learn export",
+    );
+    emit(cfg, "refuse:  abbey learn lora · abbey claims refuse lora");
     Ok(())
 }
 
-fn print_learn_usage() {
-    println!(
+fn print_learn_usage_with(cfg: Option<&AgentConfig>) {
+    emit(
+        cfg,
         "usage:\n\
          \x20  abbey learn                    # status + train_candidate summary\n\
          \x20  abbey learn review [n]         # list candidates (provenance gate)\n\
@@ -262,22 +320,31 @@ fn print_learn_usage() {
          \x20  abbey learn routes [n]         # route.jsonl → activity\n\
          \x20  abbey learn improve [n] [--apply] # propose; apply additive steps only\n\
          \x20  abbey learn digest|export …\n\
-         note:  LoRA / fine-tune is Proposed but unavailable — curation only"
+         note:  LoRA / fine-tune is Proposed but unavailable — curation only",
     );
 }
 
 /// Human-review listing of `train_candidate` rows (no LoRA / export-to-weights).
-pub fn review_train(state: &AbbeyState, limit: usize) -> Result<()> {
-    println!("abbey learn review — train_candidate curation (no weight updates)\n");
+pub fn review_train(state: &AbbeyState, limit: usize, cfg: Option<&AgentConfig>) -> Result<()> {
+    emit(
+        cfg,
+        "abbey learn review — train_candidate curation (no weight updates)\n",
+    );
     let path = memory::backend_path(&state.state_dir, &configured_backend());
     if !path.exists() {
-        println!("(no store yet — `abbey learn train <text>` or `abbey learn correction …`)");
+        emit(
+            cfg,
+            "(no store yet — `abbey learn train <text>` or `abbey learn correction …`)",
+        );
         return Ok(());
     }
     let mem = open_mem(state)?;
     let rows = mem.filter(Some("train_candidate"), None, limit)?;
     if rows.is_empty() {
-        println!("(no train_candidate records — `abbey learn train <text>`)");
+        emit(
+            cfg,
+            "(no train_candidate records — `abbey learn train <text>`)",
+        );
         return Ok(());
     }
     let mut missing_prov = 0usize;
@@ -292,49 +359,108 @@ pub fn review_train(state: &AbbeyState, limit: usize) -> Result<()> {
             ready += 1;
         }
         let preview: String = r.payload.chars().take(120).collect();
-        println!(
-            "{}\tconf={:.2}\tprov={}\tready={}\t{}",
-            r.id,
-            r.confidence,
-            if prov_ok { "ok" } else { "MISSING" },
-            if is_ready { "yes" } else { "no" },
-            preview
+        emit(
+            cfg,
+            &format!(
+                "{}\tconf={:.2}\tprov={}\tready={}\t{}",
+                r.id,
+                r.confidence,
+                if prov_ok { "ok" } else { "MISSING" },
+                if is_ready { "yes" } else { "no" },
+                preview
+            ),
         );
     }
-    println!(
-        "\nreview: {} candidate(s); {} missing provenance; {} ready (prov+conf≥0.9)\n\
-         next:   abbey learn stats · abbey learn export train_candidate\n\
-         proposed: LoRA pipeline unavailable — `abbey lora refuse`",
-        rows.len(),
-        missing_prov,
-        ready
+    emit(
+        cfg,
+        &format!(
+            "\nreview: {} candidate(s); {} missing provenance; {} ready (prov+conf≥0.9)\n\
+             next:   abbey learn stats · abbey learn export train_candidate\n\
+             proposed: LoRA pipeline unavailable — `abbey lora refuse`",
+            rows.len(),
+            missing_prov,
+            ready
+        ),
     );
     Ok(())
 }
 
 /// Counts for train_candidate curation — evaluation substrate, not a trainer.
-pub fn train_stats(state: &AbbeyState) -> Result<()> {
-    println!("abbey learn stats — train_candidate curation counts\n");
+/// Enhanced output for visibility: includes ready percent and TUI/doctor guidance.
+pub fn train_stats(state: &AbbeyState, cfg: Option<&AgentConfig>) -> Result<()> {
+    emit(cfg, "abbey learn stats — train_candidate curation counts\n");
     let path = memory::backend_path(&state.state_dir, &configured_backend());
     if !path.exists() {
-        println!("train_candidate: total=0 (no store)");
-        println!(
-            "note: export via `abbey learn export train_candidate`; LoRA is Proposed, not implemented"
+        emit(cfg, "train_candidate: total=0 (no store)");
+        emit(
+            cfg,
+            "note: export via `abbey learn export train_candidate`; LoRA is Proposed, not implemented",
         );
         return Ok(());
     }
     let mem = open_mem(state)?;
     let cur = collect_train_curation(mem.as_ref())?;
-    println!("train_candidate: total={}", cur.stats.total);
-    println!("  with_provenance={}", cur.stats.with_provenance);
-    println!("  missing_provenance={}", cur.stats.missing_provenance());
-    println!("  high_confidence(>=0.9)={}", cur.stats.high_confidence);
-    println!("  curation_ready(prov+conf>=0.9)={}", cur.ready);
-    println!(
+    let ready_pct = if cur.stats.total > 0 {
+        (cur.ready as f64 * 100.0 / cur.stats.total as f64) as u32
+    } else {
+        0
+    };
+    emit(cfg, &format!("train_candidate: total={}", cur.stats.total));
+    emit(
+        cfg,
+        &format!("  with_provenance={}", cur.stats.with_provenance),
+    );
+    emit(
+        cfg,
+        &format!("  missing_provenance={}", cur.stats.missing_provenance()),
+    );
+    emit(
+        cfg,
+        &format!("  high_confidence(>=0.9)={}", cur.stats.high_confidence),
+    );
+    emit(
+        cfg,
+        &format!("  curation_ready(prov+conf>=0.9)={}", cur.ready),
+    );
+    emit(cfg, &format!("  ready_pct={} %", ready_pct));
+    emit(
+        cfg,
+        "  self_learn_cycle: review → improve → export (curation only; no weights; distinct from specimen proposals and ABI --learn)",
+    );
+    emit(
+        cfg,
         "\nnext:  abbey learn review · abbey learn export train_candidate\n\
-         proposed: LoRA / fine-tune unavailable — `abbey lora refuse` (exit 2)"
+         TUI: /learn-stats (owned) · doctor panel · F2 memory; visible in `abbey doctor`",
+    );
+    emit(
+        cfg,
+        "proposed: LoRA / fine-tune unavailable — `abbey lora refuse` (exit 2)",
     );
     Ok(())
+}
+
+/// Short single-line curation summary for doctor integration and TUI visibility.
+/// Read-only (never creates the store). Enhances self-learn story in `abbey doctor`.
+pub fn curation_summary(state: &AbbeyState) -> Result<String> {
+    let path = memory::backend_path(&state.state_dir, &configured_backend());
+    if !path.exists() {
+        return Ok("train_candidate: 0 (no store yet)".to_string());
+    }
+    let mem = open_mem(state)?;
+    let cur = collect_train_curation(mem.as_ref())?;
+    let ready_pct = if cur.stats.total > 0 {
+        (cur.ready as f64 * 100.0 / cur.stats.total as f64) as u32
+    } else {
+        0
+    };
+    Ok(format!(
+        "train_candidate={} prov={} miss={} ready={} ({}%)",
+        cur.stats.total,
+        cur.stats.with_provenance,
+        cur.stats.missing_provenance(),
+        cur.ready,
+        ready_pct
+    ))
 }
 
 /// Route confidence below which a routing decision is proposed for review.
@@ -491,9 +617,17 @@ pub fn plan_improvements(
 
 /// `abbey learn improve [n] [--apply]`: dry-run by default. `--apply` runs only
 /// the additive steps (route promotion); every other proposal stays for a human.
-pub fn improve(state: &AbbeyState, n: usize, apply: bool) -> Result<usize> {
+pub fn improve(
+    state: &AbbeyState,
+    n: usize,
+    apply: bool,
+    cfg: Option<&AgentConfig>,
+) -> Result<usize> {
     let mode = if apply { "apply" } else { "dry-run" };
-    println!("abbey learn improve ({mode}) — propose, then apply only additive steps\n");
+    emit(
+        cfg,
+        &format!("abbey learn improve ({mode}) — propose, then apply only additive steps\n"),
+    );
     let routes = route_log::recent_routes(&state.state_dir, n)?;
     let path = memory::backend_path(&state.state_dir, &configured_backend());
     // Dry-run must stay read-only: opening a backend would create the store.
@@ -506,37 +640,48 @@ pub fn improve(state: &AbbeyState, n: usize, apply: bool) -> Result<usize> {
     };
     let plan = plan_improvements(&reflect, &routes, curation);
     if plan.is_empty() {
-        println!("(no proposals — no routes, reflect issues, or curation gaps)");
+        emit(
+            cfg,
+            "(no proposals — no routes, reflect issues, or curation gaps)",
+        );
         return Ok(0);
     }
     for p in &plan {
         let tag = if p.applies { "auto" } else { "review" };
-        println!("[{tag}] {:<15} {}", p.kind, p.detail);
+        emit(cfg, &format!("[{tag}] {:<15} {}", p.kind, p.detail));
     }
     let mut applied = 0;
     if apply {
         if plan.iter().any(|p| p.kind == "promote-routes") {
-            applied += learn_from_routes(state, n)?;
+            // Apply exactly the snapshot used to build and display this plan.
+            applied += apply_routes(state, &routes)?;
         }
-        println!("\napplied: {applied} record(s) promoted; review items unchanged");
+        emit(
+            cfg,
+            &format!("\napplied: {applied} record(s) promoted; review items unchanged"),
+        );
     } else {
-        println!("\nnext: `abbey learn improve {n} --apply` runs the [auto] steps only");
+        emit(
+            cfg,
+            &format!("\nnext: `abbey learn improve {n} --apply` runs the [auto] steps only"),
+        );
     }
     Ok(applied)
 }
 
-pub fn dispatch(state: &AbbeyState, args: &[String]) -> Result<i32> {
+pub fn dispatch(state: &AbbeyState, args: &[String], cfg: Option<&AgentConfig>) -> Result<i32> {
     if args.is_empty() {
-        status(state)?;
+        status(state, cfg)?;
         return Ok(0);
     }
+    args::validate(args)?;
     match args[0].as_str() {
         "status" | "show" => {
-            status(state)?;
+            status(state, cfg)?;
             Ok(0)
         }
         "help" | "-h" | "--help" => {
-            print_learn_usage();
+            print_learn_usage_with(cfg);
             Ok(0)
         }
         "correction" | "fix" => {
@@ -545,7 +690,7 @@ pub fn dispatch(state: &AbbeyState, args: &[String]) -> Result<i32> {
                 bail!("usage: abbey learn correction <what was wrong / preferred behavior>");
             }
             let id = capture_correction(state, "user correction", &text, false)?;
-            println!("{id}");
+            emit(cfg, &id);
             Ok(0)
         }
         "train" => {
@@ -554,7 +699,7 @@ pub fn dispatch(state: &AbbeyState, args: &[String]) -> Result<i32> {
                 bail!("usage: abbey learn train <curated example with provenance>");
             }
             let id = capture_correction(state, "train candidate", &text, true)?;
-            println!("{id}");
+            emit(cfg, &id);
             Ok(0)
         }
         "preference" | "pref" => {
@@ -563,40 +708,42 @@ pub fn dispatch(state: &AbbeyState, args: &[String]) -> Result<i32> {
                 bail!("usage: abbey learn preference <standing directive>");
             }
             let id = learn_preference(state, &text)?;
-            println!("{id}");
+            emit(cfg, &id);
             Ok(0)
         }
         "routes" => {
-            let n: usize = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(20);
+            let n = args::count(&args[1..], 20)?;
             let n = learn_from_routes(state, n)?;
-            println!("learned {n} route records into activity");
+            emit(cfg, &format!("learned {n} route records into activity"));
             Ok(0)
         }
         "digest" => {
-            println!("{}", learn_digest(state)?);
+            emit(cfg, &learn_digest(state)?);
             Ok(0)
         }
         "export" => {
             let layer = args.get(1).map(|s| s.as_str()).unwrap_or("train_candidate");
+            if !memory::backend_path(&state.state_dir, &configured_backend()).exists() {
+                return Ok(0);
+            }
             let mem = open_mem(state)?;
             for r in mem.filter(Some(layer), None, 10_000)? {
-                println!("{}", serde_json::to_string(&r)?);
+                emit(cfg, &serde_json::to_string(&r)?);
             }
             Ok(0)
         }
         "review" => {
-            let n: usize = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(50);
-            review_train(state, n)?;
+            let n = args::count(&args[1..], 50)?;
+            review_train(state, n, cfg)?;
             Ok(0)
         }
         "stats" => {
-            train_stats(state)?;
+            train_stats(state, cfg)?;
             Ok(0)
         }
         "improve" => {
-            let apply = args[1..].iter().any(|a| a == "--apply");
-            let n: usize = args[1..].iter().find_map(|a| a.parse().ok()).unwrap_or(20);
-            improve(state, n, apply)?;
+            let (n, apply) = args::improve(&args[1..])?;
+            improve(state, n, apply, cfg)?;
             Ok(0)
         }
         "distill" | "teach" => crate::distill::dispatch(state, &args[1..]),
@@ -612,6 +759,9 @@ pub fn dispatch(state: &AbbeyState, args: &[String]) -> Result<i32> {
 
 /// Inject top LTM preferences into a prompt (self-learning context).
 pub fn preference_context(state_dir: &Path, limit: usize) -> String {
+    if !memory::backend_path(state_dir, &configured_backend()).exists() {
+        return String::new();
+    }
     let Ok(mem) = memory::open_backend(state_dir, &configured_backend()) else {
         return String::new();
     };
@@ -635,205 +785,12 @@ pub fn preference_context(state_dir: &Path, limit: usize) -> String {
 mod reliability_tests;
 
 #[cfg(test)]
+#[path = "learn/safety_tests.rs"]
+mod safety_tests;
+
+#[cfg(test)]
 // `std::env::set_var` is unsafe in edition 2024 (it races other threads), and
 // these tests pin the memory backend so they do not depend on the developer's
 // config.toml. Test-only: the crate otherwise denies `unsafe_code`.
 #[allow(unsafe_code)]
-mod tests {
-    use super::*;
-    use crate::route_log::RouteRecord;
-    use std::fs;
-    use std::path::PathBuf;
-
-    fn temp_state(tag: &str) -> AbbeyState {
-        let state_dir =
-            std::env::temp_dir().join(format!("abbey-learn-{tag}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&state_dir);
-        fs::create_dir_all(&state_dir).unwrap();
-        let cwd_dir = state_dir.join("by-cwd");
-        fs::create_dir_all(&cwd_dir).unwrap();
-        AbbeyState {
-            chat_file: state_dir.join("chat-id"),
-            model_file: state_dir.join("model"),
-            history_file: state_dir.join("history.log"),
-            cwd_dir,
-            per_cwd: false,
-            cwd: PathBuf::from("."),
-            state_dir,
-        }
-    }
-
-    #[test]
-    fn learn_from_routes_keeps_alternate_and_fallback() {
-        // Force SQLite so the test is independent of the user's config.toml.
-        unsafe { std::env::set_var("ABBEY_MEMORY_BACKEND", "sqlite") };
-        let state = temp_state("routes");
-        let rec = RouteRecord::new(".", "abbey", "max", "fable", "hybrid", 0.7)
-            .with_routing(Some("gemma".into()), Some("prefer hybrid-loop".into()));
-        route_log::append_route_record(&state.state_dir, &rec).unwrap();
-        let n = learn_from_routes(&state, 5).unwrap();
-        assert_eq!(n, 1);
-        let mem = memory::open_backend(&state.state_dir, "sqlite").unwrap();
-        let rows = mem
-            .filter(Some("activity"), Some("self-learn"), 10)
-            .unwrap();
-        assert_eq!(rows.len(), 1);
-        assert!(rows[0].payload.contains("alternate=gemma"));
-        assert!(rows[0].payload.contains("fallback=prefer hybrid-loop"));
-        assert!(rows[0].payload.contains("confidence=0.70"));
-        let _ = fs::remove_dir_all(&state.state_dir);
-    }
-
-    #[test]
-    fn learn_from_routes_is_idempotent_over_the_same_route_tail() {
-        unsafe { std::env::set_var("ABBEY_MEMORY_BACKEND", "sqlite") };
-        let state = temp_state("routes-idem");
-        for ts in ["t1", "t2", "t3"] {
-            let mut rec = RouteRecord::new(".", "abbey", "max", "fable", "hybrid", 0.7);
-            rec.ts = ts.into();
-            route_log::append_route_record(&state.state_dir, &rec).unwrap();
-        }
-        let first = learn_from_routes(&state, 5).unwrap();
-        assert_eq!(first, 3);
-        let second = learn_from_routes(&state, 5).unwrap();
-        assert_eq!(second, 0, "re-consuming the same tail must not re-store");
-        let mem = memory::open_backend(&state.state_dir, "sqlite").unwrap();
-        let rows = mem
-            .filter(Some("activity"), Some("self-learn"), 100)
-            .unwrap();
-        assert_eq!(rows.len(), 3);
-        let _ = fs::remove_dir_all(&state.state_dir);
-    }
-
-    #[test]
-    fn route_activity_payload_includes_routing_fields() {
-        let r = RouteRecord::new(".", "abbey", "max", "fable", "other", 0.55)
-            .with_routing(Some("gemma".into()), Some("low conf".into()));
-        let p = route_activity_payload(&r);
-        assert!(p.contains("alternate=gemma"));
-        assert!(p.contains("fallback=low conf"));
-        assert!(p.contains("confidence=0.55"));
-    }
-
-    #[test]
-    fn plan_improvements_flags_low_confidence_routes_for_review_only() {
-        let hi = RouteRecord::new(".", "abbey", "max", "fable", "hybrid", 0.9);
-        let lo = RouteRecord::new(".", "abbey", "max", "fable", "guess", 0.3);
-        let reflect = memory::ReflectReport {
-            duplicate_summaries: vec![("a".into(), "b".into())],
-            low_confidence: vec!["c".into()],
-            superseded: vec![],
-        };
-        let stats = TrainStats {
-            total: 2,
-            with_provenance: 1,
-            high_confidence: 2,
-        };
-        let plan = plan_improvements(&reflect, &[hi, lo], Some(stats));
-        let kinds: Vec<_> = plan.iter().map(|p| p.kind).collect();
-        assert_eq!(
-            kinds,
-            [
-                "promote-routes",
-                "review-route",
-                "dedupe",
-                "low-confidence",
-                "provenance"
-            ]
-        );
-        // Only the additive step is auto-applied.
-        assert!(
-            plan.iter()
-                .filter(|p| p.applies)
-                .all(|p| p.kind == "promote-routes")
-        );
-        assert_eq!(plan.iter().filter(|p| p.applies).count(), 1);
-    }
-
-    #[test]
-    fn plan_improvements_groups_repeated_routes_and_duplicate_clusters() {
-        let low = |ts: &str| {
-            let mut r = RouteRecord::new(".", "abbey", "max", "fable", "Other", 0.55);
-            r.ts = ts.into();
-            r
-        };
-        let routes = [low("t1"), low("t2"), low("t3")];
-        let pair = |a: &str, b: &str| (a.to_owned(), b.to_owned());
-        let reflect = memory::ReflectReport {
-            duplicate_summaries: vec![
-                pair("a", "b"),
-                pair("a", "c"),
-                pair("b", "c"),
-                pair("x", "y"),
-            ],
-            low_confidence: vec![],
-            superseded: vec![],
-        };
-        let plan = plan_improvements(&reflect, &routes, None);
-        let reviews: Vec<_> = plan.iter().filter(|p| p.kind == "review-route").collect();
-        assert_eq!(reviews.len(), 1, "{plan:?}");
-        assert!(
-            reviews[0].detail.starts_with("x3 t1..t3 "),
-            "{}",
-            reviews[0].detail
-        );
-        let dedupes: Vec<_> = plan
-            .iter()
-            .filter(|p| p.kind == "dedupe")
-            .map(|p| p.detail.as_str())
-            .collect();
-        assert_eq!(
-            dedupes,
-            [
-                "3 memories share one summary: a, b, c",
-                "2 memories share one summary: x, y"
-            ]
-        );
-    }
-
-    #[test]
-    fn duplicate_clusters_merges_chains() {
-        let pairs: Vec<(String, String)> = (0..5)
-            .map(|i| (format!("m{i}"), format!("m{}", i + 1)))
-            .collect();
-        let clusters = duplicate_clusters(&pairs);
-        assert_eq!(clusters.len(), 1);
-        assert_eq!(clusters[0].len(), 6);
-        assert!(duplicate_clusters(&[]).is_empty());
-    }
-
-    #[test]
-    fn plan_improvements_is_empty_without_signals() {
-        let plan = plan_improvements(&memory::ReflectReport::default(), &[], None);
-        assert!(plan.is_empty());
-    }
-
-    #[test]
-    fn improve_dry_run_does_not_create_a_store() {
-        unsafe { std::env::set_var("ABBEY_MEMORY_BACKEND", "sqlite") };
-        let state = temp_state("improve-dry");
-        let rec = RouteRecord::new(".", "abbey", "max", "fable", "hybrid", 0.4);
-        route_log::append_route_record(&state.state_dir, &rec).unwrap();
-        let applied = improve(&state, 5, false).unwrap();
-        assert_eq!(applied, 0);
-        assert!(!memory::backend_path(&state.state_dir, "sqlite").exists());
-        let applied = improve(&state, 5, true).unwrap();
-        assert_eq!(applied, 1);
-        let _ = fs::remove_dir_all(&state.state_dir);
-    }
-
-    #[test]
-    fn train_stats_counts_provenance_and_ready() {
-        unsafe { std::env::set_var("ABBEY_MEMORY_BACKEND", "sqlite") };
-        let state = temp_state("stats");
-        let id = capture_correction(&state, "train candidate", "prefer small diffs", true).unwrap();
-        assert!(!id.is_empty());
-        let mem = memory::open_backend(&state.state_dir, "sqlite").unwrap();
-        let cur = collect_train_curation(mem.as_ref()).unwrap();
-        assert_eq!(cur.stats.total, 1);
-        assert_eq!(cur.stats.with_provenance, 1);
-        assert_eq!(cur.stats.missing_provenance(), 0);
-        assert_eq!(cur.ready, 1); // capture_correction uses conf 0.95
-        let _ = fs::remove_dir_all(&state.state_dir);
-    }
-}
+mod tests;
