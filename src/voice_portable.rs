@@ -373,25 +373,61 @@ pub fn listen_whisper(seconds: f64, wav: Option<&Path>) -> Result<String> {
         "no small Whisper weight found. Set ABBEY_WHISPER_MODEL to a ggml-tiny.bin \
          (preferred) or ggml-base.bin path.",
     )?;
+    let recording;
     let wav_path = if let Some(p) = wav {
-        p.to_path_buf()
+        p
     } else {
-        record_wav(seconds)?
+        recording = record_wav(seconds)?;
+        recording.path.as_path()
     };
-    let out = Command::new(&bin)
-        .args([
-            "-m",
-            &model.display().to_string(),
-            "-f",
-            &wav_path.display().to_string(),
-            "-nt",
-            "-otxt",
-        ])
+    transcribe_whisper(&bin, &model, wav_path)
+}
+
+/// A uniquely created directory, never an input path or a caller-owned directory.
+struct VoiceWorkspace(PathBuf);
+
+impl VoiceWorkspace {
+    fn new() -> Result<Self> {
+        let path = std::env::temp_dir().join(format!("abbey-voice-{}", uuid::Uuid::new_v4()));
+        let mut builder = std::fs::DirBuilder::new();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::DirBuilderExt;
+            builder.mode(0o700);
+        }
+        // create_dir is exclusive: an existing path is never adopted or removed.
+        builder.create(&path).context("create voice workspace")?;
+        Ok(Self(path))
+    }
+}
+
+impl Drop for VoiceWorkspace {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+fn transcribe_whisper(bin: &Path, model: &Path, wav: &Path) -> Result<String> {
+    let workspace = VoiceWorkspace::new()?;
+    transcribe_whisper_in(bin, model, wav, workspace)
+}
+
+fn transcribe_whisper_in(
+    bin: &Path,
+    model: &Path,
+    wav: &Path,
+    workspace: VoiceWorkspace,
+) -> Result<String> {
+    let output_base = workspace.0.join("transcript");
+    let out = Command::new(bin)
+        .arg("-m")
+        .arg(model)
+        .arg("-f")
+        .arg(wav)
+        .args(["-nt", "-otxt", "-of"])
+        .arg(&output_base)
         .output()
         .with_context(|| format!("exec {}", bin.display()))?;
-    if wav.is_none() {
-        let _ = std::fs::remove_file(&wav_path);
-    }
     if !out.status.success() {
         bail!(
             "whisper failed (exit {}): {}",
@@ -403,9 +439,9 @@ pub fn listen_whisper(seconds: f64, wav: Option<&Path>) -> Result<String> {
     if !stdout.is_empty() {
         return Ok(stdout);
     }
-    let txt = wav_path.with_extension("txt");
+    // whisper.cpp appends .txt to -of; it does not replace the input extension.
+    let txt = output_base.with_extension("txt");
     if let Ok(s) = std::fs::read_to_string(&txt) {
-        let _ = std::fs::remove_file(&txt);
         let t = s.trim().to_string();
         if !t.is_empty() {
             return Ok(t);
@@ -414,12 +450,22 @@ pub fn listen_whisper(seconds: f64, wav: Option<&Path>) -> Result<String> {
     bail!("whisper produced no transcript");
 }
 
-fn record_wav(seconds: f64) -> Result<PathBuf> {
+struct RecordedWav {
+    path: PathBuf,
+    _workspace: VoiceWorkspace,
+}
+
+fn record_wav(seconds: f64) -> Result<RecordedWav> {
     let ffmpeg = which_bin("ffmpeg")
         .context("ffmpeg is required to capture microphone audio for Whisper on this host")?;
-    let path = std::env::temp_dir().join(format!("abbey-stt-{}.wav", std::process::id()));
+    record_wav_with(&ffmpeg, seconds)
+}
+
+fn record_wav_with(ffmpeg: &Path, seconds: f64) -> Result<RecordedWav> {
+    let workspace = VoiceWorkspace::new()?;
+    let path = workspace.0.join("recording.wav");
     let secs = seconds.clamp(1.0, 60.0);
-    let mut cmd = Command::new(&ffmpeg);
+    let mut cmd = Command::new(ffmpeg);
     cmd.args([
         "-y",
         "-t",
@@ -444,8 +490,15 @@ fn record_wav(seconds: f64) -> Result<PathBuf> {
             st.code().unwrap_or(1)
         );
     }
-    Ok(path)
+    Ok(RecordedWav {
+        path,
+        _workspace: workspace,
+    })
 }
+
+#[cfg(all(test, unix))]
+#[path = "voice_portable_tests.rs"]
+mod whisper_tests;
 
 #[cfg(test)]
 mod tests {
