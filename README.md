@@ -104,9 +104,10 @@ abbey subagents run --lanes max,reviewer --synthesize "harden auth"
 abbey parallel --peers gemini,claude "second opinions"   # local distributed peers
 abbey routes --correlation <id>              # both stages (conf · alt · fb)
 abbey learn review                           # train_candidate provenance curation
-abbey learn stats
+abbey learn stats                            # + ready%, doctor/TUI visibility
 abbey learn improve [n] [--apply]            # propose from routes/reflect; --apply promotes routes only
-abbey learn-review · abbey learn-stats       # aliases
+abbey learn-review · abbey learn-stats       # aliases (TUI-owned direct dispatch)
+# doctor now integrates learn cur: counts; TUI doctor panel + /learn-* surface self-learn visibly (cross-ref specimen-studio 2026-10-20 usability for local proposal UX)
 abbey os · abbey allowlist                   # allowlist panel (execute needs --confirm)
 abbey wdbx query                             # → `abi wdbx query <abbey store> --json`
 abbey wdbx stats                             # in-process (needs --features wdbx)
@@ -201,9 +202,9 @@ ABBEY_BACKEND=abi abbey                              # full TUI on abi; Ctrl-B c
 ABBEY_BACKEND=claude abbey -p "hello"                # through Claude Code (no cursor-agent)
 ```
 
-Make a backend the persistent default with `backend = "abi"` in
-`~/.config/abbey/config.toml` (`ABBEY_BACKEND` still wins when set). Run
-`abbey config --init` to scaffold an annotated config with every key commented;
+Make a backend the persistent default with `backend = "abi"` in the config
+file reported by `abbey config` (`ABBEY_BACKEND` still wins when set). Run
+`abbey config --init` to scaffold annotated defaults and optional-key examples;
 it never overwrites an existing file, and an unrecognised `backend` value warns
 rather than silently falling back to cursor-agent.
 
