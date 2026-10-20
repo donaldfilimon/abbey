@@ -264,10 +264,12 @@ impl ComposerLayout {
             if line_idx > 0 {
                 if cursor == byte - 1 {
                     if col == width {
-                        rows.push(String::new());
-                        col = 0;
+                        // The hard newline creates this cursor row below. Do
+                        // not insert a second, cursor-dependent blank row.
+                        position = Some((rows.len(), 0));
+                    } else {
+                        position = Some((rows.len() - 1, col));
                     }
-                    position = Some((rows.len() - 1, col));
                 }
                 rows.push(String::new());
                 col = 0;

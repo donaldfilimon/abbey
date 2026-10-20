@@ -64,6 +64,25 @@ fn hard_lines_empty_lines_and_pasted_controls_keep_cursor_mapping() {
 }
 
 #[test]
+fn full_width_hard_newlines_do_not_insert_cursor_dependent_blank_rows() {
+    for (text, width, before, after) in [
+        ("abcdefgh\nX", 8, 8, 9),
+        ("abcd\n界z", 4, 4, 5),
+        ("ab\n界z", 2, 2, 3),
+    ] {
+        let expected: Vec<String> = ComposerLayout::new(text, after, width)
+            .lines
+            .into_iter()
+            .map(|line| line.to_string())
+            .collect();
+        let layout = ComposerLayout::new(text, before, width);
+        let actual: Vec<String> = layout.lines.iter().map(ToString::to_string).collect();
+        assert_eq!(actual, expected, "{text:?}, width={width}");
+        assert_eq!((layout.row, layout.col), (1, 0));
+    }
+}
+
+#[test]
 fn welcome_exposes_provider_context_hints_and_honest_boundaries() {
     let app = scratch_app("render-welcome", AgentBackend::Cursor);
     let (text, cursor) = screen(&app, 110, 25);

@@ -241,7 +241,8 @@ mod tests {
     #[cfg(unix)]
     impl Scratch {
         fn new() -> Self {
-            let path = std::env::temp_dir().join(format!("abbey-file-index-{}", uuid::Uuid::new_v4()));
+            let path =
+                std::env::temp_dir().join(format!("abbey-file-index-{}", uuid::Uuid::new_v4()));
             std::fs::create_dir(&path).unwrap();
             Self(path)
         }
@@ -271,10 +272,7 @@ mod tests {
             git_paths_with(&scratch.0, git, Duration::from_secs(1)).unwrap(),
             ["src/a.rs", "src/b.rs"]
         );
-        for script in [
-            "/bin/sleep 30",
-            "/usr/bin/head -c 2097153 /dev/zero",
-        ] {
+        for script in ["/bin/sleep 30", "/usr/bin/head -c 2097153 /dev/zero"] {
             let git = scratch.script(script);
             let start = Instant::now();
             assert!(git_paths_with(&scratch.0, git, Duration::from_millis(100)).is_none());
