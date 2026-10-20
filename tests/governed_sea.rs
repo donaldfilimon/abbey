@@ -654,3 +654,6 @@ fn canonical_proposal_gate_preserves_signed_bytes_and_reports_refusal() {
 
 #[path = "governed_sea/final_boundaries.rs"]
 mod final_boundaries;
+
+#[path = "governed_sea/ledger_hardening.rs"]
+mod ledger_hardening;
