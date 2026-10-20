@@ -375,7 +375,7 @@ pub fn run_cli(cli: Cli, state: AbbeyState, mut cfg: AgentConfig) -> Result<i32>
         Some(Commands::Config { init }) => {
             let ac = config::AbbeyConfig::load().unwrap_or_default();
             if init {
-                let existed = config::AbbeyConfig::config_path().is_file();
+                let existed = std::fs::symlink_metadata(config::AbbeyConfig::config_path()).is_ok();
                 let path = ac.ensure_default_file()?;
                 if existed {
                     eprintln!(

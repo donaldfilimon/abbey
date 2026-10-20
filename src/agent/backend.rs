@@ -281,7 +281,7 @@ fn legacy_agent_path() -> Option<PathBuf> {
         return None;
     }
     let path = PathBuf::from(value);
-    path.is_file().then_some(path)
+    crate::host::is_executable(&path).then_some(path)
 }
 
 fn ollama_default_ready(path: &Path) -> bool {
@@ -295,7 +295,7 @@ pub struct FmModels {
     pub pcc: bool,
 }
 
-/// Parse de-coloured `fm models` (or deprecated `fm available`) output.
+/// Parse de-coloured `fm models` (or compatibility `fm available`) output.
 ///
 /// Current `fm` prints one `✓ system (…)` / `✗ pcc (…)` line per model and
 /// exits non-zero whenever any model is unavailable, so the exit code is
@@ -313,17 +313,47 @@ pub fn parse_fm_models(text: &str) -> FmModels {
             }
         }
     }
-    let lower = text.to_ascii_lowercase();
-    out.system |= lower.contains("system model available");
-    out.pcc |= lower.contains("private cloud compute")
-        && !lower.contains("not available")
-        && !text.contains('✗');
+    for line in text.lines() {
+        match line.trim().trim_end_matches('.').to_ascii_lowercase().as_str() {
+            "system model available" | "system model is available" => out.system = true,
+            "private cloud compute available" | "private cloud compute is available" => {
+                out.pcc = true;
+            }
+            _ => {}
+        }
+    }
     out
 }
 
-/// Bounded `fm models` probe. `None` when it did not run to completion.
+/// Match only a diagnostic rejecting the exact `models` command, not a model
+/// availability error or help text that merely mentions the command.
+pub(crate) fn fm_models_unsupported(stdout: &str, stderr: &str) -> bool {
+    [stdout, stderr].into_iter().any(|text| {
+        strip_ansi(text).lines().any(|line| {
+            let lower = line.trim().to_ascii_lowercase();
+            let diagnostic = lower.strip_prefix("error:").unwrap_or(&lower).trim();
+            ["unknown command ", "unrecognized subcommand "]
+                .into_iter()
+                .filter_map(|prefix| diagnostic.strip_prefix(prefix))
+                .any(|command| {
+                    ["'models'", "\"models\"", "`models`", "models"]
+                        .into_iter()
+                        .any(|name| {
+                            command.strip_prefix(name).is_some_and(|tail| {
+                                tail.is_empty()
+                                    || tail.starts_with('.')
+                                    || tail.starts_with(char::is_whitespace)
+                            })
+                        })
+                })
+        })
+    })
+}
+
+/// Bounded read-only probe, falling back once to `available` only when a
+/// completed unsuccessful `models` response explicitly rejects that command.
+/// `None` means a probe did not run to completion.
 pub(crate) fn fm_models_probe(path: &Path) -> Option<FmModels> {
-    let spec = ProcessSpec::inherited(path.to_path_buf(), vec![OsString::from("models")]);
     let limits = SupervisorLimits {
         timeout: Duration::from_millis(3_000),
         terminate_grace: Duration::from_millis(100),
@@ -331,16 +361,24 @@ pub(crate) fn fm_models_probe(path: &Path) -> Option<FmModels> {
         stderr_bytes: 16 * 1024,
         poll_interval: Duration::from_millis(10),
     };
-    match run_with_checkpoint(&spec, &limits, || false) {
-        Ok(SupervisorOutcome::Exited { stdout, stderr, .. }) => {
-            Some(parse_fm_models(&strip_ansi(&format!(
-                "{}{}",
-                String::from_utf8_lossy(&stdout),
-                String::from_utf8_lossy(&stderr)
-            ))))
+    for command in ["models", "available"] {
+        let spec = ProcessSpec::inherited(path.to_path_buf(), vec![OsString::from(command)]);
+        match run_with_checkpoint(&spec, &limits, || false) {
+            Ok(SupervisorOutcome::Exited { status, stdout, stderr }) => {
+                let stdout = String::from_utf8_lossy(&stdout);
+                let stderr = String::from_utf8_lossy(&stderr);
+                if command == "models"
+                    && !status.success()
+                    && fm_models_unsupported(&stdout, &stderr)
+                {
+                    continue;
+                }
+                return Some(parse_fm_models(&strip_ansi(&format!("{stdout}\n{stderr}"))));
+            }
+            _ => return None,
         }
-        _ => None,
     }
+    None
 }
 
 /// True only when `fm models` reports the on-device `system` model ready.
@@ -424,7 +462,7 @@ pub fn resolve_agent_for(backend: AgentBackend) -> Result<PathBuf> {
     };
     let candidates = crate::host::agent_candidate_paths(key, &home);
     for c in &candidates {
-        if !c.is_file() {
+        if !crate::host::is_executable(c) {
             continue;
         }
         if c.file_name().and_then(|s| s.to_str()) == Some("agent")
@@ -502,6 +540,10 @@ pub fn resolve_agent_for(backend: AgentBackend) -> Result<PathBuf> {
 fn fs_readlink(path: &Path) -> Result<String> {
     Ok(std::fs::read_link(path)?.to_string_lossy().into_owned())
 }
+
+#[cfg(all(test, unix))]
+#[path = "fm_probe_tests.rs"]
+mod fm_probe_tests;
 
 #[cfg(test)]
 mod tests {

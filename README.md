@@ -57,6 +57,9 @@ shows the automatic choice, and `ABBEY_BACKEND` still selects one explicitly.
 No single backend is a hard requirement.
 
 The chat-first TUI streams a bounded transcript and keeps a multiline draft.
+Use **Ctrl-K** for commands, **Ctrl-S** to choose a provider, **Ctrl-B** to cycle
+installed providers, and **F1** for keys. The model picker is available from the
+command palette. Provider changes are blocked while a run is active.
 On macOS/Unix, interruption discards queued prompts, quit waits for supervised
 process teardown, and editor return restores terminal modes. See
 [the reliability evidence](docs/tui-reliability.md) for limits and platform scope.
@@ -184,12 +187,14 @@ Proposed provider-neutral Abbey-owned agent/tool runtime.
 |---|---|---|
 | cursor-agent | `cursor` (explicit / fallback) | hosted models, full tool surface |
 | Grok Build | `grok` | passthrough |
-| **On-device** | `fm` | Apple Foundation Models CLI, **macOS 26+** — no cursor-agent, no network |
+| **Apple Foundation Models** | `fm` | `fm` CLI on **macOS 26+**; `system` is on-device, explicitly selected `pcc` is off-device Private Cloud Compute; no cursor-agent |
 | **abi** | `abi` | sibling `abi` CLI (`abi complete`) — **no cursor-agent required**; local persona-template by default, `claude-*`/`live` opt into abi's Anthropic transport |
 | **Claude Code** | `claude` | isolated Claude argv + native session resume; requires the `claude` CLI and its own account/plan; live provider behavior is not claimed by the source tests |
 
 ```bash
-ABBEY_BACKEND=fm abbey -p "summarise this error"     # runs on-device
+fm models                                           # older fm releases: fm available
+ABBEY_BACKEND=fm abbey -m system                      # on-device TUI
+ABBEY_BACKEND=fm abbey -m system -p "summarise this error"
 ABBEY_BACKEND=fm abbey doctor                        # reports model availability
 ABBEY_BACKEND=abi abbey -p "hello"                   # through the abi CLI (no cursor-agent)
 ABBEY_BACKEND=abi abbey                              # full TUI on abi; Ctrl-B cycles backends
@@ -208,6 +213,14 @@ server-side chat ids), and `ask`/`plan` become `--instructions`. Account/session
 rather than forwarding; local `mcp status|paths|view` remains available and management
 names its provider explicitly. **Max and Gemma both resolve to the `system` model there,
 so the role distinction is carried by the prompt, not the model.**
+
+The TUI provider picker (**Ctrl-S**) lists Apple Foundation Models explicitly.
+Selecting it starts with `system`; the model picker distinguishes on-device
+`system` from **off-device** `pcc`. A listed choice is not proof that Apple has
+made that model available: use `fm models` (`fm available` on older releases) or
+`abbey doctor` to check readiness.
+Abbey does not install `fm`, enable Apple Intelligence, or add tool execution to
+Foundation Models; coding-agent tools remain the selected executor's authority.
 
 Under `abi`, each turn is a one-shot `abi complete` (needs a **real** `abi` binary —
 `ABBEY_ABI_BIN` or `abi_bin`; a shell alias won't do). Abbey keeps continuity itself:

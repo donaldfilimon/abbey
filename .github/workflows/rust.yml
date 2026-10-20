@@ -20,7 +20,7 @@ env:
   # This must match rust-toolchain.toml at ABI_REVISION until that immutable
   # integration pin advances.
   ABI_TOOLCHAIN: 1.99.1
-  ABI_REVISION: 6322c0f57f3008e544f0b9db96bd3c846c6157a0
+  ABI_REVISION: 7b9519b6cfb25cc9bc9db2982e0a901318ba039b
   # WDBX was extracted from abi on 2026-08-22. abbey consumes abi-wdbx and
   # abi-compute from it directly, and also transitively through abi-worker and
   # abi-sea, so all three checkouts must be siblings or Cargo resolves two

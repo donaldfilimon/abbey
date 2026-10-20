@@ -2,6 +2,14 @@
 
 #[cfg(unix)]
 fn metadata_pty(mode: &str) {
+    // These scenarios exercise the real 500 ms version-probe deadline. Running
+    // the held-probe PTYs alongside the ordinary CLI control can exhaust that
+    // deadline before its Python fixture records execution. Serialize only this
+    // fixture cohort; keep the production deadline and execution proof intact.
+    static FIXTURE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _fixture_guard = FIXTURE_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let output = std::process::Command::new("python3")
         .arg(concat!(
             env!("CARGO_MANIFEST_DIR"),

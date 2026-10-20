@@ -34,6 +34,7 @@ pub enum PaletteAction {
     NewChat,
     PleaseFix,
     CycleBackend,
+    ProviderPicker,
     Refresh,
     CycleTheme,
     OpenPanel(Panel),
@@ -76,6 +77,12 @@ const BUILTIN: &[PaletteItem] = &[
         action: PaletteAction::CycleTheme,
     },
     PaletteItem {
+        id: "provider",
+        label: "Choose provider",
+        detail: "Ctrl-S · all six CLIs; Apple Foundation Models defaults to on-device system",
+        action: PaletteAction::ProviderPicker,
+    },
+    PaletteItem {
         id: "backend",
         label: "Cycle backend",
         detail: "ollama → grok → fm → abi → claude → cursor (skips unresolvable)",
@@ -96,7 +103,7 @@ const BUILTIN: &[PaletteItem] = &[
     PaletteItem {
         id: "model",
         label: "Switch model",
-        detail: "Pick from the live model list",
+        detail: "Provider models; FM: on-device system or explicit off-device PCC",
         action: PaletteAction::ModelPicker,
     },
     PaletteItem {
@@ -179,7 +186,10 @@ pub fn help_lines() -> Vec<&'static str> {
         "  Ctrl-G                $EDITOR",
         "  Ctrl-O                expand tool or thinking",
         "  Shift-Tab             permission mode",
-        "  Ctrl-B / Ctrl-T       backend / theme",
+        "  Ctrl-S                choose provider (installed CLI ≠ ready model)",
+        "  Ctrl-B / Ctrl-T       cycle installed backend / theme",
+        "  Palette: Switch model FM system = on-device; pcc = off-device (explicit)",
+        "  /doctor               check model/account readiness",
         "  Ctrl-N / Ctrl-P       new chat / please-fix",
         "  Ctrl-L                refresh",
         "  PgUp PgDn wheel       scroll",
@@ -207,6 +217,12 @@ fn panel_lines(app: &App, p: Panel) -> Vec<String> {
 }
 
 fn model_rows(app: &App) -> Vec<String> {
+    if app.cfg.backend == crate::agent::AgentBackend::Fm {
+        return vec![
+            "system  Apple Foundation Models · on-device · readiness: /doctor".into(),
+            "pcc  Private Cloud Compute · OFF-DEVICE · explicit opt-in · readiness: /doctor".into(),
+        ];
+    }
     if app.live_models.is_empty() {
         app.aliases
             .iter()
@@ -290,6 +306,39 @@ pub(crate) fn draw(f: &mut Frame, area: Rect, app: &App) {
             let sel = (*idx).min(rows.len().saturating_sub(1));
             list(f, area, app, "Model · Enter select", &rows, Some(sel));
         }
+        Overlay::ProviderPicker { idx, choices } => {
+            let rows: Vec<String> = choices
+                .iter()
+                .map(|choice| {
+                    let name = if choice.backend == crate::agent::AgentBackend::Fm {
+                        "fm · Apple Foundation Models (system on-device; PCC off-device opt-in)"
+                    } else {
+                        choice.backend.label()
+                    };
+                    format!(
+                        "{}  {name} · {}",
+                        if choice.backend == app.cfg.backend {
+                            "●"
+                        } else {
+                            " "
+                        },
+                        if choice.executable.is_ok() {
+                            "installed CLI; readiness: /doctor"
+                        } else {
+                            "unavailable: CLI not found · install then reopen"
+                        }
+                    )
+                })
+                .collect();
+            list(
+                f,
+                area,
+                app,
+                "Provider · Enter select · Esc cancel",
+                &rows,
+                Some(*idx),
+            );
+        }
         Overlay::ResumePicker { idx } => {
             let rows: Vec<String> = app
                 .history
@@ -365,13 +414,58 @@ impl App {
                 idx: idx.saturating_sub(1),
             },
             (Overlay::ModelPicker { idx }, KeyCode::Enter) => {
+                if self.is_running() {
+                    self.status =
+                        "model unchanged: interrupt or finish the active run first".into();
+                    return Overlay::None;
+                }
                 if let Some(row) =
                     model_rows(self).get(idx.min(model_rows(self).len().saturating_sub(1)))
                 {
                     let name = row.split_whitespace().next().unwrap_or("").to_string();
-                    self.run_local(&[format!("/model {name}")]);
+                    if self.cfg.backend == crate::agent::AgentBackend::Fm {
+                        match self.state.save_model_literal(&name) {
+                            Ok(()) => {
+                                self.cfg.model = name.clone();
+                                self.status = format!(
+                                    "model → {name} · {} · readiness: /doctor",
+                                    if name == "pcc" {
+                                        "OFF-DEVICE Private Cloud Compute (explicit selection)"
+                                    } else {
+                                        "on-device Apple Foundation Models"
+                                    }
+                                );
+                            }
+                            Err(e) => self.status = format!("model unchanged: {e}"),
+                        }
+                    } else {
+                        self.run_local(&[format!("/model {name}")]);
+                    }
                 }
                 Overlay::None
+            }
+            (Overlay::ProviderPicker { idx, choices }, KeyCode::Down) => Overlay::ProviderPicker {
+                idx: next_index(idx, choices.len()),
+                choices,
+            },
+            (Overlay::ProviderPicker { idx, choices }, KeyCode::Up) => Overlay::ProviderPicker {
+                idx: idx.saturating_sub(1),
+                choices,
+            },
+            (Overlay::ProviderPicker { idx, choices }, KeyCode::Enter) => {
+                if let Some(choice) = choices.get(idx) {
+                    match &choice.executable {
+                        Ok(path) => {
+                            let (backend, path) = (choice.backend, path.clone());
+                            self.select_provider(backend, path);
+                            return Overlay::None;
+                        }
+                        Err(error) => {
+                            self.status = format!("{} unavailable: {error}", choice.backend.label())
+                        }
+                    }
+                }
+                Overlay::ProviderPicker { idx, choices }
             }
             (Overlay::ResumePicker { idx }, KeyCode::Down) => Overlay::ResumePicker {
                 idx: next_index(idx, self.history.len()),
@@ -478,6 +572,7 @@ impl App {
                 self.cycle_backend();
                 Overlay::None
             }
+            PaletteAction::ProviderPicker => self.open_provider_picker(),
             PaletteAction::Refresh => {
                 self.refresh_all();
                 Overlay::None
@@ -487,7 +582,15 @@ impl App {
                 Overlay::None
             }
             PaletteAction::OpenPanel(p) => self.open_panel(p),
-            PaletteAction::ModelPicker => Overlay::ModelPicker { idx: 0 },
+            PaletteAction::ModelPicker => {
+                if self.is_running() {
+                    self.status =
+                        "model unchanged: interrupt or finish the active run first".into();
+                    Overlay::None
+                } else {
+                    Overlay::ModelPicker { idx: 0 }
+                }
+            }
             PaletteAction::ResumePicker => {
                 self.history = self.state.history(40);
                 Overlay::ResumePicker { idx: 0 }

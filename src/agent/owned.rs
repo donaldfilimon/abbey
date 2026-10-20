@@ -250,7 +250,15 @@ impl AgentConfig {
     }
 
     pub(crate) fn fm_availability_owned(&self) -> Result<String> {
-        let (_, stdout, stderr) = self.metadata_owned(&["models".into()])?;
+        let (status, mut stdout, mut stderr) = self.metadata_owned(&["models".into()])?;
+        if !status.success() && super::backend::fm_models_unsupported(&stdout, &stderr) {
+            // Keep the same owner and cancellation checks for the compatibility
+            // probe; never retry an incomplete capture or invoke generation.
+            let (_, available_stdout, available_stderr) =
+                self.metadata_owned(&["available".into()])?;
+            stdout = available_stdout;
+            stderr = available_stderr;
+        }
         let models =
             super::backend::parse_fm_models(&super::strip_ansi(&format!("{stdout}\n{stderr}")));
         Ok(format!(

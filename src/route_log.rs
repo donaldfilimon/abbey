@@ -3,8 +3,8 @@
 use anyhow::{Context, Result};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use std::fs::{self, OpenOptions};
-use std::io::Write;
+use std::fs::{self, File, OpenOptions};
+use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -75,10 +75,20 @@ impl RouteRecord {
 /// All records sharing `correlation`, oldest first — the linked view of one
 /// multi-stage run.
 pub fn correlated_routes(state_dir: &Path, correlation: &str) -> Result<Vec<RouteRecord>> {
-    Ok(recent_routes(state_dir, usize::MAX)?
-        .into_iter()
-        .filter(|r| r.correlation.as_deref() == Some(correlation))
-        .collect())
+    let path = route_log_path(state_dir);
+    if !path.is_file() {
+        return Ok(Vec::new());
+    }
+    // Intentionally full-history: the stages of a run need not be near EOF.
+    let mut out = Vec::new();
+    for line in BufReader::new(File::open(path)?).split(b'\n') {
+        if let Ok(record) = serde_json::from_slice::<RouteRecord>(&line?)
+            && record.correlation.as_deref() == Some(correlation)
+        {
+            out.push(record);
+        }
+    }
+    Ok(out)
 }
 
 pub fn route_log_path(state_dir: &Path) -> std::path::PathBuf {
@@ -98,21 +108,100 @@ pub fn append_route_record(state_dir: &Path, rec: &RouteRecord) -> Result<()> {
     Ok(())
 }
 
+const RECENT_READ_BYTES: usize = 8 * 1024;
+const MAX_RECENT_READS: usize = 32;
+const MAX_RECENT_BYTES: usize = RECENT_READ_BYTES * MAX_RECENT_READS;
+const MAX_RECENT_LINES: usize = 2048;
+const MAX_RECENT_RECORD_BYTES: usize = 32 * 1024;
+
+/// Recent valid records, oldest first, within a bounded reverse tail.
+///
+/// Reads at most 256 KiB with 32 reads and examines at most 2,048 line
+/// boundaries. Records over 32 KiB, malformed JSON, and the partial leading
+/// record at the byte boundary are skipped. Consequently this may return fewer
+/// than `n` entries even when older history contains more valid records.
 pub fn recent_routes(state_dir: &Path, n: usize) -> Result<Vec<RouteRecord>> {
+    if n == 0 {
+        return Ok(Vec::new());
+    }
     let path = route_log_path(state_dir);
     if !path.is_file() {
         return Ok(Vec::new());
     }
-    let text = fs::read_to_string(&path)?;
-    let mut out: Vec<RouteRecord> = text
-        .lines()
-        .filter(|l| !l.trim().is_empty())
-        .filter_map(|l| serde_json::from_str(l).ok())
-        .collect();
-    if out.len() > n {
-        out = out.split_off(out.len() - n);
+    read_recent_routes(&mut File::open(path)?, n)
+}
+
+fn read_recent_routes(reader: &mut (impl Read + Seek), n: usize) -> Result<Vec<RouteRecord>> {
+    let mut out = Vec::new();
+    if n == 0 {
+        return Ok(out);
     }
+    // Snapshot EOF so concurrent appends cannot extend this read's budget.
+    let mut position = reader.seek(SeekFrom::End(0))?;
+    let mut block = [0; RECENT_READ_BYTES];
+    let mut line = Vec::new();
+    let mut oversized = false;
+    let mut lines = 0;
+    let mut bytes_left = MAX_RECENT_BYTES;
+    let mut reads = 0;
+    for _ in 0..MAX_RECENT_READS {
+        let size = position.min(bytes_left as u64).min(block.len() as u64) as usize;
+        if size == 0 {
+            break;
+        }
+        position -= size as u64;
+        reader.seek(SeekFrom::Start(position))?;
+        let mut filled = 0;
+        while filled < size {
+            if reads == MAX_RECENT_READS {
+                // Short reads consume the same operation budget. Do not parse
+                // an incomplete block as if it reached the snapshotted EOF.
+                out.reverse();
+                return Ok(out);
+            }
+            reads += 1;
+            let received = reader.read(&mut block[filled..size])?;
+            if received == 0 {
+                return Err(std::io::Error::from(std::io::ErrorKind::UnexpectedEof).into());
+            }
+            filled += received;
+        }
+        bytes_left -= size;
+        for &byte in block[..size].iter().rev() {
+            if byte == b'\n' {
+                parse_reverse_record(&mut line, oversized, &mut out);
+                oversized = false;
+                lines += 1;
+                if out.len() == n || lines == MAX_RECENT_LINES {
+                    out.reverse();
+                    return Ok(out);
+                }
+            } else if !oversized {
+                if line.len() == MAX_RECENT_RECORD_BYTES {
+                    line.clear();
+                    oversized = true;
+                } else {
+                    line.push(byte);
+                }
+            }
+        }
+    }
+    // Only BOF proves that the remaining fragment is an entire record.
+    if position == 0 {
+        parse_reverse_record(&mut line, oversized, &mut out);
+    }
+    out.reverse();
     Ok(out)
+}
+
+fn parse_reverse_record(line: &mut Vec<u8>, oversized: bool, out: &mut Vec<RouteRecord>) {
+    if !oversized && !line.is_empty() {
+        line.reverse();
+        if let Ok(record) = serde_json::from_slice(line) {
+            out.push(record);
+        }
+    }
+    line.clear();
 }
 
 /// Compact one-liner for the TUI Routes pane — narrow columns, no reason text.
@@ -152,6 +241,222 @@ pub fn format_route_line(r: &RouteRecord) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Cursor;
+
+    struct Meter<R> {
+        inner: R,
+        bytes: usize,
+        reads: usize,
+        seeks: usize,
+    }
+
+    impl<R> Meter<R> {
+        fn new(inner: R) -> Self {
+            Self {
+                inner,
+                bytes: 0,
+                reads: 0,
+                seeks: 0,
+            }
+        }
+
+        fn assert_bounded(&self) {
+            assert!(self.bytes <= MAX_RECENT_BYTES);
+            assert!(self.reads <= MAX_RECENT_READS);
+            assert!(self.seeks <= MAX_RECENT_READS + 1);
+        }
+    }
+
+    impl<R: Read> Read for Meter<R> {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            self.reads += 1;
+            let size = self.inner.read(buf)?;
+            self.bytes += size;
+            Ok(size)
+        }
+    }
+
+    impl<R: Seek> Seek for Meter<R> {
+        fn seek(&mut self, from: SeekFrom) -> std::io::Result<u64> {
+            self.seeks += 1;
+            self.inner.seek(from)
+        }
+    }
+
+    fn encoded(reason: &str) -> Vec<u8> {
+        serde_json::to_vec(&RouteRecord::new(".", "abbey", "max", "fable", reason, 0.8)).unwrap()
+    }
+
+    fn reasons(records: &[RouteRecord]) -> Vec<&str> {
+        records
+            .iter()
+            .map(|record| record.reason.as_str())
+            .collect()
+    }
+
+    #[test]
+    fn recent_tail_orders_records_and_handles_final_json() {
+        for ending in [b"\n".as_slice(), b"", b"\n{\"ts\":"] {
+            let mut bytes = Vec::new();
+            for reason in ["old", "middle", "new"] {
+                bytes.extend(encoded(reason));
+                bytes.push(b'\n');
+            }
+            bytes.pop();
+            bytes.extend(ending);
+            let got = read_recent_routes(&mut Cursor::new(bytes), 2).unwrap();
+            assert_eq!(reasons(&got), ["middle", "new"]);
+        }
+        assert!(
+            read_recent_routes(&mut Cursor::new(b""), 8)
+                .unwrap()
+                .is_empty()
+        );
+        let got = read_recent_routes(&mut Cursor::new(encoded("only")), 8).unwrap();
+        assert_eq!(reasons(&got), ["only"]);
+    }
+
+    #[test]
+    fn recent_tail_skips_malformed_and_oversized_records_across_blocks() {
+        let mut bytes = encoded("old");
+        bytes.extend(b"\nnot json\n\xff\xfe\n\n");
+        bytes.extend(encoded(&"x".repeat(MAX_RECENT_RECORD_BYTES)));
+        bytes.push(b'\n');
+        // This valid record spans multiple reverse-read blocks.
+        let long_reason = "y".repeat(RECENT_READ_BYTES + 17);
+        bytes.extend(encoded(&long_reason));
+        bytes.extend(b"\r\n");
+        bytes.extend(encoded("new"));
+        bytes.extend(b"\n{incomplete");
+        let mut reader = Meter::new(Cursor::new(bytes));
+        let got = read_recent_routes(&mut reader, usize::MAX).unwrap();
+        assert_eq!(reasons(&got), ["old", long_reason.as_str(), "new"]);
+        reader.assert_bounded();
+    }
+
+    #[test]
+    fn recent_tail_discards_partial_leading_record_and_stops_at_byte_budget() {
+        let mut bytes = vec![b'x'; MAX_RECENT_BYTES];
+        // The window begins on apparently valid JSON, but the preceding byte
+        // proves it is actually the suffix of a malformed oversized line.
+        let mut tail = encoded("not a whole line");
+        tail.extend(b"\n");
+        tail.extend(encoded("new"));
+        tail.push(b'\n');
+        let padding = MAX_RECENT_BYTES - tail.len();
+        tail.extend(std::iter::repeat_n(b' ', padding));
+        bytes.extend(tail);
+        let mut reader = Meter::new(Cursor::new(bytes));
+        let got = read_recent_routes(&mut reader, usize::MAX).unwrap();
+        assert_eq!(reasons(&got), ["new"]);
+        assert_eq!(reader.bytes, MAX_RECENT_BYTES);
+        assert_eq!(reader.reads, MAX_RECENT_READS);
+        reader.assert_bounded();
+    }
+
+    #[test]
+    fn recent_tail_bounds_scanned_lines_even_when_blank_or_malformed() {
+        for line in [b"\n".as_slice(), b"bad\n"] {
+            let mut bytes = encoded("outside line budget");
+            bytes.push(b'\n');
+            for _ in 0..MAX_RECENT_LINES {
+                bytes.extend(line);
+            }
+            let mut reader = Meter::new(Cursor::new(bytes));
+            assert!(
+                read_recent_routes(&mut reader, usize::MAX)
+                    .unwrap()
+                    .is_empty()
+            );
+            reader.assert_bounded();
+            assert_eq!(reader.reads, 1);
+        }
+    }
+
+    #[test]
+    fn recent_tail_zero_does_not_touch_reader_or_path() {
+        let mut reader = Meter::new(Cursor::new(encoded("unused")));
+        assert!(read_recent_routes(&mut reader, 0).unwrap().is_empty());
+        assert_eq!((reader.bytes, reader.reads, reader.seeks), (0, 0, 0));
+        assert!(
+            recent_routes(Path::new("missing-route-state"), 0)
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn recent_tail_bounds_actual_read_calls_even_with_short_reads() {
+        struct ShortReads(Cursor<Vec<u8>>);
+
+        impl Read for ShortReads {
+            fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+                let size = buf.len().min(1);
+                self.0.read(&mut buf[..size])
+            }
+        }
+
+        impl Seek for ShortReads {
+            fn seek(&mut self, from: SeekFrom) -> std::io::Result<u64> {
+                self.0.seek(from)
+            }
+        }
+
+        let mut reader = Meter::new(ShortReads(Cursor::new(encoded("short reads"))));
+        assert!(read_recent_routes(&mut reader, 8).unwrap().is_empty());
+        assert_eq!(reader.reads, MAX_RECENT_READS);
+        assert_eq!(reader.bytes, MAX_RECENT_READS);
+        reader.assert_bounded();
+    }
+
+    #[test]
+    fn recent_tail_reads_only_one_block_after_large_sparse_prefix() {
+        let dir = std::env::temp_dir().join(format!("abbey-route-sparse-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = route_log_path(&dir);
+        let mut file = File::create(&path).unwrap();
+        file.set_len(1024 * 1024 * 1024).unwrap();
+        file.seek(SeekFrom::End(0)).unwrap();
+        file.write_all(b"\n").unwrap();
+        for i in 0..8 {
+            file.write_all(&encoded(&i.to_string())).unwrap();
+            file.write_all(b"\n").unwrap();
+        }
+        drop(file);
+        let mut reader = Meter::new(File::open(&path).unwrap());
+        let got = read_recent_routes(&mut reader, 8).unwrap();
+        assert_eq!(reasons(&got), ["0", "1", "2", "3", "4", "5", "6", "7"]);
+        assert_eq!(reader.reads, 1);
+        assert_eq!(reader.bytes, RECENT_READ_BYTES);
+        reader.assert_bounded();
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn correlation_lookup_remains_full_history_and_ordered() {
+        let dir = std::env::temp_dir().join(format!("abbey-route-history-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = route_log_path(&dir);
+        fs::write(&path, b"").unwrap();
+        let first = RouteRecord::new(".", "abbey", "max", "fable", "first", 0.8)
+            .in_stage("linked", "interpret");
+        append_route_record(&dir, &first).unwrap();
+        let mut file = OpenOptions::new().append(true).open(&path).unwrap();
+        for _ in 0..MAX_RECENT_BYTES / 4 + 1 {
+            file.write_all(b"bad\n").unwrap();
+        }
+        drop(file);
+        let last = RouteRecord::new(".", "abbey", "max", "fable", "last", 0.8)
+            .in_stage("linked", "implement");
+        append_route_record(&dir, &last).unwrap();
+        assert_eq!(reasons(&recent_routes(&dir, usize::MAX).unwrap()), ["last"]);
+        assert_eq!(
+            reasons(&correlated_routes(&dir, "linked").unwrap()),
+            ["first", "last"]
+        );
+        assert!(correlated_routes(&dir, "other").unwrap().is_empty());
+        fs::remove_dir_all(dir).unwrap();
+    }
 
     #[test]
     fn append_and_read() {

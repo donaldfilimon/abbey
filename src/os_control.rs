@@ -5,7 +5,7 @@
 //!
 //! Allowlists are real executables only (no shell builtins like Windows `cd`/`dir`).
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use std::process::Command;
 
 /// Portable commands that exist as real binaries on both Unix and Windows.
@@ -13,7 +13,7 @@ const ALLOWED_COMMON: &[&str] = &["whoami", "hostname"];
 
 #[cfg(unix)]
 const ALLOWED_UNIX: &[&str] = &[
-    "echo", "date", "uname", "pwd", "ls", "true", "false", "env", "id", "uptime",
+    "echo", "date", "uname", "pwd", "ls", "true", "false", "id", "uptime",
 ];
 
 /// Windows System32 tools only — not cmd.exe builtins (`cd`, `dir`, `echo`, `ver`).
@@ -40,21 +40,28 @@ pub fn allowed_names() -> Vec<&'static str> {
 /// username. The command that executed would then differ from the one the
 /// policy recorded — exactly the mismatch this surface exists to prevent.
 pub fn is_allowed(cmd: &str) -> bool {
-    let base = std::path::Path::new(cmd)
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or(cmd);
+    // Approve names, never caller-selected paths (including Windows separators
+    // on Unix). A matching basename is not evidence of a trusted executable.
+    if cmd.contains(['/', '\\', ':']) {
+        return false;
+    }
+    let base = cmd;
     let base = if cfg!(windows) {
         base.to_ascii_lowercase()
     } else {
         base.to_string()
     };
-    let base = base.trim_end_matches(".exe");
+    let base = if cfg!(windows) {
+        base.strip_suffix(".exe").unwrap_or(&base)
+    } else {
+        &base
+    };
     allowed_names().contains(&base)
 }
 
-/// Prefer `abi agent os …` when abi is on PATH (shared policy); else local whitelist.
-pub fn run_os(args: &[String], prefer_abi: bool) -> Result<i32> {
+/// Enforce Abbey's policy locally, independently of installed peer policies.
+/// The preference argument is retained for caller compatibility, not delegation.
+pub fn run_os(args: &[String], _prefer_abi: bool) -> Result<i32> {
     if args.is_empty()
         || matches!(
             args.first().map(String::as_str),
@@ -66,20 +73,48 @@ pub fn run_os(args: &[String], prefer_abi: bool) -> Result<i32> {
             Some("help" | "-h" | "--help")
         ));
     }
-    if prefer_abi
-        && !matches!(
-            args.first().map(String::as_str),
-            Some("allowlist" | "policy" | "list" | "unrestricted" | "refuse" | "yolo")
-        )
-        && let Some(abi) = crate::agent::which_bin("abi")
-    {
-        let mut cmd = Command::new(abi);
-        cmd.arg("agent").arg("os");
-        cmd.args(args);
-        let st = cmd.status()?;
-        return Ok(st.code().unwrap_or(1));
-    }
     local_os(args)
+}
+
+/// Ignore PATH: an allowlisted name must resolve in an OS-owned binary directory.
+fn trusted_binary(cmd: &str) -> Result<std::path::PathBuf> {
+    if !is_allowed(cmd) {
+        bail!("denied: `{cmd}` is not on the OS-control allowlist");
+    }
+    #[cfg(unix)]
+    let candidates = ["/usr/bin", "/bin"].map(|dir| std::path::Path::new(dir).join(cmd));
+    #[cfg(windows)]
+    let candidates = {
+        let name = cmd.to_ascii_lowercase();
+        let name = name.strip_suffix(".exe").unwrap_or(&name);
+        [windows_system_directory()?.join(format!("{name}.exe"))]
+    };
+    #[cfg(not(any(unix, windows)))]
+    let candidates: [std::path::PathBuf; 0] = [];
+    candidates
+        .into_iter()
+        .find(|p| crate::host::is_executable(p))
+        .with_context(|| format!("trusted system executable `{cmd}` is unavailable"))
+}
+
+/// Ask Windows directly; neither PATH nor the mutable SystemRoot environment
+/// variable may redirect this execution authority.
+#[cfg(windows)]
+#[allow(unsafe_code)]
+fn windows_system_directory() -> Result<std::path::PathBuf> {
+    use std::os::windows::ffi::OsStringExt;
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GetSystemDirectoryW(buffer: *mut u16, size: u32) -> u32;
+    }
+    let mut buffer = vec![0u16; 32768];
+    // SAFETY: buffer is writable for the supplied number of UTF-16 code units;
+    // the Windows API retains no pointer. Check failure/truncation before use.
+    let size = unsafe { GetSystemDirectoryW(buffer.as_mut_ptr(), buffer.len() as u32) };
+    if size == 0 || size as usize >= buffer.len() {
+        bail!("trusted Windows system directory is unavailable");
+    }
+    Ok(std::ffi::OsString::from_wide(&buffer[..size as usize]).into())
 }
 
 /// Print the allowlist + safety rules (also `abbey allowlist`).
@@ -101,7 +136,7 @@ pub fn print_policy(verbose_help: bool) -> Result<i32> {
     println!("  allowlist|policy|list          this panel");
     println!("  refuse                         OOS: unrestricted shell");
     println!();
-    println!("backend: local whitelist (abi agent os when abi on PATH + prefer_abi)");
+    println!("backend: local whitelist (system binary directories only; PATH ignored)");
     println!("rule:    execute always needs --confirm; real executables only (no shell strings)");
     println!("refuse:  abbey shell refuse · abbey claims refuse shell · abbey os refuse");
     if verbose_help {
@@ -154,8 +189,7 @@ fn local_os(args: &[String]) -> Result<i32> {
             if !is_allowed(cmd) {
                 bail!("denied: `{cmd}` is not on the OS-control allowlist");
             }
-            // Resolve via PATH so Windows finds whoami.exe without an absolute path.
-            let bin = crate::agent::which_bin(cmd).unwrap_or_else(|| std::path::PathBuf::from(cmd));
+            let bin = trusted_binary(cmd)?;
             let out = Command::new(&bin).args(&rest[1..]).output()?;
             let stdout = String::from_utf8_lossy(&out.stdout);
             let stderr = String::from_utf8_lossy(&out.stderr);
@@ -178,6 +212,40 @@ mod tests {
         assert!(is_allowed("whoami"));
         assert!(!is_allowed("rm"));
         assert!(!is_allowed("curl"));
+    }
+
+    #[test]
+    fn paths_and_launchers_are_denied_even_with_peer_preference() {
+        for cmd in [
+            "env",
+            "/somewhere/whoami",
+            "./whoami",
+            "C:\\tools\\whoami.exe",
+            "whoami.exe.exe",
+        ] {
+            assert!(!is_allowed(cmd), "{cmd}");
+            for prefer_abi in [false, true] {
+                assert!(
+                    run_os(
+                        &["execute".into(), "--confirm".into(), cmd.into()],
+                        prefer_abi
+                    )
+                    .is_err()
+                );
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn trusted_resolution_ignores_path_and_unix_exe_suffix() {
+        assert!(!is_allowed("whoami.exe"));
+        let path = trusted_binary("whoami").unwrap();
+        assert!(
+            ["/usr/bin", "/bin"]
+                .iter()
+                .any(|dir| path.parent() == Some(std::path::Path::new(dir)))
+        );
     }
 
     #[cfg(windows)]

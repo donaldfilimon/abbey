@@ -2,10 +2,13 @@
 
 use super::predict::{self, Prediction};
 use std::path::Path;
-use std::process::Command;
+use std::time::{Duration, Instant};
 
 const MAX_FILES: usize = 20_000;
 const MAX_ITEMS: usize = 8;
+const MAX_INDEX_BYTES: usize = 2 * 1024 * 1024;
+const MAX_SCANNED_ENTRIES: usize = MAX_FILES * 2;
+const INDEX_TIMEOUT: Duration = Duration::from_millis(500);
 const SKIP_DIRS: &[&str] = &[
     ".git",
     "target",
@@ -27,43 +30,94 @@ impl FileIndex {
     }
 
     pub(crate) fn load(root: &Path) -> Self {
-        let git = Command::new("git")
-            .arg("-C")
-            .arg(root)
-            .args(["ls-files", "-co", "--exclude-standard"])
-            .output();
-        if let Ok(out) = git
-            && out.status.success()
-        {
-            let paths = String::from_utf8_lossy(&out.stdout)
-                .lines()
-                .take(MAX_FILES)
-                .map(str::to_string)
-                .collect();
+        if let Some(paths) = git_paths(root) {
             return Self { paths };
         }
         let mut paths = Vec::new();
         let mut stack = vec![(root.to_path_buf(), 0usize)];
+        let started = Instant::now();
+        let mut scanned = 0;
+        let mut retained_bytes = 0;
         while let Some((dir, depth)) = stack.pop() {
             let Ok(rd) = std::fs::read_dir(&dir) else {
                 continue;
             };
             for entry in rd.flatten() {
-                if paths.len() >= MAX_FILES {
+                scanned += 1;
+                if paths.len() >= MAX_FILES
+                    || scanned >= MAX_SCANNED_ENTRIES
+                    || started.elapsed() >= INDEX_TIMEOUT
+                {
                     return Self { paths };
                 }
                 let p = entry.path();
                 let name = entry.file_name().to_string_lossy().into_owned();
-                if p.is_dir() {
+                let Ok(kind) = entry.file_type() else {
+                    continue;
+                };
+                // Do not walk symlinked directories or follow cycles/out-of-root
+                // trees. Git's listing handles tracked links without traversal.
+                if kind.is_dir() {
                     if depth < 6 && !SKIP_DIRS.contains(&name.as_str()) {
                         stack.push((p, depth + 1));
                     }
-                } else if let Ok(rel) = p.strip_prefix(root) {
-                    paths.push(rel.to_string_lossy().into_owned());
+                } else if let Ok(rel) = p.strip_prefix(root)
+                    && let Some(path) = rel.to_str().filter(|s| safe_index_path(s))
+                {
+                    if path.len() > MAX_INDEX_BYTES.saturating_sub(retained_bytes) {
+                        return Self { paths };
+                    }
+                    retained_bytes += path.len();
+                    paths.push(path.to_string());
                 }
             }
         }
         Self { paths }
+    }
+}
+
+fn safe_index_path(path: &str) -> bool {
+    !path.is_empty() && !path.chars().any(char::is_control)
+}
+
+fn decode_git_paths(bytes: &[u8]) -> Vec<String> {
+    bytes
+        .split(|byte| *byte == 0)
+        .filter_map(|path| std::str::from_utf8(path).ok())
+        .filter(|path| safe_index_path(path))
+        .take(MAX_FILES)
+        .map(str::to_owned)
+        .collect()
+}
+
+fn git_paths(root: &Path) -> Option<Vec<String>> {
+    let git = crate::host::which_bin("git")?;
+    git_paths_with(root, git, INDEX_TIMEOUT)
+}
+
+fn git_paths_with(root: &Path, git: std::path::PathBuf, timeout: Duration) -> Option<Vec<String>> {
+    use crate::runtime::supervisor::{
+        ProcessSpec, SupervisorLimits, SupervisorOutcome, run_with_checkpoint,
+    };
+    let mut spec = ProcessSpec::inherited(
+        git,
+        ["ls-files", "-z", "-co", "--exclude-standard"]
+            .map(Into::into)
+            .to_vec(),
+    );
+    spec.current_dir = Some(root.to_path_buf());
+    let limits = SupervisorLimits {
+        timeout,
+        terminate_grace: Duration::from_millis(100),
+        stdout_bytes: MAX_INDEX_BYTES,
+        stderr_bytes: 4096,
+        poll_interval: Duration::from_millis(5),
+    };
+    match run_with_checkpoint(&spec, &limits, || false).ok()? {
+        SupervisorOutcome::Exited { status, stdout, .. } if status.success() => {
+            Some(decode_git_paths(&stdout))
+        }
+        _ => None,
     }
 }
 
@@ -170,6 +224,63 @@ pub(crate) fn accept(text: &str, cursor: usize, c: &Completion, idx: usize) -> (
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn git_paths_use_nul_boundaries_not_git_quoted_line_output() {
+        assert_eq!(
+            decode_git_paths(b"src/\xe6\x97\xa5\xe6\x9c\xac.rs\0a\"quote.rs\0with spaces.rs\0tab\tname\0line\nname\0\xff\0"),
+            ["src/日本.rs", "a\"quote.rs", "with spaces.rs"]
+        );
+        let bytes = b"a\0".repeat(MAX_FILES + 1);
+        assert_eq!(decode_git_paths(&bytes).len(), MAX_FILES);
+    }
+
+    #[cfg(unix)]
+    struct Scratch(std::path::PathBuf);
+
+    #[cfg(unix)]
+    impl Scratch {
+        fn new() -> Self {
+            let path = std::env::temp_dir().join(format!("abbey-file-index-{}", uuid::Uuid::new_v4()));
+            std::fs::create_dir(&path).unwrap();
+            Self(path)
+        }
+
+        fn script(&self, body: &str) -> std::path::PathBuf {
+            use std::os::unix::fs::PermissionsExt;
+            let path = self.0.join("fixture-git");
+            std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
+            path
+        }
+    }
+
+    #[cfg(unix)]
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn git_index_uses_nul_protocol_and_reaps_slow_and_noisy_processes() {
+        let scratch = Scratch::new();
+        let git = scratch.script("test \"$1\" = ls-files && test \"$2\" = -z || exit 2\nprintf 'src/a.rs\\000src/b.rs\\000'");
+        assert_eq!(
+            git_paths_with(&scratch.0, git, Duration::from_secs(1)).unwrap(),
+            ["src/a.rs", "src/b.rs"]
+        );
+        for script in [
+            "/bin/sleep 30",
+            "/usr/bin/head -c 2097153 /dev/zero",
+        ] {
+            let git = scratch.script(script);
+            let start = Instant::now();
+            assert!(git_paths_with(&scratch.0, git, Duration::from_millis(100)).is_none());
+            assert!(start.elapsed() < Duration::from_secs(3));
+        }
+    }
 
     fn idx() -> FileIndex {
         FileIndex::from_paths(vec![

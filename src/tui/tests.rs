@@ -683,3 +683,6 @@ mod prediction_producer;
 
 #[path = "tests/completion_mutations.rs"]
 mod completion_mutations;
+
+#[path = "tests/providers.rs"]
+mod providers;

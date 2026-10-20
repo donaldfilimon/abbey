@@ -3,7 +3,8 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::PathBuf;
+use std::io::{ErrorKind, Write};
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AbbeyConfig {
@@ -195,15 +196,7 @@ impl AbbeyConfig {
     /// Returns the path either way; the caller reports whether it was created.
     /// Never overwrites — a config file is user-authored state.
     pub fn ensure_default_file(&self) -> Result<PathBuf> {
-        let path = Self::config_path();
-        if path.is_file() {
-            return Ok(path);
-        }
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        fs::write(&path, default_toml_text())?;
-        Ok(path)
+        ensure_default_file_at(&Self::config_path())
     }
 
     pub fn status_lines(&self) -> Vec<String> {
@@ -230,6 +223,29 @@ impl AbbeyConfig {
             ),
         ]
     }
+}
+
+fn ensure_default_file_at(path: &Path) -> Result<PathBuf> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    // Exclusive creation also refuses dangling symlinks; checking is_file first
+    // would both follow links and race another initializer or user edit.
+    match fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+    {
+        Ok(mut file) => file.write_all(default_toml_text().as_bytes())?,
+        Err(error) if error.kind() == ErrorKind::AlreadyExists => {
+            let existing = fs::symlink_metadata(path)?;
+            if !existing.is_file() && !existing.file_type().is_symlink() {
+                return Err(error.into());
+            }
+        }
+        Err(error) => return Err(error.into()),
+    }
+    Ok(path.to_path_buf())
 }
 
 fn default_toml_text() -> &'static str {
@@ -275,8 +291,8 @@ fn parse_toml_lite(text: &str) -> Result<AbbeyConfig> {
         Unknown,
     }
     let mut section = Section::Root;
-    for line in text.lines() {
-        let line = line.split('#').next().unwrap_or("").trim();
+    for (index, line) in text.lines().enumerate() {
+        let line = without_toml_comment(line).trim();
         if line.is_empty() {
             continue;
         }
@@ -296,7 +312,27 @@ fn parse_toml_lite(text: &str) -> Result<AbbeyConfig> {
             continue;
         };
         let k = k.trim();
-        let v = strip_toml_str(v.trim());
+        // Unknown keys/tables remain forward-compatible, including values
+        // outside this deliberately small parser's supported syntax.
+        let known = match section {
+            Section::Root => matches!(
+                k,
+                "persona_policy" | "default_role" | "memory_backend" | "abi_bin" | "backend"
+            ),
+            Section::Roles => matches!(k, "max" | "gemma"),
+            Section::Embeddings => {
+                matches!(
+                    k,
+                    "provider" | "endpoint" | "model" | "dimension" | "language"
+                )
+            }
+            Section::Unknown => false,
+        };
+        if !known {
+            continue;
+        }
+        let v = strip_toml_str(v.trim())
+            .with_context(|| format!("config line {}, key {k:?}", index + 1))?;
         match section {
             Section::Roles => match k {
                 "max" => cfg.roles.max = v,
@@ -329,20 +365,88 @@ fn parse_toml_lite(text: &str) -> Result<AbbeyConfig> {
     Ok(cfg)
 }
 
-fn strip_toml_str(s: &str) -> String {
-    let s = s.trim().trim_end_matches(',');
-    if let Some(inner) = s.strip_prefix('"').and_then(|x| x.strip_suffix('"')) {
-        return inner.to_string();
+/// A hash starts a comment only outside single-line basic/literal strings.
+fn without_toml_comment(line: &str) -> &str {
+    let mut quote = None;
+    let mut escaped = false;
+    for (index, ch) in line.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match (quote, ch) {
+            (Some('"'), '\\') => escaped = true,
+            (Some(delimiter), ch) if delimiter == ch => quote = None,
+            (None, '"' | '\'') => quote = Some(ch),
+            (None, '#') => return &line[..index],
+            _ => {}
+        }
     }
-    if let Some(inner) = s.strip_prefix('\'').and_then(|x| x.strip_suffix('\'')) {
-        return inner.to_string();
+    line
+}
+
+/// Decode single-line TOML strings; retain legacy unquoted simple scalars.
+fn strip_toml_str(s: &str) -> Result<String> {
+    let Some(quote @ ('"' | '\'')) = s.chars().next() else {
+        anyhow::ensure!(
+            !s.contains(['"', '\'']),
+            "malformed value: quote the entire string"
+        );
+        return Ok(s.trim_end_matches(',').to_string());
+    };
+    anyhow::ensure!(
+        !s.starts_with("\"\"\"") && !s.starts_with("'''"),
+        "multiline strings are unsupported; use a single-line quoted string"
+    );
+    let mut chars = s[1..].chars();
+    let mut decoded = String::new();
+    while let Some(ch) = chars.next() {
+        if ch == quote {
+            anyhow::ensure!(
+                chars.as_str().trim().is_empty(),
+                "unexpected text after closing quote; only a comment may follow"
+            );
+            return Ok(decoded);
+        }
+        anyhow::ensure!(
+            ch == '\t' || !ch.is_control(),
+            "control characters must use basic-string escapes"
+        );
+        if quote == '\'' || ch != '\\' {
+            decoded.push(ch);
+            continue;
+        }
+        let escape = chars.next().context("unfinished basic-string escape")?;
+        decoded.push(match escape {
+            'b' => '\u{0008}',
+            't' => '\t',
+            'n' => '\n',
+            'f' => '\u{000c}',
+            'r' => '\r',
+            '"' => '"',
+            '\\' => '\\',
+            'u' | 'U' => {
+                let mut value = 0;
+                for _ in 0..if escape == 'u' { 4 } else { 8 } {
+                    let digit = chars
+                        .next()
+                        .and_then(|c| c.to_digit(16))
+                        .context("Unicode escape requires exactly 4 (\\u) or 8 (\\U) hex digits")?;
+                    value = (value << 4) | digit;
+                }
+                char::from_u32(value).context("Unicode escape must name a Unicode scalar value")?
+            }
+            _ => anyhow::bail!(
+                "unsupported basic-string escape \\{escape}; use TOML escapes or a literal single-quoted string for paths"
+            ),
+        });
     }
-    s.to_string()
+    anyhow::bail!("unterminated string; add the matching closing {quote} quote")
 }
 
 pub fn resolve_abi_bin(cfg: &AbbeyConfig) -> Option<PathBuf> {
     if let Some(p) = &cfg.abi_bin
-        && p.is_file()
+        && crate::host::is_executable(p)
     {
         return Some(p.clone());
     }
@@ -360,6 +464,183 @@ pub fn wdbx_cli_status(cfg: &AbbeyConfig) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct Scratch(PathBuf);
+
+    impl Scratch {
+        fn new() -> Self {
+            static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+            let path = std::env::temp_dir().join(format!(
+                "abbey-config-{}-{}-{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos(),
+                NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            ));
+            fs::create_dir(&path).unwrap();
+            Self(path)
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn default_file_preserves_existing_content() {
+        let dir = Scratch::new();
+        let path = dir.0.join("config.toml");
+        let content = "# user-authored config\npersona_policy = \"manual\"\n";
+        fs::write(&path, content).unwrap();
+
+        assert_eq!(ensure_default_file_at(&path).unwrap(), path);
+        assert_eq!(fs::read_to_string(&path).unwrap(), content);
+    }
+
+    #[test]
+    fn default_file_rejects_directory_without_changing_its_contents() {
+        let dir = Scratch::new();
+        let path = dir.0.join("config.toml");
+        fs::create_dir(&path).unwrap();
+        fs::write(path.join("keep"), "existing content").unwrap();
+        assert!(ensure_default_file_at(&path).is_err());
+        assert_eq!(
+            fs::read_to_string(path.join("keep")).unwrap(),
+            "existing content"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn default_file_rejects_socket_without_removing_it() {
+        let dir = Scratch::new();
+        let path = dir.0.join("config.toml");
+        let _listener = std::os::unix::net::UnixListener::bind(&path).unwrap();
+        assert!(ensure_default_file_at(&path).is_err());
+        use std::os::unix::fs::FileTypeExt;
+        assert!(fs::symlink_metadata(&path).unwrap().file_type().is_socket());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn default_file_preserves_dangling_symlink() {
+        let dir = Scratch::new();
+        let path = dir.0.join("config.toml");
+        let target = dir.0.join("missing.toml");
+        std::os::unix::fs::symlink(&target, &path).unwrap();
+
+        assert_eq!(ensure_default_file_at(&path).unwrap(), path);
+        assert_eq!(fs::read_link(&path).unwrap(), target);
+        assert!(!target.exists());
+    }
+
+    #[test]
+    fn default_file_concurrent_initialization() {
+        let dir = Scratch::new();
+        let path = dir.0.join("nested/config.toml");
+        let barrier = std::sync::Barrier::new(8);
+        std::thread::scope(|scope| {
+            let handles: Vec<_> = (0..8)
+                .map(|_| {
+                    scope.spawn(|| {
+                        barrier.wait();
+                        assert_eq!(ensure_default_file_at(&path).unwrap(), path);
+                    })
+                })
+                .collect();
+            for handle in handles {
+                handle.join().unwrap();
+            }
+        });
+        assert_eq!(fs::read_to_string(&path).unwrap(), default_toml_text());
+    }
+
+    #[test]
+    fn quoted_hashes_and_comments_in_every_section() {
+        let cfg = parse_toml_lite(
+            r##"abi_bin = "/opt/abi#build/bin" # path comment
+backend = ollama # legacy scalar
+[roles] # table comment
+max = "model\"#one" # escaped quote does not end the string
+gemma = 'model#two' # literal hash
+[embeddings]
+endpoint = "https://example.test/#fragment" # URL comment
+dimension = 512 # integer comment
+"##,
+        )
+        .unwrap();
+        assert_eq!(cfg.abi_bin.unwrap(), PathBuf::from("/opt/abi#build/bin"));
+        assert_eq!(cfg.backend.as_deref(), Some("ollama"));
+        assert_eq!(cfg.roles.max, "model\"#one");
+        assert_eq!(cfg.roles.gemma, "model#two");
+        assert_eq!(cfg.embeddings.endpoint, "https://example.test/#fragment");
+        assert_eq!(cfg.embeddings.dimension, 512);
+    }
+
+    #[test]
+    fn literal_and_basic_windows_paths() {
+        for text in [
+            r#"abi_bin = 'C:\tools\#build\abi.exe' # literal path"#,
+            r#"abi_bin = "C:\\tools\\#build\\abi.exe" # basic path"#,
+        ] {
+            let cfg = parse_toml_lite(text).unwrap();
+            assert_eq!(
+                cfg.abi_bin.unwrap(),
+                PathBuf::from(r"C:\tools\#build\abi.exe")
+            );
+        }
+        let cfg = parse_toml_lite(r#"abi_bin = "C:\\tools\\" # closing quote after escaped slash"#)
+            .unwrap();
+        assert_eq!(cfg.abi_bin.unwrap(), PathBuf::from("C:\\tools\\"));
+    }
+
+    #[test]
+    fn basic_string_escape_decoding() {
+        assert_eq!(
+            strip_toml_str(r#""\b\t\n\f\r\"\\\u0023\u00E9\U0001F600""#).unwrap(),
+            "\u{8}\t\n\u{c}\r\"\\#é😀"
+        );
+        assert_eq!(strip_toml_str("'literal\\n\"#'").unwrap(), "literal\\n\"#");
+    }
+
+    #[test]
+    fn malformed_strings_report_key_and_line() {
+        for value in [
+            r#""bad\q""#,
+            r#""bad\#""#,
+            r#""bad\x41""#,
+            r#""bad\u12""#,
+            r#""bad\uZZZZ""#,
+            r#""bad\uD800""#,
+            r#""bad\U00110000""#,
+            "\"unfinished\\",
+            "\"unfinished",
+            "'unfinished",
+            "\"closed\" trailing",
+            "'closed' trailing",
+            "\"\"\"multiline\"\"\"",
+            "'''multiline'''",
+            "unquoted\"",
+        ] {
+            let error = parse_toml_lite(&format!("# heading\nabi_bin = {value}")).unwrap_err();
+            let message = format!("{error:#}");
+            assert!(message.contains("line 2, key \"abi_bin\""), "{message}");
+        }
+    }
+
+    #[test]
+    fn unknown_values_remain_ignored() {
+        let cfg = parse_toml_lite(
+            "future = \"unsupported\\q\"\n[future]\nbackend = '''ignored'''\n[roles]\nmax = custom",
+        )
+        .unwrap();
+        assert_eq!(cfg.backend, None);
+        assert_eq!(cfg.roles.max, "custom");
+    }
 
     #[test]
     fn parse_default_shape() {

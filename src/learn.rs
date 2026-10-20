@@ -5,6 +5,7 @@ use crate::memory::{self, MemoryFilter, MemoryRecord, MemoryStore};
 use crate::route_log;
 use crate::state::AbbeyState;
 use anyhow::{Result, bail};
+use sha2::{Digest, Sha256};
 use std::path::Path;
 
 fn configured_backend() -> String {
@@ -57,35 +58,67 @@ fn route_activity_payload(r: &route_log::RouteRecord) -> String {
 pub fn learn_from_routes(state: &AbbeyState, n: usize) -> Result<usize> {
     let mem = open_mem(state)?;
     let routes = route_log::recent_routes(&state.state_dir, n)?;
-    // Idempotent promotion: provenance `route.jsonl @ <ts>` is stable per route,
-    // so re-consuming the same route tail must not re-store identical events.
-    let already: std::collections::HashSet<String> = mem
-        .filter_with(
-            &MemoryFilter {
-                source_type: Some("route".into()),
-                ..MemoryFilter::default()
-            },
-            10_000,
-        )?
-        .into_iter()
-        .map(|rec| rec.provenance)
-        .collect();
+    store_route_activity(mem.as_ref(), &routes)
+}
+
+fn route_provenance(r: &route_log::RouteRecord) -> Result<String> {
+    let mut hash = Sha256::new();
+    hash.update(b"abbey.learn.route.v1\0");
+    hash.update(serde_json::to_vec(r)?);
+    Ok(format!(
+        "route.jsonl @ {} sha256:{:x}",
+        r.ts,
+        hash.finalize()
+    ))
+}
+
+fn store_route_activity(mem: &dyn MemoryStore, routes: &[route_log::RouteRecord]) -> Result<usize> {
+    let existing = mem.filter_with(
+        &MemoryFilter {
+            source_type: Some("route".into()),
+            ..MemoryFilter::default()
+        },
+        10_000,
+    )?;
+    let mut already: std::collections::HashSet<String> =
+        existing.iter().map(|rec| rec.provenance.clone()).collect();
+    // Legacy rows have only timestamp provenance and a lossy route projection.
+    // Match the stored evidence, never the timestamp alone; each legacy row
+    // accounts for at most one distinct identity in this tail. Routes carrying
+    // tools/stage/correlation cannot be identified by that old projection: keep
+    // them rather than silently suppressing evidence the legacy row never held.
+    // Preserve legacy rows as-is.
+    let mut legacy = existing;
     let mut stored = 0;
     for r in routes {
-        let provenance = format!("route.jsonl @ {}", r.ts);
+        let provenance = route_provenance(r)?;
         if already.contains(&provenance) {
             continue;
         }
-        let mut rec = MemoryRecord::new_stm(
-            format!("route {}/{} → {}", r.persona, r.role, r.model),
-            route_activity_payload(&r),
-        );
+        let summary = format!("route {}/{} → {}", r.persona, r.role, r.model);
+        let payload = route_activity_payload(r);
+        let legacy_provenance = format!("route.jsonl @ {}", r.ts);
+        if let Some(index) = legacy.iter().position(|rec| {
+            r.tools.is_empty()
+                && r.correlation.is_none()
+                && r.stage.is_none()
+                && rec.provenance == legacy_provenance
+                && rec.summary == summary
+                && rec.payload == payload
+                && rec.confidence == r.confidence
+        }) {
+            legacy.swap_remove(index);
+            already.insert(provenance);
+            continue;
+        }
+        let mut rec = MemoryRecord::new_stm(summary, payload);
         rec.source_type = "route".into();
         rec.retention = "activity".into();
         rec.tags = vec!["activity".into(), "self-learn".into(), r.role.clone()];
         rec.confidence = r.confidence;
-        rec.provenance = provenance;
+        rec.provenance = provenance.clone();
         mem.store(rec)?;
+        already.insert(provenance);
         stored += 1;
     }
     Ok(stored)
@@ -94,12 +127,16 @@ pub fn learn_from_routes(state: &AbbeyState, n: usize) -> Result<usize> {
 /// Reflect + auto-promote duplicate-free high-confidence activity → ltm.
 pub fn learn_digest(state: &AbbeyState) -> Result<String> {
     let mem = open_mem(state)?;
+    digest_memory(mem.as_ref())
+}
+
+fn digest_memory(mem: &dyn MemoryStore) -> Result<String> {
     let report = mem.reflect()?;
     let activity = mem.filter(Some("activity"), Some("self-learn"), 100)?;
     let mut promoted = 0;
     for r in activity {
         if r.confidence >= 0.8 && !report.low_confidence.contains(&r.id) {
-            let _ = mem.promote(&r.id, "ltm");
+            mem.promote(&r.id, "ltm")?;
             promoted += 1;
         }
     }
@@ -592,6 +629,10 @@ pub fn preference_context(state_dir: &Path, limit: usize) -> String {
     }
     out
 }
+
+#[cfg(test)]
+#[path = "learn_tests.rs"]
+mod reliability_tests;
 
 #[cfg(test)]
 // `std::env::set_var` is unsafe in edition 2024 (it races other threads), and

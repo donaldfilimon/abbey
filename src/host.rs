@@ -19,8 +19,12 @@ pub fn max_prompt_argv_bytes() -> usize {
 pub fn which_bin(bin: &str) -> Option<PathBuf> {
     let path = std::env::var_os("PATH")?;
     let names = candidate_bin_names(bin);
-    for dir in std::env::split_paths(&path) {
-        for name in &names {
+    find_executable(std::env::split_paths(&path), &names)
+}
+
+fn find_executable(dirs: impl IntoIterator<Item = PathBuf>, names: &[String]) -> Option<PathBuf> {
+    for dir in dirs {
+        for name in names {
             let p = dir.join(name);
             if is_executable(&p) {
                 return Some(p);
@@ -60,10 +64,20 @@ fn candidate_bin_names(bin: &str) -> Vec<String> {
     names
 }
 
-fn is_executable(path: &Path) -> bool {
-    // Match historical Abbey behavior: presence on PATH as a regular file.
-    // (Avoid false negatives for odd install layouts without the exec bit.)
-    path.is_file()
+pub(crate) fn is_executable(path: &Path) -> bool {
+    let Ok(metadata) = path.metadata() else {
+        return false;
+    };
+    if !metadata.is_file() {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        metadata.permissions().mode() & 0o111 != 0
+    }
+    #[cfg(not(unix))]
+    true
 }
 
 /// Hermetic-test hook: candidate probing deliberately reaches outside HOME
@@ -227,6 +241,34 @@ pub fn path_report_lines(state_dir: &Path, config_path: &Path) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn discovery_skips_non_executables_and_accepts_executable_symlinks() {
+        use std::os::unix::fs::{PermissionsExt, symlink};
+        let dir = std::env::temp_dir().join(format!("abbey-discovery-{}", uuid::Uuid::new_v4()));
+        let first = dir.join("first");
+        let second = dir.join("second");
+        std::fs::create_dir_all(&first).unwrap();
+        std::fs::create_dir_all(&second).unwrap();
+        let stale = first.join("tool");
+        let runnable = second.join("tool");
+        std::fs::write(&stale, "stale").unwrap();
+        std::fs::set_permissions(&stale, std::fs::Permissions::from_mode(0o644)).unwrap();
+        std::fs::write(&runnable, "#!/bin/sh\n").unwrap();
+        std::fs::set_permissions(&runnable, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(!is_executable(&stale));
+        assert!(!is_executable(&first));
+        assert!(!is_executable(&dir.join("missing")));
+        assert_eq!(
+            find_executable([first, second], &["tool".into()]),
+            Some(runnable.clone())
+        );
+        let link = dir.join("link");
+        symlink(&runnable, &link).unwrap();
+        assert!(is_executable(&link));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 
     #[test]
     fn argv_budget_at_least_16k() {

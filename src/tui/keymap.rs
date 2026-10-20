@@ -97,7 +97,8 @@ impl App {
                 };
             }
             (KeyCode::Char('t'), true) => self.cycle_theme(),
-            (KeyCode::Char('b'), true) if !self.is_running() => self.cycle_backend(),
+            (KeyCode::Char('b'), true) => self.cycle_backend(),
+            (KeyCode::Char('s'), true) => self.overlay = self.open_provider_picker(),
             (KeyCode::Char('o'), true) => self.transcript.toggle_last_expandable(),
             (KeyCode::Char('r'), true) => {
                 self.overlay = Overlay::Search {

@@ -258,10 +258,7 @@ fn edition_never_widens_the_capability_set() {
 /// advertises dry-run by default and `--confirm` for execution, and still
 /// points at the unrestricted-shell refusal.
 ///
-/// (`abbey os execute` itself is not driven here: with `abi` on PATH that verb
-/// delegates to `abi agent os`, so the deterministic proof of the gate is the
-/// in-crate `os_control::tests::execute_without_confirm_is_denied`, which this
-/// suite's own feature build also runs.)
+/// Abbey enforces this locally even when an ABI peer is installed.
 #[test]
 fn os_control_policy_is_identical_in_this_edition() {
     let s = Scratch::new("policy");
@@ -270,6 +267,51 @@ fn os_control_policy_is_identical_in_this_edition() {
     assert!(out.contains("execute always needs --confirm"), "{out}");
     assert!(out.contains("not an unrestricted shell"), "{out}");
     assert!(out.contains("whoami"), "{out}");
+}
+
+#[test]
+fn os_control_rejects_launchers_paths_and_missing_confirmation() {
+    let s = Scratch::new("os-denied");
+    for args in [
+        vec!["os", "execute", "whoami"],
+        vec!["os", "execute", "--confirm", "env", "/bin/sh"],
+        vec!["os", "execute", "--confirm", "/somewhere/whoami"],
+    ] {
+        let (code, _, err) = run(&s, &args);
+        assert_ne!(code, 0, "{args:?}");
+        assert!(
+            err.contains("--confirm") || err.contains("allowlist"),
+            "{err}"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn os_control_does_not_execute_path_substitutes_or_delegate_to_abi() {
+    use std::os::unix::fs::PermissionsExt;
+    let s = Scratch::new("os-path");
+    let marker = s.0.join("unexpected-execution");
+    for name in ["whoami", "abi"] {
+        let path = s.0.join(name);
+        std::fs::write(&path, "#!/bin/sh\nprintf bad > \"$OS_TEST_MARKER\"\n").unwrap();
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let out = Command::new(BIN)
+        .args(["os", "execute", "--confirm", "whoami"])
+        .env(edition::ACTIVE.state_dir_env(), &s.0)
+        .env(edition::ACTIVE.config_path_env(), s.0.join("config.toml"))
+        .env("PATH", &s.0)
+        .env("OS_TEST_MARKER", &marker)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(!marker.exists(), "PATH substitute or ABI peer executed");
+    assert!(!out.stdout.is_empty());
 }
 
 // ---------------------------------------------------------- process identity

@@ -144,7 +144,10 @@ fn owned_metadata_overflow_reports_its_effective_cap_in_error_and_notice() {
             _ => None,
         })
         .collect();
-    assert!(owner.cancel.is_cancelled());
+    assert!(
+        owner.cancel.is_cancelled(),
+        "metadata capture failed without cancelling: error={error:?}, failure_notice={failures:?}"
+    );
     assert!(
         reports_metadata_cap(&error) && failures.iter().any(|text| reports_metadata_cap(text)),
         "metadata refusal reported the wrong ceiling: error={error:?}, failure_notice={failures:?}"

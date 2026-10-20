@@ -6,7 +6,7 @@ use super::composer::{Composer, History};
 use super::theme::{Theme, ThemeId};
 use super::transcript::Transcript;
 use super::worker::{self, RunHandle, RunKind, SlashRoute};
-use crate::agent::AgentConfig;
+use crate::agent::{AgentBackend, AgentConfig};
 use crate::models;
 use crate::state::AbbeyState;
 use anyhow::Result;
@@ -47,13 +47,28 @@ impl Panel {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Overlay {
     None,
-    Palette { query: String, idx: usize },
+    Palette {
+        query: String,
+        idx: usize,
+    },
     Help,
     Panel(Panel),
-    ModelPicker { idx: usize },
-    ResumePicker { idx: usize },
-    Confirm { command: Vec<String> },
-    Search { query: String },
+    ModelPicker {
+        idx: usize,
+    },
+    ProviderPicker {
+        idx: usize,
+        choices: Vec<ProviderChoice>,
+    },
+    ResumePicker {
+        idx: usize,
+    },
+    Confirm {
+        command: Vec<String>,
+    },
+    Search {
+        query: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -98,9 +113,37 @@ pub struct App {
     pub skill_lines: Vec<String>,
 }
 
+/// A picker-open snapshot, not a readiness or account-entitlement claim.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ProviderChoice {
+    pub backend: AgentBackend,
+    pub executable: std::result::Result<std::path::PathBuf, String>,
+}
+
+pub(crate) const PROVIDERS: [AgentBackend; 6] = [
+    AgentBackend::Ollama,
+    AgentBackend::Grok,
+    AgentBackend::Fm,
+    AgentBackend::Abi,
+    AgentBackend::Claude,
+    AgentBackend::Cursor,
+];
+
+// Keep the displayed selection in the exact vocabulary accepted by fm_model.
+fn fm_selection(model: &str) -> String {
+    match model.trim().to_ascii_lowercase().as_str() {
+        "pcc" | "private-cloud-compute" | "private_cloud_compute" => "pcc",
+        _ => "system",
+    }
+    .into()
+}
+
 impl App {
     pub fn new(state: AbbeyState, mut cfg: AgentConfig) -> Result<Self> {
         cfg.model = state.read_model();
+        if cfg.backend == AgentBackend::Fm {
+            cfg.model = fm_selection(&cfg.model);
+        }
         let theme_id = ThemeId::resolve(&state.state_dir);
         let history_log = History::load(&state.state_dir);
         let files = FileIndex::load(&state.cwd);
@@ -176,24 +219,91 @@ impl App {
 
     /// Switch to the next executor backend whose binary actually resolves.
     pub fn cycle_backend(&mut self) {
+        if self.is_running() {
+            self.status = "provider unchanged: interrupt or finish the active run first".into();
+            return;
+        }
         let mut next = self.cfg.backend;
         for _ in 0..5 {
             next = next.cycle_next();
             let Ok(path) = crate::agent::resolve_agent_for(next) else {
                 continue;
             };
-            self.cfg.backend = next;
-            self.cfg.agent_path = path;
-            self.cfg.transcript_dir = Some(self.state.state_dir.join(next.transcript_subdir()));
-            self.live_models.clear();
-            if !next.supports_account_surface() {
-                self.refresh_models_live();
-            }
-            self.refresh_doctor();
-            self.status = format!("backend → {}", next.label());
+            self.select_provider(next, path);
             return;
         }
         self.status = "backend: no other executor resolvable on this host".into();
+    }
+
+    pub(crate) fn open_provider_picker(&mut self) -> Overlay {
+        if self.is_running() {
+            self.status = "provider unchanged: interrupt or finish the active run first".into();
+            return Overlay::None;
+        }
+        let choices = PROVIDERS
+            .into_iter()
+            .map(|backend| ProviderChoice {
+                backend,
+                executable: if backend == self.cfg.backend
+                    && crate::host::is_executable(&self.cfg.agent_path)
+                {
+                    Ok(self.cfg.agent_path.clone())
+                } else {
+                    crate::agent::resolve_agent_for(backend).map_err(|e| e.to_string())
+                },
+            })
+            .collect();
+        self.status =
+            "provider: installed means CLI found, not model/account ready · /doctor".into();
+        Overlay::ProviderPicker {
+            choices,
+            idx: PROVIDERS
+                .iter()
+                .position(|b| *b == self.cfg.backend)
+                .unwrap_or(0),
+        }
+    }
+
+    pub(crate) fn select_provider(&mut self, backend: AgentBackend, path: std::path::PathBuf) {
+        if self.is_running() {
+            self.status = "provider unchanged: interrupt or finish the active run first".into();
+            return;
+        }
+        let reset_model = if self.cfg.backend == backend {
+            None
+        } else if backend == AgentBackend::Fm {
+            Some("system")
+        } else if self.cfg.backend == AgentBackend::Fm {
+            Some("auto")
+        } else {
+            None
+        };
+        if let Some(model) = reset_model {
+            // Persist the exact local choice, so a later local command refresh
+            // cannot resurrect a cloud selection, vendor alias, or Apple-only
+            // model in another provider. Commit before changing live identity.
+            if let Err(e) = self.state.save_model_literal(model) {
+                self.status = format!("provider unchanged: could not select {model}: {e}");
+                return;
+            }
+            self.cfg.model = model.into();
+        }
+        self.cfg.backend = backend;
+        self.cfg.agent_path = path;
+        self.cfg.transcript_dir = Some(self.state.state_dir.join(backend.transcript_subdir()));
+        self.live_models.clear();
+        if !backend.supports_account_surface() {
+            self.refresh_models_live();
+        }
+        self.refresh_doctor();
+        self.status = if backend == AgentBackend::Fm {
+            format!(
+                "provider → Apple Foundation Models · {} · readiness: /doctor",
+                self.cfg.model
+            )
+        } else {
+            format!("backend → {}", backend.label())
+        };
     }
 
     pub fn refresh_all(&mut self) {
@@ -382,6 +492,9 @@ impl App {
         self.history = self.state.history(40);
         if run.local {
             self.cfg.model = self.state.read_model();
+            if self.cfg.backend == AgentBackend::Fm {
+                self.cfg.model = fm_selection(&self.cfg.model);
+            }
             if code == 0 {
                 self.refresh_all();
                 self.status = format!("done · exit {code} · {}s", run.started.elapsed().as_secs());

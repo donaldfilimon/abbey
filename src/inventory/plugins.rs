@@ -612,6 +612,11 @@ mod tests {
             uuid::Uuid::new_v4()
         ));
         fs::write(&configured, b"test executable placeholder").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&configured, fs::Permissions::from_mode(0o700)).unwrap();
+        }
         let cfg = crate::config::AbbeyConfig {
             abi_bin: Some(configured.clone()),
             ..crate::config::AbbeyConfig::default()
