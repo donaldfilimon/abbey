@@ -231,6 +231,26 @@ impl App {
         self.status = format!("theme → {}", self.theme_id.as_str());
     }
 
+    /// Copy the last reply to the host's clipboard.
+    ///
+    /// The status line says what happened in every case — copied, no
+    /// clipboard command on this host, or the command's own refusal. It
+    /// never reports a success that did not happen.
+    pub fn copy_last_reply(&mut self) {
+        let text = self.transcript.last_reply();
+        if text.is_empty() {
+            self.status = "nothing to copy: no reply yet".into();
+            return;
+        }
+        let outcome = super::clipboard::copy(&text);
+        self.status = match outcome {
+            super::clipboard::CopyOutcome::Copied => {
+                format!("copied the last reply ({})", outcome.describe())
+            }
+            _ => outcome.describe(),
+        };
+    }
+
     pub fn refresh_models_live(&mut self) {
         if let Ok(text) = self.cfg.list_models_text() {
             self.live_models = text

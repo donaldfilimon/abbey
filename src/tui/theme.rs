@@ -13,15 +13,25 @@ pub enum ThemeId {
     Ink,
     Violet,
     Mono,
+    /// A light palette, for a light terminal profile.
+    ///
+    /// The other three are all dark. A terminal in a light profile inherits
+    /// that profile's background, and a dark palette on top of it is
+    /// either illegible or a rectangle of black in a white window. This one
+    /// is the palette for that case: a paper-white ground, ink text, and
+    /// the same teal accent carried over from [`ThemeId::Ink`].
+    Daylight,
 }
 
 impl ThemeId {
-    /// Parse `ink`, `violet`, or `mono` (case-insensitive). Whitespace is trimmed.
+    /// Parse `ink`, `violet`, `mono`, or `daylight` (case-insensitive).
+    /// Whitespace is trimmed.
     pub fn parse(s: &str) -> Option<Self> {
         match s.trim().to_ascii_lowercase().as_str() {
             "ink" => Some(Self::Ink),
             "violet" => Some(Self::Violet),
             "mono" => Some(Self::Mono),
+            "daylight" => Some(Self::Daylight),
             _ => None,
         }
     }
@@ -32,7 +42,13 @@ impl ThemeId {
             Self::Ink => "ink",
             Self::Violet => "violet",
             Self::Mono => "mono",
+            Self::Daylight => "daylight",
         }
+    }
+
+    /// Every theme, in cycle order.
+    pub fn all() -> [Self; 4] {
+        [Self::Ink, Self::Violet, Self::Mono, Self::Daylight]
     }
 
     /// Resolve order: `ABBEY_TUI_THEME` env > `{state_dir}/tui-theme` file >
@@ -57,13 +73,11 @@ impl ThemeId {
         fs::write(theme_file_path(state_dir), format!("{}\n", id.as_str()))
     }
 
-    /// Cycle ink → violet → mono → ink.
+    /// Cycle ink → violet → mono → daylight → ink.
     pub fn cycle(self) -> Self {
-        match self {
-            Self::Ink => Self::Violet,
-            Self::Violet => Self::Mono,
-            Self::Mono => Self::Ink,
-        }
+        let all = Self::all();
+        let index = all.iter().position(|id| *id == self).unwrap_or(0);
+        all[(index + 1) % all.len()]
     }
 }
 
@@ -98,6 +112,34 @@ impl Theme {
             ThemeId::Ink => Self::ink(),
             ThemeId::Violet => Self::violet(),
             ThemeId::Mono => Self::mono(),
+            ThemeId::Daylight => Self::daylight(),
+        }
+    }
+
+    /// A light palette for a light terminal profile.
+    ///
+    /// The accent is the same teal the ink palette uses, so the two read as
+    /// one design in two light conditions rather than two designs. The
+    /// status colors are darkened, because the vivid versions are chosen
+    /// for a dark ground and lose their contrast on a light one.
+    fn daylight() -> Self {
+        Self {
+            bg: rgb(250, 249, 245),
+            fg: rgb(28, 30, 34),
+            fg_dim: rgb(108, 112, 120),
+            accent: rgb(14, 118, 110),
+            accent_dim: rgb(60, 132, 126),
+            ok: rgb(24, 122, 84),
+            warn: rgb(160, 100, 12),
+            error: rgb(176, 42, 42),
+            border: rgb(196, 198, 204),
+            border_focus: rgb(14, 118, 110),
+            chip_bg: rgb(232, 234, 238),
+            chip_fg: rgb(28, 30, 34),
+            selection_bg: rgb(206, 232, 228),
+            selection_fg: rgb(18, 20, 24),
+            prompt_border: rgb(14, 118, 110),
+            header_pulse: rgb(20, 140, 130),
         }
     }
 
@@ -248,7 +290,24 @@ mod tests {
     fn cycle_rotates_ink_violet_mono() {
         assert_eq!(ThemeId::Ink.cycle(), ThemeId::Violet);
         assert_eq!(ThemeId::Violet.cycle(), ThemeId::Mono);
-        assert_eq!(ThemeId::Mono.cycle(), ThemeId::Ink);
+        assert_eq!(ThemeId::Mono.cycle(), ThemeId::Daylight);
+        assert_eq!(ThemeId::Daylight.cycle(), ThemeId::Ink);
+    }
+
+    #[test]
+    fn the_cycle_visits_every_theme_exactly_once() {
+        // A palette that cannot be reached by cycling is a palette nobody
+        // finds: the theme is chosen by pressing a key, not by editing a
+        // file.
+        let mut seen = Vec::new();
+        let mut id = ThemeId::Ink;
+        for _ in 0..ThemeId::all().len() {
+            assert!(!seen.contains(&id), "the cycle revisited {id:?}");
+            seen.push(id);
+            id = id.cycle();
+        }
+        assert_eq!(seen.len(), ThemeId::all().len());
+        assert_eq!(id, ThemeId::Ink, "the cycle must return to where it started");
     }
 
     #[test]
@@ -260,5 +319,80 @@ mod tests {
         assert_ne!(ink.bg, mono.bg);
         assert_eq!(mono.ok, rgb(120, 220, 160));
         assert_eq!(violet.accent, rgb(180, 120, 255));
+    }
+
+    #[test]
+    fn the_daylight_palette_is_readable_on_a_light_ground() {
+        // The reason this palette exists: the other three are dark, and a
+        // dark palette in a light terminal profile is illegible. A light
+        // palette must have a light background, and every colour that
+        // carries text must be *darker* than that background — the only
+        // relation that holds on a light ground.
+        let day = Theme::from_id(ThemeId::Daylight);
+        assert!(is_light(day.bg), "the daylight background must be light");
+        assert!(
+            !is_light(day.fg),
+            "the daylight text must be dark, not light"
+        );
+        assert!(is_darker(day.fg, day.bg), "text must be darker than its ground");
+        assert!(is_darker(day.fg_dim, day.bg), "dim text must be darker than its ground");
+        assert!(
+            is_darker(day.accent, day.bg),
+            "the accent must be darker than its ground"
+        );
+        assert!(
+            is_darker(day.chip_fg, day.chip_bg),
+            "chip text must be darker than its chip"
+        );
+    }
+
+    #[test]
+    fn the_daylight_palette_keeps_the_ink_accent_family() {
+        // The light palette is the same design in another light condition,
+        // so it carries the ink palette's teal rather than a new hue.
+        let ink = Theme::from_id(ThemeId::Ink);
+        let day = Theme::from_id(ThemeId::Daylight);
+        let hue = |color: Color| match color {
+            Color::Rgb(r, g, b) => (r, g, b),
+            _ => panic!("the palettes are RGB"),
+        };
+        let (ir, ig, ib) = hue(ink.accent);
+        let (dr, dg, db) = hue(day.accent);
+        // The accent family is teal: green and blue dominate, red does not.
+        for (r, g, b) in [(ir, ig, ib), (dr, dg, db)] {
+            assert!(g > r, "teal keeps green above red: {r},{g},{b}");
+            assert!(b >= r, "teal keeps blue at or above red: {r},{g},{b}");
+        }
+    }
+
+    #[test]
+    fn every_theme_names_itself_and_parses_back() {
+        for id in ThemeId::all() {
+            let name = id.as_str();
+            assert_eq!(ThemeId::parse(name), Some(id), "{name} must parse back");
+            assert_eq!(
+                ThemeId::parse(&name.to_uppercase()),
+                Some(id),
+                "{name} must parse case-insensitively"
+            );
+        }
+    }
+
+    /// Whether a colour is on the light side of the range.
+    fn is_light(color: Color) -> bool {
+        match color {
+            Color::Rgb(r, g, b) => (r as u32 + g as u32 + b as u32) / 3 > 127,
+            _ => false,
+        }
+    }
+
+    /// Whether `a` is darker than `b`.
+    fn is_darker(a: Color, b: Color) -> bool {
+        match (a, b) {
+            (Color::Rgb(ar, ag, ab), Color::Rgb(br, bg, bb)) => {
+                (ar as u32 + ag as u32 + ab as u32) < (br as u32 + bg as u32 + bb as u32)
+            }
+            _ => false,
+        }
     }
 }

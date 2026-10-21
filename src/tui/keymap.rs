@@ -121,6 +121,7 @@ impl App {
             (KeyCode::Char('e'), true) => self.composer.line_end(),
             (KeyCode::Char('u'), true) => self.composer.kill_line_before(),
             (KeyCode::Char('w'), true) => self.composer.kill_word_before(),
+            (KeyCode::Char('y'), true) => self.copy_last_reply(),
             (KeyCode::F(1), _) => self.overlay = Overlay::Help,
             (KeyCode::Char('?'), false) if self.composer.is_empty() => self.overlay = Overlay::Help,
             (KeyCode::BackTab, _) => {

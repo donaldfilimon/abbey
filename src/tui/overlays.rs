@@ -188,6 +188,7 @@ pub fn help_lines() -> Vec<&'static str> {
         "  Shift-Tab             permission mode",
         "  Ctrl-S                choose provider (installed CLI ≠ ready model)",
         "  Ctrl-B / Ctrl-T       cycle installed backend / theme",
+        "  Ctrl-Y                copy the last reply to the clipboard",
         "  Palette: Switch model FM system = on-device; pcc = off-device (explicit)",
         "  /doctor               check model/account readiness",
         "  Ctrl-N / Ctrl-P       new chat / please-fix",

@@ -123,6 +123,22 @@ impl Transcript {
         self.push(Cell::Error(text.into()));
     }
 
+    /// The text a copy action should hand to the clipboard.
+    ///
+    /// The last assistant reply, because that is what a reader wants to
+    /// keep. An empty string means there is nothing to copy yet — the
+    /// caller says so rather than copying nothing and reporting success.
+    pub(crate) fn last_reply(&self) -> String {
+        self.cells
+            .iter()
+            .rev()
+            .find_map(|cell| match cell {
+                Cell::Assistant(text) if !text.trim().is_empty() => Some(text.clone()),
+                _ => None,
+            })
+            .unwrap_or_default()
+    }
+
     pub(crate) fn apply(&mut self, ev: StreamEvent) -> bool {
         match ev {
             StreamEvent::TextDelta(t) => match self.cells.last_mut() {
@@ -689,5 +705,33 @@ mod tests {
         assert_eq!(transcript.usage, None);
         transcript.apply(StreamEvent::Done { exit: 1 });
         assert_eq!(transcript.usage, None);
+    }
+
+    #[test]
+    fn the_last_reply_is_the_most_recent_assistant_text() {
+        let mut transcript = Transcript::default();
+        // Nothing yet.
+        assert_eq!(transcript.last_reply(), "");
+
+        transcript.push_user("first question");
+        transcript.push(Cell::Assistant("first answer".into()));
+        assert_eq!(transcript.last_reply(), "first answer");
+
+        // A later user turn does not displace the last reply.
+        transcript.push_user("second question");
+        assert_eq!(transcript.last_reply(), "first answer");
+
+        // A later reply does.
+        transcript.push(Cell::Assistant("second answer".into()));
+        assert_eq!(transcript.last_reply(), "second answer");
+    }
+
+    #[test]
+    fn an_empty_reply_is_not_offered_for_copying() {
+        // Copying an empty string would report a success that copied
+        // nothing, so an empty reply is not a reply.
+        let mut transcript = Transcript::default();
+        transcript.push(Cell::Assistant("   ".into()));
+        assert_eq!(transcript.last_reply(), "");
     }
 }

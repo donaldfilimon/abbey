@@ -1,6 +1,7 @@
 //! Abbey chat-first TUI (ratatui + crossterm).
 
 mod app;
+mod clipboard;
 mod completion;
 mod composer;
 mod keymap;
