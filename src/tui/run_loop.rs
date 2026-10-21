@@ -125,8 +125,8 @@ pub fn run_tui(state: AbbeyState, cfg: AgentConfig) -> Result<i32> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::terminal::Mode;
+    use super::*;
     #[test]
     fn failed_editor_preserves_the_draft() {
         let mut app =
@@ -233,7 +233,8 @@ mod tests {
         guard.enter().unwrap();
         guard.restore().unwrap();
 
-        let outcome = take_the_terminal_back(&mut guard, || anyhow::bail!("the screen reset failed"));
+        let outcome =
+            take_the_terminal_back(&mut guard, || anyhow::bail!("the screen reset failed"));
         assert!(outcome.is_err(), "the reset failure must be reported");
 
         let recorded = calls.lock().unwrap().clone();

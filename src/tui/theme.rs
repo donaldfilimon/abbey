@@ -307,7 +307,11 @@ mod tests {
             id = id.cycle();
         }
         assert_eq!(seen.len(), ThemeId::all().len());
-        assert_eq!(id, ThemeId::Ink, "the cycle must return to where it started");
+        assert_eq!(
+            id,
+            ThemeId::Ink,
+            "the cycle must return to where it started"
+        );
     }
 
     #[test]
@@ -334,8 +338,14 @@ mod tests {
             !is_light(day.fg),
             "the daylight text must be dark, not light"
         );
-        assert!(is_darker(day.fg, day.bg), "text must be darker than its ground");
-        assert!(is_darker(day.fg_dim, day.bg), "dim text must be darker than its ground");
+        assert!(
+            is_darker(day.fg, day.bg),
+            "text must be darker than its ground"
+        );
+        assert!(
+            is_darker(day.fg_dim, day.bg),
+            "dim text must be darker than its ground"
+        );
         assert!(
             is_darker(day.accent, day.bg),
             "the accent must be darker than its ground"

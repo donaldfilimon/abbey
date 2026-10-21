@@ -187,7 +187,8 @@ mod tests {
     }
 
     fn scratch(tag: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("abbey-clipboard-{}-{}", tag, std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("abbey-clipboard-{}-{}", tag, std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir
@@ -212,7 +213,11 @@ mod tests {
     #[test]
     fn a_failing_command_is_reported_with_its_own_diagnosis() {
         let dir = scratch("fail");
-        let command = stub(&dir, "pbcopy", "#!/bin/sh\nprintf 'no clipboard daemon\\n' >&2\nexit 1\n");
+        let command = stub(
+            &dir,
+            "pbcopy",
+            "#!/bin/sh\nprintf 'no clipboard daemon\\n' >&2\nexit 1\n",
+        );
         let outcome = copy_with(&command, &[], "text");
         match outcome {
             CopyOutcome::Refused(reason) => {
@@ -227,7 +232,10 @@ mod tests {
     fn a_command_that_cannot_start_is_reported_rather_than_silently_ignored() {
         let dir = scratch("missing");
         let outcome = copy_with(&dir.join("not-there"), &[], "text");
-        assert!(matches!(outcome, CopyOutcome::Refused(_)), "saw {outcome:?}");
+        assert!(
+            matches!(outcome, CopyOutcome::Refused(_)),
+            "saw {outcome:?}"
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -243,14 +251,15 @@ mod tests {
             "pbcopy",
             &format!("#!/bin/sh\ncat > {}\n", out.display()),
         );
-        let text = format!("$(touch {})`touch {}`; rm -rf /\n", canary.display(), canary.display());
+        let text = format!(
+            "$(touch {})`touch {}`; rm -rf /\n",
+            canary.display(),
+            canary.display()
+        );
         let outcome = copy_with(&command, &[], &text);
         assert_eq!(outcome, CopyOutcome::Copied);
         assert_eq!(fs::read_to_string(&out).unwrap(), text);
-        assert!(
-            !canary.exists(),
-            "the text must never reach a shell"
-        );
+        assert!(!canary.exists(), "the text must never reach a shell");
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -298,8 +307,16 @@ mod tests {
     #[test]
     fn the_outcome_describes_itself_for_the_status_line() {
         assert!(CopyOutcome::Copied.describe().contains("copied"));
-        assert!(CopyOutcome::Unavailable.describe().contains("no clipboard command"));
-        assert!(CopyOutcome::Refused("boom".into()).describe().contains("boom"));
+        assert!(
+            CopyOutcome::Unavailable
+                .describe()
+                .contains("no clipboard command")
+        );
+        assert!(
+            CopyOutcome::Refused("boom".into())
+                .describe()
+                .contains("boom")
+        );
     }
 
     #[test]
