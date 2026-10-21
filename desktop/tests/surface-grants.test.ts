@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { available } from "../src/App";
 import { SURFACES, surfaceById } from "../src/surfaces";
+import { paths } from "../src/components/Icon";
 import {
   ALL_APP_CAPABILITIES,
   DESKTOP_READ_CAPABILITIES,
@@ -125,6 +126,18 @@ test("every available surface opens when its own grant is held", () => {
     expect(
       available(surface, status, grants),
       `${surface.id} must open on ${surface.requires}`,
+    ).toBe(true);
+  }
+});
+
+test("every surface has an icon", () => {
+  // A surface with no icon renders the fallback spark, so the navigation
+  // entry looks like a different feature. The check is against the real
+  // icon table, so a surface added without an icon fails here.
+  for (const surface of SURFACES) {
+    expect(
+      Object.prototype.hasOwnProperty.call(paths, surface.id),
+      `${surface.id} has no icon`,
     ).toBe(true);
   }
 });

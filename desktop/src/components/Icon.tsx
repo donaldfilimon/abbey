@@ -1,4 +1,11 @@
-const paths: Record<string, string> = {
+/**
+ * The icon vocabulary.
+ *
+ * Exported so the navigation's icons can be checked against the surfaces
+ * that use them: a surface with no icon renders the fallback spark, so the
+ * entry looks like a different feature.
+ */
+export const paths: Record<string, string> = {
   chat: "M4 4h16v12H9l-5 4V4Z",
   runs: "m8 5 11 7-11 7V5Z",
   automations: "m13 2-9 12h7l-1 8 10-13h-7l0-7Z",
