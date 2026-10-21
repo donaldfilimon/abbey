@@ -319,3 +319,78 @@ fn v4_context_empty_success_does_not_poison_next_turn() {
     drop(store);
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn v4_context_notice_then_empty_success_is_valid_but_post_terminal_is_not() {
+    let root = std::env::temp_dir().join(format!("abbey-context-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&root).unwrap();
+    let store = RuntimeStore::open(&RuntimeStore::path_for_state_dir(&root)).unwrap();
+    let cid = store
+        .v4_create_conversation("notice", 1700000000000)
+        .unwrap()
+        .conversation_id;
+    let mut request = V4SubmitTurn {
+        conversation_id: cid,
+        idempotency_key: "notice".parse().unwrap(),
+        route_id: "abi.local".into(),
+        input: "hello".into(),
+    };
+    let prior = store.v4_admit_turn(&request, 1700000000000).unwrap().run_id;
+    for (from, to) in [
+        (RunState::Queued, RunState::Starting),
+        (RunState::Starting, RunState::Running),
+    ] {
+        store
+            .transition_run(
+                &prior,
+                from,
+                to,
+                NewRunEvent {
+                    kind: "fixture".into(),
+                    payload: serde_json::json!({}),
+                },
+            )
+            .unwrap();
+    }
+    store
+        .v4_append_content(
+            &prior,
+            crate::app_core::V4ContentPayload::Notice {
+                code: crate::app_core::V4NoticeCode::Truncated,
+            },
+            1700000000000,
+        )
+        .unwrap();
+    store
+        .transition_run(
+            &prior,
+            RunState::Running,
+            RunState::Succeeded,
+            NewRunEvent {
+                kind: "fixture".into(),
+                payload: serde_json::json!({}),
+            },
+        )
+        .unwrap();
+    request.idempotency_key = "next".parse().unwrap();
+    let current = store.v4_admit_turn(&request, 1700000000000).unwrap();
+    assert!(
+        store
+            .v4_turn_context(&current.run_id, &request, 24000)
+            .unwrap()
+            .pairs
+            .is_empty()
+    );
+    {
+        let conn = store.conn.lock().unwrap();
+        conn.execute("INSERT INTO assistant_content_events SELECT conversation_id,3,request_id,run_id,kind,byte_count,timestamp_ms FROM assistant_content_events WHERE run_id=?1 AND sequence=1",[prior.as_str()]).unwrap();
+        conn.execute("INSERT INTO assistant_content_payloads SELECT conversation_id,3,payload_json FROM assistant_content_payloads WHERE sequence=1",[]).unwrap();
+    }
+    assert!(
+        store
+            .v4_turn_context(&current.run_id, &request, 24000)
+            .is_err()
+    );
+    drop(store);
+    std::fs::remove_dir_all(root).unwrap();
+}

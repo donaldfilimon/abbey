@@ -355,11 +355,18 @@ fn message_page(
 ) -> Result<Vec<V4Message>, StoreError> {
     let after = after.unwrap_or(0);
     let mut stmt = tx.prepare(
-        "SELECT id, conversation_id, run_id, role, sequence, body, text_bytes, text_complete, state, created_at_ms FROM assistant_messages WHERE conversation_id=?1 AND sequence > ?2 ORDER BY sequence LIMIT ?3"
+        "SELECT id, conversation_id, run_id, role, sequence, body, text_bytes, text_complete, state, created_at_ms, EXISTS(SELECT 1 FROM assistant_content_events e JOIN assistant_content_payloads p ON p.conversation_id=e.conversation_id AND p.sequence=e.sequence WHERE m.role='assistant' AND e.conversation_id=m.conversation_id AND e.run_id=m.run_id AND e.request_id=m.run_id AND e.kind='output_bounded' AND p.payload_json=?4 AND e.byte_count=length(CAST(p.payload_json AS BLOB))) FROM assistant_messages m WHERE conversation_id=?1 AND sequence > ?2 ORDER BY sequence LIMIT ?3"
     )?;
     let rows = stmt
         .query_map(
-            params![cid.as_str(), sql_sequence(after)?, i64::from(limit)],
+            params![
+                cid.as_str(),
+                sql_sequence(after)?,
+                i64::from(limit),
+                serde_json::to_string(&crate::app_core::V4ContentPayload::Notice {
+                    code: crate::app_core::V4NoticeCode::Truncated
+                })?
+            ],
             |r| {
                 Ok((
                     r.get::<_, String>(0)?,
@@ -372,24 +379,28 @@ fn message_page(
                     r.get::<_, i64>(7)?,
                     r.get::<_, String>(8)?,
                     r.get::<_, i64>(9)?,
+                    r.get::<_, bool>(10)?,
                 ))
             },
         )?
         .collect::<Result<Vec<_>, _>>()?;
     rows.into_iter()
-        .map(|(_id, _c, run, role_s, seq, body, tb, _tc, st, created)| {
-            let role = parse_role(&role_s);
-            project_message(
-                cid,
-                &run,
-                role,
-                u64::try_from(seq).unwrap_or(0),
-                body,
-                u64::try_from(tb).unwrap_or(0),
-                state_from_str(&st),
-                u64::try_from(created).unwrap_or(0),
-            )
-        })
+        .map(
+            |(_id, _c, run, role_s, seq, body, tb, _tc, st, created, context_truncated)| {
+                let role = parse_role(&role_s);
+                project_message(
+                    cid,
+                    &run,
+                    role,
+                    u64::try_from(seq).unwrap_or(0),
+                    body,
+                    u64::try_from(tb).unwrap_or(0),
+                    state_from_str(&st),
+                    context_truncated,
+                    u64::try_from(created).unwrap_or(0),
+                )
+            },
+        )
         .collect()
 }
 
@@ -401,6 +412,7 @@ fn project_message(
     mut text: String,
     stored_bytes: u64,
     state: RunState,
+    context_truncated: bool,
     created_at_ms: u64,
 ) -> Result<V4Message, StoreError> {
     let cap = if role == V4MessageRole::User {
@@ -433,6 +445,7 @@ fn project_message(
         text,
         text_bytes,
         text_complete,
+        context_truncated,
         created_at_ms,
     };
     message

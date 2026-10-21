@@ -33,6 +33,34 @@ tauri = { version = "2", features = [] }
 abbey = { path = "../.." }
 tauri-plugin-updater = "2.14.0"
 
+# The native macOS window appearance (`src/appearance.rs`) installs real AppKit
+# material — `NSGlassEffectView` / `NSVisualEffectView` — into the window's
+# titlebar strip. These three crates are not new to this build: Tauri already
+# depends on exactly these versions on macOS, so this adds direct dependency
+# edges, not new crates. `src/appearance.rs` is the only AppKit caller in the
+# tree; nothing else may use them, and nothing here is reachable on a
+# non-macOS target.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3.2", default-features = false, features = [
+  "std",
+  "NSApplication",
+  "NSBox",
+  "NSColor",
+  "NSGraphics",
+  "NSResponder",
+  "NSView",
+  "NSVisualEffectView",
+  "NSGlassEffectView",
+  "NSWindow",
+  "NSWorkspace",
+] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = [
+  "std",
+  "NSGeometry",
+  "objc2-core-foundation",
+] }
+
 [features]
 default = []
 # Build the desktop client against Abbey's personal edition. This changes the

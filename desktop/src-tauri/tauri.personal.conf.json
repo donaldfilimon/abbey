@@ -2,6 +2,21 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Abbey Personal",
   "identifier": "com.donaldfilimon.abbey-personal",
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Abbey Personal",
+        "width": 1120,
+        "height": 760,
+        "minWidth": 860,
+        "minHeight": 540,
+        "center": true,
+        "titleBarStyle": "Transparent",
+        "transparent": false
+      }
+    ]
+  },
   "plugins": {
     "updater": {
       "endpoints": [

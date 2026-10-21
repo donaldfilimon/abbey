@@ -117,6 +117,27 @@ fn conversation_id(value: &str) -> Result<ConversationId, IpcError> {
         .parse::<ConversationId>()
         .map_err(|_| IpcError::new(IpcErrorKind::Rejected, "invalid conversation id"))
 }
+
+/// Exact read-only recovery of an admitted turn; never submits work.
+pub fn conversation_lookup_turn(
+    conversation_id: ConversationId,
+    idempotency_key: IdempotencyKey,
+) -> Result<Option<V4TurnSubmission>, IpcError> {
+    session()?
+        .lookup_turn(conversation_id, idempotency_key)
+        .map_err(error)
+}
+
+/// Only the canonical bounded title/pin/archive patch crosses this boundary.
+pub fn conversation_update(
+    conversation_id: ConversationId,
+    patch: V4ConversationPatch,
+) -> Result<V4Conversation, IpcError> {
+    session()?
+        .update_conversation(conversation_id, patch)
+        .map_err(error)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -308,24 +329,4 @@ mod tests {
             IpcErrorKind::NotFound
         );
     }
-}
-
-/// Exact read-only recovery of an admitted turn; never submits work.
-pub fn conversation_lookup_turn(
-    conversation_id: ConversationId,
-    idempotency_key: IdempotencyKey,
-) -> Result<Option<V4TurnSubmission>, IpcError> {
-    session()?
-        .lookup_turn(conversation_id, idempotency_key)
-        .map_err(error)
-}
-
-/// Only the canonical bounded title/pin/archive patch crosses this boundary.
-pub fn conversation_update(
-    conversation_id: ConversationId,
-    patch: V4ConversationPatch,
-) -> Result<V4Conversation, IpcError> {
-    session()?
-        .update_conversation(conversation_id, patch)
-        .map_err(error)
 }

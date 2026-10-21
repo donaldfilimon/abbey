@@ -108,3 +108,18 @@ fn v4_lookup_client_lost_read_response_never_resubmits() {
     server.join().unwrap();
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn v4_lookup_without_read_turns_grant_never_connects() {
+    let session = V4DaemonSession {
+        client: DaemonClient::new(DaemonConfig::local(
+            "/missing-v4-lookup-fixture",
+            BearerSecret::parse("lookup-no-grant-fixture-bearer-00001").unwrap(),
+        )),
+        granted: V4CapabilitySet::deny_all(),
+    };
+    assert_eq!(
+        session.lookup_turn(ConversationId::new(), "lookup-key".parse().unwrap()),
+        Err(V4ClientError::CapabilityDenied)
+    );
+}

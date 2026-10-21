@@ -71,7 +71,8 @@ export function DoctorView({ status, connection, identity }: Props) {
         <p className="muted no-top-margin">
           The responding runtime granted {granted.length} capabilities. This
           desktop recognizes {DESKTOP_READ_CAPABILITIES.length} read capabilities across status,
-          claims, routes, task events, memory, and model inventory. Each view requires its corresponding runtime grant.
+          claims, routes, task events, memory, model inventory, and the tool
+          inventory. Each view requires its corresponding runtime grant.
         </p>
         <dl className="kv">
           {ALL_APP_CAPABILITIES.map((capability) => (

@@ -69,6 +69,54 @@ pub struct BundleIdentity {
     pub configured_bundle_id: String,
 }
 
+/// The state of one host-OS integration, as this app reports it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IntegrationState {
+    /// This app registers nothing with the host OS for this, and must not.
+    NotRegistered,
+    /// The host integration belongs to a separate process, not to this app.
+    SeparateProcess,
+    /// The work is owned by the daemon and outlives this window.
+    DaemonOwned,
+}
+
+/// One host-OS integration fact.
+///
+/// A state token the frontend can switch on, plus the sentence that explains
+/// it. Every statement here is about *this* app, and none of them is a
+/// promise that a future build will keep: the shipped build is the evidence.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct IntegrationFact {
+    pub state: IntegrationState,
+    /// One or two sentences. Safe to render and safe to log.
+    pub detail: String,
+}
+
+/// What this desktop build does — and does not do — with the host OS.
+///
+/// Every field is read-only and is derived from the build's own compiled-in
+/// capability manifest and edition table. Nothing here registers a login item,
+/// installs or starts a service, requests an OS permission, or spawns a
+/// helper process; where such a fact cannot be read, it is reported as *not
+/// registered* rather than guessed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SystemIntegration {
+    /// The exact permission identifiers this build declares, in manifest order.
+    pub declared_permissions: Vec<String>,
+    /// The declared permissions that could reach the filesystem, a shell, a
+    /// process, or the OS opener. Empty in the shipped build.
+    pub execution_capable_permissions: Vec<String>,
+    /// Whether this app starts anything at login.
+    pub login_startup: IntegrationFact,
+    /// Whether this app installs or starts a background service.
+    pub background_service: IntegrationFact,
+    /// What closing this window does to daemon-owned work.
+    pub window_close: IntegrationFact,
+}
+
 /// Category of an IPC failure. The frontend switches on this, so the strings
 /// are part of the contract.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

@@ -13,6 +13,7 @@ import type {
   V3CapabilitySet,
   V3EntityPage,
   V3SearchRequest,
+  V3ToolPage,
 } from "./generated";
 
 export const statusCommandFixture = {
@@ -235,8 +236,47 @@ export const v3EntityPageFixture = {
   ]
 } as const satisfies V3EntityPage;
 
+export const v3ToolPageFixture = {
+  "after": 0,
+  "through": 4,
+  "tools": [
+    {
+      "tool_id": "abbey_status",
+      "description": "Read the runtime status of this Abbey instance.",
+      "effect": "read_only",
+      "input_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "tool_id": "abbey_claims",
+      "description": "Read the canonical capability ledger.",
+      "effect": "read_only",
+      "input_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "tool_id": "abbey_platform",
+      "description": "Report detected platform hardware.",
+      "effect": "read_only",
+      "input_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "tool_id": "abbey_memory_mark_obsolete",
+      "description": "Mark one memory record obsolete.",
+      "effect": "mutating",
+      "input_schema": {
+        "type": "object"
+      }
+    }
+  ]
+} as const satisfies V3ToolPage;
+
 /** Capabilities consumed by the desktop's read-only Tauri bridge. */
-export const DESKTOP_READ_CAPABILITIES = ["read_status","read_claims","read_routes","read_run","read_run_events","read_memory","read_models","read_claims_by_id","read_conversations"] as const;
+export const DESKTOP_READ_CAPABILITIES = ["read_status","read_claims","read_routes","read_run","read_run_events","read_memory","read_models","read_claims_by_id","list_tools","read_conversations"] as const;
 
 /** Every capability protocol v2 can advertise when a run route is bound. */
 export const ALL_APP_CAPABILITIES = ["read_status","read_claims","read_run","read_run_events","submit_run","cancel_run","read_routes"] as const;

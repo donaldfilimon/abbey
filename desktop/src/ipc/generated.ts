@@ -91,6 +91,10 @@ export interface V4Message {
   text: string;
   text_bytes: number;
   text_complete: boolean;
+  /**
+   * This exact run omitted earlier context under its bounded prompt budget.
+   */
+  context_truncated: boolean;
   created_at_ms: number;
 }
 
@@ -812,6 +816,62 @@ export interface BundleIdentity {
 }
 
 /**
+ * The state of one host-OS integration, as this app reports it.
+ */
+export type IntegrationState =
+  | "not_registered"
+  | "separate_process"
+  | "daemon_owned";
+
+/**
+ * One host-OS integration fact.
+ *
+ * A state token the frontend can switch on, plus the sentence that explains
+ * it. Every statement here is about *this* app, and none of them is a
+ * promise that a future build will keep: the shipped build is the evidence.
+ */
+export interface IntegrationFact {
+  state: IntegrationState;
+  /**
+   * One or two sentences. Safe to render and safe to log.
+   */
+  detail: string;
+}
+
+/**
+ * What this desktop build does — and does not do — with the host OS.
+ *
+ * Every field is read-only and is derived from the build's own compiled-in
+ * capability manifest and edition table. Nothing here registers a login item,
+ * installs or starts a service, requests an OS permission, or spawns a
+ * helper process; where such a fact cannot be read, it is reported as *not
+ * registered* rather than guessed.
+ */
+export interface SystemIntegration {
+  /**
+   * The exact permission identifiers this build declares, in manifest order.
+   */
+  declared_permissions: Array<string>;
+  /**
+   * The declared permissions that could reach the filesystem, a shell, a
+   * process, or the OS opener. Empty in the shipped build.
+   */
+  execution_capable_permissions: Array<string>;
+  /**
+   * Whether this app starts anything at login.
+   */
+  login_startup: IntegrationFact;
+  /**
+   * Whether this app installs or starts a background service.
+   */
+  background_service: IntegrationFact;
+  /**
+   * What closing this window does to daemon-owned work.
+   */
+  window_close: IntegrationFact;
+}
+
+/**
  * Category of an IPC failure. The frontend switches on this, so the strings
  * are part of the contract.
  */
@@ -937,6 +997,41 @@ export interface V3StableClaim {
   name: string;
   status: ClaimStatus;
   note: string;
+}
+
+/**
+ * Declared effect of one protocol-v3 tool.
+ *
+ * Serde-identical to `abbey::app_core::V3ToolEffect`. The desktop renders the
+ * daemon's own effect class; it never invents one, and it never turns an
+ * advertised effect into an invitation to run the tool.
+ */
+export type V3ToolEffect =
+  | "read_only"
+  | "mutating"
+  | "destructive";
+
+/**
+ * One advertised tool and its bounded JSON input schema.
+ *
+ * `input_schema` is the daemon's own advertised JSON Schema. The desktop
+ * carries it verbatim and never interprets it: this client cannot call a tool,
+ * so a schema is inventory, not an instruction.
+ */
+export interface V3ToolDescriptor {
+  tool_id: string;
+  description: string;
+  effect: V3ToolEffect;
+  input_schema: unknown;
+}
+
+/**
+ * Fixed-watermark page of tool descriptors.
+ */
+export interface V3ToolPage {
+  after: number;
+  through: number;
+  tools: Array<V3ToolDescriptor>;
 }
 
 /**

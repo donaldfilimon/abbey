@@ -5,15 +5,17 @@ use abbey::app_core::{
     ClaimsQuery, ClaimsSnapshot, ConversationId, IdempotencyKey, RouteAuditPage, RouteAuditQuery,
     RunEventPage, RunEventsQuery, RunId, RunQuery, RunSnapshot, RunState, RuntimeStatus,
     V3CapabilitySet, V3EntityPage, V3EntityRecord, V3ModelAction, V3ModelDetails,
-    V3OperationStatus, V3PageQuery, V3ResourceQuery, V3SearchRequest, V3StableClaim,
+    V3OperationStatus, V3PageQuery, V3ResourceQuery, V3SearchRequest, V3StableClaim, V3ToolPage,
     V4CapabilitySet, V4ContentPage, V4ContentQuery, V4Conversation, V4ConversationCreate,
-    V4ConversationPage, V4ConversationQuery, V4ConversationRename, V4MessagePage, V4MessageQuery,
-    V4ResourceQuery, V4Route, V4SubmitTurn, V4TurnSubmission,
+    V4ConversationPage, V4ConversationPatch, V4ConversationQuery, V4ConversationRename,
+    V4MessagePage, V4MessageQuery, V4ResourceQuery, V4Route, V4SubmitTurn, V4TurnSubmission,
 };
 use abbey::edition::ACTIVE;
 
 use crate::backend;
-use crate::ipc::{BundleIdentity, ConnectionInfo, IpcError};
+use crate::ipc::{
+    BundleIdentity, ConnectionInfo, IntegrationFact, IntegrationState, IpcError, SystemIntegration,
+};
 
 /// `ReadStatus` — process identity, build stamp, and granted capabilities.
 #[tauri::command]
@@ -85,6 +87,114 @@ pub async fn app_models_list(query: V3PageQuery) -> Result<V3EntityPage, IpcErro
 #[tauri::command]
 pub fn app_claim_by_id(query: V3ResourceQuery) -> Result<V3StableClaim, IpcError> {
     backend::claim_by_id(query)
+}
+
+/// `ListTools` — the tool inventory the daemon actually advertises.
+///
+/// Read-only *enumeration*. The session behind this command negotiates
+/// `ListTools` and nothing else, so this surface can show a tool and can
+/// never call one: there is no invoke, approve, deny, or cancel command in
+/// this desktop client, and the mutating tool the safe edition advertises is
+/// listed with its effect class only.
+///
+/// Registered in the `generate_handler!` block in `src/main.rs`; the
+/// frontend's command list is checked against that block in both directions
+/// by `scripts/verify-bundle.mjs`, so the two cannot drift apart.
+#[tauri::command]
+pub async fn app_tools_list(query: V3PageQuery) -> Result<V3ToolPage, IpcError> {
+    tools_task(move || backend::tools_list(query)).await
+}
+
+/// This build's own host-OS integration, as read-only facts.
+///
+/// Derived from the compiled-in capability manifest and the edition table —
+/// never from the host. The desktop process has no filesystem, shell,
+/// process, or opener plugin with which it could inspect the OS, and it does
+/// not need one to state what it does not do.
+///
+/// Registered in the `generate_handler!` block in `src/main.rs`.
+#[tauri::command]
+pub fn app_system_integration() -> SystemIntegration {
+    system_integration()
+}
+
+/// The host-integration facts this build reports.
+///
+/// Each fact is a statement about the shipped build, and each is written so
+/// that it stays true as long as the build does: the desktop registers
+/// nothing at login, installs and starts no service, spawns no helper
+/// process, and cancels nothing when its window closes.
+fn system_integration() -> SystemIntegration {
+    // The compiled-in capability manifest this build ships. Read at compile
+    // time, not at runtime: the desktop has no filesystem plugin, and a
+    // manifest the app cannot read is a manifest it cannot misreport either.
+    const CAPABILITY_MANIFEST: &str = include_str!("../capabilities/default.json");
+    // Permission prefixes that could reach the filesystem, a shell, a
+    // process, or the OS opener. The shipped build declares none of them.
+    const EXECUTION_CAPABLE_PREFIXES: &[&str] = &["fs:", "shell:", "process:", "opener:"];
+
+    let manifest: serde_json::Value =
+        serde_json::from_str(CAPABILITY_MANIFEST).expect("the compiled-in manifest is valid JSON");
+    let declared_permissions = manifest
+        .get("permissions")
+        .and_then(serde_json::Value::as_array)
+        .map(|permissions| {
+            permissions
+                .iter()
+                .filter_map(serde_json::Value::as_str)
+                .map(str::to_owned)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let execution_capable_permissions = declared_permissions
+        .iter()
+        .filter(|permission| {
+            EXECUTION_CAPABLE_PREFIXES
+                .iter()
+                .any(|prefix| permission.starts_with(prefix))
+        })
+        .cloned()
+        .collect();
+    SystemIntegration {
+        declared_permissions,
+        execution_capable_permissions,
+        login_startup: IntegrationFact {
+            state: IntegrationState::NotRegistered,
+            detail: "This app registers no login item, launch agent, or startup service, and \
+                      it must stay unregistered: nothing it declares can install one."
+                .to_owned(),
+        },
+        background_service: IntegrationFact {
+            state: IntegrationState::SeparateProcess,
+            detail: format!(
+                "This app installs and starts no background service and spawns no helper \
+                 process. The Abbey daemon ({}) is a separate owner-only process that you \
+                 start yourself; this window is only a client of it.",
+                ACTIVE.daemon_binary_name()
+            ),
+        },
+        window_close: IntegrationFact {
+            state: IntegrationState::DaemonOwned,
+            detail: "Closing this window does not cancel daemon-owned work. Runs and their \
+                     lifecycle events live in the daemon's own durable store and continue \
+                     there."
+                .to_owned(),
+        },
+    }
+}
+
+/// Unix IPC blocks; keep the tool inventory read off the UI thread.
+async fn tools_task<T: Send + 'static>(
+    task: impl FnOnce() -> Result<T, IpcError> + Send + 'static,
+) -> Result<T, IpcError> {
+    tauri::async_runtime::spawn_blocking(task)
+        .await
+        .map_err(|_| {
+            IpcError::new(
+                crate::ipc::IpcErrorKind::Transport,
+                "tool inventory request worker was interrupted; retry the read",
+            )
+        })?
 }
 
 /// How this client reaches Abbey. No secret material; see `ipc::ConnectionInfo`.
@@ -263,4 +373,98 @@ async fn conversation_task<T: Send + 'static>(
                 "conversation outcome unknown: request worker interrupted; reconcile through reads",
             )
         })?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The permissions this build reports are the ones the shipped capability
+    /// manifest declares — read from that manifest, not restated by hand.
+    #[test]
+    fn the_reported_permissions_are_the_manifests_own() {
+        const CAPABILITY_MANIFEST: &str = include_str!("../capabilities/default.json");
+        let integration = app_system_integration();
+        assert_eq!(
+            integration.declared_permissions,
+            vec!["core:default".to_owned(), "updater:default".to_owned()]
+        );
+        // And the manifest itself is what the report is derived from.
+        let manifest: serde_json::Value =
+            serde_json::from_str(CAPABILITY_MANIFEST).expect("valid manifest");
+        let declared = manifest
+            .get("permissions")
+            .and_then(serde_json::Value::as_array)
+            .expect("permissions array")
+            .iter()
+            .filter_map(serde_json::Value::as_str)
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        assert_eq!(integration.declared_permissions, declared);
+    }
+
+    /// No declared permission may reach the filesystem, a shell, a process, or
+    /// the OS opener. This is the check behind the sentence the Settings
+    /// surface prints, so the sentence cannot drift away from the manifest.
+    #[test]
+    fn no_declared_permission_can_execute() {
+        let integration = app_system_integration();
+        assert!(
+            integration.execution_capable_permissions.is_empty(),
+            "unexpected execution-capable permission: {:?}",
+            integration.execution_capable_permissions
+        );
+        for prefix in ["fs:", "shell:", "process:", "opener:"] {
+            assert!(
+                !integration
+                    .declared_permissions
+                    .iter()
+                    .any(|permission| permission.starts_with(prefix)),
+                "{prefix} permission is declared"
+            );
+        }
+    }
+
+    /// The three host-integration facts are the ones this build guarantees:
+    /// nothing is registered at login, no service is installed or started, and
+    /// closing the window cancels nothing.
+    #[test]
+    fn the_reported_host_facts_are_the_shipped_ones() {
+        let integration = app_system_integration();
+        assert_eq!(
+            integration.login_startup.state,
+            IntegrationState::NotRegistered
+        );
+        assert_eq!(
+            integration.background_service.state,
+            IntegrationState::SeparateProcess
+        );
+        assert_eq!(
+            integration.window_close.state,
+            IntegrationState::DaemonOwned
+        );
+        for fact in [
+            &integration.login_startup,
+            &integration.background_service,
+            &integration.window_close,
+        ] {
+            assert!(!fact.detail.trim().is_empty(), "every fact explains itself");
+            // The report must not read as an instruction to do any of it.
+            for forbidden in ["install it", "enable it", "start it", "turn it on"] {
+                assert!(
+                    !fact.detail.to_ascii_lowercase().contains(forbidden),
+                    "a host fact must not invite an action: {forbidden}"
+                );
+            }
+        }
+        // The daemon is named as the separate owner of background work.
+        assert!(
+            integration
+                .background_service
+                .detail
+                .contains(ACTIVE.daemon_binary_name()),
+            "the daemon binary must be named: {}",
+            integration.background_service.detail
+        );
+    }
 }

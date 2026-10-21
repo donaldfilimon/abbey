@@ -22,7 +22,8 @@ use abbey::app_core::{
     RouteAuditEntry, RouteAuditPage, RouteAuditQuery, RunEventPage, RunEventRecord, RunId,
     RunLifecycleEvent, RunMode, RunQuery, RunRequest, RunRouteCapability, RunSnapshot, RunState,
     RuntimeState, RuntimeStatus, V3Capability, V3CapabilitySet, V3EntityPage, V3EntityRecord,
-    V3OperationState, V3PageQuery, V3SearchRequest, V4Capability,
+    V3OperationState, V3PageQuery, V3SearchRequest, V3ToolDescriptor, V3ToolEffect, V3ToolPage,
+    V4Capability,
 };
 use anyhow::{Context, Result};
 use std::fmt::Write as _;
@@ -47,6 +48,7 @@ import type {
   V3CapabilitySet,
   V3EntityPage,
   V3SearchRequest,
+  V3ToolPage,
 } from \"./generated\";
 ",
     );
@@ -263,6 +265,46 @@ import type {
             }],
         },
     )?;
+    // The tool inventory the desktop renders. The four entries mirror the
+    // safe edition's startup catalog: the three canonical read-only tools
+    // and the one mutating tool that needs an exact-call approval. The
+    // personal edition advertises the first three only, and the desktop
+    // renders whatever the daemon it is talking to actually advertises.
+    emit(
+        &mut out,
+        "v3ToolPageFixture",
+        "V3ToolPage",
+        &V3ToolPage {
+            after: 0,
+            through: 4,
+            tools: vec![
+                V3ToolDescriptor {
+                    tool_id: "abbey_status".to_owned(),
+                    description: "Read the runtime status of this Abbey instance.".to_owned(),
+                    effect: V3ToolEffect::ReadOnly,
+                    input_schema: serde_json::json!({"type": "object"}),
+                },
+                V3ToolDescriptor {
+                    tool_id: "abbey_claims".to_owned(),
+                    description: "Read the canonical capability ledger.".to_owned(),
+                    effect: V3ToolEffect::ReadOnly,
+                    input_schema: serde_json::json!({"type": "object"}),
+                },
+                V3ToolDescriptor {
+                    tool_id: "abbey_platform".to_owned(),
+                    description: "Report detected platform hardware.".to_owned(),
+                    effect: V3ToolEffect::ReadOnly,
+                    input_schema: serde_json::json!({"type": "object"}),
+                },
+                V3ToolDescriptor {
+                    tool_id: "abbey_memory_mark_obsolete".to_owned(),
+                    description: "Mark one memory record obsolete.".to_owned(),
+                    effect: V3ToolEffect::Mutating,
+                    input_schema: serde_json::json!({"type": "object"}),
+                },
+            ],
+        },
+    )?;
 
     let mut desktop_caps = Vec::new();
     for cap in [
@@ -277,6 +319,10 @@ import type {
     desktop_caps.push(serde_json::to_value(V3Capability::ReadMemory)?);
     desktop_caps.push(serde_json::to_value(V3Capability::ReadModels)?);
     desktop_caps.push(serde_json::to_value(V3Capability::ReadClaimsById)?);
+    // The read-only tool inventory: enumeration only. The desktop's tools
+    // session requests `ListTools` and nothing else, so this entry is the
+    // whole of its tool authority.
+    desktop_caps.push(serde_json::to_value(V3Capability::ListTools)?);
     desktop_caps.push(serde_json::to_value(V4Capability::ReadConversations)?);
 
     writeln!(

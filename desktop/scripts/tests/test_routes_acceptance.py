@@ -84,6 +84,38 @@ class Assertions(unittest.TestCase):
 
 
 class ScratchIsolation(unittest.TestCase):
+    def test_connected_waits_for_native_window_before_navigation(self):
+        with tempfile.TemporaryDirectory() as root:
+            proof = Smoke(Path(root), Path(root) / "driver", {})
+            actions = []
+            ready = False
+
+            def ax(_proc, action="snapshot", *args):
+                nonlocal ready
+                actions.append(action)
+                if not ready:
+                    if action != "snapshot":
+                        raise ProofFailure("navigation_before_window_ready")
+                    if actions.count("snapshot") < 3:
+                        raise ProofFailure("ax_window_missing")
+                    ready = True
+                return snapshot("abbeyd (authenticated Unix socket)")
+
+            proof.ax = ax
+            with patch("prove_routes_macos.time.sleep"):
+                proof.connected(Mock())
+            self.assertEqual(actions, ["snapshot", "snapshot", "snapshot", "doctor", "snapshot", "routes"])
+
+    def test_connected_does_not_retry_permission_or_secrecy_failure(self):
+        for failure in ("accessibility_permission_required", "rendered_sensitive_data", "ax_traversal_truncated"):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as root:
+                proof = Smoke(Path(root), Path(root) / "driver", {})
+                proof.ax = Mock(side_effect=ProofFailure(failure))
+                with self.assertRaisesRegex(ProofFailure, "^" + failure + "$"):
+                    proof.connected(Mock())
+                self.assertEqual(proof.ax.call_args.args[1:], ())
+                self.assertEqual(proof.ax.call_count, 1)
+
     def test_daemon_readiness_requires_listen_not_just_bind(self):
         with tempfile.TemporaryDirectory() as root:
             path = Path(root) / "daemon.sock"

@@ -206,25 +206,36 @@ fn validate_empty_success(
     conversation: &str,
     run: &str,
 ) -> Result<(), StoreError> {
-    let mut statement = tx.prepare("SELECT e.byte_count, CASE WHEN length(CAST(p.payload_json AS BLOB))<=1024 THEN p.payload_json ELSE NULL END FROM assistant_content_events e LEFT JOIN assistant_content_payloads p ON p.conversation_id=e.conversation_id AND p.sequence=e.sequence WHERE e.conversation_id=?1 AND e.run_id=?2 ORDER BY e.sequence LIMIT 3")?;
+    let mut statement = tx.prepare("SELECT e.byte_count, e.kind, CASE WHEN length(CAST(p.payload_json AS BLOB))<=1024 THEN p.payload_json ELSE NULL END FROM assistant_content_events e LEFT JOIN assistant_content_payloads p ON p.conversation_id=e.conversation_id AND p.sequence=e.sequence WHERE e.conversation_id=?1 AND e.run_id=?2 ORDER BY e.sequence LIMIT 4")?;
     let mut rows = statement.query(params![conversation, run])?;
     let mut terminal = false;
     let mut index = 0;
+    let mut notice = false;
     while let Some(row) = rows.next()? {
-        if terminal || index >= 2 {
+        if terminal || index >= 3 {
             return Err(StoreError::CorruptData("empty context events invalid"));
         }
-        let json: Option<String> = row.get(1)?;
+        let json: Option<String> = row.get(2)?;
         let json = json.ok_or(StoreError::CorruptData("empty context payload missing"))?;
         let payload: V4ContentPayload = serde_json::from_str(&json)
             .map_err(|_| StoreError::CorruptData("empty context payload invalid"))?;
+        payload
+            .validate()
+            .map_err(|_| StoreError::CorruptData("empty context payload invalid"))?;
         let bytes: i64 = row.get(0)?;
+        let kind: String = row.get(1)?;
+        if bytes != json.len() as i64 {
+            return Err(StoreError::CorruptData("empty context byte count invalid"));
+        }
         match payload {
             V4ContentPayload::Terminal {
                 state: RunState::Succeeded,
-            } => terminal = true,
+            } if kind == "completed" => terminal = true,
+            V4ContentPayload::Notice {
+                code: crate::app_core::V4NoticeCode::Truncated,
+            } if !notice && kind == "output_bounded" => notice = true,
             V4ContentPayload::TextDelta { text }
-                if index == 0 && text == "[admitted]" && bytes == json.len() as i64 => {}
+                if index == 0 && text == "[admitted]" && kind == "output_bounded" => {}
             _ => return Err(StoreError::CorruptData("empty context content invalid")),
         }
         index += 1;

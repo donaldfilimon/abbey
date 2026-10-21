@@ -173,6 +173,11 @@ impl App {
             format!("agent:     {}", self.cfg.agent_path.display()),
             format!("agent ver: {}", self.cfg.agent_version()),
             format!("model:     {}", self.cfg.model),
+            // The live backend plus the live model, resolved with the spawn
+            // path's own rules — the same helper the CLI doctor prints, so the
+            // two surfaces cannot disagree. Read-only: nothing is persisted
+            // and routing is untouched.
+            crate::effective_model::effective_model_line(self.cfg.backend, &self.cfg.model),
             format!("chat:      {chat}"),
             format!("chat file: {}", self.state.active_chat_file().display()),
             format!("per-cwd:   {}", self.state.per_cwd),
@@ -249,5 +254,30 @@ mod tests {
                 b.label()
             );
         }
+    }
+
+    /// The TUI doctor panel and the CLI doctor print the *same* effective
+    /// model line, from the same helper — so the two surfaces can never
+    /// disagree about what a turn would use right now.
+    ///
+    /// The stale-model case is the interesting one: after a Ctrl-B provider
+    /// switch the live `cfg.model` can still hold another backend's id, and
+    /// the panel must report what the turn would *actually* use.
+    #[test]
+    fn doctor_panel_prints_the_shared_effective_model_line() {
+        let mut app = crate::tui::tests::scratch_app("effective", AgentBackend::Ollama);
+        app.cfg.model = "claude-opus-5-thinking-high".into();
+        app.refresh_doctor();
+        let expected =
+            crate::effective_model::effective_model_line(app.cfg.backend, &app.cfg.model);
+        assert_eq!(
+            expected,
+            "effective model: gemma4:26b-mlx  (live: claude-opus-5-thinking-high, backend: ollama)"
+        );
+        assert!(
+            app.doctor_lines.iter().any(|line| line == &expected),
+            "doctor panel must carry the shared line {expected}: {:?}",
+            app.doctor_lines
+        );
     }
 }

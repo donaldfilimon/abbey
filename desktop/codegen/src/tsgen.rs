@@ -280,6 +280,14 @@ fn to_camel_case(name: &str) -> String {
 fn ts_type(ty: &syn::Type, known: &BTreeSet<String>) -> Result<String> {
     match ty {
         syn::Type::Path(path) if path.qself.is_none() => {
+            // `serde_json::Value` is arbitrary JSON. It projects to
+            // `unknown`, never `any`: a consumer must narrow the value before
+            // using it, which is the whole point of the tool inventory's
+            // input schema — the desktop carries it verbatim and never
+            // interprets it.
+            if is_serde_json_value(&path.path) {
+                return Ok("unknown".into());
+            }
             let segment = path
                 .path
                 .segments
@@ -323,6 +331,17 @@ fn ts_type(ty: &syn::Type, known: &BTreeSet<String>) -> Result<String> {
         // construct precisely enough to fix the generator.
         other => bail!("desktop/codegen cannot project this Rust type: {other:?}"),
     }
+}
+
+/// True for the exact `serde_json::Value` path.
+///
+/// Matched on the whole path, not on the last segment: `Value` alone is too
+/// generic a name to map unconditionally, and mapping the wrong `Value` to
+/// `unknown` would silently weaken a real contract.
+fn is_serde_json_value(path: &syn::Path) -> bool {
+    path.segments.len() == 2
+        && path.segments[0].ident == "serde_json"
+        && path.segments[1].ident == "Value"
 }
 
 fn generic_args(segment: &syn::PathSegment) -> Vec<&syn::Type> {

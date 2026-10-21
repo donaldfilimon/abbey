@@ -36,6 +36,8 @@ pub use models::{
     model_details, model_download, model_download_status, model_grants, model_lifecycle_status,
     model_load, model_unload,
 };
+mod tools;
+pub use tools::tools_list;
 
 pub use v3::{claim_by_id, memory_metadata, memory_search, models_list, v3_grants};
 

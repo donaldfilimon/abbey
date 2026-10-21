@@ -19,7 +19,9 @@
         "height": 760,
         "minWidth": 860,
         "minHeight": 540,
-        "center": true
+        "center": true,
+        "titleBarStyle": "Transparent",
+        "transparent": false
       }
     ],
     "security": {
@@ -51,7 +53,8 @@
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
-      "icons/icon.png"
+      "icons/icon.png",
+      "icons/master.png"
     ],
     "shortDescription": "Abbey desktop client",
     "longDescription": "Read-only desktop client for Abbey's shared application core: runtime status, build stamp, capabilities, and the canonical capability ledger.",

@@ -738,3 +738,7 @@ mod v4_tests;
 #[cfg(test)]
 #[path = "store/v4_context_tests.rs"]
 mod v4_context_tests;
+
+#[cfg(test)]
+#[path = "store/v4_notice_tests.rs"]
+mod v4_notice_tests;

@@ -58,8 +58,8 @@ pub use v3_tool::{
 };
 
 mod v4;
-mod v4_permission;
 pub(crate) mod v4_content;
+mod v4_permission;
 pub(crate) mod v4_protocol;
 #[cfg(test)]
 mod v4_tests;

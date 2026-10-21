@@ -194,6 +194,10 @@ class Smoke:
         raise ProofFailure("timeout_" + last)
 
     def connected(self, proc):
+        # Popen and LaunchServices registration can precede the first AppKit
+        # window. Await a complete, secrecy-checked native snapshot before the
+        # first navigation action; permission/traversal failures stay fatal.
+        self.wait(proc, lambda snap: inspect(snap, self.secrets))
         # Connection details live on the Doctor surface in the current desktop
         # shell; navigate there before asserting the authenticated source.
         self.ax(proc, "doctor")

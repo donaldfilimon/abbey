@@ -27,6 +27,8 @@ interface Snapshot {
   access: "loading" | "ready" | "read-only" | "no-daemon" | "no-grant" | "offline";
   canRead: boolean; canWrite: boolean; canCancel:boolean; activeRunId:string | null; stop:StopState | null; query: string; items: V4Conversation[];
   listing: boolean; more: boolean; selectedId: string | null; selected: V4Conversation | null;
+  contentLoadingRun:string|null; contentNotice:string|null;
+  historyMode:"browse" | "following"; earlierMessages:boolean; seekingLatest:boolean; historyProgress:number;
   messages: V4Message[]; reading: boolean; moreMessages: boolean; draft: string;
   mutation: Mutation | null; note: string | null;
   routes: V4Route[]; routeId: string | null; sending: boolean;
@@ -36,10 +38,11 @@ interface Snapshot {
   sendUnknownAt: number | null;
 }
 const PAGE = 16;
+const MESSAGE_PAGE = 32;
 const kindOf = (error: unknown) => typeof error === "object" && error !== null && "kind" in error ? error.kind : null;
 // One controller per application window. Never persisted or logged. No timers/retries.
 export function createConversations(api: ConversationApi) {
-  let state: Snapshot = {retries:[], canUpdate:!!api.update, archived:false, access:"loading", canRead:false, canWrite:false, canCancel:false, activeRunId:null, stop:null, query:"", items:[], listing:false, more:false, selectedId:null, selected:null, messages:[], reading:false, moreMessages:false, draft:"", mutation:null, note:null, routes:[], routeId:null, routeStatus:"loading", sendUnknownFor:null, sendUnknownText:null, sendUnknownAt:null, sending:false};
+  let state: Snapshot = {contentLoadingRun:null,contentNotice:null,historyMode:"browse",earlierMessages:false,seekingLatest:false,historyProgress:0,retries:[], canUpdate:!!api.update, archived:false, access:"loading", canRead:false, canWrite:false, canCancel:false, activeRunId:null, stop:null, query:"", items:[], listing:false, more:false, selectedId:null, selected:null, messages:[], reading:false, moreMessages:false, draft:"", mutation:null, note:null, routes:[], routeId:null, routeStatus:"loading", sendUnknownFor:null, sendUnknownText:null, sendUnknownAt:null, sending:false};
   const stops = new Map<string, StopState>();
   const listeners = new Set<() => void>();
   const drafts = new Map<string, string>();
@@ -51,7 +54,11 @@ export function createConversations(api: ConversationApi) {
   // Conversation list uses ID cursors (after: ConvId, next_after); messages use numeric sequence.
   let listSnapshot: {query: string; archived:boolean; after: string | null} | null = null;
   let messageAfter = 0;
-  const contentByRun = new Map<string, {after:number; text:string; done:boolean}>();
+  let windowAfter=0, windowNext:number|null=null;
+  let previousWindows:number[]=[];
+  const originalInputs = new Map<string,V4Message>();
+  const inputKey=(conversationId:string,runId:string)=>JSON.stringify([conversationId,runId]);
+  const contentByRun = new Map<string, {after:number; text:string; done:boolean; more:boolean}>();
   const contentTargets = new Map<string, {message:V4Message; conversationId:string}>();
   let pollTimer: ReturnType<typeof setTimeout> | null = null;
   const update = (patch: Partial<Snapshot>) => {
@@ -75,11 +82,12 @@ export function createConversations(api: ConversationApi) {
   const stopPoll = () => { if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; } };
   const readContent = async (message: V4Message, conversationId: string, generation: number): Promise<boolean> => {
     if (!api.content || message.role !== "assistant" || generation !== pollGeneration || state.selectedId !== conversationId) return false;
-    const saved = contentByRun.get(message.run_id) ?? {after:0, text:"", done:false};
+    const saved = contentByRun.get(message.run_id) ?? {after:0, text:"", done:false,more:true};
     if (saved.done) return false;
     try {
       const page = await api.content({conversation_id:conversationId, run_id:message.run_id, after:saved.after, limit:50});
       if (generation !== pollGeneration || state.selectedId !== conversationId || page.conversation_id !== conversationId || page.run_id !== message.run_id || page.after !== saved.after) return false;
+      if(page.events.length>50)return false;
       let text = saved.text;
       let after = saved.after;
       let terminal = false;
@@ -87,15 +95,16 @@ export function createConversations(api: ConversationApi) {
       for (const event of page.events) {
         // Event sequences are conversation-scoped, while this page is filtered
         // to one run; gaps can therefore be valid but replay/out-of-order is not.
-        if (event.sequence <= after || event.run_id !== message.run_id || event.conversation_id !== conversationId) return false;
+        if (terminal || event.sequence>65536 || event.sequence <= after || event.run_id !== message.run_id || event.conversation_id !== conversationId) return false;
         after = event.sequence;
-        if (event.payload.kind === "text_delta") text += event.payload.data.text;
-        if (event.payload.kind === "terminal") { terminal = true; terminalState = event.payload.data.state; }
+        if (event.payload.kind === "text_delta") {if(new TextEncoder().encode(event.payload.data.text).length>16*1024)return false;text += event.payload.data.text;}
+        if (event.payload.kind === "terminal") { if(!["succeeded","failed","cancelled","interrupted"].includes(event.payload.data.state))return false;terminal = true; terminalState = event.payload.data.state; }
       }
       if (page.next_after !== null && page.next_after !== after) return false;
-      contentByRun.set(message.run_id, {after, text, done:terminal});
       const bytes = new TextEncoder().encode(text).length;
-      const messages = state.messages.map(current => current.run_id === message.run_id && current.role === "assistant" ? {...current, text, text_bytes:bytes, text_complete:terminal, ...(terminalState ? {state:terminalState} : {})} : current);
+      if(bytes>4*1024*1024)return false;
+      contentByRun.set(message.run_id, {after, text, done:terminal,more:page.next_after!==null});
+      const messages = state.messages.map(current => current.run_id === message.run_id && current.role === "assistant" ? {...current, text, text_bytes:terminal ? bytes : Math.max(current.text_bytes,bytes), text_complete:terminal, ...(terminalState ? {state:terminalState} : {})} : current);
       update({messages});
       if (terminal) contentTargets.delete(message.run_id);
       return page.events.length > 0;
@@ -103,7 +112,7 @@ export function createConversations(api: ConversationApi) {
   };
   const schedulePoll = () => {
     stopPoll();
-    if (!state.selectedId || !state.canRead) return;
+    if (!state.selectedId || !state.canRead || state.historyMode!=="following" || state.reading) return;
     const id = state.selectedId;
     pollTimer = setTimeout(() => {
       pollTimer = null;
@@ -112,25 +121,15 @@ export function createConversations(api: ConversationApi) {
       void (async () => {
         try {
           let activity = false;
-          const previousAfter = messageAfter;
-          const after = messageAfter > 0 ? messageAfter - 1 : null;
-          const tail = await api.messages({conversation_id: id, after, limit: 8});
-          if (gen !== pollGeneration || state.selectedId !== id) return;
-          if (tail.messages.length) {
-            const bySeq = new Map(state.messages.map(message => [message.sequence, message]));
-            for (const message of tail.messages) bySeq.set(message.sequence, message);
-            const merged = [...bySeq.values()].sort((a, b) => a.sequence - b.sequence).slice(-256);
-            messageAfter = merged.at(-1)?.sequence ?? messageAfter;
-            activity = messageAfter > previousAfter;
-            update({messages: merged});
-            await reconcileUnknownSend(id);
-            if(gen !== pollGeneration || state.selectedId !== id)return;
-            for (const message of tail.messages) {
-              if (message.role === "assistant" && (!message.text_complete || message.text_bytes > new TextEncoder().encode(message.text).length)) {
-                contentTargets.set(message.run_id, {message, conversationId:id});
-              }
-            }
-          }
+          const after=windowNext ?? windowAfter;
+          const tail=await api.messages({conversation_id:id,after,limit:MESSAGE_PAGE});
+          if(gen!==pollGeneration || state.selectedId!==id || state.historyMode!=="following")return;
+          validateWindow(tail,id,after);
+          activity=tail.messages.at(-1)?.sequence!==messageAfter;
+          if(after!==windowAfter)previousWindows=[...previousWindows,windowAfter].slice(-256);
+          installWindow(tail,after,"following");
+          await reconcileUnknownSend(id);
+          if(gen!==pollGeneration || state.selectedId!==id)return;
           for (const target of [...contentTargets.values()]) {
             if (target.conversationId === id && await readContent(target.message, id, gen)) activity = true;
           }
@@ -145,6 +144,55 @@ export function createConversations(api: ConversationApi) {
         schedulePoll();
       })();
     }, pollDelay);
+  };
+  const validateWindow=(page:V4MessagePage,id:string,after:number) => {
+    let previous=after;
+    if(page.conversation_id!==id || page.messages.length>MESSAGE_PAGE)throw Error("Invalid message window");
+    for(const message of page.messages){if(message.conversation_id!==id || message.sequence<=previous)throw Error("Invalid message order");previous=message.sequence;}
+    if(page.next_after!==null && (page.messages.length===0 || page.next_after!==previous))throw Error("Invalid message cursor");
+    for(const message of page.messages)if(message.role==="user" && message.text_complete && new TextEncoder().encode(message.text).length===message.text_bytes) {
+      const key=inputKey(id,message.run_id);
+      originalInputs.delete(key);originalInputs.set(key,{...message});
+      if(originalInputs.size>64)originalInputs.delete(originalInputs.keys().next().value!);
+    }
+  };
+  const installWindow=(page:V4MessagePage,after:number,mode:Snapshot["historyMode"]) => {
+    windowAfter=after;windowNext=page.next_after;messageAfter=page.messages.at(-1)?.sequence ?? after;
+    const visible=new Set(page.messages.map(message=>message.run_id));
+    for(const key of contentByRun.keys())if(!visible.has(key))contentByRun.delete(key);
+    contentTargets.clear();
+    const messages=page.messages.map(message=>{const cached=contentByRun.get(message.run_id);return cached && message.role==="assistant" ? {...message,text:cached.text,text_bytes:Math.max(message.text_bytes,new TextEncoder().encode(cached.text).length),text_complete:cached.done} : message;});
+    for(const message of messages)if(message.role==="assistant" && (!message.text_complete || message.text_bytes>new TextEncoder().encode(message.text).length))contentTargets.set(message.run_id,{message,conversationId:page.conversation_id});
+    update({messages,reading:false,seekingLatest:false,earlierMessages:after>0,moreMessages:page.next_after!==null,historyMode:mode});
+  };
+  const moveWindow=async(direction:"earlier" | "later" | "latest") => {
+    if(!state.canRead || !state.selectedId || state.reading || (direction==="earlier" && windowAfter===0) || (direction==="later" && windowNext===null))return;
+    const id=state.selectedId,generation=++readGeneration;
+    stopPoll();pollGeneration++;
+    update({contentLoadingRun:null,contentNotice:null,reading:true,seekingLatest:direction==="latest",historyProgress:0,historyMode:"browse"});
+    try {
+      let after=direction==="later" ? windowNext! : direction==="earlier" && previousWindows.length ? previousWindows.at(-1)! : 0;
+      const rebuilding=direction==="earlier" && previousWindows.length===0;
+      const target=windowAfter;
+      let trail=direction==="latest" || rebuilding ? [] : [...previousWindows];
+      if(direction==="earlier" && !rebuilding)trail.pop();
+      if(direction==="later")trail=[...trail,windowAfter].slice(-256);
+      let page:V4MessagePage;
+      for(;;){
+        page=await api.messages({conversation_id:id,after,limit:MESSAGE_PAGE});
+        if(generation!==readGeneration || state.selectedId!==id)return;
+        validateWindow(page,id,after);
+        update({historyProgress:state.historyProgress+page.messages.length});
+        if(direction!=="latest" && !rebuilding)break;
+        if(rebuilding && page.next_after===target)break;
+        if(page.next_after===null){if(rebuilding)throw Error("Previous window changed");break;}
+        if(rebuilding && page.next_after>target)throw Error("Previous cursor changed");
+        trail=[...trail,after].slice(-256);after=page.next_after;
+      }
+      previousWindows=trail;
+      installWindow(page,after,direction!=="earlier" && page.next_after===null ? "following" : "browse");
+      schedulePoll();
+    }catch{if(generation===readGeneration)update({reading:false,seekingLatest:false,note:"History page couldn’t be read. The visible window and draft are kept; try the read again."});}
   };
   const draftKey = () => state.selectedId ?? "@new";
   const acceptMetadata = (selected: V4Conversation) => {
@@ -209,16 +257,19 @@ export function createConversations(api: ConversationApi) {
     const generation = ++readGeneration;
     const metadataVersion = metadataGeneration;
     const same = state.selectedId === id;
-    messageAfter = 0;
-    update({selectedId:id, selected:same ? state.selected : null, messages:same ? state.messages : [], reading:true, moreMessages:false, draft:drafts.get(id) ?? ""});
+    if(!same)originalInputs.clear();
+    messageAfter = 0;windowAfter=0;windowNext=null;previousWindows=[];
+    update({contentLoadingRun:null,contentNotice:null,historyMode:"browse",earlierMessages:false,seekingLatest:false,historyProgress:0,selectedId:id, selected:same ? state.selected : null, messages:same ? state.messages : [], reading:true, moreMessages:false, draft:drafts.get(id) ?? ""});
     try {
-      const [selected, history] = await Promise.all([api.read({resource_id:id}), api.messages({conversation_id:id, after:0, limit:PAGE})]);
+      const [selected, history] = await Promise.all([api.read({resource_id:id}), api.messages({conversation_id:id, after:0, limit:MESSAGE_PAGE})]);
       if (generation !== readGeneration) return;
+      validateWindow(history,id,0);
       const histMsgs = history.messages;
       messageAfter = histMsgs.at(-1)?.sequence ?? history.next_after ?? 0;
       // A completed metadata effect/reconciliation outranks an older read, while
       // its independently valid history still finishes loading and keeps paging.
-      update({...(metadataVersion === metadataGeneration ? {selected} : {}), messages:histMsgs, reading:false, moreMessages: history.next_after !== null });
+      update({...(metadataVersion === metadataGeneration ? {selected} : {}), reading:false });
+      installWindow(history,0,history.next_after===null ? "following" : "browse");
       await reconcileUnknownSend(id);
       if(generation !== readGeneration)return;
       await reconcileRetries(id);
@@ -232,9 +283,12 @@ export function createConversations(api: ConversationApi) {
   const newDraft = () => {
     stopPoll();
     readGeneration++; pollGeneration++; contentByRun.clear(); contentTargets.clear(); messageAfter = 0;
-    update({selectedId:null, selected:null, messages:[], reading:false, moreMessages:false, draft:drafts.get("@new") ?? ""});
+    windowAfter=0;windowNext=null;previousWindows=[];originalInputs.clear();
+    update({contentLoadingRun:null,contentNotice:null,historyMode:"browse",earlierMessages:false,seekingLatest:false,historyProgress:0,selectedId:null, selected:null, messages:[], reading:false, moreMessages:false, draft:drafts.get("@new") ?? ""});
   };
   const connect = async () => {
+    stopPoll();pollGeneration++;
+    update({contentLoadingRun:null,contentNotice:null});
     const generation = ++accessGeneration; listGeneration++; readGeneration++;
     update({access:"loading", canRead:false, canWrite:false, canCancel:false, listing:false, reading:false});
     try {
@@ -304,10 +358,10 @@ export function createConversations(api: ConversationApi) {
     }
   };
   const canRetry = (conversationId:string, runId:string) => {
-    if (conversationId !== state.selectedId || !state.canWrite || state.reading || state.sending || state.mutation || state.activeRunId || state.sendUnknownFor === conversationId || state.retries.some(attempt => (attempt.phase === "unknown" && attempt.conversationId === conversationId) || (attempt.phase === "accepted" && attempt.conversationId === conversationId && (attempt.state === null || activeState(attempt.state)) && !state.messages.some(message => message.run_id === attempt.runId && !activeState(message.state))) || (attempt.conversationId === conversationId && attempt.originalRunId === runId && attempt.phase !== "rejected")) || state.retries.length >= 256 || state.routeStatus !== "ready" || !state.routes.some(route => route.available && route.route_id === state.routeId)) return false;
+    if (conversationId !== state.selectedId || state.historyMode!=="following" || !state.canWrite || state.reading || state.sending || state.mutation || state.activeRunId || state.sendUnknownFor === conversationId || state.retries.some(attempt => (attempt.phase === "unknown" && attempt.conversationId === conversationId) || (attempt.phase === "accepted" && attempt.conversationId === conversationId && (attempt.state === null || activeState(attempt.state)) && !state.messages.some(message => message.run_id === attempt.runId && !activeState(message.state))) || (attempt.conversationId === conversationId && attempt.originalRunId === runId && attempt.phase !== "rejected")) || state.retries.length >= 256 || state.routeStatus !== "ready" || !state.routes.some(route => route.available && route.route_id === state.routeId)) return false;
     const messages = state.messages.filter(message => message.conversation_id === conversationId && message.run_id === runId);
     const latest = messages.at(-1);
-    const original = messages.find(message => message.role === "user");
+    const original = messages.find(message => message.role === "user") ?? originalInputs.get(inputKey(conversationId,runId));
     return !!latest && ["failed", "interrupted", "cancelled"].includes(latest.state) && !!original && original.text_complete && original.text.trim().length > 0 && new TextEncoder().encode(original.text).length === original.text_bytes;
   };
   return {
@@ -380,7 +434,7 @@ export function createConversations(api: ConversationApi) {
     canRetry,
     async retry(conversationId:string, originalRunId:string) {
       if (!canRetry(conversationId, originalRunId)) return;
-      const input = state.messages.find(message => message.conversation_id === conversationId && message.run_id === originalRunId && message.role === "user")!.text;
+      const input = (state.messages.find(message => message.conversation_id === conversationId && message.run_id === originalRunId && message.role === "user") ?? originalInputs.get(inputKey(conversationId,originalRunId)))!.text;
       const routeId = state.routeId!;
       const idempotency = `turn-${crypto.randomUUID()}`;
       const attempt:RetryAttempt = {conversationId, originalRunId, routeId, runId:null, idempotencyKey:idempotency, state:null, phase:"sending"};
@@ -390,7 +444,7 @@ export function createConversations(api: ConversationApi) {
         const result = await api.submit({conversation_id:conversationId, idempotency_key:idempotency, route_id:routeId, input});
         if (result.conversation_id !== conversationId || result.idempotency_key !== idempotency || !result.run_id || result.run_id === originalRunId || result.duplicate) throw new Error("Uncorrelated retry response");
         finish({phase:"accepted", runId:result.run_id, state:result.state}, "Retry accepted. Your composer draft is kept.");
-        if (state.selectedId === conversationId) await select(conversationId);
+        if (state.selectedId === conversationId) {await select(conversationId);if(state.selectedId===conversationId && state.moreMessages)await moveWindow("latest");}
       } catch (error) {
         const rejected = ["rejected", "configuration", "unsupported_platform", "not_found"].includes(String(kindOf(error)));
         finish({phase:rejected ? "rejected" : "unknown"}, rejected ? "Retry rejected. Your draft is kept." : "Retry outcome unknown. It will not be sent again; inspect history. Your draft is kept.");
@@ -429,7 +483,7 @@ export function createConversations(api: ConversationApi) {
         const unchanged=(draftVersions.get(conversationId) ?? 0)===originalDraftVersion;
         if(unchanged)drafts.delete(conversationId);
         update({sending:false,...(state.selectedId===conversationId ? {...(unchanged ? {draft:""} : {}),note:null} : {})});
-        if(state.selectedId===conversationId)await select(conversationId);
+        if(state.selectedId===conversationId){await select(conversationId);if(state.selectedId===conversationId && state.moreMessages)await moveWindow("latest");}
       } catch (error) {
         const rejected = ["rejected", "configuration", "unsupported_platform", "not_found"].includes(String(kindOf(error)));
         if(!rejected)unknownSends.set(conversationId,{key:idempotency,input,at:submittedAt,draftVersion:originalDraftVersion});
@@ -437,28 +491,28 @@ export function createConversations(api: ConversationApi) {
       }
     },
     refresh: () => refresh(), more: () => refresh(true),
-    async moreMessages() {
-      if(!state.canRead || !state.selectedId || state.reading || !state.moreMessages) return;
-      const id = state.selectedId, generation = readGeneration;
-      update({reading:true});
-      try {
-        const page = await api.messages({conversation_id:id, after: messageAfter, limit: PAGE});
-        if(generation !== readGeneration) return;
-        const newMsgs = page.messages;
-        messageAfter = newMsgs.at(-1)?.sequence ?? page.next_after ?? 0;
-        const messages = [...state.messages, ...newMsgs];
-        update({messages:messages.slice(0, 256), reading:false, moreMessages: page.next_after !== null && messages.length < 256});
-        for (const message of newMsgs) if (message.role === "assistant" && (!message.text_complete || message.text_bytes > new TextEncoder().encode(message.text).length)) contentTargets.set(message.run_id, {message, conversationId:id});
-        schedulePoll();
-      } catch {if(generation === readGeneration) update({reading:false, note:"More messages couldn’t be read. The current page and draft are kept."});}
-    },
+    moreMessages:()=>moveWindow("later"),
+    laterMessages:()=>moveWindow("later"),
+    earlierMessages:()=>moveWindow("earlier"),
+    latestMessages:()=>moveWindow("latest"),
     async loadContent(message: V4Message) {
-      if (!state.canRead || !state.selectedId || !api.content) return;
-      const conversationId = state.selectedId;
-      contentTargets.set(message.run_id, {message, conversationId});
+      if (!state.canRead || !state.selectedId || !api.content || state.contentLoadingRun || !state.messages.some(current=>current.sequence===message.sequence && current.run_id===message.run_id)) return;
+      const conversationId=state.selectedId;
+      contentTargets.set(message.run_id,{message,conversationId});
       stopPoll();
-      const generation = ++pollGeneration;
-      await readContent(message, conversationId, generation);
+      const generation=++pollGeneration;
+      update({contentLoadingRun:message.run_id,contentNotice:null});
+      let notice:string|null=null;
+      for(let page=0;page<128;page++) {
+        const progress=await readContent(message,conversationId,generation);
+        if(generation!==pollGeneration || state.selectedId!==conversationId)return;
+        const saved=contentByRun.get(message.run_id);
+        if(saved?.done)break;
+        if(!progress){notice="Reply content couldn’t advance. Continue loading to try the read again.";break;}
+        if(!saved?.more){notice="Available reply content loaded; the reply is incomplete. Continue loading to check again.";break;}
+        if(page===127)notice="Read limit reached. Continue loading reply to read the next bounded portion.";
+      }
+      update({contentLoadingRun:null,contentNotice:notice});
       schedulePoll();
     },
   };

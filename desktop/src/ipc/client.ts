@@ -23,6 +23,7 @@ import type {
   ConversationId,
   RunId,
   RuntimeStatus,
+  SystemIntegration,
   V3CapabilitySet,
   V3EntityPage,
   V3EntityRecord,
@@ -30,6 +31,7 @@ import type {
   V3ResourceQuery,
   V3SearchRequest,
   V3StableClaim,
+  V3ToolPage,
   V3ModelAction, V3ModelDetails, V3OperationStatus,
 } from "./generated";
 
@@ -75,6 +77,12 @@ export const COMMANDS = [
   "app_conversation_cancel_turn",
   "app_conversation_lookup_turn",
   "app_conversation_update",
+
+  // Read-only tool inventory and this build's own host-OS facts. The order
+  // mirrors the `generate_handler!` block in `src-tauri/src/main.rs`, which
+  // `tools/check_claims_sync.py` compares entry by entry.
+  "app_tools_list",
+  "app_system_integration",
 
 ] as const;
 
@@ -155,6 +163,27 @@ export function appClaimById(query: V3ResourceQuery): Promise<V3StableClaim> {
 
 export function appConnection(): Promise<ConnectionInfo> {
   return invoke<ConnectionInfo>("app_connection");
+}
+
+/**
+ * `ListTools` — the tool inventory the daemon advertises.
+ *
+ * Read-only enumeration: this call lists descriptors and nothing else. There
+ * is no invoke, approve, deny, or cancel command on this surface, so a tool
+ * that appears here cannot be run from this window.
+ */
+export function appToolsList(query: V3PageQuery): Promise<V3ToolPage> {
+  return invoke<V3ToolPage>("app_tools_list", { query });
+}
+
+/**
+ * This build's own host-OS integration, as read-only facts.
+ *
+ * The declared permissions come from the compiled-in capability manifest;
+ * nothing here registers, installs, or starts anything.
+ */
+export function appSystemIntegration(): Promise<SystemIntegration> {
+  return invoke<SystemIntegration>("app_system_integration");
 }
 
 export function appBundleIdentity(): Promise<BundleIdentity> {

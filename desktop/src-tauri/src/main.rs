@@ -4,6 +4,7 @@
 // No console window on Windows release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod appearance;
 mod backend;
 mod commands;
 mod ipc;
@@ -26,12 +27,13 @@ fn main() {
         // UpdateCheck.tsx), and it never installs without the user pressing it.
         .plugin(tauri_plugin_updater::Builder::new().build())
         // Native application menu: Apple-standard predefined items only. Every
-        // entry is an OS-provided role (about/hide/quit/undo/copy/minimize...
-        // operate on this window or open the about panel); there are no custom
-        // handlers that reach webview state, the daemon, or the filesystem, in
-        // keeping with the read-only command surface. The FIRST submenu becomes
-        // the macOS app menu (the OS reads its name from the bundle, not from
-        // the submenu title).
+        // entry except the single, explicitly user-initiated "Check for
+        // Updates…" item is an OS-provided role (about/hide/quit/undo/copy/
+        // minimize... operate on this window or open the about panel); no menu
+        // entry reaches webview state, the daemon, or the filesystem, in
+        // keeping with the read-only command surface. The FIRST submenu
+        // becomes the macOS app menu (the OS reads its name from the bundle,
+        // not from the submenu title).
         .menu(|handle| {
             use tauri::menu::{AboutMetadata, MenuBuilder, MenuItemBuilder, SubmenuBuilder};
             let version = handle
@@ -115,10 +117,64 @@ fn main() {
             // the edition overlay replaces arrays wholesale, so the title is
             // applied here from the same product name the bundle and the
             // menu use.
-            if let Some(window) = app.get_webview_window("main")
-                && let Some(product_name) = app.config().product_name.clone()
-            {
-                let _ = window.set_title(&product_name);
+            //
+            // The same lookup then hands the window to the native appearance
+            // module: on macOS this installs real AppKit material — Liquid
+            // Glass (`NSGlassEffectView`) or the titlebar visual effect
+            // (`NSVisualEffectView`) — into the window's titlebar strip only.
+            // The webview content area keeps its opaque reading surfaces; the
+            // webview itself is never made transparent, and everywhere else
+            // the module is a no-op that reports an opaque window.
+            //
+            // The decision is re-evaluated whenever the window regains focus
+            // or is resized, so a change to the macOS accessibility display
+            // options (reduce transparency, increase contrast, forced colors)
+            // degrades the window to opaque without a restart, and a window
+            // that enters full screen (where the titlebar strip does not
+            // exist) drops the material again. `apply` is idempotent: an
+            // unchanged decision leaves the installed material alone, so the
+            // frame never flickers, and the re-evaluation is coalesced to one
+            // queued task at a time.
+            if let Some(window) = app.get_webview_window("main") {
+                if let Some(product_name) = app.config().product_name.clone() {
+                    let _ = window.set_title(&product_name);
+                }
+                let appearance = appearance::apply(&window);
+                eprintln!(
+                    "abbey-desktop: window appearance: {} [kind={} material={} reason={}]",
+                    appearance.describe(),
+                    appearance.kind().label(),
+                    appearance
+                        .material()
+                        .map_or("-", appearance::NativeMaterial::label),
+                    appearance
+                        .opaque_reason()
+                        .map_or("-", appearance::OpaqueReason::label),
+                );
+                let refocus = window.clone();
+                let queued = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+                window.on_window_event(move |event| {
+                    let recheck = matches!(
+                        event,
+                        tauri::WindowEvent::Focused(true) | tauri::WindowEvent::Resized(_)
+                    );
+                    if !recheck {
+                        return;
+                    }
+                    // At most one re-evaluation is queued at a time: a live
+                    // resize fires a stream of events, and each of them would
+                    // otherwise post its own task.
+                    if queued.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                        return;
+                    }
+                    let window = refocus.clone();
+                    let applied = window.clone();
+                    let queued = queued.clone();
+                    let _ = window.run_on_main_thread(move || {
+                        queued.store(false, std::sync::atomic::Ordering::SeqCst);
+                        let _ = appearance::apply(&applied);
+                    });
+                });
             }
             // Route the single custom menu item ("Check for Updates…") to the
             // updater plugin's manual check: user-initiated (menu click only),
@@ -142,6 +198,14 @@ fn main() {
         })
         // The complete IPC surface. Adding a command means adding it here, in
         // review, next to this comment.
+        //
+        // `app_tools_list` is a read-only enumeration of the daemon's tool
+        // inventory: it lists a tool and never calls one. `app_system_integration`
+        // reports this build's own host-OS facts. Neither can execute anything.
+        //
+        // Keep this block free of comments: `scripts/verify-bundle.mjs` parses
+        // it by splitting on commas, so an inline comment would swallow the
+        // command that follows it.
         .invoke_handler(tauri::generate_handler![
             commands::app_status,
             commands::app_claims,
@@ -177,6 +241,8 @@ fn main() {
             commands::app_conversation_cancel_turn,
             commands::app_conversation_lookup_turn,
             commands::app_conversation_update,
+            commands::app_tools_list,
+            commands::app_system_integration,
         ])
         .run(tauri::generate_context!())
         .expect("abbey-desktop failed to start");

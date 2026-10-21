@@ -79,17 +79,14 @@ export const SURFACES: readonly Surface[] = [
   {
     id: "tools",
     label: "Tools",
-    blurb: "Sensitive-operation prompts.",
-    requires: null,
-    unavailable: {
-      reason: "not_on_contract",
-      detail:
-        "`AppEvent::ApprovalRequested` exists, and its own doc comment says the type " +
-        "grants no authority. Nothing emits it today, and there is no approve or deny " +
-        "command to pair with it. Rendering an approvals queue would be inventing both " +
-        "the queue and the authority to answer it.",
-      ledgerFilter: "allowlist",
-    },
+    blurb:
+      "The tool inventory the connected runtime advertises — read-only enumeration, never an invocation.",
+    // The inventory itself needs the daemon's `list_tools` grant, which the
+    // desktop negotiates in its own tool session rather than in the shared
+    // v3 read session. `read_status` is the honest floor for *reaching* the
+    // surface: the view then reports, in its own words, whether the daemon
+    // negotiated a tool inventory or refused to answer at all.
+    requires: "read_status",
   },
   {
     id: "memory",

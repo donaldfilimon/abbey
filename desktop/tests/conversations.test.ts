@@ -42,8 +42,8 @@ test("conversation and message pages retain watermark; stale load-more is discar
   }});
   await store.connect(); const pending = store.more(); await store.search("changed"); more.resolve(page(["b"])); await pending;
   expect(store.snapshot().items).toEqual([]); expect(queries[1]).toEqual({search:null, after:"old-15", limit:16, archived:false});
-  await store.select("a"); await store.moreMessages(); expect(store.snapshot().messages).toHaveLength(2);
-  expect(queries.at(-1)).toEqual({conversation_id:"a", after:1, limit:16});
+  await store.select("a"); await store.moreMessages(); expect(store.snapshot().messages).toHaveLength(1); expect(store.snapshot().messages[0]?.sequence).toBe(2);
+  expect(queries.at(-1)).toEqual({conversation_id:"a", after:1, limit:32});
 });
 test("double mutation sends once, transport ambiguity locks effects, read reconciliation never replays", async () => {
   let sends = 0; let reads = 0; const lost = defer<V4Conversation>();
@@ -97,7 +97,7 @@ test.each(["rename", "archive"] as const)("successful %s metadata survives an ol
   await store.mutate(kind, "new title");
   expect(store.snapshot().reading).toBe(true);
   staleRead.resolve(conversation("a"));
-  history.resolve({conversation_id:"a", next_after:2, messages:[message("a",1,"retained history")]});
+  history.resolve({conversation_id:"a", next_after:1, messages:[message("a",1,"retained history")]});
   await refresh;
   expect(store.snapshot().selected?.title).toBe(kind === "rename" ? "new title" : "a");
   expect(store.snapshot().selected?.archived).toBe(kind === "archive");
@@ -295,4 +295,24 @@ test("later conversation-scoped run accepts its first nonzero event sequence wit
   await new Promise(resolve => setTimeout(resolve, 300));
   expect(store.snapshot().messages[0]?.text).toBe("ok"); expect(store.snapshot().messages[0]?.text_complete).toBe(true);
   store.newDraft();
+});
+test("historical browse explicitly drains content pages without resuming history polling",async()=>{
+ const old={...message("a",1,"preview"),text_bytes:70000,text_complete:true};let reads=0;const calls:number[]=[];
+ const {store}=fixture({messages:async q=>{reads++;return {conversation_id:q.conversation_id,messages:[old],next_after:1};},content:async q=>{calls.push(q.after);return {conversation_id:"a",run_id:old.run_id,after:q.after,next_after:q.after===0?1:null,events:[{conversation_id:"a",run_id:old.run_id,sequence:q.after+1,timestamp_ms:1,payload:q.after===0?{kind:"text_delta",data:{text:"full"}}:{kind:"terminal",data:{state:"succeeded"}}}]};}});
+ await store.connect();await store.select("a");store.draft("keep");await store.loadContent(old);expect(calls).toEqual([0,1]);expect(store.snapshot().messages[0]?.text).toBe("full");expect(store.snapshot().messages[0]?.text_complete).toBe(true);expect(store.snapshot().historyMode).toBe("browse");await new Promise(done=>setTimeout(done,300));expect(reads).toBe(1);expect(store.snapshot().draft).toBe("keep");store.newDraft();
+});
+test("historical content action has bounded continuation and preserves advertised bytes",async()=>{
+ const old={...message("a",1,"preview"),text_bytes:70000,text_complete:true};let calls=0;
+ const {store}=fixture({messages:async q=>({conversation_id:q.conversation_id,messages:[old],next_after:1}),content:async q=>{calls++;return {conversation_id:"a",run_id:old.run_id,after:q.after,next_after:q.after<128?q.after+1:null,events:[{conversation_id:"a",run_id:old.run_id,sequence:q.after+1,timestamp_ms:1,payload:q.after<128?{kind:"text_delta",data:{text:"x"}}:{kind:"terminal",data:{state:"succeeded"}}}]};}});
+ await store.connect();await store.select("a");await store.loadContent(old);expect(calls).toBe(128);expect(store.snapshot().messages[0]?.text_bytes).toBe(70000);expect(store.snapshot().messages[0]?.text_complete).toBe(false);expect(store.snapshot().contentNotice).toContain("Continue");await store.loadContent(store.snapshot().messages[0]!);expect(calls).toBe(129);expect(store.snapshot().messages[0]?.text_complete).toBe(true);store.newDraft();
+});
+test("explicit content load is single flight and late pages cannot alter a navigated conversation",async()=>{
+ const old={...message("a",1,"preview"),text_bytes:70000,text_complete:true};const pending=defer<V4ContentPage>();let calls=0;
+ const {store}=fixture({messages:async q=>({conversation_id:q.conversation_id,messages:q.conversation_id==="a"?[old]:[],next_after:q.conversation_id==="a"?1:null}),content:async()=>{calls++;return pending.promise;}});
+ await store.connect();await store.select("a");const loading=store.loadContent(old);await store.loadContent(old);expect(calls).toBe(1);await store.select("b");store.draft("B");pending.resolve({conversation_id:"a",run_id:old.run_id,after:0,next_after:null,events:[{conversation_id:"a",run_id:old.run_id,sequence:1,timestamp_ms:1,payload:{kind:"text_delta",data:{text:"late"}}}]});await loading;expect(store.snapshot().selectedId).toBe("b");expect(store.snapshot().draft).toBe("B");expect(store.snapshot().contentLoadingRun).toBeNull();expect(store.snapshot().messages).toHaveLength(0);store.newDraft();
+});
+test("nonadvancing historical content remains incomplete with continuation available",async()=>{
+ const old={...message("a",1,"preview"),text_bytes:70000,text_complete:true};let calls=0;
+ const {store}=fixture({messages:async q=>({conversation_id:q.conversation_id,messages:[old],next_after:1}),content:async q=>{calls++;return {conversation_id:"a",run_id:old.run_id,after:q.after,next_after:null,events:[]};}});
+ await store.connect();await store.select("a");await store.loadContent(old);expect(calls).toBe(1);expect(store.snapshot().messages[0]?.text_bytes).toBe(70000);expect(store.snapshot().messages[0]?.text_complete).toBe(false);expect(store.snapshot().contentNotice).toContain("Continue");store.newDraft();
 });

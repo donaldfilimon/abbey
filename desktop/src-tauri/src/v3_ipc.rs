@@ -124,6 +124,45 @@ pub struct V3StableClaim {
     pub note: String,
 }
 
+/// Declared effect of one protocol-v3 tool.
+///
+/// Serde-identical to `abbey::app_core::V3ToolEffect`. The desktop renders the
+/// daemon's own effect class; it never invents one, and it never turns an
+/// advertised effect into an invitation to run the tool.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum V3ToolEffect {
+    /// Observes state and may run without an approval.
+    ReadOnly,
+    /// Changes state reversibly and requires an exact-call approval.
+    Mutating,
+    /// Changes state irreversibly and is not served by the safe edition.
+    Destructive,
+}
+
+/// One advertised tool and its bounded JSON input schema.
+///
+/// `input_schema` is the daemon's own advertised JSON Schema. The desktop
+/// carries it verbatim and never interprets it: this client cannot call a tool,
+/// so a schema is inventory, not an instruction.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct V3ToolDescriptor {
+    pub tool_id: String,
+    pub description: String,
+    pub effect: V3ToolEffect,
+    pub input_schema: serde_json::Value,
+}
+
+/// Fixed-watermark page of tool descriptors.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct V3ToolPage {
+    pub after: u64,
+    pub through: u64,
+    pub tools: Vec<V3ToolDescriptor>,
+}
+
 /// Exact immutable signed-model action, with single-use operation identity.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -456,5 +495,76 @@ mod tests {
             serde_json::from_str(&serde_json::to_string(&mirror).expect("re-ser claim"))
                 .expect("core claim");
         assert_eq!(core_claim, back);
+    }
+
+    /// The tool inventory the desktop renders is the daemon's own descriptor
+    /// wire. If these mirrors ever drift from `abbey::app_core::V3ToolPage`,
+    /// the desktop would label an effect class the daemon never sent.
+    #[test]
+    fn tool_page_wire_matches_app_core_serde() {
+        let core_page = abbey::app_core::V3ToolPage {
+            after: 0,
+            through: 2,
+            tools: vec![
+                abbey::app_core::V3ToolDescriptor {
+                    tool_id: "abbey_status".to_owned(),
+                    description: "Read runtime status.".to_owned(),
+                    effect: abbey::app_core::V3ToolEffect::ReadOnly,
+                    input_schema: serde_json::json!({"type": "object"}),
+                },
+                abbey::app_core::V3ToolDescriptor {
+                    tool_id: "abbey_memory_mark_obsolete".to_owned(),
+                    description: "Mark one memory record obsolete.".to_owned(),
+                    effect: abbey::app_core::V3ToolEffect::Mutating,
+                    input_schema: serde_json::json!({"type": "object"}),
+                },
+            ],
+        };
+        let json = serde_json::to_string(&core_page).expect("serialize core tool page");
+        let mirror: V3ToolPage = serde_json::from_str(&json).expect("desktop tool page");
+        assert_eq!(mirror.after, 0);
+        assert_eq!(mirror.through, 2);
+        assert_eq!(mirror.tools.len(), 2);
+        assert_eq!(mirror.tools[0].tool_id, "abbey_status");
+        assert_eq!(mirror.tools[0].effect, V3ToolEffect::ReadOnly);
+        assert_eq!(mirror.tools[1].tool_id, "abbey_memory_mark_obsolete");
+        assert_eq!(mirror.tools[1].effect, V3ToolEffect::Mutating);
+        assert_eq!(
+            mirror.tools[0].input_schema,
+            serde_json::json!({"type": "object"})
+        );
+
+        let back: abbey::app_core::V3ToolPage =
+            serde_json::from_str(&serde_json::to_string(&mirror).expect("re-ser tool page"))
+                .expect("core tool page");
+        assert_eq!(core_page, back);
+    }
+
+    /// Every `V3ToolEffect` variant the daemon can advertise must have a
+    /// mirror with the same wire spelling, including the destructive class the
+    /// safe edition never serves.
+    #[test]
+    fn tool_effect_wire_matches_app_core_serde() {
+        for (core, mirror) in [
+            (
+                abbey::app_core::V3ToolEffect::ReadOnly,
+                V3ToolEffect::ReadOnly,
+            ),
+            (
+                abbey::app_core::V3ToolEffect::Mutating,
+                V3ToolEffect::Mutating,
+            ),
+            (
+                abbey::app_core::V3ToolEffect::Destructive,
+                V3ToolEffect::Destructive,
+            ),
+        ] {
+            let core_json = serde_json::to_string(&core).expect("serialize core effect");
+            let mirror_json = serde_json::to_string(&mirror).expect("serialize mirror effect");
+            assert_eq!(core_json, mirror_json, "wire mismatch for {core:?}");
+            let back: abbey::app_core::V3ToolEffect =
+                serde_json::from_str(&mirror_json).expect("core effect");
+            assert_eq!(core, back);
+        }
     }
 }

@@ -242,6 +242,8 @@ pub struct V4Message {
     pub text: String,
     pub text_bytes: u64,
     pub text_complete: bool,
+    /// This exact run omitted earlier context under its bounded prompt budget.
+    pub context_truncated: bool,
     pub created_at_ms: u64,
 }
 
@@ -260,7 +262,8 @@ impl V4Message {
                     } else {
                         MAX_V4_DELTA_BYTES
                     }
-                && (self.role != V4MessageRole::User || self.text_complete)
+                && (self.role != V4MessageRole::User
+                    || (self.text_complete && !self.context_truncated))
                 && !self.text.contains('\0'),
         )
     }
@@ -530,6 +533,8 @@ impl<'de> Deserialize<'de> for V4Message {
             text: String,
             text_bytes: u64,
             text_complete: bool,
+            #[serde(default)]
+            context_truncated: bool,
             created_at_ms: u64,
         }
         let w = Wire::deserialize(deserializer)
@@ -543,6 +548,7 @@ impl<'de> Deserialize<'de> for V4Message {
             text: w.text,
             text_bytes: w.text_bytes,
             text_complete: w.text_complete,
+            context_truncated: w.context_truncated,
             created_at_ms: w.created_at_ms,
         };
         value.validate().map_err(serde::de::Error::custom)?;

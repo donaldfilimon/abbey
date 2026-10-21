@@ -1,8 +1,8 @@
 #![allow(
     dead_code,
-    reason = "v4 admin stubs for Task2 conv focus; full in later"
+    reason = "internal profile storage; remaining admin authority is deliberately unserved"
 )]
-//! Permission profiles etc for v4 tests. Keep small.
+//! Validated internal profile storage and explicit refusal for unserved admin authority.
 
 use super::super::{RuntimeStore, StoreError};
 #[allow(unused_imports)]
@@ -51,29 +51,23 @@ impl RuntimeStore {
         Ok(profile)
     }
     pub(crate) fn v4_tasks(&self, _p: &V4ConversationQuery) -> Result<V4TaskPage, StoreError> {
-        Ok(V4TaskPage {
-            tasks: vec![],
-            next_after: None,
-        })
+        Err(StoreError::InvalidInput("task authority unavailable"))
     }
     pub(crate) fn v4_create_task(&self, _t: &V4TaskCreate, _n: u64) -> Result<V4Task, StoreError> {
-        Err(StoreError::InvalidInput("tasks later"))
+        Err(StoreError::InvalidInput("task authority unavailable"))
     }
     pub(crate) fn v4_automations(
         &self,
         _p: &V4ConversationQuery,
     ) -> Result<V4AutomationPage, StoreError> {
-        Ok(V4AutomationPage {
-            automations: vec![],
-            next_after: None,
-        })
+        Err(StoreError::InvalidInput("automation authority unavailable"))
     }
     pub(crate) fn v4_upsert_automation(
         &self,
         _a: &V4AutomationUpsert,
         _n: u64,
     ) -> Result<V4Automation, StoreError> {
-        Err(StoreError::InvalidInput("auto later"))
+        Err(StoreError::InvalidInput("automation authority unavailable"))
     }
     pub(crate) fn v4_decide_action(
         &self,
@@ -82,10 +76,16 @@ impl RuntimeStore {
         _ap: bool,
         _n: u64,
     ) -> Result<(), StoreError> {
-        Ok(())
+        Err(StoreError::InvalidInput(
+            "action decision authority unavailable",
+        ))
     }
 }
 
 #[cfg(test)]
 #[path = "v4_profile_tests.rs"]
 mod profile_tests;
+
+#[cfg(test)]
+#[path = "v4_unavailable_tests.rs"]
+mod unavailable_tests;

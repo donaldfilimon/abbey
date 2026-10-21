@@ -137,9 +137,16 @@ if [ "$status" -ne 0 ]; then
   echo "live daemon desktop test failed" >&2
   exit "$status"
 fi
-if ! grep -q 'running 3 tests' "$LOG" || ! grep -q 'test result: ok. 3 passed' "$LOG"; then
+# The live-test count is read from the log rather than restated here: a
+# hardcoded count quietly goes stale the moment a live test is added, and a
+# stale count is how a vacuous cargo filter passes unnoticed. The count must
+# be at least one — a filter that matched nothing is not a proof.
+RUNNING="$(sed -n 's/^running \([0-9][0-9]*\) tests$/\1/p' "$LOG" | head -1)"
+PASSED="$(sed -n 's/^test result: ok\. \([0-9][0-9]*\) passed.*/\1/p' "$LOG" | head -1)"
+if [ -z "$RUNNING" ] || [ -z "$PASSED" ] || [ "$RUNNING" -lt 1 ] || [ "$RUNNING" != "$PASSED" ]; then
   echo "live daemon desktop tests did not all run (vacuous cargo filter)" >&2
   exit 1
 fi
+echo "live daemon desktop tests ran: $RUNNING"
 
 echo "prove-daemon-read: OK"

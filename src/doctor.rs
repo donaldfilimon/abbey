@@ -599,6 +599,11 @@ pub fn cmd_doctor(state: &AbbeyState, cfg: &AgentConfig) -> Result<i32> {
             }
         ),
         format!("model:     {}", cfg.model),
+        // Read-only summary of what a turn would use *now*: the live backend
+        // plus the live model, resolved with the spawn path's own rules. The
+        // TUI doctor panel renders the same line from the same helper, so the
+        // two surfaces cannot disagree.
+        crate::effective_model::effective_model_line(cfg.backend, &cfg.model),
         format!("chat:      {chat}"),
         format!("chat file: {}", state.active_chat_file().display()),
         format!("per-cwd:   {}", state.per_cwd),
@@ -616,7 +621,10 @@ pub fn cmd_doctor(state: &AbbeyState, cfg: &AgentConfig) -> Result<i32> {
             if cfg.stream.is_some() {
                 "live TUI configuration".into()
             } else {
-                snap.backend.source.label().to_string()
+                match snap.backend.source {
+                    config::ConfigSource::Default => "auto; default configuration".to_owned(),
+                    source => source.label().to_owned(),
+                }
             }
         ),
     ];
@@ -798,14 +806,17 @@ pub fn cmd_doctor(state: &AbbeyState, cfg: &AgentConfig) -> Result<i32> {
         match abi_path {
             // Name the real source: this line used to hardcode `ABBEY_BACKEND=abi`
             // and so lied whenever the backend came from the config key — the same
-            // defect `backend_source()` was written to fix one line above.
+            // source-provenance defect addressed by the backend diagnostic above.
             Some(p) if backend == agent::AgentBackend::Abi => format!(
                 "abi backend: active (from {} → {}) — local persona-template; \
              claude-*/live models use abi's Anthropic transport; Abbey-side transcript continuity",
                 if cfg.stream.is_some() {
                     "live TUI configuration".into()
                 } else {
-                    snap.backend.source.label().to_string()
+                    match snap.backend.source {
+                        config::ConfigSource::Default => "auto; default configuration".to_owned(),
+                        source => source.label().to_owned(),
+                    }
                 },
                 p.display()
             ),

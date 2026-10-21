@@ -12,6 +12,7 @@ import { MemoryView } from "./views/MemoryView";
 import { ModelsView } from "./views/ModelsView";
 import { RoutesView } from "./views/RoutesView";
 import { RunsView } from "./views/RunsView";
+import { ToolsView } from "./views/ToolsView";
 import { UnavailableView } from "./views/UnavailableView";
 import { useBootstrap } from "./hooks/useBootstrap";
 import { usePreferences, type Appearance } from "./hooks/usePreferences";
@@ -21,6 +22,7 @@ import { useConversations } from "./conversations/useConversations";
 import { CommandPalette } from "./components/CommandPalette";
 import { Icon } from "./components/Icon";
 import { PresentationSettings } from "./components/PresentationSettings";
+import { SystemIntegrationPanel } from "./components/SystemIntegration";
 const PRIMARY: SurfaceId[] = [
   "chat",
   "runs",
@@ -243,6 +245,7 @@ export function App() {
                 </button>
               </section>
               <PresentationSettings material={material} density={density} setMaterial={setMaterial} setDensity={setDensity} resetPresentation={resetPresentation} />
+              <SystemIntegrationPanel />
               <details className="card diagnostics">
                 <summary>Runtime diagnostics</summary>
                 {error && <ErrorCard error={error} />}
@@ -274,6 +277,7 @@ export function App() {
               {active === "runs" && <RunsView />}
               {active === "memory" && <MemoryView />}
               {active === "models" && <ModelsView />}
+              {active === "tools" && <ToolsView />}
             </div>
           ) : (
             <div className="empty-state">
