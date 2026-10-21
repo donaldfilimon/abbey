@@ -36,7 +36,7 @@ python3 tools/check_claims_sync.py           # verify; `--write` regenerates doc
 python3 -m unittest discover -s tools/tests -p 'test_*.py'   # Python tool tests (also a gate step)
 python3 tools/check_p3_readonly.py           # Program 3 read-only boundary (gate step)
 cargo check --target x86_64-pc-windows-gnu   # the soft cross-compile checks, run standalone
-./desktop/check.sh                           # separate Tauri+bun workspace gate; root ./check.sh runs only its codegen --check
+./desktop/check.sh                           # desktop gate: bun frontend, bundle, packaging (the root gate already builds/tests the client)
 (cd desktop && bun run codegen)              # regenerate desktop IPC types after changing src/app_core/ contracts
 ABBEY_COVERAGE=1 ./check.sh                  # opt-in report; needs cargo-llvm-cov
 ./zig/tools/check.sh >| /private/tmp/abbey-zig-gate.log 2>&1; echo EXIT:$?   # separate Zig gate for zig/ (see zig/AGENTS.md)
@@ -95,7 +95,7 @@ abbey claims [partial|proposed|blocked|oos|manifest] · abbey claims refuse lora
 | `inventory.rs` / `inventory/` (`skills.rs`, `plugins.rs`) | skills/plugins/peer-agent-tool discovery |
 | `init/` (`mod.rs`, `detect.rs`, `probe.rs`) | `abbey init` — scans a project and writes `AGENTS.md` |
 | `stream/` | executor stdout decoders (`StreamEvent`) for claude, cursor-agent, grok, and plain text |
-| `tui/` | chat-first ratatui app: transcript, composer, streaming run worker; `predict.rs` ranks slash completion |
+| `tui/` | chat-first ratatui app: transcript, composer, streaming run worker; `predict.rs` ranks slash completion; `clipboard.rs` copies the last reply via the host's clipboard command |
 | `agent/` / `models.rs` / `gitops.rs` / `state.rs` / `state/` / `config.rs` / `cli/args.rs` | executor invocation with an isolated per-backend argv grammar in `agent/argv.rs` (`agent/capture.rs` is the bounded non-Unix capture path, not the top-level `capture.rs`), model aliases, git helpers, canonical-first identity save/clear with a private compatibility-mirror journal, config loading, and leaf clap args |
 
 <!-- machine-git-policy -->
