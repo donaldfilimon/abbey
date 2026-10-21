@@ -5,7 +5,7 @@ const conversation = (id: string, sequence = 1): V4Conversation => ({id, convers
 const page = (ids: string[], next_after: string | null = null): V4ConversationPage => ({conversations: ids.map((id, i) => conversation(id, i + 1)), next_after});
 const fullPage = (prefix: string): V4ConversationPage => page(Array.from({length:16}, (_, i) => `${prefix}-${i}`), `${prefix}-15`);
 const message = (conversation_id: string, sequence: number, text: string) => ({conversation_id, run_id:"00000000-0000-4000-8000-000000000001", sequence, role:"assistant" as const, state:"succeeded" as const, text, text_bytes:new TextEncoder().encode(text).length, text_complete:true, created_at_ms:1});
-const route = (route_id:string, available=true):V4Route => ({route_id, backend:"abi", label:route_id, available});
+const route = (route_id:string, available=true):V4Route => ({route_id, backend:"abi", model:"local", label:route_id, available});
 function fixture(overrides: Partial<ConversationApi> = {}) {
   let effects = 0;
   const api: ConversationApi = {
