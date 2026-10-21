@@ -270,6 +270,35 @@ mod tests {
     }
 
     #[test]
+    fn every_theme_renders_markdown_without_panicking() {
+        // A palette added later must not be a palette that panics when a
+        // reply is rendered with it. The renderer is the one place a
+        // stream of arbitrary assistant text meets the theme.
+        let source = "# Heading\n\n- one\n- two\n\n```rust\nfn main() {}\n```\n\ntext with `code` and *emphasis*\n";
+        for id in ThemeId::all() {
+            let theme = Theme::from_id(id);
+            let lines = render(source, &theme, 80);
+            assert!(!lines.is_empty(), "{id:?} rendered nothing");
+        }
+    }
+
+    #[test]
+    fn every_theme_renders_a_partial_stream_without_panicking() {
+        // A reply arrives in fragments, and a fragment is not valid
+        // markdown. The renderer must survive every prefix of a reply.
+        let source = "# Heading\n\n- one\n\n```rust\nfn main() {}\n```\n\ntext with `code`";
+        for id in ThemeId::all() {
+            let theme = Theme::from_id(id);
+            for cut in 0..source.len() {
+                if !source.is_char_boundary(cut) {
+                    continue;
+                }
+                let _ = render(&source[..cut], &theme, 80);
+            }
+        }
+    }
+
+    #[test]
     fn partial_streaming_markdown_never_panics() {
         let t = Theme::from_id(ThemeId::Ink);
         for md in [

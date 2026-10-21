@@ -54,7 +54,7 @@ impl ThemeId {
     /// The theme the user has *chosen*, if any.
     ///
     /// The env override and the persisted file are the user's choice, and
-    /// they win outright. This is what [`resolve`] consults before it lets
+    /// they win outright. This is what [`Self::resolve`] consults before it lets
     /// the terminal's appearance decide.
     pub fn chosen(state_dir: &Path) -> Option<Self> {
         if let Ok(raw) = std::env::var(ENV_THEME)
