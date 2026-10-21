@@ -133,7 +133,7 @@ equals the local resolution of the same pair),
 `desktop/src-tauri/src/commands.rs` tests, `desktop/tests/doctor-effective-model.test.tsx`
 (SSR card rendering, the selected-route case, and the no-selection case), the
 live daemon proof `live_daemon_desktop_effective_model_comes_from_the_runtime_route`
-and its selected-route sibling, and
+and `live_daemon_desktop_the_selected_route_answers_the_effective_model`, and
 `tools/tests/test_check_claims_sync.py::DesktopReadmeDriftTests`.
 
 ## 4. Metal-device evidence for exact-model inference
