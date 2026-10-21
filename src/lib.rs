@@ -1,8 +1,9 @@
 //! Abbey application library.
 //!
 //! The CLI, TUI, daemon, and future desktop clients share one implementation
-//! crate. Only the presentation-neutral application contract is public; the
-//! mature CLI modules remain implementation details.
+//! crate. Only the presentation-neutral application contract and the
+//! read-only effective-model summary are public; the mature CLI modules
+//! remain implementation details.
 
 pub mod abbey_contracts;
 mod accel;
@@ -21,7 +22,7 @@ mod deferred;
 mod distill;
 mod doctor;
 pub mod edition;
-mod effective_model;
+pub mod effective_model;
 mod entry;
 mod generate;
 mod gitops;

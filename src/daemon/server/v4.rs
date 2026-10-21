@@ -202,7 +202,7 @@ mod tests {
     fn protocol_v4_accepts_the_exact_json_envelope_used_by_the_scratch_fixture() {
         let raw = serde_json::json!({
             "version": 4,
-            "schema_version": 1,
+            "schema_version": APP_SCHEMA_V4,
             "request_id": "00000000-0000-4000-8000-000000000001",
             "bearer": "fixture-bearer",
             "grants": {"capabilities": []},

@@ -23,6 +23,7 @@ import type {
   ConversationId,
   RunId,
   RuntimeStatus,
+  EffectiveModel,
   SystemIntegration,
   V3CapabilitySet,
   V3EntityPage,
@@ -43,6 +44,7 @@ import type {
  */
 export const COMMANDS = [
   "app_status",
+  "app_effective_model",
   "app_claims",
   "app_routes",
   "app_run_status",
@@ -118,6 +120,21 @@ export function toIpcError(thrown: unknown): IpcError {
 
 export function appStatus(): Promise<RuntimeStatus> {
   return invoke<RuntimeStatus>("app_status");
+}
+
+/**
+ * The model a turn would use right now.
+ *
+ * Pass a `routeId` to ask about that exact route — the one the Chat surface
+ * has selected. Pass `backend` and `model` together to ask about a named
+ * pair. Pass neither for the runtime's default available route.
+ */
+export function appEffectiveModel(
+  routeId?: string | null,
+  backend?: string | null,
+  model?: string | null,
+): Promise<EffectiveModel> {
+  return invoke<EffectiveModel>("app_effective_model", { routeId, backend, model });
 }
 
 export function appClaims(query: ClaimsQuery): Promise<ClaimsSnapshot> {

@@ -651,6 +651,16 @@ fn v4_handler_schedules_turns_through_the_manager_and_keeps_the_prompt_out_of_th
         routes.iter().any(|route| route.route_id == "abi.local"),
         "expected abi.local in {routes:?}"
     );
+    // The route publishes its exact model id as its own field, in Abbey's
+    // canonical backend vocabulary, so no client has to recover either from a
+    // display label or from the route id.
+    let abi = routes
+        .iter()
+        .find(|route| route.route_id == "abi.local")
+        .expect("abi route");
+    assert_eq!(abi.backend, "abi");
+    assert_eq!(abi.model, "local");
+    assert_eq!(abi.label, "ABI local (local)");
 }
 
 #[test]

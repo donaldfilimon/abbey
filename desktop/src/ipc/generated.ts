@@ -101,6 +101,13 @@ export interface V4Message {
 export interface V4Route {
   route_id: string;
   backend: string;
+  /**
+   * The exact model id this route's provider receives.
+   *
+   * Published as its own field so a client never has to recover the model
+   * from `route_id` or from the display `label`.
+   */
+  model: string;
   label: string;
   available: boolean;
 }
@@ -1063,4 +1070,53 @@ export interface V3OperationStatus {
   resource_id: string;
   state: V3OperationState;
   progress_basis_points: number;
+}
+
+// ---------------------------------------------------------------------------
+// src/effective_model.rs — effective model resolution
+// ---------------------------------------------------------------------------
+
+/**
+ * Where an [`EffectiveModel`] answer came from.
+ *
+ * Two surfaces answer the same question from two different authorities, and
+ * both are legitimate: the CLI and the TUI resolve from the *live local
+ * configuration* (`cfg.backend` / `cfg.model`), while the desktop client
+ * resolves from the *runtime's own published route* — the route the daemon
+ * will actually run a turn on. This discriminator makes that difference
+ * explicit so a consumer can never mistake one authority for the other, and
+ * so a client can say which one it consulted.
+ */
+export type EffectiveModelSource =
+  | "local-config"
+  | "runtime-route";
+
+/**
+ * The model a turn would use right now, given the live backend and the live
+ * model string.
+ *
+ * The backend is carried as its canonical label (`ollama`, `cursor-agent`,
+ * `grok`, `fm`, `abi`, `claude`) rather than as the executor-selection
+ * enum, so this contract crosses the crate boundary to the desktop client
+ * without exposing the executor-selection internals. The backend parser is
+ * the one place a label becomes a backend, so there is still exactly one
+ * backend vocabulary.
+ */
+export interface EffectiveModel {
+  /**
+   * The canonical backend label a turn would use.
+   */
+  backend: string;
+  /**
+   * The live model string, trimmed. Empty means "unset".
+   */
+  raw: string;
+  /**
+   * The model id the backend would actually receive.
+   */
+  resolved: string;
+  /**
+   * Which authority this answer was resolved against.
+   */
+  source: EffectiveModelSource;
 }

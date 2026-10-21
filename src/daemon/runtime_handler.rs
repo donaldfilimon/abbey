@@ -324,14 +324,18 @@ fn route(backend: BackendSelection) -> RunRouteCapability {
 }
 
 fn v4_route(backend: BackendSelection, model: &str) -> Result<V4Route, ()> {
+    // The backend is published as Abbey's canonical backend label, so a
+    // client resolves the route's model with the same vocabulary the CLI and
+    // the TUI use instead of a second, route-only spelling.
     let (backend_name, label) = match backend {
         BackendSelection::Abi => ("abi", "ABI local"),
-        BackendSelection::FoundationModels => ("foundation_models", "Foundation Models"),
+        BackendSelection::FoundationModels => ("fm", "Foundation Models"),
         BackendSelection::Cursor | BackendSelection::Grok => return Err(()),
     };
     let route = V4Route {
         route_id: v4_route_id(backend, model),
         backend: backend_name.into(),
+        model: model.to_string(),
         label: format!("{label} ({model})"),
         available: true,
     };

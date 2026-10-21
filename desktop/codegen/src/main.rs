@@ -63,6 +63,10 @@ const SOURCES: &[(&str, &str)] = &[
         "desktop/src-tauri/src/v3_ipc.rs",
         "desktop/src-tauri/src/v3_ipc.rs — protocol-v3 memory/grant wire (codegen)",
     ),
+    (
+        "src/effective_model.rs",
+        "src/effective_model.rs — effective model resolution",
+    ),
 ];
 
 /// Tauri configs whose bundle identity is written from `abbey::edition`.

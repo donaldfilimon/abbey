@@ -320,6 +320,32 @@ fn v4_command_and_event_serde_round_trip_the_wire_contract() {
 }
 
 #[test]
+fn v4_routes_publish_their_exact_model_id() {
+    let route = json!({
+        "route_id": "abi.local",
+        "backend": "abi",
+        "model": "local",
+        "label": "ABI local (local)",
+        "available": true,
+    });
+    let decoded: V4Route = serde_json::from_value(route.clone()).expect("valid route");
+    assert_eq!(decoded.backend, "abi");
+    assert_eq!(decoded.model, "local");
+    // The model is its own wire field, not text recovered from the label.
+    assert_eq!(serde_json::to_value(&decoded).unwrap(), route);
+
+    // A route without the model field is refused: the schema requires it.
+    let mut missing = route.clone();
+    missing.as_object_mut().expect("object").remove("model");
+    assert!(serde_json::from_value::<V4Route>(missing).is_err());
+
+    // A model that is not a bounded route token is refused too.
+    let mut hostile = route.clone();
+    hostile["model"] = json!("../escape");
+    assert!(serde_json::from_value::<V4Route>(hostile).is_err());
+}
+
+#[test]
 fn v4_decode_errors_never_echo_untrusted_values() {
     const SENTINEL: &str = "PRIVATE_ATTACKER_SENTINEL";
     fn check<T: serde::de::DeserializeOwned>(value: serde_json::Value) {

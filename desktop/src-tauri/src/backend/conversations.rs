@@ -30,6 +30,36 @@ fn requested() -> V4CapabilitySet {
     ])
     .expect("canonical conversation grants")
 }
+
+/// A read-only session that asks for the route grant and nothing else.
+///
+/// The conversation session above negotiates write and submit authority
+/// because the Chat surface needs it. A *read* of the published routes does
+/// not: borrowing the conversation session would make a daemon that serves
+/// conversation reads but withholds write authority refuse an honest
+/// read-only question, and it would couple a diagnosis to a mutation
+/// capability. This session asks for exactly `ReadRoutes`, so a read is
+/// refused only when the route authority itself was withheld.
+fn routes_session() -> Result<V4DaemonSession, IpcError> {
+    if bearer_source().is_none() {
+        return Err(IpcError::new(
+            IpcErrorKind::Rejected,
+            "the published routes require a configured daemon",
+        ));
+    }
+    match route()? {
+        Route::Daemon(client) => client
+            .negotiate_v4(
+                V4CapabilitySet::from_sorted(vec![V4Capability::ReadRoutes])
+                    .expect("canonical route grant"),
+            )
+            .map_err(error),
+        Route::InProcess(_) => Err(IpcError::new(
+            IpcErrorKind::Rejected,
+            "the published routes are daemon-only",
+        )),
+    }
+}
 fn error(value: V4ClientError) -> IpcError {
     let kind = match value {
         V4ClientError::UnsupportedPlatform => IpcErrorKind::UnsupportedPlatform,
@@ -98,6 +128,16 @@ pub fn conversation_content(query: V4ContentQuery) -> Result<V4ContentPage, IpcE
 }
 pub fn conversation_routes() -> Result<Vec<V4Route>, IpcError> {
     session()?.list_routes().map_err(error)
+}
+
+/// The routes the connected runtime publishes, read over a read-only
+/// session.
+///
+/// This is the same data `conversation_routes` returns, requested with the
+/// route grant alone. A read-only surface must not depend on a mutation
+/// capability being granted alongside it.
+pub fn published_routes() -> Result<Vec<V4Route>, IpcError> {
+    routes_session()?.list_routes().map_err(error)
 }
 pub fn conversation_submit_turn(request: V4SubmitTurn) -> Result<V4TurnSubmission, IpcError> {
     session()?.submit_turn(request).map_err(error)

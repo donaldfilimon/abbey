@@ -254,6 +254,7 @@ export function App() {
                     status={boot.status}
                     connection={boot.connection}
                     identity={boot.identity}
+                    routeId={history.routeId}
                   />
                 ) : (
                   <p className="muted">

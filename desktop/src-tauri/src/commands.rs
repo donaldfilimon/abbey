@@ -11,16 +11,133 @@ use abbey::app_core::{
     V4MessagePage, V4MessageQuery, V4ResourceQuery, V4Route, V4SubmitTurn, V4TurnSubmission,
 };
 use abbey::edition::ACTIVE;
+use abbey::effective_model::EffectiveModel;
 
 use crate::backend;
 use crate::ipc::{
-    BundleIdentity, ConnectionInfo, IntegrationFact, IntegrationState, IpcError, SystemIntegration,
+    BundleIdentity, ConnectionInfo, IntegrationFact, IntegrationState, IpcError, IpcErrorKind,
+    SystemIntegration,
 };
 
 /// `ReadStatus` — process identity, build stamp, and granted capabilities.
 #[tauri::command]
 pub fn app_status() -> Result<RuntimeStatus, IpcError> {
     backend::status()
+}
+
+/// The effective model — the model a turn would use right now, resolved with
+/// Abbey's shared spawn-path rules. Read-only: it reports; it does not act.
+///
+/// The read is governed by the `ReadRoutes` grant, and by nothing else. The
+/// answer is a projection of the routes the connected runtime publishes, and
+/// the protocol-v4 client refuses the request outright when that grant was
+/// not negotiated. There is no separate effective-model capability, because
+/// there is no separate effective-model authority.
+///
+/// The read opens its own read-only session rather than borrowing the
+/// conversation session: the conversation session negotiates write and submit
+/// authority because the Chat surface needs it, and a diagnosis of "which
+/// model would a turn use" must not depend on whether the client may mutate.
+///
+/// Three ways to ask:
+///
+/// * **A route id** — the answer is *that* route, which is what the Chat
+///   surface's current selection is. This is the honest answer to "the model
+///   a turn would use right now" once a route is selected.
+/// * **Nothing** — the answer is the runtime's first available route, which
+///   is the route a turn uses when no other one is selected.
+/// * **A backend and a model** — the answer is that named pair, resolved
+///   with the same rules. This is an explicit request for a specific pair,
+///   not a report of what a turn would use, and it is labeled as such.
+#[tauri::command]
+pub fn app_effective_model(
+    route_id: Option<String>,
+    backend: Option<String>,
+    model: Option<String>,
+) -> Result<EffectiveModel, IpcError> {
+    match (route_id, backend, model) {
+        (None, Some(backend), Some(model)) => resolve(&backend, &model),
+        (None, None, None) => runtime_effective_model(None),
+        (Some(route_id), None, None) => runtime_effective_model(Some(&route_id)),
+        _ => Err(IpcError::new(
+            IpcErrorKind::Rejected,
+            "ask for a route id, for a backend and model together, or for neither",
+        )),
+    }
+}
+
+/// The runtime's route, resolved with Abbey's shared rules.
+///
+/// The runtime owns the routes its turns run on, so this is the route the
+/// desktop's own turns use — not the desktop process's own environment.
+///
+/// With a `route_id`, that exact route is the answer: it is the route the
+/// Chat surface has selected, and the Chat surface submits turns on
+/// whichever route is selected. Resolving the *first* available route
+/// instead would report a model the desktop will not use, which is exactly
+/// the disagreement this command exists to prevent. A route id the runtime
+/// does not publish, or one it publishes as unavailable, is refused rather
+/// than silently replaced with a different route.
+fn runtime_effective_model(route_id: Option<&str>) -> Result<EffectiveModel, IpcError> {
+    if backend::bearer_source().is_none() {
+        return Err(IpcError::new(
+            IpcErrorKind::Rejected,
+            "no runtime route is published: this client executes no turns without a daemon",
+        ));
+    }
+    let routes = backend::published_routes()?;
+    let route = match route_id {
+        Some(route_id) => routes
+            .iter()
+            .find(|route| route.route_id == route_id)
+            .ok_or_else(|| {
+                IpcError::new(
+                    IpcErrorKind::NotFound,
+                    format!("the runtime publishes no route {route_id:?}"),
+                )
+            })?,
+        None => routes.iter().find(|route| route.available).ok_or_else(|| {
+            IpcError::new(
+                IpcErrorKind::NotFound,
+                "the runtime publishes no available route",
+            )
+        })?,
+    };
+    if !route.available {
+        return Err(IpcError::new(
+            IpcErrorKind::Rejected,
+            format!("the runtime publishes route {:?} as unavailable", route.route_id),
+        ));
+    }
+    resolve_for_route(&route.backend, &route.model)
+}
+
+/// Resolve one backend/model pair with Abbey's shared rules.
+///
+/// An unknown backend label is refused rather than guessed: the client must
+/// not invent a backend the user did not name.
+fn resolve(backend: &str, model: &str) -> Result<EffectiveModel, IpcError> {
+    EffectiveModel::resolve(backend, model).ok_or_else(|| {
+        IpcError::new(
+            IpcErrorKind::Rejected,
+            format!("unknown backend {backend:?}"),
+        )
+    })
+}
+
+/// Resolve a route the runtime published, with Abbey's shared rules.
+///
+/// The route's backend is already a canonical label and its model is already
+/// the exact id the provider receives, so this is the shared resolution and
+/// not a second grammar. The answer records that the runtime's route was
+/// the authority.
+fn resolve_for_route(backend: &str, model: &str) -> Result<EffectiveModel, IpcError> {
+    EffectiveModel::resolve_for_route(backend, model).ok_or_else(|| {
+        IpcError::new(
+            IpcErrorKind::Rejected,
+            format!("unknown backend {backend:?}"),
+        )
+    })
 }
 
 /// `ReadClaims` — the canonical capability ledger, filtered by a bounded query
@@ -378,6 +495,145 @@ async fn conversation_task<T: Send + 'static>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use abbey::effective_model::EffectiveModelSource;
+
+    /// An explicit backend and model resolve with Abbey's shared rules — the
+    /// same rules `abbey doctor` and the TUI doctor panel apply, so the
+    /// surfaces cannot disagree.
+    #[test]
+    fn an_explicit_backend_and_model_resolve_with_the_shared_rules() {
+        let ollama = app_effective_model(None, Some("ollama".into()), Some("gemma".into()))
+            .expect("a known backend resolves");
+        assert_eq!(ollama.backend, "ollama");
+        assert_eq!(ollama.raw, "gemma");
+        assert_eq!(ollama.resolved, "gemma4:26b-mlx");
+
+        // The alias table, the fm vocabulary, and the abi vocabulary all
+        // resolve exactly as they do for the CLI.
+        let cursor = app_effective_model(None, Some("cursor-agent".into()), Some("opus".into()))
+            .expect("a known backend resolves");
+        assert_eq!(cursor.resolved, "claude-opus-5-thinking-high");
+
+        let fm = app_effective_model(
+            None,
+            Some("fm".into()),
+            Some("claude-opus-5-thinking-high".into()),
+        )
+        .expect("a known backend resolves");
+        assert_eq!(fm.resolved, "system");
+
+        let abi = app_effective_model(None, Some("abi".into()), Some("fable".into()))
+            .expect("a known backend resolves");
+        assert_eq!(abi.resolved, "local");
+    }
+
+    /// An unknown backend label is refused, never guessed into one.
+    #[test]
+    fn an_unknown_backend_is_refused_rather_than_guessed() {
+        let error = app_effective_model(None, Some("nonsense".into()), Some("gemma".into()))
+            .expect_err("an unknown backend resolves to nothing");
+        assert_eq!(error.kind, IpcErrorKind::Rejected);
+        assert!(error.message.contains("unknown backend"));
+    }
+
+    /// Half a request is refused: a backend without a model (or the reverse)
+    /// would otherwise resolve against an invented model.
+    #[test]
+    fn a_half_requested_pair_is_refused() {
+        let error = app_effective_model(None, Some("ollama".into()), None)
+            .expect_err("half a request is refused");
+        assert_eq!(error.kind, IpcErrorKind::Rejected);
+        assert!(error.message.contains("ask for a route id"));
+    }
+
+    /// A route id together with a backend or a model is refused: they are
+    /// two different questions, and answering one with the other would
+    /// report a model the route does not use.
+    #[test]
+    fn a_route_id_combined_with_a_named_pair_is_refused() {
+        let error = app_effective_model(Some("abi.local".into()), Some("abi".into()), None)
+            .expect_err("a route id and a half pair are refused");
+        assert_eq!(error.kind, IpcErrorKind::Rejected);
+        assert!(error.message.contains("ask for a route id"));
+    }
+
+    /// Without a daemon there is no route, so there is no effective model to
+    /// report — and the window does not substitute one of its own.
+    #[test]
+    fn without_a_daemon_there_is_no_runtime_route_to_report() {
+        if backend::bearer_source().is_some() {
+            // A daemon is configured in this environment; the live daemon
+            // proof covers the daemon-backed path.
+            return;
+        }
+        let error = app_effective_model(None, None, None).expect_err("no daemon means no runtime route");
+        assert_eq!(error.kind, IpcErrorKind::Rejected);
+        assert!(error.message.contains("no runtime route is published"));
+    }
+
+    /// A route id the runtime does not publish is refused, never replaced
+    /// with a different route. Reporting the runtime's first available route
+    /// instead would answer a different question than the one asked.
+    #[test]
+    fn an_unpublished_route_id_is_refused_rather_than_replaced() {
+        if backend::bearer_source().is_some() {
+            // A daemon is configured in this environment; the live daemon
+            // proof covers the daemon-backed path.
+            return;
+        }
+        let error = app_effective_model(Some("no.such.route".into()), None, None)
+            .expect_err("an unpublished route is refused");
+        // Without a daemon there is no published route list at all, so the
+        // refusal is the same one a missing daemon produces.
+        assert_eq!(error.kind, IpcErrorKind::Rejected);
+        assert!(error.message.contains("no runtime route is published"));
+    }
+
+    /// Against a real daemon the effective model is the runtime's own
+    /// published route, resolved with Abbey's shared rules — never a value the
+    /// desktop process made up about itself.
+    #[cfg(unix)]
+    #[test]
+    fn live_daemon_desktop_effective_model_comes_from_the_runtime_route() {
+        if std::env::var_os("ABBEY_DESKTOP_LIVE_DAEMON").is_none() {
+            return;
+        }
+        let routes = backend::published_routes().expect("the daemon publishes its routes");
+        let route = routes
+            .iter()
+            .find(|route| route.available)
+            .expect("an available route");
+        // The scratch daemon binds the ABI local provider.
+        assert_eq!(route.backend, "abi");
+        assert_eq!(route.model, "local");
+        let effective = app_effective_model(None, None, None).expect("the runtime route resolves");
+        assert_eq!(effective.backend, route.backend);
+        assert_eq!(effective.raw, route.model);
+        assert_eq!(effective.resolved, "local");
+    }
+
+    /// A *selected* route is the route a turn runs on, so the effective model
+    /// must be that route's model — not the runtime's first available one.
+    #[cfg(unix)]
+    #[test]
+    fn live_daemon_the_selected_route_answers_the_effective_model() {
+        if std::env::var_os("ABBEY_DESKTOP_LIVE_DAEMON").is_none() {
+            return;
+        }
+        let routes = backend::published_routes().expect("the daemon publishes its routes");
+        let route = routes
+            .iter()
+            .find(|route| route.available)
+            .expect("an available route");
+        // Asking for that exact route must answer with that route's model.
+        let effective = app_effective_model(Some(route.route_id.clone()), None, None)
+            .expect("the selected route resolves");
+        assert_eq!(effective.backend, route.backend);
+        assert_eq!(effective.raw, route.model);
+        assert_eq!(effective.resolved, "local");
+        // And it is labeled as the runtime's route, not as a local guess.
+        assert_eq!(effective.source, EffectiveModelSource::RuntimeRoute);
+    }
 
     /// The permissions this build reports are the ones the shipped capability
     /// manifest declares — read from that manifest, not restated by hand.

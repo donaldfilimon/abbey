@@ -4,7 +4,12 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 pub const APP_PROTOCOL_V4: u16 = 4;
-pub const APP_SCHEMA_V4: u16 = 1;
+/// Schema 2 publishes each route's exact model id as its own field.
+///
+/// A daemon and a client that disagree on this version fail closed at
+/// negotiation instead of one side silently ignoring a field the other
+/// requires.
+pub const APP_SCHEMA_V4: u16 = 2;
 pub const MAX_V4_INPUT_BYTES: usize = 32 * 1024;
 pub const MAX_V4_TITLE_BYTES: usize = 256;
 pub const MAX_V4_PAGE: u16 = 50;
@@ -278,6 +283,11 @@ impl fmt::Debug for V4Message {
 pub struct V4Route {
     pub route_id: String,
     pub backend: String,
+    /// The exact model id this route's provider receives.
+    ///
+    /// Published as its own field so a client never has to recover the model
+    /// from `route_id` or from the display `label`.
+    pub model: String,
     pub label: String,
     pub available: bool,
 }
@@ -286,6 +296,7 @@ impl V4Route {
     pub fn validate(&self) -> Result<(), ValidationError> {
         route(&self.route_id)?;
         route(&self.backend)?;
+        route(&self.model)?;
         label(&self.label)
     }
 }
@@ -563,6 +574,7 @@ impl<'de> Deserialize<'de> for V4Route {
         struct Wire {
             route_id: String,
             backend: String,
+            model: String,
             label: String,
             available: bool,
         }
@@ -571,6 +583,7 @@ impl<'de> Deserialize<'de> for V4Route {
         let value = Self {
             route_id: w.route_id,
             backend: w.backend,
+            model: w.model,
             label: w.label,
             available: w.available,
         };

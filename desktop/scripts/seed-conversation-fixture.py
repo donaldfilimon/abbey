@@ -28,7 +28,7 @@ def seed():
         command = {"command": kind}
         if content is not None:
             command["data"] = content
-        raw = json.dumps({"version": 4, "schema_version": 1, "request_id": request_id,
+        raw = json.dumps({"version": 4, "schema_version": 2, "request_id": request_id,
                           "bearer": bearer, "grants": grants,
                           "command": command}).encode()
         with socket.socket(socket.AF_UNIX) as peer:

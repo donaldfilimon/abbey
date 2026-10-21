@@ -12,7 +12,7 @@ fn protocol_v4_socket_keeps_its_envelope_for_denial_and_unsupported_authority() 
 
     let unsupported = v4_frame(&harness, TEST_BEARER);
     assert_eq!(unsupported.version, 4);
-    assert_eq!(unsupported.schema_version, 1);
+    assert_eq!(unsupported.schema_version, crate::app_core::APP_SCHEMA_V4);
     match unsupported.payload {
         crate::daemon::V4ResponsePayload::Error { error } => {
             assert_eq!(error.code, crate::app_core::V4ErrorCode::UnsupportedVersion);
@@ -25,7 +25,7 @@ fn protocol_v4_socket_keeps_its_envelope_for_denial_and_unsupported_authority() 
 fn v4_frame(harness: &Harness, bearer: &str) -> crate::daemon::V4ResponseEnvelope {
     let bytes = serde_json::to_vec(&serde_json::json!({
         "version": 4,
-        "schema_version": 1,
+        "schema_version": crate::app_core::APP_SCHEMA_V4,
         "request_id": "v4-socket",
         "bearer": bearer,
         "grants": {"capabilities": []},
