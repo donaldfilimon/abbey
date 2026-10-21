@@ -2,6 +2,16 @@
 # Capture Python before system linker precedence and preserve it in children.
 if [ -z "${ABBEY_PYTHON:-}" ]; then ABBEY_PYTHON=$(command -v python3); fi
 export ABBEY_PYTHON
+# Ensure common toolchain directories are in PATH if rustup is not already resolvable
+if ! command -v rustup >/dev/null 2>&1; then
+  for p in /opt/homebrew/bin /opt/homebrew/sbin "$HOME/.cargo/bin" /usr/local/bin; do
+    if [ -d "$p" ]; then
+      PATH="$p:$PATH"
+    fi
+  done
+  export PATH
+fi
+
 # Resolve only in the repository; preserve the caller's working directory.
 ABBEY_TOOLCHAIN_CARGO=$(cd "$ABBEY_TOOLCHAIN_ROOT" && rustup which cargo) || return 1
 ABBEY_TOOLCHAIN_BIN=$(dirname "$ABBEY_TOOLCHAIN_CARGO")
