@@ -213,10 +213,7 @@ pub(super) fn run_with_checkpoint(
         }
     }
     use std::os::unix::process::CommandExt as _;
-    // MUTATION-I: the child no longer gets its own process group.
-    if std::env::var_os("ABBEY_MUTATION_I").is_none() {
-        command.process_group(0);
-    }
+    command.process_group(0);
 
     let child = command.spawn().map_err(SupervisorError::Spawn)?;
     let mut guard = ChildGuard::new(child)?;
