@@ -567,7 +567,7 @@ fn generated_cpu_provider_runs_through_governed_host_without_tool_claims() {
 fn canonical_proposal_gate_preserves_signed_bytes_and_reports_refusal() {
     use abi_wdbx::v3::episode::{
         ActorKind, ActorRef, EpisodeEvent, EpisodeSigner, EpisodeSource, EpisodeStore,
-        EpisodeWrite, EvidenceLevel, GuildEpisodePolicy, SignatureStatus, StorePolicy,
+        EpisodeWrite, EvidenceLevel, SignatureStatus, StorePolicy,
     };
     let root = std::env::temp_dir().join(format!("abbey-sea-episode-{}", std::process::id()));
     let policy = StorePolicy {
