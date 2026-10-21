@@ -17,8 +17,11 @@ import time
 
 
 class Session:
-    def __init__(self, binary, root, editor=None):
+    def __init__(self, binary, root, editor=None, background_color="0000/0000/0000"):
         self.root = root
+        # The background this terminal reports for the `OSC 11` query. The
+        # default is black, so the TUI keeps its dark palette.
+        self.background_color = background_color
         self.master, self.slave = os.openpty()
         self.resize(30, 100)
         self.before = termios.tcgetattr(self.slave)
@@ -65,12 +68,32 @@ class Session:
                 row, col = self.cursor
                 self.send(f"\x1b[{row};{col}R".encode())
                 self.query_offset = query + 4
+            # Answer the background-colour query the TUI asks before its first
+            # draw, so the app does not wait out its bounded timeout. A real
+            # terminal answers this; the reply is the reported background.
+            while True:
+                query = self.output.find(b"\x1b]11;?", self.query_offset)
+                if query < 0: break
+                self.send(f"\x1b]11;rgb:{self.background_color}\x1b\\".encode())
+                self.query_offset = query + len(b"\x1b]11;?")
 
     def screen(self):
         rows, cols = self.rows, self.cols
         grid = [[" " for _ in range(cols)] for _ in range(rows)]
         row = col = 0
-        for token in re.findall(r"\x1b\[[0-?]*[ -/]*[@-~]|\x1b.|.", self.output.decode("utf-8", "replace"), re.S):
+        # A terminal consumes an operating-system command whole and acts on
+        # it: it never renders the command's characters. The OSC form is
+        # `ESC ] <body> ST`, where ST is `ESC \` or `BEL`. Without this the
+        # characters of an OSC sequence would land on the screen as text,
+        # which is not what any real terminal does.
+        for token in re.findall(
+            r"\x1b\][^\x07\x1b]*(?:\x1b\\|\x07)|\x1b\[[0-?]*[ -/]*[@-~]|\x1b.|.",
+            self.output.decode("utf-8", "replace"),
+            re.S,
+        ):
+            if token.startswith("\x1b]"):
+                # An OSC command: consumed, not rendered.
+                continue
             if token.startswith("\x1b["):
                 body, op = token[2:-1], token[-1]
                 if body.startswith("?"):

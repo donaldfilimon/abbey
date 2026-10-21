@@ -50,10 +50,23 @@ pub fn query_background() -> Option<(u8, u8, u8)> {
 ///
 /// Split out so a test can drive the query against a pipe it controls.
 pub fn query_background_with(timeout: Duration) -> Option<(u8, u8, u8)> {
-    let mut stdin = std::io::stdin();
-    let mut stdout = std::io::stdout();
-    stdout.write_all(QUERY).ok()?;
-    stdout.flush().ok()?;
+    let stdin = std::io::stdin();
+    let stdout = std::io::stdout();
+    query_background_from(&mut stdin.lock(), &mut stdout.lock(), timeout)
+}
+
+/// Ask the terminal through the given streams.
+///
+/// The streams are parameters so a test can drive the query against a pipe
+/// it controls: a real query writes to the terminal and reads the reply,
+/// and only the *shape* of the exchange matters to the caller.
+pub fn query_background_from(
+    input: &mut impl Read,
+    output: &mut impl Write,
+    timeout: Duration,
+) -> Option<(u8, u8, u8)> {
+    output.write_all(QUERY).ok()?;
+    output.flush().ok()?;
 
     let deadline = Instant::now() + timeout;
     let mut buffer = Vec::new();
@@ -65,7 +78,7 @@ pub fn query_background_with(timeout: Duration) -> Option<(u8, u8, u8)> {
         if remaining.is_zero() {
             break;
         }
-        match stdin.read(&mut chunk) {
+        match input.read(&mut chunk) {
             Ok(0) => break,
             Ok(count) => {
                 buffer.extend_from_slice(&chunk[..count]);
@@ -240,5 +253,43 @@ mod tests {
             TerminalBrightness::from_background(None),
             TerminalBrightness::Dark
         );
+    }
+
+    #[test]
+    fn the_query_is_written_and_the_reply_is_read() {
+        // The real exchange: the query goes out, the terminal's reply comes
+        // back, and the reply is the colour. This is the shape a terminal
+        // performs, driven through pipes the test owns.
+        let reply = b"\x1b]11;rgb:ffff/ffff/ffff\x1b\\";
+        let mut input = std::io::Cursor::new(reply.to_vec());
+        let mut output: Vec<u8> = Vec::new();
+        let color = query_background_from(&mut input, &mut output, Duration::from_millis(500));
+        assert_eq!(color, Some((255, 255, 255)));
+        // The query that was written is the one a terminal answers.
+        assert_eq!(output, b"\x1b]11;?\x1b\\");
+    }
+
+    #[test]
+    fn a_terminal_that_says_nothing_is_dark() {
+        // The bound is what makes this safe: a terminal that does not
+        // support the query never answers, and the app must not wait
+        // forever for it.
+        let mut input = std::io::Cursor::new(Vec::new());
+        let mut output: Vec<u8> = Vec::new();
+        let color = query_background_from(&mut input, &mut output, Duration::from_millis(50));
+        assert_eq!(color, None);
+        // The query was still sent: the terminal simply did not answer.
+        assert_eq!(output, b"\x1b]11;?\x1b\\");
+    }
+
+    #[test]
+    fn a_reply_that_arrives_in_pieces_is_still_read() {
+        // A terminal may answer in more than one write, and a partial
+        // answer must not be mistaken for a complete one.
+        let mut input = std::io::Cursor::new(b"\x1b]11;rgb:".to_vec());
+        let mut output: Vec<u8> = Vec::new();
+        let color = query_background_from(&mut input, &mut output, Duration::from_millis(50));
+        // The first piece is incomplete, so no colour is claimed.
+        assert_eq!(color, None);
     }
 }

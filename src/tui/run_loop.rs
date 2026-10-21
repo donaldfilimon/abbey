@@ -86,16 +86,23 @@ fn edit_with(app: &mut App, path: &std::path::Path, editor: &str) -> Result<()> 
 }
 
 pub fn run_tui(state: AbbeyState, cfg: AgentConfig) -> Result<i32> {
-    // Ask the terminal what it looks like *before* raw mode is entered. In
-    // raw mode the reply would be delivered as keyboard input and read as a
-    // keypress, so the query has to happen while the terminal is still
-    // line-oriented. A terminal that does not answer leaves the dark
-    // palette; the wait is bounded, so an unsupported terminal is not a
-    // visible stall.
-    let brightness = super::terminal_appearance::background_brightness();
-    let mut app = App::new_with_brightness(state, cfg, brightness)?;
     let mut guard = TerminalGuard::native();
     guard.enter()?;
+    // Ask the terminal what it looks like, *after* the alternate screen is
+    // entered and before the first draw.
+    //
+    // The order matters twice over. After the alternate screen: a terminal
+    // that does not understand the query may render its characters, and
+    // the alternate screen is cleared, so nothing is left on the display.
+    // Before the first draw: the reply is read here, and a reply that
+    // arrives later would otherwise be read as a keypress.
+    //
+    // In raw mode the terminal does not echo the query, so the bytes are
+    // not read back as input. A terminal that does not answer leaves the
+    // dark palette; the wait is bounded, so an unsupported terminal is not
+    // a visible stall.
+    let brightness = super::terminal_appearance::background_brightness();
+    let mut app = App::new_with_brightness(state, cfg, brightness)?;
     let mut term = Terminal::new(CrosstermBackend::new(stdout()))?;
     let result = (|| -> Result<i32> {
         let mut was_running = false;

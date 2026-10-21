@@ -257,6 +257,8 @@ class OwnedSession(Session):
         self.resize(30, 110)
         self.before = termios.tcgetattr(self.slave)
         self.output, self.query_offset, self.cursor = bytearray(), 0, (1, 1)
+        # The background this terminal reports for the `OSC 11` query.
+        self.background_color = "0000/0000/0000"
         self.closed = False
         argv = [str(binary), *(args if args is not None else ["tui"])]
         self.proc = subprocess.Popen(argv, cwd=self.root,
