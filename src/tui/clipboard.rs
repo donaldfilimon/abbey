@@ -66,6 +66,53 @@ pub fn copy(text: &str) -> CopyOutcome {
     copy_with(&command, &args, text)
 }
 
+/// A copy running on its own thread.
+///
+/// The TUI's event loop must not block: a clipboard command that hangs —
+/// a `pbcopy` waiting on a pasteboard server that never answers — would
+/// otherwise freeze the whole app behind a keystroke the user cannot
+/// cancel. The copy runs on a worker and the result is collected on a
+/// later pump.
+pub struct PendingCopy {
+    result: std::sync::mpsc::Receiver<CopyOutcome>,
+    thread: std::thread::JoinHandle<()>,
+}
+
+impl PendingCopy {
+    /// Start a copy of `text`.
+    pub fn start(text: String) -> Self {
+        let (tx, result) = std::sync::mpsc::channel();
+        let thread = std::thread::Builder::new()
+            .name("abbey-tui-clipboard".into())
+            .spawn(move || {
+                let outcome = copy(&text);
+                // The receiver may be gone if the TUI quit first; that is
+                // not an error worth reporting anywhere.
+                let _ = tx.send(outcome);
+            })
+            .expect("the clipboard worker thread starts");
+        Self { result, thread }
+    }
+
+    /// The outcome, if the copy has finished.
+    ///
+    /// `None` means it is still running. The caller keeps its "copying…"
+    /// status and asks again on the next pump.
+    pub fn poll(&self) -> Option<CopyOutcome> {
+        self.result.try_recv().ok()
+    }
+
+    /// Wait for the copy to finish and join the worker.
+    ///
+    /// Used when the TUI is shutting down, so the worker is not left
+    /// running against a terminal that is going away.
+    pub fn join(self) -> Option<CopyOutcome> {
+        let outcome = self.result.recv().ok();
+        let _ = self.thread.join();
+        outcome
+    }
+}
+
 /// Copy `text` using one specific command.
 ///
 /// Split out so a test can point the action at a stub without a real
@@ -205,6 +252,47 @@ mod tests {
             "the text must never reach a shell"
         );
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_pending_copy_reports_its_outcome_when_it_finishes() {
+        // The copy runs on a worker so a hanging clipboard command cannot
+        // freeze the event loop. The outcome arrives later, through the
+        // poll.
+        //
+        // The outcome depends on whether this machine has a clipboard
+        // command, so the test asserts that an outcome *arrives* and that
+        // it is one of the three honest ones — not which one.
+        let pending = PendingCopy::start("copied text".to_owned());
+
+        // Poll until the outcome arrives; the worker is a real thread, so
+        // this is a bounded wait rather than an instant.
+        let mut outcome = None;
+        for _ in 0..200 {
+            if let Some(seen) = pending.poll() {
+                outcome = Some(seen);
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(
+            matches!(
+                outcome,
+                Some(CopyOutcome::Copied)
+                    | Some(CopyOutcome::Unavailable)
+                    | Some(CopyOutcome::Refused(_))
+            ),
+            "a finished copy must report one of the three outcomes, saw {outcome:?}"
+        );
+    }
+
+    #[test]
+    fn a_pending_copy_can_be_joined() {
+        // Shutdown joins the worker, so a copy in flight is not left running
+        // against a terminal that is going away.
+        let pending = PendingCopy::start("text".to_owned());
+        let outcome = pending.join();
+        assert!(outcome.is_some(), "joining a copy must yield its outcome");
     }
 
     #[test]

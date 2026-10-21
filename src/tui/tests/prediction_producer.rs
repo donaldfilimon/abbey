@@ -224,6 +224,7 @@ esac
             completion_idx: 0,
             completion_basis: None,
             prediction: crate::tui::prediction_owner::PredictionOwner::default(),
+            clipboard: None,
             run: None,
             pending_model_mutation: None,
             queued: Vec::new(),

@@ -91,6 +91,8 @@ pub struct App {
     pub completion_idx: usize,
     pub completion_basis: Option<(String, usize)>,
     pub prediction: super::prediction_owner::PredictionOwner,
+    /// A clipboard copy in flight, if any.
+    pub clipboard: Option<super::clipboard::PendingCopy>,
     pub run: Option<RunHandle>,
     pub(crate) pending_model_mutation: Option<ModelMutation>,
     pub queued: Vec<String>,
@@ -188,6 +190,7 @@ impl App {
             completion_idx: 0,
             completion_basis: None,
             prediction: super::prediction_owner::PredictionOwner::default(),
+            clipboard: None,
             run: None,
             pending_model_mutation: None,
             queued: Vec::new(),
@@ -233,16 +236,38 @@ impl App {
 
     /// Copy the last reply to the host's clipboard.
     ///
-    /// The status line says what happened in every case — copied, no
-    /// clipboard command on this host, or the command's own refusal. It
-    /// never reports a success that did not happen.
+    /// The copy runs on a worker, so a clipboard command that hangs cannot
+    /// freeze the TUI's event loop. The status line says what happened in
+    /// every case — copied, no clipboard command on this host, or the
+    /// command's own refusal. It never reports a success that did not
+    /// happen.
     pub fn copy_last_reply(&mut self) {
         let text = self.transcript.last_reply();
         if text.is_empty() {
             self.status = "nothing to copy: no reply yet".into();
             return;
         }
-        let outcome = super::clipboard::copy(&text);
+        // A copy already in flight is *not* joined here: joining would
+        // block the event loop on a clipboard command that may be hung,
+        // which is the whole reason the copy runs on a worker. Dropping the
+        // handle detaches that worker; it finishes on its own, and its
+        // result is discarded because the receiver is gone.
+        self.clipboard = Some(super::clipboard::PendingCopy::start(text));
+        self.status = "copying the last reply…".into();
+    }
+
+    /// Collect a finished copy, if there is one.
+    ///
+    /// Called from the pump, so the status line learns the outcome without
+    /// the event loop ever waiting for the clipboard.
+    pub fn poll_clipboard(&mut self) {
+        let Some(pending) = &self.clipboard else {
+            return;
+        };
+        let Some(outcome) = pending.poll() else {
+            return;
+        };
+        self.clipboard = None;
         self.status = match outcome {
             super::clipboard::CopyOutcome::Copied => {
                 format!("copied the last reply ({})", outcome.describe())
@@ -448,6 +473,9 @@ impl App {
     /// Apply at most 128 events per tick, then finalize only after the queue
     /// is drained. Completion is a worker outcome, never an executor event.
     pub fn pump(&mut self) {
+        // Collect a finished clipboard copy before anything else, so the
+        // status line is never a frame behind.
+        self.poll_clipboard();
         let allowed = !self.is_running() && matches!(self.overlay, Overlay::None);
         match self.prediction.pump(
             &self.composer.text,
@@ -603,6 +631,12 @@ impl App {
     pub(crate) fn shutdown(&mut self) -> Result<()> {
         let prediction = self.prediction.dismiss();
         self.discard_queue();
+        // Join a clipboard copy that is still running, so the worker is not
+        // left writing to a clipboard command while the terminal is going
+        // away.
+        if let Some(pending) = self.clipboard.take() {
+            let _ = pending.join();
+        }
         if let Some(mut run) = self.run.take() {
             run.cancel.cancel();
             let run_result = run.join().map_err(anyhow::Error::msg);

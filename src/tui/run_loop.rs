@@ -58,7 +58,8 @@ fn take_the_terminal_back<C: Control>(
     guard: &mut TerminalGuard<C>,
     clear: impl FnOnce() -> Result<()>,
 ) -> Result<()> {
-    guard.enter().and_then(clear)
+    guard.enter()?;
+    clear()
 }
 
 fn edit_composer(app: &mut App) -> Result<()> {
