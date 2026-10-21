@@ -51,20 +51,36 @@ impl ThemeId {
         [Self::Ink, Self::Violet, Self::Mono, Self::Daylight]
     }
 
-    /// Resolve order: `ABBEY_TUI_THEME` env > `{state_dir}/tui-theme` file >
-    /// [`ThemeId::Ink`].
-    pub fn resolve(state_dir: &Path) -> Self {
+    /// The theme the user has *chosen*, if any.
+    ///
+    /// The env override and the persisted file are the user's choice, and
+    /// they win outright. This is what [`resolve`] consults before it lets
+    /// the terminal's appearance decide.
+    pub fn chosen(state_dir: &Path) -> Option<Self> {
         if let Ok(raw) = std::env::var(ENV_THEME)
             && let Some(id) = Self::parse(&raw)
         {
-            return id;
+            return Some(id);
         }
         if let Ok(contents) = fs::read_to_string(theme_file_path(state_dir))
             && let Some(id) = Self::parse(&contents)
         {
-            return id;
+            return Some(id);
         }
-        Self::Ink
+        None
+    }
+
+    /// Resolve the theme for this session.
+    ///
+    /// Order: the user's choice (env override, then the persisted file) >
+    /// the terminal's reported appearance > [`ThemeId::Ink`].
+    ///
+    /// The choice wins outright, because a theme the user picked is theirs.
+    /// Only when they have not picked one does the terminal's brightness
+    /// decide, and a terminal that does not answer leaves the dark palette —
+    /// a palette must never be chosen from a value the app could not read.
+    pub fn resolve(state_dir: &Path, brightness: TerminalBrightness) -> Self {
+        decide(Self::chosen(state_dir), brightness)
     }
 
     /// Persist the theme id to `{state_dir}/tui-theme`.
@@ -79,6 +95,70 @@ impl ThemeId {
         let index = all.iter().position(|id| *id == self).unwrap_or(0);
         all[(index + 1) % all.len()]
     }
+}
+
+/// What the terminal said about its own background.
+///
+/// A terminal can report its default foreground and background colours
+/// (the `OSC 10` / `OSC 11` queries). That is the only way a TUI can learn
+/// whether it is running in a light or a dark profile, and it is the answer
+/// that matters: a dark palette drawn on a light terminal is either
+/// illegible or a rectangle of black in a white window.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TerminalBrightness {
+    /// The terminal reported a dark background, or did not answer.
+    Dark,
+    /// The terminal reported a light background.
+    Light,
+}
+
+impl TerminalBrightness {
+    /// Classify a terminal's reported background colour.
+    ///
+    /// Uses the same luminance rule as the palette check below, so the
+    /// decision and the assertion agree: a colour is light when the mean of
+    /// its channels is above the midpoint. A terminal that answers with
+    /// something that is not a colour is treated as dark, because a palette
+    /// must never be chosen from a value that could not be understood.
+    pub fn from_background(background: Option<(u8, u8, u8)>) -> Self {
+        match background {
+            Some((r, g, b)) if mean(r, g, b) > 127 => Self::Light,
+            _ => Self::Dark,
+        }
+    }
+
+    /// The palette this brightness implies.
+    ///
+    /// The dark profiles keep their own palette, because the three dark
+    /// themes are a *choice* — ink, violet, mono — and the terminal's
+    /// brightness does not narrow that choice. Only the light profile has
+    /// one obvious palette.
+    pub fn default_theme(self) -> ThemeId {
+        match self {
+            Self::Dark => ThemeId::Ink,
+            Self::Light => ThemeId::Daylight,
+        }
+    }
+}
+
+/// The mean of three channels.
+fn mean(r: u8, g: u8, b: u8) -> u32 {
+    (r as u32 + g as u32 + b as u32) / 3
+}
+
+/// The pure decision: which theme should the TUI use?
+///
+/// `chosen` is what the user selected — the env override, the persisted
+/// file, or the theme they last cycled to. `brightness` is what the terminal
+/// reported. A user who has *chosen* a theme keeps it, whatever the
+/// terminal says: the choice is theirs. Only when nothing has been chosen
+/// does the terminal's own appearance decide, and then only between the
+/// one obvious palette for that appearance.
+///
+/// The ordering matters. An appearance-following default that overrode an
+/// explicit choice would make the choice meaningless.
+pub fn decide(chosen: Option<ThemeId>, brightness: TerminalBrightness) -> ThemeId {
+    chosen.unwrap_or_else(|| brightness.default_theme())
 }
 
 fn theme_file_path(state_dir: &Path) -> PathBuf {
@@ -252,7 +332,10 @@ mod tests {
         let _guard = env_test_guard();
         unsafe { std::env::remove_var(ENV_THEME) };
         let dir = temp_state("default");
-        assert_eq!(ThemeId::resolve(&dir), ThemeId::Ink);
+        assert_eq!(
+            ThemeId::resolve(&dir, TerminalBrightness::Dark),
+            ThemeId::Ink
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -262,7 +345,10 @@ mod tests {
         unsafe { std::env::remove_var(ENV_THEME) };
         let dir = temp_state("file");
         ThemeId::save(&dir, ThemeId::Violet).unwrap();
-        assert_eq!(ThemeId::resolve(&dir), ThemeId::Violet);
+        assert_eq!(
+            ThemeId::resolve(&dir, TerminalBrightness::Dark),
+            ThemeId::Violet
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -272,7 +358,10 @@ mod tests {
         let dir = temp_state("env-beats-file");
         ThemeId::save(&dir, ThemeId::Violet).unwrap();
         unsafe { std::env::set_var(ENV_THEME, "mono") };
-        assert_eq!(ThemeId::resolve(&dir), ThemeId::Mono);
+        assert_eq!(
+            ThemeId::resolve(&dir, TerminalBrightness::Dark),
+            ThemeId::Mono
+        );
         unsafe { std::env::remove_var(ENV_THEME) };
         let _ = fs::remove_dir_all(&dir);
     }
@@ -404,5 +493,87 @@ mod tests {
             }
             _ => false,
         }
+    }
+
+    #[test]
+    fn a_chosen_theme_beats_the_terminals_appearance() {
+        // The choice is the user's. An appearance-following default that
+        // overrode it would make the choice meaningless.
+        for chosen in ThemeId::all() {
+            for brightness in [TerminalBrightness::Dark, TerminalBrightness::Light] {
+                assert_eq!(
+                    decide(Some(chosen), brightness),
+                    chosen,
+                    "{chosen:?} must survive a {brightness:?} terminal"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn an_unchosen_theme_follows_the_terminals_appearance() {
+        assert_eq!(decide(None, TerminalBrightness::Light), ThemeId::Daylight);
+        assert_eq!(decide(None, TerminalBrightness::Dark), ThemeId::Ink);
+    }
+
+    #[test]
+    fn the_light_profile_picks_the_light_palette() {
+        // The three dark palettes stay a choice among themselves; only the
+        // light profile has one obvious palette.
+        assert_eq!(TerminalBrightness::Light.default_theme(), ThemeId::Daylight);
+        assert_eq!(TerminalBrightness::Dark.default_theme(), ThemeId::Ink);
+    }
+
+    #[test]
+    fn a_terminal_that_answers_light_resolves_to_the_light_palette() {
+        // The end-to-end rule: a light terminal with no chosen theme gets the
+        // light palette.
+        let _guard = env_test_guard();
+        unsafe { std::env::remove_var(ENV_THEME) };
+        let dir = temp_state("light-terminal");
+        assert_eq!(
+            ThemeId::resolve(&dir, TerminalBrightness::Light),
+            ThemeId::Daylight
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_chosen_theme_survives_a_light_terminal() {
+        let _guard = env_test_guard();
+        unsafe { std::env::remove_var(ENV_THEME) };
+        let dir = temp_state("chosen-over-light");
+        ThemeId::save(&dir, ThemeId::Violet).unwrap();
+        assert_eq!(
+            ThemeId::resolve(&dir, TerminalBrightness::Light),
+            ThemeId::Violet
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_env_override_survives_a_light_terminal() {
+        let _guard = env_test_guard();
+        let dir = temp_state("env-over-light");
+        unsafe { std::env::set_var(ENV_THEME, "mono") };
+        assert_eq!(
+            ThemeId::resolve(&dir, TerminalBrightness::Light),
+            ThemeId::Mono
+        );
+        unsafe { std::env::remove_var(ENV_THEME) };
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_terminal_that_does_not_answer_keeps_the_dark_palette() {
+        // A palette must never be chosen from a value the app could not read.
+        let _guard = env_test_guard();
+        unsafe { std::env::remove_var(ENV_THEME) };
+        let dir = temp_state("silent-terminal");
+        assert_eq!(
+            ThemeId::resolve(&dir, TerminalBrightness::Dark),
+            ThemeId::Ink
+        );
+        let _ = fs::remove_dir_all(&dir);
     }
 }

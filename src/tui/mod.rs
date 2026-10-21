@@ -14,6 +14,7 @@ mod refresh;
 mod render;
 mod run_loop;
 mod terminal;
+mod terminal_appearance;
 mod theme;
 mod transcript;
 mod widgets;

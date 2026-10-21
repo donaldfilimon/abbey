@@ -86,7 +86,14 @@ fn edit_with(app: &mut App, path: &std::path::Path, editor: &str) -> Result<()> 
 }
 
 pub fn run_tui(state: AbbeyState, cfg: AgentConfig) -> Result<i32> {
-    let mut app = App::new(state, cfg)?;
+    // Ask the terminal what it looks like *before* raw mode is entered. In
+    // raw mode the reply would be delivered as keyboard input and read as a
+    // keypress, so the query has to happen while the terminal is still
+    // line-oriented. A terminal that does not answer leaves the dark
+    // palette; the wait is bounded, so an unsupported terminal is not a
+    // visible stall.
+    let brightness = super::terminal_appearance::background_brightness();
+    let mut app = App::new_with_brightness(state, cfg, brightness)?;
     let mut guard = TerminalGuard::native();
     guard.enter()?;
     let mut term = Terminal::new(CrosstermBackend::new(stdout()))?;

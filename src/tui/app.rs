@@ -3,7 +3,7 @@
 
 use super::completion::{Completion, FileIndex};
 use super::composer::{Composer, History};
-use super::theme::{Theme, ThemeId};
+use super::theme::{TerminalBrightness, Theme, ThemeId};
 use super::transcript::Transcript;
 use super::worker::{self, RunHandle, RunKind, SlashRoute};
 use crate::agent::{AgentBackend, AgentConfig};
@@ -163,13 +163,34 @@ fn fm_selection(model: &str) -> String {
 }
 
 impl App {
-    pub fn new(state: AbbeyState, mut cfg: AgentConfig) -> Result<Self> {
+    /// Build the app without asking the terminal what it looks like.
+    ///
+    /// A caller that cannot query the terminal gets the dark palette. The
+    /// real entry point asks, because a dark palette in a light terminal
+    /// profile is illegible.
+    ///
+    /// This is what the test fixtures use, so they do not depend on a
+    /// terminal answering.
+    #[cfg(test)]
+    pub fn new(state: AbbeyState, cfg: AgentConfig) -> Result<Self> {
+        Self::new_with_brightness(state, cfg, TerminalBrightness::Dark)
+    }
+
+    /// Build the app with the terminal's reported appearance in hand.
+    ///
+    /// The brightness only decides the theme when the user has not chosen
+    /// one; see [`ThemeId::resolve`].
+    pub fn new_with_brightness(
+        state: AbbeyState,
+        mut cfg: AgentConfig,
+        brightness: TerminalBrightness,
+    ) -> Result<Self> {
         // Startup already resolved CLI flags and backend-specific persisted models.
         // Re-reading here would discard explicit selections (and ABI literal IDs).
         if cfg.backend == AgentBackend::Fm {
             cfg.model = fm_selection(&cfg.model);
         }
-        let theme_id = ThemeId::resolve(&state.state_dir);
+        let theme_id = ThemeId::resolve(&state.state_dir, brightness);
         let history_log = History::load(&state.state_dir);
         let files = FileIndex::load(&state.cwd);
         let mut app = Self {
