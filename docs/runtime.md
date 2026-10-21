@@ -360,3 +360,18 @@ SQLite and output. Tool dispatch, automations, approvals,
 live subscriptions, the desktop run bridge, Windows named pipes/Job Objects, production
 model architectures/weights, and full provider-neutral tool ownership remain separate incomplete or Proposed
 evidence slices.
+
+## Sandbox PATH note
+
+Constrained shell environments (sandboxed tool executors, CI runners) often expose a
+minimal `PATH` (`/usr/bin:/bin`). Abbey's `tools/toolchain-env.sh` prepends common
+package-manager locations (`/opt/homebrew/bin`, `/opt/homebrew/sbin`, `$HOME/.cargo/bin`,
+`/usr/local/bin`) when `rustup` is not already resolvable, and then resolves `cargo`
+through `rustup which cargo` so the answer follows this repository's toolchain
+override. `tools/check_claims_sync.py` resolves the pinned toolchain's cargo the same
+way first, and falls back to `which cargo` and then to the usual install directories.
+The two are not identical: the shell helper resolves `rustup` and then asks it, while
+the Python helper prefers the pinned toolchain's cargo and only then falls back.
+
+Source `tools/toolchain-env.sh` with `ABBEY_TOOLCHAIN_ROOT` set to the repository root
+before running Rust gates; do not assume Homebrew or rustup are on a default `PATH`.
