@@ -119,6 +119,8 @@ struct SerdeAttrs {
     skip_serializing_if: bool,
     transparent: bool,
     flatten: bool,
+    try_from: Option<String>,
+    into: Option<String>,
 }
 
 fn serde_attrs(attrs: &[syn::Attribute]) -> Result<SerdeAttrs> {
@@ -135,6 +137,8 @@ fn serde_attrs(attrs: &[syn::Attribute]) -> Result<SerdeAttrs> {
                 "rename_all" => {
                     parsed.rename_all = Some(meta.value()?.parse::<syn::LitStr>()?.value());
                 }
+                "try_from" => parsed.try_from = Some(meta.value()?.parse::<syn::LitStr>()?.value()),
+                "into" => parsed.into = Some(meta.value()?.parse::<syn::LitStr>()?.value()),
                 "tag" => parsed.tag = Some(meta.value()?.parse::<syn::LitStr>()?.value()),
                 "content" => parsed.content = Some(meta.value()?.parse::<syn::LitStr>()?.value()),
                 "untagged" => parsed.untagged = true,
@@ -209,7 +213,11 @@ fn tsdoc(attrs: &[syn::Attribute], indent: &str) -> String {
         Some(text) => {
             let mut out = format!("{indent}/**\n");
             for line in text.lines() {
-                out.push_str(&format!("{indent} * {line}\n"));
+                if line.is_empty() {
+                    out.push_str(&format!("{indent} *\n"));
+                } else {
+                    out.push_str(&format!("{indent} * {line}\n"));
+                }
             }
             out.push_str(&format!("{indent} */\n"));
             out
@@ -340,9 +348,19 @@ fn render_struct(item: &syn::ItemStruct, known: &BTreeSet<String>) -> Result<Str
     let name = item.ident.to_string();
     let mut out = format!("\n{}", tsdoc(&item.attrs, ""));
 
+    if container.try_from.is_some() || container.into.is_some() {
+        let (Some(input), Some(output)) = (&container.try_from, &container.into) else {
+            bail!("serde conversion must declare both try_from and into");
+        };
+        if input != output || input == &name || !known.contains(input) {
+            bail!("serde conversion must use one known distinct wire type");
+        }
+        writeln!(out, "export type {name} = {input};")?;
+        return Ok(out);
+    }
     match &item.fields {
         syn::Fields::Named(fields) => {
-            write!(out, "export interface {name} {{\n")?;
+            writeln!(out, "export interface {name} {{")?;
             out.push_str(&render_named_fields(
                 &fields.named,
                 &container,
@@ -354,7 +372,7 @@ fn render_struct(item: &syn::ItemStruct, known: &BTreeSet<String>) -> Result<Str
         syn::Fields::Unnamed(fields) if fields.unnamed.len() == 1 => {
             // Newtype struct: serde is transparent over the inner type.
             let inner = ts_type(&fields.unnamed[0].ty, known)?;
-            write!(out, "export type {name} = {inner};\n")?;
+            writeln!(out, "export type {name} = {inner};")?;
         }
         syn::Fields::Unnamed(fields) => {
             let parts = fields
@@ -362,9 +380,9 @@ fn render_struct(item: &syn::ItemStruct, known: &BTreeSet<String>) -> Result<Str
                 .iter()
                 .map(|field| ts_type(&field.ty, known))
                 .collect::<Result<Vec<_>>>()?;
-            write!(out, "export type {name} = [{}];\n", parts.join(", "))?;
+            writeln!(out, "export type {name} = [{}];", parts.join(", "))?;
         }
-        syn::Fields::Unit => write!(out, "export type {name} = null;\n")?,
+        syn::Fields::Unit => writeln!(out, "export type {name} = null;")?,
     }
     Ok(out)
 }
@@ -398,9 +416,9 @@ fn render_named_fields(
         };
         let optional = attrs.default || attrs.skip_serializing_if || container.default;
         out.push_str(&tsdoc(&field.attrs, indent));
-        write!(
+        writeln!(
             out,
-            "{indent}{wire}{}: {};\n",
+            "{indent}{wire}{}: {};",
             if optional { "?" } else { "" },
             ts_type(&field.ty, known)?
         )?;
@@ -414,6 +432,9 @@ fn render_named_fields(
 
 fn render_enum(item: &syn::ItemEnum, known: &BTreeSet<String>) -> Result<String> {
     let container = serde_attrs(&item.attrs)?;
+    if container.try_from.is_some() || container.into.is_some() {
+        bail!("serde conversion projection is supported only on structs");
+    }
     let name = item.ident.to_string();
     let mut out = format!("\n{}", tsdoc(&item.attrs, ""));
 
@@ -498,5 +519,40 @@ fn opaque_id_macro(item: &syn::ItemMacro) -> Option<String> {
     match tokens.next() {
         Some(proc_macro2::TokenTree::Ident(ident)) => Some(ident.to_string()),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod conversion_tests {
+    use super::*;
+    #[test]
+    fn converted_struct_projects_wire_instead_of_internal_fields() {
+        let item = syn::parse_quote! {
+            #[derive(Serialize, Deserialize)]
+            #[serde(try_from = "Wire", into = "Wire")]
+            struct Internal { private_state: Unknown }
+        };
+        let known = BTreeSet::from(["Wire".into()]);
+        assert!(
+            render_struct(&item, &known)
+                .unwrap()
+                .contains("export type Internal = Wire;")
+        );
+        let bad = syn::parse_quote! {
+            #[derive(Serialize, Deserialize)]
+            #[serde(try_from = "Wire", into = "Other")]
+            struct Internal {}
+        };
+        assert!(render_struct(&bad, &known).is_err());
+        assert!(render_struct(&item, &BTreeSet::new()).is_err());
+        for attribute in [
+            "#[serde(try_from = \"Wire\") ]",
+            "#[serde(try_from = \"Internal\", into = \"Internal\")]",
+        ] {
+            let source =
+                format!("#[derive(Serialize, Deserialize)] {attribute} struct Internal {{}}");
+            let bad: syn::ItemStruct = syn::parse_str(&source).unwrap();
+            assert!(render_struct(&bad, &known).is_err());
+        }
     }
 }

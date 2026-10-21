@@ -39,6 +39,8 @@ impl RuntimeDaemonConfig {
     /// Resolve edition-scoped storage and fixed provider routes once at startup.
     pub fn from_env() -> Result<Self, RuntimeConfigError> {
         #[cfg(not(unix))]
+        // Windows named pipes not yet implemented; serve path must fail closed
+        // before any runtime config or handler is constructed.
         return Err(RuntimeConfigError::UnsupportedPlatform);
 
         #[cfg(unix)]

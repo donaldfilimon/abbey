@@ -7,8 +7,8 @@
 //! command can be dispatched.
 
 use super::{
-    ClaimStatus, V3ModelInferenceRequest, V3ModelInferenceResult, V3ToolApprovalStatus, V3ToolCall,
-    V3ToolDecision, V3ToolPage, V3ToolResult, ValidationError,
+    ClaimStatus, V3ModelDetails, V3ModelInferenceRequest, V3ModelInferenceResult,
+    V3ToolApprovalStatus, V3ToolCall, V3ToolDecision, V3ToolPage, V3ToolResult, ValidationError,
 };
 use serde::{Deserialize, Serialize};
 
@@ -339,10 +339,12 @@ pub enum V3Command {
     SearchMemory(V3SearchRequest),
     ReadMemoryMetadata(V3ResourceQuery),
     ListModels(V3PageQuery),
+    ModelDetails(V3ResourceQuery),
     DownloadModel(V3ModelAction),
     ModelDownloadStatus(V3ResourceQuery),
     LoadModel(V3ModelAction),
     UnloadModel(V3ModelAction),
+    CancelModel(V3Action),
     InferenceStatus(V3ResourceQuery),
     InferModel(V3ModelInferenceRequest),
     TrainingDatasetStatus(V3ResourceQuery),
@@ -380,11 +382,14 @@ impl V3Command {
             Self::ListMemorySpaces(_) | Self::SearchMemory(_) | Self::ReadMemoryMetadata(_) => {
                 V3Capability::ReadMemory
             }
-            Self::ListModels(_) | Self::ModelDownloadStatus(_) | Self::InferenceStatus(_) => {
-                V3Capability::ReadModels
-            }
+            Self::ListModels(_)
+            | Self::ModelDetails(_)
+            | Self::ModelDownloadStatus(_)
+            | Self::InferenceStatus(_) => V3Capability::ReadModels,
             Self::DownloadModel(_) => V3Capability::DownloadModels,
-            Self::LoadModel(_) | Self::UnloadModel(_) => V3Capability::ManageModels,
+            Self::LoadModel(_) | Self::UnloadModel(_) | Self::CancelModel(_) => {
+                V3Capability::ManageModels
+            }
             Self::InferModel(_) => V3Capability::InferModels,
             Self::TrainingDatasetStatus(_) | Self::TrainingStatus(_) | Self::TrainingMetrics(_) => {
                 V3Capability::ReadTraining
@@ -419,9 +424,11 @@ impl V3Command {
             Self::DownloadModel(action) | Self::LoadModel(action) | Self::UnloadModel(action) => {
                 action.validate()
             }
+            Self::CancelModel(action) => action.validate(),
             Self::StartTraining(request) => request.validate(),
             Self::InferModel(request) => request.validate(),
             Self::ReadMemoryMetadata(query)
+            | Self::ModelDetails(query)
             | Self::ModelDownloadStatus(query)
             | Self::InferenceStatus(query)
             | Self::TrainingDatasetStatus(query)
@@ -684,6 +691,7 @@ pub enum V3Event {
     MemorySearchResults(V3EntityPage),
     MemoryMetadata(V3EntityRecord),
     Models(V3EntityPage),
+    ModelDetails(V3ModelDetails),
     ModelStatus(V3OperationStatus),
     ModelInference(V3ModelInferenceResult),
     TrainingDatasetStatus(V3EntityRecord),
@@ -718,6 +726,7 @@ impl V3Event {
             | Self::JobStatus(value) => value.validate(),
             Self::ToolApprovalStatus(value) => value.validate(),
             Self::ModelInference(value) => value.validate(),
+            Self::ModelDetails(value) => value.validate(),
             Self::MemoryMetadata(value)
             | Self::TrainingDatasetStatus(value)
             | Self::WorkerHealth(value) => value.validate(),

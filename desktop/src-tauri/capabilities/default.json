@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Core webview permissions only. Abbey's desktop client reaches the application core exclusively through the four enumerated `app_*` commands in src/commands.rs. No shell, filesystem, HTTP, process, dialog, or opener plugin is declared in Cargo.toml, so no permission for one can be granted here even by mistake.",
+  "description": "The four enumerated `app_*` application-core commands plus exactly one deliberate execution-adjacent exception: `updater:default`, which can fetch and replace this app bundle from an endpoint that is pinned in tauri.conf.json and only after verifying the artifact against the pinned Ed25519 public key there. No shell, filesystem, HTTP, process, dialog, or opener plugin is declared (or granted) anywhere — and no other updater permission is granted beyond its default set.",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": ["core:default", "updater:default"]
 }

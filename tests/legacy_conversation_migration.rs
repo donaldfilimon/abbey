@@ -158,7 +158,7 @@ fn assert_database(database: &Path) {
             0
         ))
         .unwrap(),
-        9
+        10
     );
     for (table, expected) in [
         ("legacy_conversation_imports", 1),
@@ -174,6 +174,10 @@ fn assert_database(database: &Path) {
         ("conversation_identity_migrated_scopes", 0),
         ("runs", 0),
         ("conversation_backends", 0),
+        ("assistant_conversations", 0),
+        ("assistant_messages", 0),
+        ("assistant_turns", 0),
+        ("assistant_content_events", 0),
     ] {
         let sql = format!("SELECT COUNT(*) FROM {table}");
         assert_eq!(

@@ -137,6 +137,14 @@ fn v3_model_read_refuses_locally_when_negotiation_denies_the_grant() {
             capability: V3Capability::ReadModels
         })
     ));
+    assert!(matches!(
+        session.model_details(V3ResourceQuery {
+            resource_id: "fixture".into()
+        }),
+        Err(ClientError::V3CapabilityNotGranted {
+            capability: V3Capability::ReadModels
+        })
+    ));
     thread.join().unwrap();
     std::fs::remove_dir_all(root).unwrap();
 }
@@ -373,3 +381,48 @@ fn v3_claim_read_refuses_locally_when_negotiation_denies_the_grant() {
 }
 
 include!("v3_tool_tests.rs");
+
+#[test]
+fn model_details_client_correlates_identity_and_exact_grants() {
+    for response_id in ["fixture", "wrong"] {
+        let (config, server, root) = fake_v3_server(move |request| {
+            assert_eq!(request.grants.as_slice(), &[V3Capability::ReadModels]);
+            assert_eq!(
+                request.command,
+                V3Command::ModelDetails(V3ResourceQuery {
+                    resource_id: "fixture".into()
+                })
+            );
+            encoded_v3_response(V3ResponseEnvelope::ok(
+                request.request_id,
+                V3Event::ModelDetails(crate::app_core::V3ModelDetails {
+                    model_id: response_id.into(),
+                    revision: "revision".into(),
+                    architecture: "abi-bigram-v1".into(),
+                    configured_device: crate::app_core::V3ModelDevice::Cpu,
+                    license_sha256: "07".repeat(32),
+                    license_accepted: true,
+                    loaded: false,
+                }),
+            ))
+        });
+        let session = V3DaemonSession {
+            client: DaemonClient::new(config),
+            negotiation: V3GrantNegotiation {
+                protocol_version: 3,
+                schema_version: 3,
+                granted: V3CapabilitySet::from_sorted(vec![V3Capability::ReadModels]).unwrap(),
+            },
+        };
+        let result = session.model_details(V3ResourceQuery {
+            resource_id: "fixture".into(),
+        });
+        if response_id == "fixture" {
+            assert!(result.unwrap().license_accepted);
+        } else {
+            assert!(matches!(result, Err(ClientError::InvalidV3Response)));
+        }
+        server.join().unwrap();
+        std::fs::remove_dir_all(root).unwrap();
+    }
+}

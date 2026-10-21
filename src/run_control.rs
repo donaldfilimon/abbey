@@ -461,6 +461,8 @@ fn request_daemon(command: AppCommand) -> Result<AppEvent> {
 
 #[cfg(not(unix))]
 fn request_daemon(_command: AppCommand) -> Result<AppEvent> {
+    // Windows pipe stub: commands that reach a daemon (e.g. some slash or
+    // desktop-driven) fail closed here. Matches the client stubs.
     Err(ClientError::UnsupportedPlatform.into())
 }
 

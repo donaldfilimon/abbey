@@ -76,6 +76,8 @@ pub struct BundleIdentity {
 pub enum IpcErrorKind {
     /// The daemon is configured but its configuration is invalid.
     Configuration,
+    /// Exact authorized conversation read returned not-found.
+    NotFound,
     /// The daemon could not be reached, or the exchange failed.
     Transport,
     /// The daemon answered with a well-formed but unexpected event.
@@ -83,6 +85,8 @@ pub enum IpcErrorKind {
     /// The request was rejected before any data was read.
     Rejected,
     /// This platform has no daemon transport yet (Windows named pipes).
+    /// Native adapters (macOS AX, Win UIA, Linux AT-SPI) are likewise unavailable
+    /// on the desktop surface; they are documented as report-only in platform ui.
     UnsupportedPlatform,
 }
 

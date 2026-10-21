@@ -7,20 +7,27 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
+    "test:models": "bun test tests",
     "preview": "vite preview",
     "codegen": "cargo run --manifest-path codegen/Cargo.toml --quiet --",
     "codegen:check": "cargo run --manifest-path codegen/Cargo.toml --quiet -- --check",
     "verify:bundle": "node scripts/verify-bundle.mjs",
     "tauri": "tauri",
-    "smoke:routes:macos": "./scripts/prove-routes-macos.sh"
+    "smoke:routes:macos": "./scripts/prove-routes-macos.sh",
+    "release:macos": "./scripts/release-macos.sh",
+    "prove:packaged": "./scripts/prove-packaged-macos.sh",
+    "prove:menu:macos": "./scripts/prove-menu-icon-macos.sh",
+    "updater:feed": "./scripts/assemble-update-feed.sh",
+    "updater:keygen": "./scripts/updater-keygen.sh"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/api": "^2.12.4",
+    "@tauri-apps/plugin-updater": "^2.14.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.11.4",
+    "@tauri-apps/cli": "^2.12.3",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^6.1.0",

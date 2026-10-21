@@ -24,6 +24,18 @@ use std::path::{Path, PathBuf};
 /// in step.
 const SOURCES: &[(&str, &str)] = &[
     (
+        "src/app_core/v4.rs",
+        "src/app_core/v4.rs — protocol-v4 conversations",
+    ),
+    (
+        "src/app_core/v4_content.rs",
+        "src/app_core/v4_content.rs — protocol-v4 visible content events",
+    ),
+    (
+        "src/app_core/v4_protocol.rs",
+        "src/app_core/v4_protocol.rs — protocol-v4 commands and events",
+    ),
+    (
         "src/app_core/ids.rs",
         "src/app_core/ids.rs — opaque identifiers",
     ),

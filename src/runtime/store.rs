@@ -28,6 +28,7 @@ mod projection;
 mod records;
 mod tool_approval;
 mod tool_execution;
+mod v4;
 
 pub use audit::{AuditEvent, AuditMetadata, NewAuditEvent};
 use audit::{row_to_audit, validate_audit_label};
@@ -61,6 +62,10 @@ pub enum StoreError {
     RunNotFound(String),
     #[error("conversation was not found: {0}")]
     ConversationNotFound(String),
+    #[error("assistant record was not found")]
+    AssistantNotFound,
+    #[error("assistant write conflicts with durable state")]
+    AssistantConflict,
     #[error("run status changed concurrently: expected {expected:?}, found {found:?}")]
     UnexpectedStatus { expected: RunState, found: RunState },
     #[error("invalid run transition from {from:?} to {to:?}")]
@@ -617,7 +622,9 @@ fn update_and_append(
                 .status,
         });
     }
-    append_event(tx, run, event, timestamp)
+    let stored = append_event(tx, run, event, timestamp)?;
+    v4::sync_message_state(tx, &run.id, next)?;
+    Ok(stored)
 }
 
 fn append_event(
@@ -724,3 +731,6 @@ fn epoch_ms() -> Result<u64, StoreError> {
 #[cfg(test)]
 #[path = "store/tests.rs"]
 mod tests;
+#[cfg(test)]
+#[path = "store/v4_tests.rs"]
+mod v4_tests;

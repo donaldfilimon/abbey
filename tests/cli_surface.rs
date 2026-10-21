@@ -575,3 +575,74 @@ fn plain_help_retains_cli_text_without_stream_json() {
         "CLI help adopted TUI framing: {out}"
     );
 }
+
+/// Compatibility UX acceptance matrix (run as part of gate).
+/// Exercises the documented Grok/Codex/Claude surface parity aliases and
+/// commands listed in README and cli surface (without claiming runtime parity
+/// or live executor behavior). Local surfaces only; generation paths covered
+/// by sibling tests.
+#[test]
+fn compatibility_ux_acceptance_matrix() {
+    let s = Scratch::new("ux-matrix");
+
+    // Grok Build documented surfaces (from README table + cli aliases):
+    // -c/--continue, -w/--worktree, --cwd, model aliases, session resume
+    // (continue subcommand + worktree flag are parseable; doctor is shared)
+    // Use --help form so we do not attempt generation; surface parse is the matrix point.
+    let (code, _, err) = run(&s, &["--continue", "--help"]);
+    assert_eq!(
+        code, 0,
+        "grok --continue flag must be accepted by surface: {err}"
+    );
+
+    let (code, _, err) = run(&s, &["--worktree", "tmp", "--help"]);
+    assert_eq!(code, 0, "grok --worktree flag must parse: {err}");
+
+    // Codex documented: exec/print, review, doctor (which/info), login/logout (status),
+    // mcp/plugin, completion, sandbox/force
+    let (code, out, _) = run(&s, &["doctor"]);
+    assert_eq!(code, 0, "codex doctor alias must succeed: {out}");
+    let (code, _, _) = run(&s, &["which"]);
+    assert_eq!(code, 0, "codex which alias");
+    let (code, _, _) = run(&s, &["info"]);
+    assert_eq!(code, 0, "codex info alias");
+
+    let (code, _, _) = run(&s, &["-p", "--help"]);
+    assert_eq!(code, 0, "codex -p / print surface");
+
+    let (code, _, _) = run(&s, &["review", "--help"]);
+    assert_eq!(code, 0, "codex review");
+
+    let (code, _, _) = run(&s, &["completion", "--help"]);
+    // completion subcmd exists for grok/codex parity
+    assert_eq!(code, 0, "grok/codex completion surface");
+
+    // Claude Code documented: slash (/plan /diff /pr /init /commit /clear …),
+    // -p, ask/plan modes
+    let (code, _, _) = run(&s, &["plan", "--help"]);
+    assert_eq!(code, 0, "claude plan mode");
+
+    let (code, _, _) = run(&s, &["ask", "--help"]);
+    assert_eq!(code, 0, "claude ask");
+
+    // -p is print alias
+    let (code, _, _) = run(&s, &["-p", "--help"]);
+    assert_eq!(code, 0, "claude -p (print)");
+
+    // clear (claude /clear alias)
+    let (code, _, _) = run(&s, &["clear", "--help"]);
+    assert_eq!(code, 0, "claude clear");
+
+    // diff, pr, init, commit, security-review
+    for sub in ["diff", "pr", "init", "commit", "security-review"] {
+        let (code, _, _) = run(&s, &[sub, "--help"]);
+        assert_eq!(code, 0, "claude {sub} surface",);
+    }
+
+    // cross surface aliases resolve in slash too (tested more in unit)
+    // ensure help mentions parity surfaces without overclaiming
+    let (code, out, _) = run(&s, &["--help"]);
+    assert_eq!(code, 0);
+    assert!(out.contains("Grok Build") || out.contains("Codex") || out.contains("Claude Code"));
+    assert!(out.contains("does not reimplement vendor runtimes"));
+}

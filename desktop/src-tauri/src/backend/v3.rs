@@ -1,10 +1,10 @@
 //! Protocol-v3 desktop reads. Separate from v1/v2 `AppCommand` routing.
 //!
-//! The desktop requests **exactly** [`V3Capability::ReadMemory`],
+//! This read session requests **exactly** [`V3Capability::ReadMemory`],
 //! [`V3Capability::ReadModels`], and [`V3Capability::ReadClaimsById`] — all
 //! three read-only. No mutating grant (`DownloadModels`, `ManageModels`,
-//! `InvokeTools`, …) is ever requested, so mutation remains unreachable from
-//! the webview by construction rather than by UI convention.
+//! `InvokeTools`, …) is requested here, so this session cannot mutate.
+//! The separate models module owns exact signed-model lifecycle authority.
 //!
 //! Requesting all three in one negotiation is safe and deliberate:
 //! `V3GrantNegotiation::validate_for` rejects only grants that were *not*
@@ -27,7 +27,7 @@ use abbey::daemon::V3DaemonSession;
 use super::{Route, bearer_source, from_client_error, route};
 use crate::ipc::{IpcError, IpcErrorKind};
 
-/// The exact, sorted set of v3 grants this process ever requests. Shared by
+/// The exact, sorted set of v3 grants this read session requests. Shared by
 /// [`v3_read_session`] (what is actually negotiated) and the
 /// `requested_v3_grants_are_read_only` guard test (what is asserted safe),
 /// so the two can never drift apart.
@@ -83,9 +83,7 @@ pub fn memory_metadata(query: V3ResourceQuery) -> Result<V3EntityRecord, IpcErro
 
 /// `ReadModels` — one bounded fixed-watermark page of the model inventory.
 ///
-/// Read-only by construction: the session never negotiates `DownloadModels` or
-/// `ManageModels`, so the daemon refuses any mutation this process could
-/// attempt even if a future caller tried.
+/// This read session never negotiates lifecycle effects; those use the separate model session.
 pub fn models_list(query: V3PageQuery) -> Result<V3EntityPage, IpcError> {
     v3_read_session()?
         .list_models(query)

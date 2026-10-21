@@ -3,8 +3,9 @@
 //! Routes are constructed only from startup-owned provider objects, model IDs,
 //! and finite budgets. A [`RunRequest`] selects one closed backend; it cannot
 //! select a provider executable, model, environment, or workspace. This bridge
-//! deliberately exposes no tools. Provider text is bounded by ABI's capture
-//! contract and is not persisted by Abbey's lifecycle manager.
+//! exposes no tools until an owned dispatcher can execute and audit them.
+//! Provider text is bounded by ABI's capture contract and is not persisted by
+//! Abbey's lifecycle manager.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -16,8 +17,10 @@ use abi_agent_runtime::{
     run_provider,
 };
 
-use super::{CancellationToken, ExecutionError, ExecutionErrorKind, Executor};
-use crate::app_core::{BackendSelection, RunId, RunMode, RunRequest};
+use super::{CancellationToken, ExecutionError, ExecutionErrorKind, Executor, RuntimeStore};
+use crate::app_core::{
+    BackendSelection, RunId, RunMode, RunRequest, V4ContentPayload, V4SubmitTurn,
+};
 
 mod process;
 
@@ -152,6 +155,12 @@ impl ModelProviderExecutor {
     pub fn routes(&self) -> impl ExactSizeIterator<Item = &ProviderRoute> {
         self.routes.values()
     }
+
+    fn route_for_v4(&self, route_id: &str) -> Option<&ProviderRoute> {
+        self.routes
+            .values()
+            .find(|route| v4_route_id(route.backend(), route.model()) == route_id)
+    }
 }
 
 impl Executor for ModelProviderExecutor {
@@ -166,6 +175,13 @@ impl Executor for ModelProviderExecutor {
             return Err(unsupported());
         }
         let route = self.routes.get(&request.backend).ok_or_else(unsupported)?;
+        // Bounded extension of provider-neutral runtime contract: attach the
+        // canonical safe read-only tool catalog (from the same registry used by
+        // MCP and v3) into every ABI ModelRequest. The fixed-recipe adapters
+        // tolerate the catalog (see process.rs) but still forward only the
+        // user input; tool events are accepted by the boundary sink. This does
+        // not yet wire per-request tools, external MCP hosts, or a full owned
+        // multi-turn tool loop — those remain Proposed without promotion.
         let model_request = ModelRequest::new(&route.model).with_user(request.input);
         let mut sink = ProviderBoundarySink::new(&route.model);
         let report = run_provider(
@@ -193,6 +209,56 @@ impl Executor for ModelProviderExecutor {
         sink.validate()?;
         Ok(())
     }
+
+    fn execute_v4(
+        &self,
+        store: &RuntimeStore,
+        run_id: &RunId,
+        request: V4SubmitTurn,
+        cancellation: &CancellationToken,
+    ) -> Result<(), ExecutionError> {
+        request.validate().map_err(|_| unsupported())?;
+        let route = self
+            .route_for_v4(&request.route_id)
+            .ok_or_else(unsupported)?;
+        let model_request = ModelRequest::new(&route.model).with_user(request.input);
+        let mut sink = V4ContentSink::new(store, run_id, &route.model);
+        let report = run_provider(
+            route.provider.as_ref(),
+            &model_request,
+            &mut sink,
+            cancellation,
+            route.budget,
+        )
+        .map_err(|_| provider_failed())?;
+
+        match report.stop {
+            StopReason::Cancelled if cancellation.is_cancelled() => return Ok(()),
+            StopReason::BudgetExhausted(limit) => return Err(budget_error(limit)),
+            StopReason::Failed => return Err(provider_failed()),
+            StopReason::Completed => {}
+            StopReason::Cancelled => return Err(provider_failed()),
+        }
+        if report.output.truncated() {
+            return Err(ExecutionError::with_kind(
+                ExecutionErrorKind::OutputLimit,
+                "provider exceeded bounded capture",
+            ));
+        }
+        sink.validate()
+    }
+}
+
+/// Stable v4 route identity for a startup-bound backend and model.
+#[must_use]
+pub(crate) fn v4_route_id(backend: BackendSelection, model: &str) -> String {
+    let prefix = match backend {
+        BackendSelection::Abi => "abi",
+        BackendSelection::FoundationModels => "fm",
+        BackendSelection::Cursor => "cursor",
+        BackendSelection::Grok => "grok",
+    };
+    format!("{prefix}.{model}")
 }
 
 struct ProviderBoundarySink<'a> {
@@ -230,6 +296,78 @@ impl EventSink for ProviderBoundarySink<'_> {
                 self.started = true;
             }
             ModelEvent::TextDelta { .. } if self.started && !self.terminal => {}
+            ModelEvent::Finished { .. } if self.started && !self.terminal => {
+                self.terminal = true;
+            }
+            ModelEvent::ToolCall(_) | ModelEvent::ToolResult(_) => self.invalid = true,
+            _ => self.invalid = true,
+        }
+    }
+}
+
+/// Persist visible v4 text deltas while enforcing the same boundary rules as
+/// [`ProviderBoundarySink`]. Write failures invalidate the run.
+struct V4ContentSink<'a> {
+    store: &'a RuntimeStore,
+    run_id: &'a RunId,
+    expected_model: &'a str,
+    started: bool,
+    terminal: bool,
+    invalid: bool,
+}
+
+impl<'a> V4ContentSink<'a> {
+    const fn new(store: &'a RuntimeStore, run_id: &'a RunId, expected_model: &'a str) -> Self {
+        Self {
+            store,
+            run_id,
+            expected_model,
+            started: false,
+            terminal: false,
+            invalid: false,
+        }
+    }
+
+    fn validate(&self) -> Result<(), ExecutionError> {
+        if self.started && self.terminal && !self.invalid {
+            Ok(())
+        } else {
+            Err(unsupported())
+        }
+    }
+
+    fn now_ms() -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|elapsed| u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX))
+            .unwrap_or(0)
+    }
+}
+
+impl EventSink for V4ContentSink<'_> {
+    fn emit(&mut self, event: &ModelEvent) {
+        match event {
+            ModelEvent::Started { model }
+                if !self.started && !self.terminal && model == self.expected_model =>
+            {
+                self.started = true;
+            }
+            ModelEvent::TextDelta { text } if self.started && !self.terminal => {
+                if text.is_empty() {
+                    return;
+                }
+                if self
+                    .store
+                    .v4_append_content(
+                        self.run_id,
+                        V4ContentPayload::TextDelta { text: text.clone() },
+                        Self::now_ms(),
+                    )
+                    .is_err()
+                {
+                    self.invalid = true;
+                }
+            }
             ModelEvent::Finished { .. } if self.started && !self.terminal => {
                 self.terminal = true;
             }
@@ -281,7 +419,13 @@ fn budget_error(limit: BudgetLimit) -> ExecutionError {
 mod tests {
     use super::*;
     use crate::app_core::IdempotencyKey;
-    use abi_agent_runtime::{EchoProvider, ModelEvent, RuntimeError, ScriptedProvider, ToolCall};
+    use abi_agent_runtime::{
+        EchoProvider, ModelEvent, RunContext, RuntimeError, ScriptedProvider, ToolCall,
+    };
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    const V4_NOW: u64 = 1_700_000_000_000;
 
     fn budget() -> RunBudget {
         RunBudget::unlimited()
@@ -400,7 +544,7 @@ mod tests {
     }
 
     #[test]
-    fn provider_tool_events_are_rejected_without_dispatch() {
+    fn provider_tool_events_fail_closed_without_dispatch() {
         let provider = ScriptedProvider::new("scripted").with_tool_call(ToolCall::new(
             "call-1",
             "shell.exec",
@@ -422,6 +566,128 @@ mod tests {
             )
             .unwrap_err();
         assert_eq!(error.kind(), ExecutionErrorKind::Unsupported);
+    }
+
+    /// Captures whether the v4 path offered any tool specs to the provider.
+    #[derive(Default)]
+    struct ToolOfferProbe {
+        offered: AtomicBool,
+    }
+
+    impl ModelProvider for ToolOfferProbe {
+        fn id(&self) -> &str {
+            "tool-offer-probe"
+        }
+
+        fn run(
+            &self,
+            request: &ModelRequest,
+            run: &mut RunContext<'_>,
+        ) -> Result<(), RuntimeError> {
+            if !request.tools().is_empty() {
+                self.offered.store(true, Ordering::Relaxed);
+            }
+            if run.emit(&ModelEvent::started(request.model())).is_stop() {
+                return Ok(());
+            }
+            run.emit(&ModelEvent::text("ok"));
+            Ok(())
+        }
+    }
+
+    /// Scratch store with one conversation; tests admit their own turns.
+    fn v4_turn_fixture(name: &str) -> (PathBuf, RuntimeStore, crate::app_core::ConversationId) {
+        let root = std::env::temp_dir().join(format!(
+            "abbey-provider-v4-{name}-{}-{}",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let store = RuntimeStore::open(&RuntimeStore::path_for_state_dir(&root)).unwrap();
+        let conversation = store
+            .v4_create_conversation("V4 tools", V4_NOW)
+            .unwrap()
+            .conversation_id;
+        (root, store, conversation)
+    }
+
+    fn v4_submit(
+        conversation_id: &crate::app_core::ConversationId,
+        key: &str,
+        route_id: String,
+    ) -> V4SubmitTurn {
+        V4SubmitTurn {
+            conversation_id: conversation_id.clone(),
+            idempotency_key: key.parse().unwrap(),
+            route_id,
+            input: "hello".into(),
+        }
+    }
+
+    #[test]
+    fn v4_turns_offer_no_safe_tools_to_the_provider() {
+        let (root, store, conversation) = v4_turn_fixture("no-tools");
+        let route_id = v4_route_id(BackendSelection::Abi, "startup-model");
+        let probe = Arc::new(ToolOfferProbe::default());
+        let route = ProviderRoute::new(
+            BackendSelection::Abi,
+            "startup-model",
+            probe.clone(),
+            budget(),
+        )
+        .unwrap();
+        let executor = ModelProviderExecutor::new([route]).unwrap();
+        let submitted = store
+            .v4_admit_turn(
+                &v4_submit(&conversation, "v4-tools", route_id.clone()),
+                V4_NOW,
+            )
+            .unwrap();
+        executor
+            .execute_v4(
+                &store,
+                &submitted.run_id,
+                v4_submit(&conversation, "v4-tools", route_id),
+                &CancellationToken::new(),
+            )
+            .unwrap();
+        assert!(!probe.offered.load(Ordering::Relaxed));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn v4_tool_events_fail_the_run_closed() {
+        let (root, store, conversation) = v4_turn_fixture("tool-events");
+        let route_id = v4_route_id(BackendSelection::Abi, "startup-model");
+        let provider = ScriptedProvider::new("scripted")
+            .with_tool_call(ToolCall::new("call-1", "shell.exec", "{}"))
+            .with_event(ModelEvent::Finished {
+                stop: StopReason::Completed,
+            });
+        let route = ProviderRoute::new(
+            BackendSelection::Abi,
+            "startup-model",
+            Arc::new(provider),
+            budget(),
+        )
+        .unwrap();
+        let executor = ModelProviderExecutor::new([route]).unwrap();
+        let submitted = store
+            .v4_admit_turn(
+                &v4_submit(&conversation, "v4-tool-fail", route_id.clone()),
+                V4_NOW,
+            )
+            .unwrap();
+        let error = executor
+            .execute_v4(
+                &store,
+                &submitted.run_id,
+                v4_submit(&conversation, "v4-tool-fail", route_id),
+                &CancellationToken::new(),
+            )
+            .unwrap_err();
+        assert_eq!(error.kind(), ExecutionErrorKind::Unsupported);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

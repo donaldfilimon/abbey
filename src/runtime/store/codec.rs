@@ -65,7 +65,7 @@ pub(super) fn backend_as_str(backend: BackendSelection) -> &'static str {
     }
 }
 
-fn parse_run_state(value: &str) -> Result<RunState, StoreError> {
+pub(super) fn parse_run_state(value: &str) -> Result<RunState, StoreError> {
     match value {
         "queued" => Ok(RunState::Queued),
         "starting" => Ok(RunState::Starting),

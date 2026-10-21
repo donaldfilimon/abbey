@@ -126,6 +126,20 @@ func press(_ elements: [AXUIElement]) throws {
     }
 }
 
+func waitForControl(_ app: AXUIElement, role: String, title: String,
+                    snapshots: inout [Snapshot]) throws -> AXUIElement {
+    let deadline = Date().addingTimeInterval(10)
+    var latest = try tree(app)
+    while Date() < deadline {
+        snapshots.append(latest.snapshot)
+        let matches = latest.matching([role], title)
+        if matches.count == 1 { return matches[0] }
+        Thread.sleep(forTimeInterval: 0.1)
+        latest = try tree(app)
+    }
+    try fail("ax_control_missing_or_ambiguous")
+}
+
 do {
     guard AXIsProcessTrusted() else { try fail("accessibility_permission_required") }
     if CommandLine.arguments.count == 2 && CommandLine.arguments[1] == "preflight" {
@@ -133,10 +147,22 @@ do {
         print("{\"trusted\":true}")
         exit(0)
     }
-    guard CommandLine.arguments.count >= 3, let pid = Int32(CommandLine.arguments[1]),
-          let running = NSRunningApplication(processIdentifier: pid), !running.isTerminated else {
+    guard CommandLine.arguments.count >= 3, let pid = Int32(CommandLine.arguments[1]) else {
         try fail("owned_process_unavailable")
     }
+    // A directly spawned Tauri executable can precede LaunchServices' process
+    // registration by a few hundred milliseconds. Retry that exact PID rather
+    // than treating a normal startup race as process loss.
+    var running: NSRunningApplication?
+    let registrationDeadline = Date().addingTimeInterval(5)
+    repeat {
+        running = NSRunningApplication(processIdentifier: pid)
+        if let running, !running.isTerminated { break }
+        Thread.sleep(forTimeInterval: 0.05)
+    } while Date() < registrationDeadline
+    guard let running, !running.isTerminated else { try fail("owned_process_unavailable") }
+    _ = running.activate(options: [.activateAllWindows])
+    Thread.sleep(forTimeInterval: 0.15)
     let app = AXUIElementCreateApplication(pid)
     AXUIElementSetMessagingTimeout(app, 0.5)
     // A launched PID can precede the first registered AppKit window. This
@@ -153,8 +179,10 @@ do {
     var snapshots = [initial.snapshot]
     switch CommandLine.arguments[2] {
     case "snapshot": break
+    case "doctor":
+        try press([waitForControl(app, role: "AXButton", title: "Settings", snapshots: &snapshots)])
     case "routes":
-        try press(initial.matching(["AXButton"], "Routes"))
+        try press([waitForControl(app, role: "AXButton", title: "Routes", snapshots: &snapshots)])
     case "limit":
         guard CommandLine.arguments.count == 4,
               ["10", "25", "50"].contains(CommandLine.arguments[3]) else { try fail("invalid_limit") }

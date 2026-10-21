@@ -1,6 +1,6 @@
 """Run the shipped shell proof with owned fakes; never run Rust or a provider.
 
-Only the shell script's bytes are copied into the disposable fixture tree.
+Only the shell script's bytes are copied; seed behavior uses an owned marker stub.
 """
 
 import json
@@ -104,8 +104,10 @@ elif args[0] == "test":
     record(event="test-daemon", identity=identity)
     # Deliberately let a stale but reachable decoy pass the fake Rust stage.
     # The outer regression must detect the shell's wrong artifact admission.
-    print("running 2 tests")
-    print("test result: ok. 2 passed; 0 failed; 0 ignored")
+    if not (state / "conversation-seed-observed").is_file():
+        raise SystemExit("conversation history seed never executed")
+    print("running 3 tests")
+    print("test result: ok. 3 passed; 0 failed; 0 ignored")
 else:
     raise SystemExit("unexpected cargo command")
 '''
@@ -181,6 +183,14 @@ class DaemonReadTarget(unittest.TestCase):
             fixture_script = root / "desktop" / "scripts" / "prove-daemon-read.sh"
             fixture_script.parent.mkdir(parents=True)
             fixture_script.write_bytes(SCRIPT.read_bytes())
+            (fixture_script.parent / "seed-conversation-fixture.py").write_text(
+                "import os\nfrom pathlib import Path\n"
+                "assert os.environ['ABBEY_DESKTOP_CONVERSATION_FIXTURE'] == '1'\n"
+                "root = Path(os.environ['ABBEY_PROOF_FIXTURE_ROOT']).resolve()\n"
+                "state = Path(os.environ['ABBEYD_SOCKET_PATH']).resolve().parent\n"
+                "state.relative_to(root)\n"
+                "(state / 'conversation-seed-observed').write_text('synthetic')\n"
+            )
             (root / "Cargo.toml").write_text(
                 '[package]\nname="fixture"\nversion="0.0.0"\nedition="2024"\n'
             )

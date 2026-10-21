@@ -20,6 +20,7 @@ pub use executor::{CancellationToken, ExecutionError, ExecutionErrorKind, Execut
 pub use manager::{
     Clock, ManagerError, RunManager, RunManagerConfig, SubmitDisposition, SubmitResult, SystemClock,
 };
+pub(crate) use provider::v4_route_id;
 pub use provider::{
     FixedProviderKind, FixedRecipeProvider, FixedRecipeProviderError, ModelProviderExecutor,
     ProviderConfigError, ProviderRoute,

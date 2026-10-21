@@ -119,6 +119,17 @@ fn handle_connection<H: DaemonHandler>(
             } => {
                 if !limiter.admit() {
                     WireResponse::rate_limited(response_version, request_id)
+                } else if response_version == crate::app_core::APP_PROTOCOL_V4 {
+                    match serde_json::from_slice::<V4RequestEnvelope>(&bytes) {
+                        Ok(request) => {
+                            WireResponse::V4(super::v4::dispatch_authenticated_v4(request, handler))
+                        }
+                        Err(_) => WireResponse::V4(V4ResponseEnvelope::error(
+                            "",
+                            crate::app_core::V4ErrorCode::InvalidCommand,
+                            "request is not valid protocol-v4 JSON",
+                        )),
+                    }
                 } else if response_version == crate::app_core::APP_PROTOCOL_V3 {
                     match serde_json::from_slice::<V3RequestEnvelope>(&bytes) {
                         Ok(request) => {
@@ -173,12 +184,19 @@ fn handle_connection<H: DaemonHandler>(
 pub(super) enum WireResponse {
     Legacy(ResponseEnvelope),
     V3(V3ResponseEnvelope),
+    V4(V4ResponseEnvelope),
     Federation(FederationResponse),
 }
 
 impl WireResponse {
     fn unauthorized(version: u16, request_id: String) -> Self {
-        if version == crate::app_core::APP_PROTOCOL_V3 {
+        if version == crate::app_core::APP_PROTOCOL_V4 {
+            Self::V4(V4ResponseEnvelope::error(
+                request_id,
+                crate::app_core::V4ErrorCode::Unauthorized,
+                "authentication failed",
+            ))
+        } else if version == crate::app_core::APP_PROTOCOL_V3 {
             Self::V3(V3ResponseEnvelope::error(
                 request_id,
                 crate::app_core::V3ErrorCode::Unauthorized,
@@ -195,7 +213,13 @@ impl WireResponse {
     }
 
     fn rate_limited(version: u16, request_id: String) -> Self {
-        if version == crate::app_core::APP_PROTOCOL_V3 {
+        if version == crate::app_core::APP_PROTOCOL_V4 {
+            Self::V4(V4ResponseEnvelope::error(
+                request_id,
+                crate::app_core::V4ErrorCode::RateLimited,
+                "authenticated request rate limit exceeded",
+            ))
+        } else if version == crate::app_core::APP_PROTOCOL_V3 {
             Self::V3(V3ResponseEnvelope::error(
                 request_id,
                 crate::app_core::V3ErrorCode::RateLimited,
@@ -222,6 +246,11 @@ impl WireResponse {
             Self::V3(response) => Self::V3(V3ResponseEnvelope::error(
                 response.request_id,
                 crate::app_core::V3ErrorCode::ResponseTooLarge,
+                "handler response exceeds configured limit",
+            )),
+            Self::V4(response) => Self::V4(V4ResponseEnvelope::error(
+                response.request_id,
+                crate::app_core::V4ErrorCode::ResponseTooLarge,
                 "handler response exceeds configured limit",
             )),
             Self::Federation(response) => Self::Federation(FederationResponse::error(
@@ -286,7 +315,10 @@ fn authenticate_frame(bytes: &[u8], config: &DaemonConfig) -> FrameAuthenticatio
         .to_owned();
     if config.bearer.matches(candidate.as_bytes()) {
         let response_version = Some(response_version)
-            .filter(|version| SUPPORTED_PROTOCOL_VERSIONS.contains(version))
+            .filter(|version| {
+                SUPPORTED_PROTOCOL_VERSIONS.contains(version)
+                    || *version == crate::app_core::APP_PROTOCOL_V4
+            })
             .unwrap_or(CURRENT_PROTOCOL_VERSION);
         FrameAuthentication::Authenticated {
             response_version,

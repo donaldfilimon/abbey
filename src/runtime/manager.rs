@@ -6,9 +6,10 @@
 
 use super::executor::{
     CancellationToken, ExecutionAttempt, ExecutionErrorKind, Executor, execute_catching_panics,
+    execute_v4_catching_panics,
 };
 use super::{NewRun, NewRunEvent, RunRecord, RuntimeStore, StoreError};
-use crate::app_core::{RunId, RunRequest, RunState};
+use crate::app_core::{RunId, RunRequest, RunState, V4SubmitTurn, V4TurnSubmission};
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
@@ -103,9 +104,14 @@ impl From<StoreError> for ManagerError {
     }
 }
 
+enum WorkPayload {
+    Legacy(RunRequest),
+    V4(V4SubmitTurn),
+}
+
 struct WorkItem {
     run_id: RunId,
-    request: RunRequest,
+    payload: WorkPayload,
 }
 
 struct Shared<C> {
@@ -194,8 +200,62 @@ impl<E: Executor, C: Clock> RunManager<E, C> {
 
         let item = WorkItem {
             run_id: run.id.clone(),
-            request,
+            payload: WorkPayload::Legacy(request),
         };
+        match self.enqueue(item)? {
+            EnqueueOutcome::Enqueued => Ok(SubmitResult {
+                run,
+                disposition: SubmitDisposition::Enqueued,
+            }),
+            EnqueueOutcome::QueueFull(failed) => Ok(SubmitResult {
+                run: failed,
+                disposition: SubmitDisposition::QueueFull,
+            }),
+        }
+    }
+
+    /// Admit a protocol-v4 turn and enqueue it on the shared worker.
+    ///
+    /// Admission is the store's atomic `v4_admit_turn`. Execution uses
+    /// [`Executor::execute_v4`]; the default refuses, so an unbound conversational
+    /// route fails through the ordinary lifecycle instead of leaving a stuck queue.
+    pub fn submit_v4(&self, request: V4SubmitTurn) -> Result<V4TurnSubmission, ManagerError> {
+        if self.shared.shutting_down.load(Ordering::Acquire) {
+            return Err(ManagerError::ShuttingDown);
+        }
+        request
+            .validate()
+            .map_err(|error| ManagerError::InvalidRequest(error.to_string()))?;
+        let now_ms = self.shared.clock.now_millis();
+        let admitted = self.shared.store.v4_admit_turn(&request, now_ms)?;
+        if admitted.duplicate || admitted.state != RunState::Queued {
+            return Ok(admitted);
+        }
+
+        {
+            let mut admitted_ids = lock(&self.shared.admitted);
+            if !admitted_ids.insert(admitted.run_id.clone()) {
+                return Ok(admitted);
+            }
+        }
+
+        let item = WorkItem {
+            run_id: admitted.run_id.clone(),
+            payload: WorkPayload::V4(request),
+        };
+        match self.enqueue(item)? {
+            EnqueueOutcome::Enqueued => Ok(admitted),
+            EnqueueOutcome::QueueFull(_) => {
+                // Admission already failed the run; re-read the turn receipt.
+                self.shared
+                    .store
+                    .v4_fail_unadopted_turn(&admitted.run_id)
+                    .map_err(Into::into)
+            }
+        }
+    }
+
+    fn enqueue(&self, item: WorkItem) -> Result<EnqueueOutcome, ManagerError> {
         let sender = lock(&self.sender).as_ref().cloned();
         let Some(sender) = sender else {
             reject_admission(
@@ -206,12 +266,8 @@ impl<E: Executor, C: Clock> RunManager<E, C> {
             )?;
             return Err(ManagerError::ShuttingDown);
         };
-        let send_result = sender.try_send(item);
-        match send_result {
-            Ok(()) => Ok(SubmitResult {
-                run,
-                disposition: SubmitDisposition::Enqueued,
-            }),
+        match sender.try_send(item) {
+            Ok(()) => Ok(EnqueueOutcome::Enqueued),
             Err(TrySendError::Full(item)) => {
                 let failed = reject_admission(
                     &self.shared,
@@ -219,10 +275,7 @@ impl<E: Executor, C: Clock> RunManager<E, C> {
                     "queue_full",
                     "bounded run queue is full",
                 )?;
-                Ok(SubmitResult {
-                    run: failed,
-                    disposition: SubmitDisposition::QueueFull,
-                })
+                Ok(EnqueueOutcome::QueueFull(failed))
             }
             Err(TrySendError::Disconnected(item)) => {
                 reject_admission(
@@ -344,6 +397,11 @@ impl<E: Executor, C: Clock> Drop for RunManager<E, C> {
     }
 }
 
+enum EnqueueOutcome {
+    Enqueued,
+    QueueFull(RunRecord),
+}
+
 fn worker_entry<E: Executor, C: Clock>(
     shared: Arc<Shared<C>>,
     executor: Arc<E>,
@@ -373,6 +431,7 @@ fn execute_item<E: Executor, C: Clock>(
     executor: &E,
     item: WorkItem,
 ) -> Result<(), ManagerError> {
+    let is_v4 = matches!(item.payload, WorkPayload::V4(_));
     let started = shared.store.transition_run(
         &item.run_id,
         RunState::Queued,
@@ -401,6 +460,9 @@ fn execute_item<E: Executor, C: Clock>(
     if record.status == RunState::CancelRequested || token.is_cancelled() {
         token.cancel();
         finish_cancelled(shared, &item.run_id)?;
+        if is_v4 {
+            finalize_v4_turn(shared, &item.run_id, RunState::Cancelled)?;
+        }
         finish_admission(shared, &item.run_id);
         return Ok(());
     }
@@ -415,16 +477,50 @@ fn execute_item<E: Executor, C: Clock>(
         Err(StoreError::UnexpectedStatus { .. }) => {
             token.cancel();
             finish_cancelled(shared, &item.run_id)?;
+            if is_v4 {
+                finalize_v4_turn(shared, &item.run_id, RunState::Cancelled)?;
+            }
             finish_admission(shared, &item.run_id);
             return Ok(());
         }
         Err(error) => return Err(error.into()),
     }
 
-    let attempt = execute_catching_panics(executor, &item.run_id, item.request, &token);
+    let attempt = match item.payload {
+        WorkPayload::Legacy(request) => {
+            execute_catching_panics(executor, &item.run_id, request, &token)
+        }
+        WorkPayload::V4(request) => {
+            execute_v4_catching_panics(executor, &shared.store, &item.run_id, request, &token)
+        }
+    };
     settle_attempt(shared, &item.run_id, &token, &attempt)?;
+    if is_v4 {
+        let terminal = shared
+            .store
+            .get_run(&item.run_id)?
+            .map(|run| run.status)
+            .unwrap_or(RunState::Failed);
+        if terminal.is_terminal() {
+            finalize_v4_turn(shared, &item.run_id, terminal)?;
+        }
+    }
     finish_admission(shared, &item.run_id);
     Ok(())
+}
+
+fn finalize_v4_turn<C: Clock>(
+    shared: &Shared<C>,
+    run_id: &RunId,
+    state: RunState,
+) -> Result<(), ManagerError> {
+    match shared
+        .store
+        .v4_finalize_turn(run_id, state, shared.clock.now_millis())
+    {
+        Ok(()) | Err(StoreError::AssistantNotFound) => Ok(()),
+        Err(error) => Err(error.into()),
+    }
 }
 
 fn settle_attempt<C: Clock>(

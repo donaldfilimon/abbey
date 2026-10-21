@@ -45,5 +45,8 @@ fn shutdown_on_signals() -> Result<Shutdown, nix::Error> {
 
 #[cfg(not(unix))]
 fn shutdown_on_signals() -> Result<Shutdown, std::convert::Infallible> {
+    // On Windows the serve() stub already fails before signals matter; this
+    // placeholder keeps the binary compiling. Named-pipe support will supply
+    // equivalent shutdown when implemented.
     Ok(Shutdown::default())
 }

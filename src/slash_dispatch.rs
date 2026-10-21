@@ -354,7 +354,19 @@ pub fn dispatch_slash(input: &str, state: &AbbeyState, cfg: &mut AgentConfig) ->
             Ok(0)
         }
         "config" => {
+            println!("Live session (current selection; no provider probe):");
+            println!("backend:   {}", cfg.backend.label());
             print_config(state, cfg);
+            println!("Local configuration (file/defaults + environment overrides):");
+            let ac = config::AbbeyConfig::load().map_err(|error| {
+                anyhow::anyhow!(
+                    "load config {}: {error:#}",
+                    config::AbbeyConfig::config_path().display()
+                )
+            })?;
+            for line in ac.status_lines() {
+                println!("{line}");
+            }
             Ok(0)
         }
         "cost" => {

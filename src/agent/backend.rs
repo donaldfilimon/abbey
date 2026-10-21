@@ -360,7 +360,7 @@ pub(crate) fn fm_models_unsupported(stdout: &str, stderr: &str) -> bool {
 /// `None` means a probe did not run to completion.
 pub(crate) fn fm_models_probe(path: &Path) -> Option<FmModels> {
     let limits = SupervisorLimits {
-        timeout: Duration::from_millis(3_000),
+        timeout: Duration::from_millis(5_000),
         terminate_grace: Duration::from_millis(100),
         stdout_bytes: 64 * 1024,
         stderr_bytes: 16 * 1024,

@@ -50,9 +50,18 @@ pub use v3::{
 };
 pub use v3_model::{
     MAX_V3_MODEL_OUTPUT_BYTES, MAX_V3_MODEL_OUTPUT_TOKENS, MAX_V3_MODEL_PROMPT_BYTES,
-    V3ModelDevice, V3ModelInferenceRequest, V3ModelInferenceResult,
+    V3ModelDetails, V3ModelDevice, V3ModelInferenceRequest, V3ModelInferenceResult,
 };
 pub use v3_tool::{
     V3ToolApprovalState, V3ToolApprovalStatus, V3ToolCall, V3ToolDecision, V3ToolDescriptor,
     V3ToolEffect, V3ToolInvocation, V3ToolPage, V3ToolResult,
 };
+
+mod v4;
+pub(crate) mod v4_content;
+pub(crate) mod v4_protocol;
+#[cfg(test)]
+mod v4_tests;
+pub use v4::*;
+pub use v4_content::*;
+pub use v4_protocol::*;

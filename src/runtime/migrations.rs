@@ -3,7 +3,7 @@
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 use thiserror::Error;
 
-pub(super) const CURRENT_SCHEMA_VERSION: i64 = 9;
+pub(super) const CURRENT_SCHEMA_VERSION: i64 = 10;
 
 const CREATE_LEDGER: &str = r#"
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -28,6 +28,8 @@ const MIGRATION_8: &str = include_str!("migration_8_governed_tools.sql");
 
 const MIGRATION_9: &str = include_str!("migration_9_governed_refusals.sql");
 
+const MIGRATION_10: &str = include_str!("migration_10_assistant.sql");
+
 const MIGRATIONS: &[(i64, &str)] = &[
     (1, MIGRATION_1),
     (2, MIGRATION_2),
@@ -38,6 +40,7 @@ const MIGRATIONS: &[(i64, &str)] = &[
     (7, MIGRATION_7),
     (8, MIGRATION_8),
     (9, MIGRATION_9),
+    (10, MIGRATION_10),
 ];
 
 #[derive(Debug, Error)]
@@ -332,6 +335,140 @@ mod tests {
                 .get::<_, i64>(0))
                 .unwrap(),
             CURRENT_SCHEMA_VERSION
+        );
+    }
+
+    #[test]
+    fn assistant_content_is_separate_from_legacy_identity() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        apply(&mut conn, "2026-10-20T00:00:00Z").unwrap();
+        conn.execute_batch("PRAGMA foreign_keys=ON;").unwrap();
+        conn.execute(
+            "INSERT INTO conversations (id, created_at, updated_at) VALUES ('legacy-1', 't', 't')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO conversations (id, created_at, updated_at) VALUES ('chat-1', 't', 't')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO runs (
+                id, conversation_id, idempotency_key, request_digest, status,
+                next_event_sequence, created_at, updated_at
+             ) VALUES (
+                '11111111-1111-4111-8111-111111111111', 'chat-1', 'req-1',
+                'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                'queued', 2, 't', 't'
+             )",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO run_events (run_id, sequence, kind, payload_json, created_at)
+             VALUES ('11111111-1111-4111-8111-111111111111', 1, 'run_queued', '{}', 't')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO assistant_conversations (
+                id, sequence, title, created_at_ms, updated_at_ms
+             ) VALUES ('chat-1', 1, 'Hello', 1, 1)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO assistant_messages (
+                id, conversation_id, run_id, role, sequence, body, text_bytes,
+                text_complete, state, created_at_ms
+             ) VALUES (
+                'msg-1', 'chat-1', '11111111-1111-4111-8111-111111111111',
+                'user', 1, 'secret prompt', 13, 1, 'queued', 1
+             )",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO assistant_content_events (
+                conversation_id, sequence, request_id, run_id, kind, byte_count, timestamp_ms
+             ) VALUES (
+                'chat-1', 1, 'req-1', '11111111-1111-4111-8111-111111111111',
+                'output_bounded', 13, 1
+             )",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO assistant_content_payloads (
+                conversation_id, sequence, payload_json
+             ) VALUES (
+                'chat-1', 1,
+                '{\"kind\":\"text_delta\",\"data\":{\"text\":\"secret prompt\"}}'
+             )",
+            [],
+        )
+        .unwrap();
+        let columns: Vec<String> = conn
+            .prepare("PRAGMA table_info(assistant_content_events)")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert!(!columns.iter().any(|name| {
+            matches!(
+                name.as_str(),
+                "body" | "prompt" | "payload" | "payload_json" | "text"
+            )
+        }));
+        let lifecycle = conn
+            .query_row(
+                "SELECT payload_json FROM run_events WHERE run_id = '11111111-1111-4111-8111-111111111111'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .unwrap();
+        assert!(!lifecycle.contains("secret prompt"));
+        conn.execute(
+            "DELETE FROM assistant_content_events WHERE conversation_id = 'chat-1'",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "DELETE FROM assistant_messages WHERE conversation_id = 'chat-1'",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE assistant_conversations SET deleted = 1 WHERE id = 'chat-1'",
+            [],
+        )
+        .unwrap();
+        let identities: i64 = conn
+            .query_row("SELECT COUNT(*) FROM conversations", [], |row| row.get(0))
+            .unwrap();
+        let runs: i64 = conn
+            .query_row("SELECT COUNT(*) FROM runs", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(identities, 2);
+        assert_eq!(runs, 1);
+        let cron = conn.execute(
+            "INSERT INTO assistant_permission_profiles (profile_id, document_json, updated_at_ms)
+             VALUES ('default', '{}', 1)",
+            [],
+        );
+        assert!(cron.is_ok());
+        let cron = conn.execute(
+            "INSERT INTO assistant_automations (
+                automation_id, instruction, schedule, cron, timezone, route_id,
+                permission_profile_id, budget_tokens, enabled
+             ) VALUES ('auto-1', 'check', 'daily', '0 * * * *', 'UTC', 'ollama', 'default', 100, 1)",
+            [],
+        );
+        assert!(
+            cron.is_err(),
+            "daily schedule must not store a cron expression"
         );
     }
 

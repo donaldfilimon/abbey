@@ -152,9 +152,13 @@ impl FixedRecipeProvider {
     }
 
     fn request_input<'a>(&self, request: &'a ModelRequest) -> Result<&'a str, RuntimeError> {
+        // Tools are accepted at the provider-neutral ABI ModelRequest boundary (bounded
+        // runtime-contracts extension). The fixed recipes still ignore them when
+        // constructing the backend CLI argv; only single user message + no system/override
+        // is forwarded. This keeps observable behavior unchanged while extending the
+        // neutral interface.
         let valid_shape = request.model() == self.model
             && request.system().is_none()
-            && request.tools().is_empty()
             && request.max_output_tokens().is_none()
             && request.messages().len() == 1
             && request.messages()[0].role == Role::User;
@@ -407,11 +411,9 @@ mod tests {
     fn request_data_cannot_change_model_tools_or_process_options() {
         let scratch = Scratch::new("request-refusal", "printf should-not-run");
         let provider = provider(&scratch, FixedProviderKind::Cursor, "fixed-model");
+        // Model, system, flags, token-hint still refuse at the fixed-recipe boundary.
         for request in [
             ModelRequest::new("different").with_user("hello"),
-            ModelRequest::new("fixed-model")
-                .with_user("hello")
-                .with_tool(ToolSpec::new("shell.exec")),
             ModelRequest::new("fixed-model")
                 .with_system("override")
                 .with_user("hello"),
@@ -432,6 +434,26 @@ mod tests {
             assert_eq!(sink.kinds(), vec!["finished"]);
             assert!(!error.to_string().contains("--force"));
         }
+
+        // Bounded runtime-contracts extension: tools are accepted in the neutral
+        // ABI ModelRequest (so the catalog can be carried); the recipe still
+        // ignores them and emits only the user text.
+        let tool_request = ModelRequest::new("fixed-model")
+            .with_user("hello")
+            .with_tool(ToolSpec::new("shell.exec"));
+        let mut sink = CollectingSink::new();
+        let report = run_provider(
+            &provider,
+            &tool_request,
+            &mut sink,
+            &CancellationToken::new(),
+            RunBudget::unlimited(),
+        )
+        .expect("tools now accepted in shape for provider-neutral contract");
+        assert_eq!(report.stop, StopReason::Completed);
+        // The fake executable (always prints its body) ran; the presence of tools
+        // in the neutral request did not cause a shape refusal.
+        assert!(report.text().contains("should-not-run"));
     }
 
     #[cfg(unix)]

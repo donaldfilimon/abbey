@@ -2,10 +2,19 @@
 """Decide whether an Actions run is execution evidence.
 
 The evidence bar is an exact-head completed run with an actually executed,
-successful qualifying gate and all of that gate's required steps. Linux ARM64,
-macOS ARM64, and the isolated hosted-fork gate are distinguishable narrower
-facts; none is silently promoted to cross-platform proof. A zero-job
-`startup_failure` is infrastructure evidence, never source-test evidence.
+successful qualifying gate and all of that gate's required steps. Linux ARM64
+is the primary for the blocked `ci-self-hosted-linux-proof`; macOS ARM64 adjunct
+and any hosted-fork gate are distinguishable narrower facts (soft/narrow
+evidence only); none is silently promoted to cross-platform or full Linux
+proof. A zero-job `startup_failure` is infrastructure evidence, never
+source-test evidence.
+
+Current (2026-10): workflow defines only the macOS ARM64 self-hosted adjunct
+(Linux ARM64 gate removed 2026-09-28 as unprovisioned; GitHub-hosted fork gate
+also removed due to billing lock on hosted Actions). macOS successes are
+recorded as narrow adjunct evidence. Full Phase 2 / working-ci closure still
+requires a non-zero successful Linux ARM64 job + separate Windows runtime
+evidence.
 """
 
 from __future__ import annotations

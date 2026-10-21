@@ -4,6 +4,7 @@ const KIND_LABEL: Record<IpcError["kind"], string> = {
   configuration: "Daemon configuration error",
   transport: "Cannot reach Abbey",
   protocol: "Protocol mismatch",
+  not_found: "Conversation not found",
   rejected: "Request rejected",
   unsupported_platform: "Unsupported platform",
 };

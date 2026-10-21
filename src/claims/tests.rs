@@ -415,6 +415,8 @@ fn ci_proof_stays_blocked_without_linux_and_windows_execution() {
     assert!(claim.note.contains("Linux ARM64"));
     assert!(claim.note.contains("Windows"));
     assert!(claim.next_action.contains("Linux ARM64"));
+    // macOS adjunct is soft/narrow; prepared guards + cross-compile checks are
+    // repo-side only and do not promote the Blocked status or close Phase 2.
 }
 
 #[test]

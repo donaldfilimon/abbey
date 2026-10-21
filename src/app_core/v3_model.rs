@@ -177,3 +177,26 @@ fn digest_field(digest: &mut Sha256, value: &[u8]) {
     digest.update(u64::try_from(value.len()).unwrap_or(u64::MAX).to_be_bytes());
     digest.update(value);
 }
+
+/// Sanitized exact signed startup model identity and local state.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct V3ModelDetails {
+    pub model_id: String,
+    pub revision: String,
+    pub architecture: String,
+    pub configured_device: V3ModelDevice,
+    pub license_sha256: String,
+    pub license_accepted: bool,
+    pub loaded: bool,
+}
+
+impl V3ModelDetails {
+    /// Validate bounded opaque identities and exact license digest.
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        validate_id(&self.model_id)?;
+        validate_id(&self.revision)?;
+        validate_id(&self.architecture)?;
+        validate_digest(&self.license_sha256)
+    }
+}

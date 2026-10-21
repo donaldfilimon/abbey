@@ -66,3 +66,34 @@ fn result_requires_exact_digests_native_single_device_evidence_and_bounds() {
     oversized.output_digest = oversized.computed_output_digest();
     assert!(oversized.validate_for(&request).is_err());
 }
+
+#[test]
+fn model_details_contract_is_bounded_and_read_only() {
+    let details = super::V3ModelDetails {
+        model_id: "fixture".into(),
+        revision: "revision".into(),
+        architecture: "abi-bigram-v1".into(),
+        configured_device: super::V3ModelDevice::Cpu,
+        license_sha256: "07".repeat(32),
+        license_accepted: false,
+        loaded: false,
+    };
+    assert!(details.validate().is_ok());
+    let command = super::V3Command::ModelDetails(super::V3ResourceQuery {
+        resource_id: "fixture".into(),
+    });
+    assert_eq!(
+        command.required_capability(),
+        Some(super::V3Capability::ReadModels)
+    );
+    assert!(command.validate().is_ok());
+    let mut bad = details.clone();
+    bad.license_sha256 = "A".repeat(64);
+    assert!(bad.validate().is_err());
+    let mut bad = details.clone();
+    bad.architecture = "/private/model".into();
+    assert!(bad.validate().is_err());
+    let mut bad = details;
+    bad.revision = "a".repeat(257);
+    assert!(bad.validate().is_err());
+}

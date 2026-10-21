@@ -8,6 +8,7 @@ set -eu
 
 cd "$(dirname "$0")/.."
 DESKTOP_ROOT="$(pwd)"
+ABBEY_PYTHON="${ABBEY_PYTHON:-python3}"
 REPO_ROOT="$(cd .. && pwd)"
 
 if [ "$(uname -s)" != "Darwin" ] && [ "$(uname -s)" != "Linux" ]; then
@@ -101,6 +102,13 @@ while [ ! -S "$SOCKET" ]; do
 done
 echo "abbeyd ready pid=$DAEMON_PID socket=$SOCKET"
 
+echo "== seed synthetic authorized conversation history =="
+ABBEYD_SOCKET_PATH="$SOCKET" \
+  ABBEYD_BEARER_TOKEN="$BEARER" \
+  ABBEY_DESKTOP_CONVERSATION_FIXTURE=1 \
+  "$ABBEY_PYTHON" scripts/seed-conversation-fixture.py
+touch "$SCRATCH/conversation-seed-observed"
+
 echo "== seed sanitized memory summary =="
 ABBEY_STATE_DIR="$SCRATCH" \
   ABBEY_CONFIG="$SCRATCH/config.toml" \
@@ -129,8 +137,8 @@ if [ "$status" -ne 0 ]; then
   echo "live daemon desktop test failed" >&2
   exit "$status"
 fi
-if ! grep -q 'running 2 tests' "$LOG" || ! grep -q 'test result: ok. 2 passed' "$LOG"; then
-  echo "live daemon desktop tests did not both run (vacuous cargo filter)" >&2
+if ! grep -q 'running 3 tests' "$LOG" || ! grep -q 'test result: ok. 3 passed' "$LOG"; then
+  echo "live daemon desktop tests did not all run (vacuous cargo filter)" >&2
   exit 1
 fi
 

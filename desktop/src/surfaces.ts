@@ -4,7 +4,7 @@
 // Two rules govern this file:
 //
 //   1. A view is available only when the *live* `CapabilitySet` returned by
-//      `app_status` grants what it needs. Availability is never a hardcoded
+//      `app_status` or the separate v3/v4 session grants what it needs. Availability is never a hardcoded
 //      boolean, so the day the app core grants more, the UI follows.
 //   2. An unavailable view never asserts a claim status of its own. It states
 //      the contract-level reason, and renders whatever the *live* ledger
@@ -12,9 +12,10 @@
 //      capability is Current, the UI says Current — the missing piece is the
 //      contract, not the capability.
 
-import type { AppCapability, V3Capability } from "./ipc/generated";
+import type { AppCapability, V3Capability, V4Capability } from "./ipc/generated";
 
 export type SurfaceId =
+  | "automations"
   | "doctor"
   | "claims"
   | "chat"
@@ -27,7 +28,7 @@ export type SurfaceId =
   | "routes";
 
 export type MissingReason =
-  /** Abbey ships this, but the read-only contract does not carry it. */
+  /** Abbey ships this, but the desktop contract does not carry it. */
   | "not_on_contract"
   /** The underlying capability itself is not implemented anywhere yet. */
   | "capability_not_implemented";
@@ -44,24 +45,16 @@ export interface Surface {
   id: SurfaceId;
   label: string;
   blurb: string;
-  /** Capability `app_status` (v1/v2) or `app_v3_grants` must report. */
-  requires: AppCapability | V3Capability | null;
+  /** Capability a validated v1/v2, v3, or v4 session must report. */
+  requires: AppCapability | V3Capability | V4Capability | null;
   unavailable?: UnavailableSurface;
 }
 
-const CONTRACT_SHAPE =
-  "The desktop exposes read-only Status, Claims, Routes, protocol-v2 run " +
-  "status/events, and protocol-v3 memory summary search/metadata, model " +
-  "inventory, and exact-ID claim lookup. In-process `CapabilitySet::standard()` " +
-  "grants `ReadStatus`, `ReadClaims`, and `ReadRoutes`. `ReadRun`/`ReadRunEvents` " +
-  "appear only on a protocol-v2 daemon. `ReadMemory`, `ReadModels`, and " +
-  "`ReadClaimsById` are v3 grants, never an in-process store open. Submit, " +
-  "cancel, invoke, and obsolete stay off this invoke surface.";
-
 export const SURFACES: readonly Surface[] = [
+  { id: "automations", label: "Automations", blurb: "A home for recurring work.", requires: null, unavailable: { reason: "not_on_contract", detail: "Automation scheduling and execution are not exposed by the current desktop bridge. No automations can be created or managed here yet.", ledgerFilter: "automation" } },
   {
     id: "doctor",
-    label: "Doctor",
+    label: "Settings",
     blurb: "Runtime status, build stamp, edition identity, granted capabilities.",
     requires: "read_status",
   },
@@ -74,26 +67,18 @@ export const SURFACES: readonly Surface[] = [
   {
     id: "chat",
     label: "Chat",
-    blurb: "Conversational agent runs.",
-    requires: null,
-    unavailable: {
-      reason: "not_on_contract",
-      detail:
-        `${CONTRACT_SHAPE} Protocol v2 does not stream conversational output, and ` +
-        "the desktop has no command that starts or cancels an agent run, so a chat " +
-        "view here would still have nothing to send or receive.",
-      ledgerFilter: "provider-neutral",
-    },
+    blurb: "Send turns through the daemon’s configured route and read the authorized conversation history.",
+    requires: "read_conversations",
   },
   {
     id: "runs",
-    label: "Runs & trace",
-    blurb: "Sanitized protocol-v2 run lifecycle and fixed-watermark events.",
+    label: "Tasks",
+    blurb: "Inspect daemon run status and lifecycle events. Task delegation is not available here yet.",
     requires: "read_run",
   },
   {
     id: "tools",
-    label: "Tools & approvals",
+    label: "Tools",
     blurb: "Sensitive-operation prompts.",
     requires: null,
     unavailable: {
@@ -115,7 +100,7 @@ export const SURFACES: readonly Surface[] = [
   {
     id: "models",
     label: "Models",
-    blurb: "Protocol-v3 model inventory, read-only.",
+    blurb: "Model inventory and exact signed-model lifecycle management.",
     requires: "read_models",
   },
   {

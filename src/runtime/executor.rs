@@ -9,7 +9,8 @@ pub use abi_agent_runtime::CancellationToken;
 use std::fmt;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
-use crate::app_core::{RunId, RunRequest};
+use super::RuntimeStore;
+use crate::app_core::{RunId, RunRequest, V4SubmitTurn};
 
 const MAX_FAILURE_BYTES: usize = 4_096;
 
@@ -70,6 +71,10 @@ impl std::error::Error for ExecutionError {}
 ///
 /// Cancellation is cooperative. Implementations should inspect `cancellation`
 /// at natural interruption points and return promptly when it becomes set.
+///
+/// Protocol-v4 turns use [`Self::execute_v4`]. The default implementation refuses
+/// execution so a daemon without a wired conversational executor still admits,
+/// schedules, and fails closed through the shared lifecycle path.
 pub trait Executor: Send + Sync + 'static {
     fn execute(
         &self,
@@ -77,6 +82,24 @@ pub trait Executor: Send + Sync + 'static {
         request: RunRequest,
         cancellation: &CancellationToken,
     ) -> Result<(), ExecutionError>;
+
+    /// Execute one admitted protocol-v4 turn.
+    ///
+    /// Default: unsupported. Concrete executors override this when startup has
+    /// bound conversational routes; they must persist only provider-emitted
+    /// visible content through `store` and must not invent assistant text.
+    fn execute_v4(
+        &self,
+        _store: &RuntimeStore,
+        _run_id: &RunId,
+        _request: V4SubmitTurn,
+        _cancellation: &CancellationToken,
+    ) -> Result<(), ExecutionError> {
+        Err(ExecutionError::with_kind(
+            ExecutionErrorKind::Unsupported,
+            "executor does not support protocol-v4 turns",
+        ))
+    }
 }
 
 /// Outcome produced without allowing an executor panic to kill the manager worker.
@@ -95,6 +118,22 @@ pub(crate) fn execute_catching_panics<E: Executor>(
 ) -> ExecutionAttempt {
     match catch_unwind(AssertUnwindSafe(|| {
         executor.execute(run_id, request, cancellation)
+    })) {
+        Ok(Ok(())) => ExecutionAttempt::Completed,
+        Ok(Err(error)) => ExecutionAttempt::Failed(error),
+        Err(payload) => ExecutionAttempt::Panicked(ExecutionError::new(panic_message(payload))),
+    }
+}
+
+pub(crate) fn execute_v4_catching_panics<E: Executor>(
+    executor: &E,
+    store: &RuntimeStore,
+    run_id: &RunId,
+    request: V4SubmitTurn,
+    cancellation: &CancellationToken,
+) -> ExecutionAttempt {
+    match catch_unwind(AssertUnwindSafe(|| {
+        executor.execute_v4(store, run_id, request, cancellation)
     })) {
         Ok(Ok(())) => ExecutionAttempt::Completed,
         Ok(Err(error)) => ExecutionAttempt::Failed(error),

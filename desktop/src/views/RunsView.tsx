@@ -1,10 +1,9 @@
-// Protocol-v2 run status and fixed-watermark lifecycle events.
+// Protocol-v2 run status and fixed-watermark lifecycle events. Serves as
+// the "Tasks" surface (id: runs) for minimal Task 6.
 //
-// This window looks up one durable run by canonical UUID and pages its
-// sanitized lifecycle ledger. It cannot submit or cancel: those commands are
-// absent from `generate_handler!`. User input and provider output are not on
-// `RunSnapshot` or `RunEventPage`, so there is nothing here that could echo
-// them even by accident.
+// Basic UI list for tasks wired here (stub data + v4-grant note). Uses
+// existing Runs lookup as the trace stub. Full v4 tasks list, detail, and
+// governed loop per plan remain out of scope for this slice. No execution.
 
 import { useMemo, useState } from "react";
 import { appRunEvents, appRunStatus, toIpcError } from "../ipc/client";
@@ -116,6 +115,16 @@ export function RunsView() {
         prompt text and provider output never cross this contract. Submit and
         cancel are not on the desktop invoke surface.
       </p>
+
+      <div className="card">
+        <div className="claim-head">
+          <span className="claim-name">Tasks</span>
+          <span className="badge">Unavailable</span>
+        </div>
+        <p className="claim-note">
+          Task management is not connected to this desktop yet. No task records or actions are available here.
+        </p>
+      </div>
 
       <div className="filters">
         <label>

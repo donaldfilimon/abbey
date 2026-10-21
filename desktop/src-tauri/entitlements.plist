@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Hardened-runtime entitlements for the Developer ID Distribution of Abbey's
+  desktop client. Deliberately minimal: no App Sandbox, no user-selected-file
+  access, no scripting host — the client holds no runtime authority beyond its
+  four enumerated read-only app_core commands (see verify-bundle.mjs).
+
+  com.apple.security.cs.allow-jit: WKWebView's JIT needs it once the app is
+  signed with hardened runtime (bundle > macOS > hardenedRuntime). Without it
+  the first signed build can fail to render instead of reporting a missing
+  entitlement.
+-->
+<plist version="1.0">
+  <dict>
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+  </dict>
+</plist>

@@ -21,12 +21,17 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-# No `tauri-plugin-shell`, `-fs`, `-http`, `-process`, or `-dialog`. The desktop
-# client exposes four enumerated read-only commands and nothing else; a generic
-# "run this command" bridge is not something that can be added by accident if
-# the plugin providing it is absent from this table.
+# No `tauri-plugin-shell`, `-fs`, `-http`, `-process`, `-dialog`, or `-opener`.
+# The desktop client exposes four enumerated read-only commands and nothing
+# else; a generic "run this command" bridge is not something that can be added
+# by accident if the plugin providing it is absent from this table.
+# The one deliberate execution-adjacent exception is `tauri-plugin-updater`:
+# it downloads and replaces this app bundle from the pinned endpoint in
+# `tauri.conf.json` and only after verifying the artifact against the pinned
+# Ed25519 public key there. It grants no other network or shell authority.
 tauri = { version = "2", features = [] }
 abbey = { path = "../.." }
+tauri-plugin-updater = "2.14.0"
 
 [features]
 default = []
@@ -36,3 +41,11 @@ default = []
 # grants no extra runtime capability — `CapabilitySet` is identical in both
 # editions.
 personal-edition = ["abbey/personal-edition"]
+
+# Test-only. Both crates are already in this workspace's dependency graph
+# through `tauri-plugin-updater` — they are named here so the updater's own
+# verification path (`tests/updater_signature.rs`) can be run directly, with
+# the same crate the plugin uses, against the key this client pins.
+[dev-dependencies]
+base64 = "0.22"
+minisign-verify = "0.3"

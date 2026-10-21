@@ -1,0 +1,122 @@
+name: Desktop
+
+# Desktop gate and staged release smoke on the same macOS ARM64 self-hosted
+# adjunct runner as the Rust gate. This is a separate workflow (never a second
+# job in rust.yml): check.sh's guard tooling asserts rust.yml has exactly one
+# actions/checkout use, and cross-checking a workspace crate needs its own
+# checkout pinning rather than an extra `uses:` in the Rust gate file.
+#
+# Same trust boundary as rust.yml: only trusted same-repository events. Fork
+# pull requests get no job; GitHub-hosted runners stay unused (billing lock).
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+concurrency:
+  group: desktop-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  ABBEY_TOOLCHAIN: 1.99.1
+  # These must match rust.yml until the immutable integration pins advance.
+  ABI_TOOLCHAIN: 1.99.1
+  ABI_REVISION: 7b9519b6cfb25cc9bc9db2982e0a901318ba039b
+  WDBX_REVISION: 5182bc3a60300e1dd152611025e774c4b906638b
+  # The desktop workspace is a bun project. Pin the exact bun release the
+  # gate runs with; a floating "latest bun" would let the lockfile format and
+  # the packaged build drift under the gate. The local development bun is
+  # 1.4.4-canary.1 and bun.lock was written by that series, so 1.4.4 stable
+  # reads the same lockfile.
+  BUN_VERSION: 1.4.4
+
+jobs:
+  gate-desktop-macos:
+    name: desktop gate (macOS ARM64 adjunct)
+    if: >
+      vars.ABBEY_MACOS_ARM64_RUNNER == 'enabled' &&
+      github.repository == 'donaldfilimon/abbey' &&
+      (github.event_name == 'push' ||
+       github.event_name == 'workflow_dispatch' ||
+       (github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.full_name == github.repository))
+    runs-on: [self-hosted, macOS, ARM64, abbey]
+    steps:
+      - name: Check out Abbey
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: abbey
+          persist-credentials: false
+
+      - name: Check out the verified ABI dependency
+        run: >-
+          ./abbey/tools/ci/checkout-public-revision.sh
+          donaldfilimon/abi "${ABI_REVISION}" abi
+
+      - name: Check out the public WDBX substrate
+        run: >-
+          ./abbey/tools/ci/checkout-public-revision.sh
+          donaldfilimon/wdbx "${WDBX_REVISION}" wdbx
+
+      - name: Prefer system compiler and linker tools
+        run: |
+          for directory in /usr/bin /bin /usr/sbin /sbin; do
+            echo "$directory" >> "$GITHUB_PATH"
+          done
+          export PATH="/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+          test "$(command -v cc)" = /usr/bin/cc
+
+      - name: Install pinned Abbey toolchain
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: ${{ env.ABBEY_TOOLCHAIN }}
+          components: rustfmt, clippy
+
+      - name: Ensure pinned bun
+        run: |
+          expected="${BUN_VERSION}"
+          command -v bun >/dev/null 2>&1 || true
+          version="$(bun --version 2>/dev/null || true)"
+          if [ "$version" = "$expected" ]; then
+            echo "bun ${version} already pinned"
+            exit 0
+          fi
+          echo "runner bun ${version:-absent}; installing exactly bun-v${expected}"
+          base="${RUNNER_TEMP}/abbey-bun"
+          rm -rf "$base"
+          mkdir -p "$base"
+          curl -fsSL "https://github.com/oven-sh/bun/releases/download/bun-v${expected}/bun-darwin-aarch64.zip" \
+            -o "$base/bun-darwin-aarch64.zip"
+          unzip -q "$base/bun-darwin-aarch64.zip" -d "$base"
+          test -x "$base/bun-darwin-aarch64/bun"
+          echo "$base/bun-darwin-aarch64" >> "$GITHUB_PATH"
+          test "$(bun --version)" = "$expected"
+
+      - name: Desktop gate (typecheck, codegen drift, bun tests, both editions, daemon proof)
+        working-directory: abbey/desktop
+        run: ./check.sh
+
+      - name: Staged release smoke (ad-hoc signed .app + signed updater artifacts, no DMG)
+        working-directory: abbey/desktop
+        run: |
+          # The bundling path is proven on every push without any Apple
+          # credential: the gate-DW crates a fresh ephemeral updater key on
+          # this run's RUNNER_TEMP, never stored or exported.
+          key="${RUNNER_TEMP}/abbey-updater-ci/generated"
+          rm -rf "$(dirname "$key")"
+          mkdir -p "$(dirname "$key")"
+          bun run tauri signer generate -w "$key" -f -p ""
+          ./scripts/release-macos.sh --skip-dmg --updater-key "$key"
+
+      - name: Clean runner workspace
+        if: always()
+        run: |
+          for checkout in abbey abi wdbx; do
+            rm -rf "$GITHUB_WORKSPACE/${checkout}"
+          done

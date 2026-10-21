@@ -1,4 +1,4 @@
-// Abbey desktop client — a read-only Tauri 2 surface over Abbey's shared
+// Abbey desktop client — an enumerated Tauri 2 surface over Abbey's shared
 // application core.
 //
 // No console window on Windows release builds.
@@ -10,16 +10,91 @@ mod ipc;
 mod v3_ipc;
 
 use abbey::edition::ACTIVE;
+use tauri::Manager;
 
 fn main() {
     tauri::Builder::default()
+        // Deliberate exception to the no-execution-plugin stance, wired with
+        // eyes open: `tauri-plugin-updater` can download and replace this app
+        // bundle from the pinned release endpoint in `tauri.conf.json`
+        // (`plugins.updater`), and only after verifying the artifact against
+        // the pinned Ed25519 public key there. No other endpoint is trusted and
+        // no other plugin is registered. The webview may invoke it only through
+        // `updater:default` in capabilities/default.json; the Doctor surface's
+        // update row is the single trigger surface (desktop/src/components/
+        // UpdateCheck.tsx), and it never installs without the user pressing it.
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        // Native application menu: Apple-standard predefined items only. Every
+        // entry is an OS-provided role (about/hide/quit/undo/copy/minimize...
+        // operate on this window or open the about panel); there are no custom
+        // handlers that reach webview state, the daemon, or the filesystem, in
+        // keeping with the read-only command surface. The FIRST submenu becomes
+        // the macOS app menu (the OS reads its name from the bundle, not from
+        // the submenu title).
+        .menu(|handle| {
+            use tauri::menu::{AboutMetadata, MenuBuilder, MenuItemBuilder, SubmenuBuilder};
+            let version = handle
+                .config()
+                .version
+                .clone()
+                .unwrap_or_else(|| "unknown".to_owned());
+            // Same version source the doctor surface prints from
+            // `app_status`; the menu introduces no second truth.
+            let about = AboutMetadata {
+                version: Some(version),
+                ..AboutMetadata::default()
+            };
+            let product_name = handle.config().product_name.as_deref().unwrap_or("Abbey");
+            // Bounded: the only custom menu handler in the bar. Clicking it
+            // runs one manual update check against the pinned updater
+            // endpoint — the same code path the Doctor surface's UpdateCheck
+            // uses. No auto-check, no background scheduler, and no install
+            // without an explicit button press (that stays in UpdateCheck).
+            let check_for_updates = MenuItemBuilder::with_id("check-for-updates", "Check for Updates…")
+                .build(handle)?;
+            let app_menu = SubmenuBuilder::new(handle, product_name)
+                .about(Some(about))
+                .item(&check_for_updates)
+                .separator()
+            .services()
+            .separator()
+            .hide()
+            .hide_others()
+            .show_all()
+            .separator()
+            .quit()
+            .build()?;
+            let edit_menu = SubmenuBuilder::new(handle, "Edit")
+                .undo()
+                .redo()
+                .separator()
+                .cut()
+                .copy()
+                .paste()
+                .select_all()
+                .build()?;
+            let window_menu = SubmenuBuilder::new(handle, "Window")
+                .fullscreen()
+                .minimize()
+                .maximize()
+                .separator()
+                .bring_all_to_front()
+                .separator()
+                .close_window()
+                .build()?;
+            MenuBuilder::new(handle)
+                .item(&app_menu)
+                .item(&edit_menu)
+                .item(&window_menu)
+                .build()
+        })
         .setup(|app| {
             // Requirement, not decoration: the safe and personal editions must
             // never share a bundle identity. `tauri.conf.json` is generated
             // from `abbey::edition` by `desktop/codegen`, and this check is the
             // runtime half — a personal-edition binary packaged with the safe
             // identifier refuses to start rather than installing over it.
-            let configured = commands::configured_identifier(&app.handle());
+            let configured = commands::configured_identifier(app.handle());
             let expected = ACTIVE.bundle_id();
             if configured != expected {
                 return Err(format!(
@@ -31,6 +106,36 @@ fn main() {
                 )
                 .into());
             }
+            // The window title must name the edition that is actually on
+            // screen: the personal edition ships as "Abbey Personal", and a
+            // title bar reading "Abbey" would misreport the running build.
+            // The base config's window title is the safe edition's default and
+            // the edition overlay replaces arrays wholesale, so the title is
+            // applied here from the same product name the bundle and the
+            // menu use.
+            if let Some(window) = app.get_webview_window("main") {
+                if let Some(product_name) = app.config().product_name.clone() {
+                    let _ = window.set_title(&product_name);
+                }
+            }
+            // Route the single custom menu item ("Check for Updates…") to the
+            // updater plugin's manual check: user-initiated (menu click only),
+            // verified against the pinned Ed25519 key, never installs silently.
+            app.handle().on_menu_event(move |app_handle, event| {
+                if event.id() == "check-for-updates" {
+                    let handle = app_handle.clone();
+                    tauri::async_runtime::spawn(async move {
+                        match handle.updater() {
+                            Ok(updater) => {
+                                if let Err(err) = updater.check().await {
+                                    eprintln!("abbey-desktop: update check failed: {err}");
+                                }
+                            }
+                            Err(err) => eprintln!("abbey-desktop: update check failed: {err}"),
+                        }
+                    });
+                }
+            });
             Ok(())
         })
         // The complete IPC surface. Adding a command means adding it here, in
@@ -45,131 +150,34 @@ fn main() {
             commands::app_memory_search,
             commands::app_memory_metadata,
             commands::app_models_list,
+            commands::app_model_grants,
+            commands::app_model_details,
+            commands::app_model_download,
+            commands::app_model_load,
+            commands::app_model_unload,
+            commands::app_model_download_status,
+            commands::app_model_lifecycle_status,
             commands::app_claim_by_id,
             commands::app_connection,
             commands::app_bundle_identity,
+            commands::app_conversation_grants,
+            commands::app_conversations_list,
+            commands::app_conversations_search,
+            commands::app_conversation_read,
+            commands::app_conversation_create,
+            commands::app_conversation_rename,
+            commands::app_conversation_archive,
+            commands::app_conversation_delete,
+            commands::app_conversation_messages,
+            commands::app_conversation_content,
+            commands::app_conversation_routes,
+            commands::app_conversation_submit_turn,
+            commands::app_conversation_cancel_turn,
         ])
         .run(tauri::generate_context!())
         .expect("abbey-desktop failed to start");
 }
 
 #[cfg(test)]
-mod tests {
-    use abbey::edition::Edition;
-    use serde_json::Value;
-
-    fn identifier(config: &str) -> String {
-        serde_json::from_str::<Value>(config)
-            .expect("tauri config is valid JSON")
-            .get("identifier")
-            .and_then(Value::as_str)
-            .expect("tauri config declares an identifier")
-            .to_owned()
-    }
-
-    fn product_name(config: &str) -> String {
-        serde_json::from_str::<Value>(config)
-            .expect("tauri config is valid JSON")
-            .get("productName")
-            .and_then(Value::as_str)
-            .expect("tauri config declares a productName")
-            .to_owned()
-    }
-
-    const SAFE_CONFIG: &str = include_str!("../tauri.conf.json");
-    const PERSONAL_CONFIG: &str = include_str!("../tauri.personal.conf.json");
-
-    #[test]
-    fn bundle_identity_is_derived_from_the_edition_table() {
-        assert_eq!(identifier(SAFE_CONFIG), Edition::Safe.bundle_id());
-        assert_eq!(identifier(PERSONAL_CONFIG), Edition::Personal.bundle_id());
-        assert_eq!(product_name(SAFE_CONFIG), Edition::Safe.product_name());
-        assert_eq!(
-            product_name(PERSONAL_CONFIG),
-            Edition::Personal.product_name()
-        );
-    }
-
-    #[test]
-    fn the_two_editions_never_share_a_bundle_identity() {
-        assert_ne!(identifier(SAFE_CONFIG), identifier(PERSONAL_CONFIG));
-        assert_ne!(product_name(SAFE_CONFIG), product_name(PERSONAL_CONFIG));
-    }
-
-    #[test]
-    fn the_declared_csp_is_strict() {
-        let csp = serde_json::from_str::<Value>(SAFE_CONFIG)
-            .expect("valid JSON")
-            .pointer("/app/security/csp")
-            .and_then(Value::as_str)
-            .expect("a csp is declared")
-            .to_owned();
-        assert!(csp.contains("default-src 'self'"));
-        assert!(csp.contains("script-src 'self'"));
-        assert!(csp.contains("object-src 'none'"));
-        // The two directives that would readmit remote or inline script.
-        assert!(!csp.contains("unsafe-inline"));
-        assert!(!csp.contains("unsafe-eval"));
-        assert!(!csp.contains("http://") || csp.contains("http://ipc.localhost"));
-    }
-
-    #[test]
-    fn invoke_surface_reads_runs_and_memory_without_mutation() {
-        const MAIN: &str = include_str!("main.rs");
-        let handler = MAIN
-            .split("generate_handler![")
-            .nth(1)
-            .and_then(|rest| rest.split(']').next())
-            .expect("generate_handler block");
-        assert!(handler.contains("commands::app_run_status"));
-        assert!(handler.contains("commands::app_memory_search"));
-        assert!(handler.contains("commands::app_models_list"));
-        assert!(handler.contains("commands::app_claim_by_id"));
-        assert!(handler.contains("commands::app_memory_metadata"));
-        assert!(handler.contains("commands::app_v3_grants"));
-        let lower = handler.to_ascii_lowercase();
-        assert!(!lower.contains("submit"));
-        assert!(!lower.contains("cancel"));
-        assert!(!lower.contains("invoke"));
-        assert!(!lower.contains("obsolete"));
-        assert!(!lower.contains("approve"));
-        assert!(!lower.contains("infer"));
-    }
-
-    #[test]
-    fn no_execution_capable_plugin_is_declared() {
-        // Comments are stripped first: this file's own manifest *names* the
-        // plugins it refuses to depend on, and a naive substring match would
-        // fail on the explanation rather than on a real dependency.
-        const RAW_MANIFEST: &str = include_str!("../Cargo.toml");
-        let manifest: String = RAW_MANIFEST
-            .lines()
-            .map(|line| line.split('#').next().unwrap_or_default())
-            .collect::<Vec<_>>()
-            .join("\n");
-        for plugin in [
-            "tauri-plugin-shell",
-            "tauri-plugin-fs",
-            "tauri-plugin-http",
-            "tauri-plugin-process",
-            "tauri-plugin-opener",
-            "tauri-plugin-dialog",
-        ] {
-            assert!(
-                !manifest.contains(plugin),
-                "{plugin} would give the webview a capability the desktop client must not have"
-            );
-        }
-        const CAPABILITIES: &str = include_str!("../capabilities/default.json");
-        let permissions = serde_json::from_str::<Value>(CAPABILITIES)
-            .expect("valid JSON")
-            .get("permissions")
-            .and_then(Value::as_array)
-            .expect("permissions array")
-            .iter()
-            .filter_map(Value::as_str)
-            .map(str::to_owned)
-            .collect::<Vec<_>>();
-        assert_eq!(permissions, vec!["core:default".to_owned()]);
-    }
-}
+#[path = "main_tests.rs"]
+mod tests;

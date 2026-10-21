@@ -373,6 +373,15 @@ pub fn print_compute() -> Result<i32> {
 /// Report-only GUI / accessibility / desktop / Discord inventory.
 ///
 /// This is host detection, not UI learning and not a Discord bot.
+///
+/// Native adapters:
+/// - macOS Accessibility (AX) — inventory only; no drive/control authority.
+/// - Windows UI Automation — no execution proof; unavailable on this build.
+/// - Linux AT-SPI + portals — inventory only; no GTK/Qt driving.
+///
+///   These surfaces are unavailable for actual effects (see desktop plan Task 8
+///   and honesty surfaces). `abbey os` remains allowlist+confirm only. GUI
+///   learning and live Discord are not Current.
 pub fn print_ui_surfaces() -> Result<i32> {
     println!("abbey platform ui — report-only host GUI / a11y / client inventory");
     println!(
@@ -419,7 +428,9 @@ pub fn print_ui_surfaces() -> Result<i32> {
     );
     println!(
         "learn-ui: driving or learning macOS / Linux / Windows GUI is not implemented. \
-         `abbey os` remains allowlist + --confirm. This command does not grant GUI control."
+         Native adapters (Accessibility / UI Automation / AT-SPI) are unavailable for \
+         effects — report-only inventory only. `abbey os` remains allowlist + --confirm. \
+         This command does not grant GUI control."
     );
     println!(
         "voice:   `abbey voice status` — macOS say/Speech plus portable Whisper tiny/base when installed"

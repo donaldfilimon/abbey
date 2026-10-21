@@ -23,8 +23,17 @@ echo "== native Routes acceptance assertion tests =="
 echo "== codegen drift =="
 cargo run --quiet --locked -p abbey-desktop-codegen -- --check
 
+echo "== shell script syntax =="
+sh -n scripts/release-macos.sh
+sh -n scripts/prove-daemon-read.sh
+sh -n scripts/assemble-update-feed.sh
+sh -n scripts/prove-menu-icon-macos.sh
+
 echo "== typecheck =="
 bun run --silent typecheck
+
+echo "== model operation state and recovery =="
+bun run --silent test:models
 
 echo "== frontend build =="
 bun run --silent build
@@ -59,9 +68,35 @@ ABBEYD_BEARER_TOKEN="$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')" \
 echo "== cargo build (links a real binary) =="
 cargo build --quiet --locked -p abbey-desktop
 
+# When a staging bundle is present, prove that its updater artifact verifies
+# against the key this client pins — the same check the release workflow runs
+# before it publishes anything. No bundle means no artifact to check, so this
+# is skipped rather than failed; the gate never requires a build.
+if [ -f target/release/bundle/macos/Abbey.app.tar.gz ]; then
+  echo "== updater artifact verifies against the pinned key =="
+  ABBEY_DESKTOP_UPDATE_ARTIFACT="../target/release/bundle/macos/Abbey.app.tar.gz" \
+    cargo test --quiet --locked -p abbey-desktop --test updater_signature
+fi
+
 if [ "${ABBEY_DESKTOP_ROUTES_ACCEPTANCE:-0}" = "1" ]; then
   echo "== macOS Routes window acceptance (required) =="
   ./scripts/prove-routes-macos.sh
+fi
+
+# Packaged-app acceptance requires a staging bundle from release-macos.sh; it
+# launches the .app bundle binary itself, so bundle layout, packaged Info.plist
+# and the hardened-runtime signature are exercised, not just the raw binary.
+if [ "${ABBEY_DESKTOP_PACKAGED_ACCEPTANCE:-0}" = "1" ]; then
+  echo "== macOS packaged .app Routes acceptance (required, after release-macos.sh) =="
+  ./scripts/prove-packaged-macos.sh
+fi
+
+# The menu/icon proof needs a staging bundle too (it inspects the packaged
+# bundle's icon and drives the packaged app's AX menu bar), and it needs the
+# same Accessibility permission as the Routes acceptance.
+if [ "${ABBEY_DESKTOP_MENU_ACCEPTANCE:-0}" = "1" ]; then
+  echo "== macOS packaged menu/icon acceptance (required, after release-macos.sh) =="
+  ./scripts/prove-menu-icon-macos.sh --app "target/release/bundle/macos/Abbey.app" --expect-edition safe
 fi
 
 echo "desktop/check.sh: OK"

@@ -2,6 +2,8 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import "./styles.css";
+import "./presentation/material.css";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 
 const host = document.getElementById("root");
 if (!host) {
@@ -10,6 +12,6 @@ if (!host) {
 
 createRoot(host).render(
   <StrictMode>
-    <App />
+    <ErrorBoundary><App /></ErrorBoundary>
   </StrictMode>,
 );

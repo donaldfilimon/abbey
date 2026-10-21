@@ -515,6 +515,14 @@ fn wire_v3_request(
     wire_exchange(socket, &request, &request_id)
 }
 
+fn wire_v4_request(
+    socket: &Path,
+    request: crate::daemon::V4RequestEnvelope,
+) -> crate::daemon::V4ResponseEnvelope {
+    let request_id = request.request_id.clone();
+    wire_exchange(socket, &request, &request_id)
+}
+
 // This is a scheduler budget for a process-backed integration fixture, not a
 // product latency claim. The daemon intentionally serves one connection at a
 // time, and the full parallel suite can deschedule its server thread long
@@ -562,6 +570,214 @@ where
         .unwrap_or_else(|error| panic!("decode wire response for {request_id:?}: {error}"))
 }
 
+#[test]
+fn v4_handler_schedules_turns_through_the_manager_and_keeps_the_prompt_out_of_the_receipt() {
+    let harness = Harness::start("exit 0");
+    let V4Event::Conversation(conversation) = harness
+        .handler
+        .handle_v4(V4Command::CreateConversation("Desk".into()))
+        .unwrap()
+    else {
+        panic!("expected a conversation");
+    };
+    let submit = crate::app_core::V4TurnSubmit {
+        conversation_id: conversation.conversation_id.clone(),
+        idempotency_key: "turn-1".parse().unwrap(),
+        route_id: "abi.local".into(),
+        input: "secret prompt".into(),
+    };
+    let V4Event::TurnSubmitted(first) = harness
+        .handler
+        .handle_v4(V4Command::SubmitTurn(submit.clone()))
+        .unwrap()
+    else {
+        panic!("expected a submission");
+    };
+    assert!(
+        matches!(
+            first.state,
+            crate::app_core::RunState::Queued
+                | crate::app_core::RunState::Starting
+                | crate::app_core::RunState::Running
+                | crate::app_core::RunState::Failed
+        ),
+        "unexpected admission state {:?}",
+        first.state
+    );
+    assert!(!first.duplicate);
+    assert!(!serde_json::to_string(&first).unwrap().contains("secret"));
+    let terminal = harness
+        .handler
+        .manager
+        .wait_for_terminal(&first.run_id, Duration::from_secs(3))
+        .expect("v4 turn wait")
+        .expect("v4 turn record")
+        .status;
+    assert_eq!(terminal, crate::app_core::RunState::Failed);
+    let V4Event::TurnSubmitted(second) = harness
+        .handler
+        .handle_v4(V4Command::SubmitTurn(submit.clone()))
+        .unwrap()
+    else {
+        panic!("expected the same submission");
+    };
+    assert_eq!(second.run_id, first.run_id);
+    assert!(second.duplicate);
+    assert_eq!(second.state, crate::app_core::RunState::Failed);
+    let mut follow = submit;
+    follow.idempotency_key = "turn-2".parse().unwrap();
+    follow.input = "next prompt".into();
+    let V4Event::TurnSubmitted(third) = harness
+        .handler
+        .handle_v4(V4Command::SubmitTurn(follow))
+        .unwrap()
+    else {
+        panic!("expected a second submission");
+    };
+    assert_ne!(third.run_id, first.run_id);
+    let follow_terminal = harness
+        .handler
+        .manager
+        .wait_for_terminal(&third.run_id, Duration::from_secs(3))
+        .expect("follow-up turn wait")
+        .expect("follow-up turn record")
+        .status;
+    assert_eq!(follow_terminal, crate::app_core::RunState::Failed);
+    assert!(harness.handler.supports_v4());
+    let V4Event::Routes(routes) = harness.handler.handle_v4(V4Command::ListRoutes).unwrap() else {
+        panic!("expected routes");
+    };
+    assert!(
+        routes.iter().any(|route| route.route_id == "abi.local"),
+        "expected abi.local in {routes:?}"
+    );
+}
+
+#[test]
+fn authenticated_unix_server_negotiates_v4_without_replacing_the_legacy_envelope() {
+    const BEARER: &str = "runtime-handler-v4-bearer-0000001";
+    let root = scratch("v4-wire");
+    let workspace = root.join("workspace");
+    std::fs::create_dir(&workspace).unwrap();
+    let executable = root.join("abi-provider");
+    write_script(&executable, "printf 'ok'");
+    let handler = RuntimeHandler::start(
+        RuntimeDaemonConfig::new(&root, &workspace).bind_abi_local(&executable),
+    )
+    .unwrap();
+    let socket = root.join("abbeyd.sock");
+    let daemon_config = crate::daemon::DaemonConfig::for_test(socket.clone(), BEARER.as_bytes());
+    let shutdown = crate::daemon::Shutdown::default();
+    let server_shutdown = shutdown.clone();
+    let server = thread::spawn(move || {
+        crate::daemon::DaemonServer::new(daemon_config, handler).serve(server_shutdown)
+    });
+    wait_for_socket(&socket);
+
+    let requested = crate::app_core::V4CapabilitySet::from_sorted(vec![
+        crate::app_core::V4Capability::ReadConversations,
+        crate::app_core::V4Capability::WriteConversations,
+    ])
+    .unwrap();
+    let denied = wire_v4_request(
+        &socket,
+        v4_request(
+            "v4-denied",
+            "wrong-bearer-00000000000000000000",
+            crate::app_core::V4CapabilitySet::deny_all(),
+            V4Command::Negotiate(crate::app_core::V4GrantRequest {
+                supported_versions: vec![crate::app_core::APP_PROTOCOL_V4],
+                requested: requested.clone(),
+            }),
+        ),
+    );
+    assert!(
+        serde_json::from_slice::<crate::daemon::ResponseEnvelope>(
+            &serde_json::to_vec(&denied).unwrap()
+        )
+        .is_err()
+    );
+    assert!(matches!(
+        denied.payload,
+        crate::daemon::V4ResponsePayload::Error { error }
+            if error.code == crate::app_core::V4ErrorCode::Unauthorized
+    ));
+
+    let negotiated = wire_v4_request(
+        &socket,
+        v4_request(
+            "v4-negotiate",
+            BEARER,
+            crate::app_core::V4CapabilitySet::deny_all(),
+            V4Command::Negotiate(crate::app_core::V4GrantRequest {
+                supported_versions: vec![crate::app_core::APP_PROTOCOL_V4],
+                requested: requested.clone(),
+            }),
+        ),
+    );
+    let crate::daemon::V4ResponsePayload::Ok {
+        event: V4Event::Negotiated(n),
+    } = negotiated.payload
+    else {
+        panic!("expected v4 negotiation");
+    };
+    let granted = n.granted;
+    assert_eq!(granted, requested);
+
+    let created = wire_v4_request(
+        &socket,
+        v4_request(
+            "v4-create",
+            BEARER,
+            requested,
+            V4Command::CreateConversation("Desk".into()),
+        ),
+    );
+    let crate::daemon::V4ResponsePayload::Ok {
+        event: V4Event::Conversation(conversation),
+    } = created.payload
+    else {
+        panic!("expected a conversation, got {created:?}");
+    };
+    assert_eq!(conversation.title, "Desk");
+
+    let legacy = wire_request(
+        &socket,
+        crate::daemon::RequestEnvelope {
+            version: APP_PROTOCOL_V1,
+            request_id: "v1-still-status".into(),
+            bearer: BEARER.into(),
+            command: AppCommand::Status,
+        },
+    );
+    assert!(matches!(
+        legacy.payload,
+        crate::daemon::ResponsePayload::Ok {
+            event: AppEvent::Status(_)
+        }
+    ));
+
+    shutdown.request();
+    server.join().unwrap().unwrap();
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+fn v4_request(
+    request_id: &str,
+    bearer: &str,
+    grants: crate::app_core::V4CapabilitySet,
+    command: V4Command,
+) -> crate::daemon::V4RequestEnvelope {
+    crate::daemon::V4RequestEnvelope {
+        version: crate::app_core::APP_PROTOCOL_V4,
+        schema_version: crate::app_core::APP_SCHEMA_V4,
+        request_id: request_id.into(),
+        bearer: bearer.into(),
+        grants,
+        command,
+    }
+}
+
 fn scratch(label: &str) -> PathBuf {
     let path = PathBuf::from("/tmp").join(format!(
         "abbey-runtime-handler-{label}-{}-{}",
@@ -572,3 +788,6 @@ fn scratch(label: &str) -> PathBuf {
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
     path
 }
+
+#[path = "cancellation_tests.rs"]
+mod cancellation_tests;

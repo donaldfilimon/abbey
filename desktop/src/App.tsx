@@ -1,24 +1,10 @@
 import { useEffect, useState } from "react";
-import {
-  appBundleIdentity,
-  appConnection,
-  appStatus,
-  appV3Grants,
-  toIpcError,
-} from "./ipc/client";
-import type {
-  BundleIdentity,
-  ConnectionInfo,
-  IpcError,
-  RuntimeStatus,
-  V3Capability,
-  V3CapabilitySet,
-} from "./ipc/generated";
+import type { V3Capability, RuntimeStatus } from "./ipc/generated";
 import {
   ALL_APP_CAPABILITIES,
   DESKTOP_READ_CAPABILITIES,
 } from "./ipc/generated.samples";
-import { SURFACES, type Surface, type SurfaceId } from "./surfaces";
+import { surfaceById, type Surface, type SurfaceId } from "./surfaces";
 import { ClaimsView } from "./views/ClaimsView";
 import { DoctorView } from "./views/DoctorView";
 import { ErrorCard } from "./views/ErrorCard";
@@ -27,14 +13,23 @@ import { ModelsView } from "./views/ModelsView";
 import { RoutesView } from "./views/RoutesView";
 import { RunsView } from "./views/RunsView";
 import { UnavailableView } from "./views/UnavailableView";
-
-interface Bootstrap {
-  status: RuntimeStatus;
-  connection: ConnectionInfo;
-  identity: BundleIdentity | null;
-  v3Grants: V3Capability[];
-}
-
+import { useBootstrap } from "./hooks/useBootstrap";
+import { usePreferences, type Appearance } from "./hooks/usePreferences";
+import { ConversationWorkspace } from "./conversations/Workspace";
+import { History } from "./conversations/History";
+import { useConversations } from "./conversations/useConversations";
+import { CommandPalette } from "./components/CommandPalette";
+import { Icon } from "./components/Icon";
+import { PresentationSettings } from "./components/PresentationSettings";
+const PRIMARY: SurfaceId[] = [
+  "chat",
+  "runs",
+  "automations",
+  "memory",
+  "models",
+  "tools",
+];
+const ADVANCED: SurfaceId[] = ["routes", "claims", "training", "cluster"];
 // `DESKTOP_READ_CAPABILITIES` mixes protocol-v1/v2 `AppCapability` reads with
 // protocol-v3 `V3Capability` reads. `ALL_APP_CAPABILITIES` is the exhaustive
 // v1/v2 set, so anything in the former but not the latter is a v3 grant. This
@@ -42,7 +37,8 @@ interface Bootstrap {
 // a hardcoded pair that silently misses a new v3 read (e.g. `ReadClaimsById`).
 const V3_GATED_CAPABILITIES = new Set<string>(
   DESKTOP_READ_CAPABILITIES.filter(
-    (capability) => !(ALL_APP_CAPABILITIES as readonly string[]).includes(capability),
+    (capability) =>
+      !(ALL_APP_CAPABILITIES as readonly string[]).includes(capability),
   ),
 );
 
@@ -62,116 +58,258 @@ function available(
 }
 
 export function App() {
-  const [active, setActive] = useState<SurfaceId>("doctor");
-  const [boot, setBoot] = useState<Bootstrap | null>(null);
-  const [error, setError] = useState<IpcError | null>(null);
-
+  const [active, setActive] = useState<SurfaceId>("chat");
+  const {state: history, conversations} = useConversations();
+  const [palette, setPalette] = useState(false);
+  const { boot, error, loading, retry } = useBootstrap();
+  const { appearance, collapsed, material, density, setAppearance, setMaterial, setDensity, toggleSidebar, resetPresentation } =
+    usePreferences();
   useEffect(() => {
-    let live = true;
-    // A v3 grants failure (daemon unreachable with a bearer configured) must
-    // not blank the whole window: the v1 surfaces (Doctor/Claims/Routes/Runs)
-    // don't need the daemon, and the v3-gated surfaces already render as
-    // ungranted with no grants present. Only appStatus/appConnection stay
-    // fatal — those back every surface, protocol-v1 included.
-    const v3Grants: Promise<V3CapabilitySet> = appV3Grants().catch(
-      () => ({ capabilities: [] }) satisfies V3CapabilitySet,
-    );
-    Promise.all([appStatus(), appConnection(), v3Grants])
-      .then(async ([status, connection, grants]) => {
-        // Bundle identity is informational; a failure here must not blank the
-        // whole window.
-        const identity = await appBundleIdentity().catch(() => null);
-        if (live) {
-          setBoot({
-            status,
-            connection,
-            identity,
-            v3Grants: grants.capabilities,
-          });
+    const handler = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && !event.altKey) {
+        if (event.key.toLowerCase() === "k") {
+          event.preventDefault();
+          setPalette((open) => !open);
         }
-      })
-      .catch((thrown: unknown) => {
-        if (live) setError(toIpcError(thrown));
-      });
-    return () => {
-      live = false;
+        if (event.key.toLowerCase() === "b") {
+          event.preventDefault();
+          toggleSidebar();
+        }
+      }
     };
-  }, []);
-
-  const status = boot?.status ?? null;
-  const surface = SURFACES.find((entry) => entry.id === active) ?? SURFACES[0]!;
-  const surfaceIsAvailable = available(surface, status, boot?.v3Grants ?? []);
-
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [toggleSidebar]);
+  const surface = surfaceById(active);
+  const granted = active === "chat" ? history.canRead : available(
+    surface,
+    boot?.status ?? null,
+    boot?.v3Grants ?? [],
+  );
+  const connectionLabel = loading
+    ? "Connecting"
+    : boot
+      ? boot.connection.source === "daemon"
+        ? "abbeyd (authenticated Unix socket)"
+        : "Local application core"
+      : "Connection unavailable";
+  const navigationButton = (id: SurfaceId) => {
+    const entry = surfaceById(id);
+    return (
+      <button
+        key={id}
+        type="button"
+        className="nav-button"
+        aria-label={entry.label}
+        title={collapsed ? entry.label : undefined}
+        aria-current={active === id ? "page" : undefined}
+        onClick={() => setActive(id)}
+      >
+        <Icon name={id} />
+        <span className="nav-label">{entry.label}</span>
+      </button>
+    );
+  };
   return (
-    <div className="shell">
-      <nav className="sidebar">
+    <div className={`shell ${collapsed ? "sidebar-collapsed" : ""}`}>
+      <aside className="sidebar">
         <div className="brand">
-          Abbey
-          <small>
-            {status === null ? "connecting…" : `${status.version} · ${status.edition}`}
-          </small>
+          <span className="brand-mark">
+            <Icon name="spark" />
+          </span>
+          <span className="nav-label">
+            abbey<span className="brand-caption">A space for your work</span>
+          </span>
         </div>
-        <div className="nav-group">Available</div>
-        {SURFACES.filter((entry) => entry.requires !== null).map((entry) => (
+        <button className="new-chat" aria-label="New conversation draft" onClick={() => {conversations.newDraft(); setActive("chat");}}>
+          <Icon name="plus" />
+          <span className="nav-label">New conversation</span>
+        </button>
+        <span id="new-chat-note" className="sr-only">
+          Start a new window-session draft. Create conversation metadata in Chat when the daemon grants changes.
+        </span>
+        <nav aria-label="Main navigation">
+          <div className="nav-group">Workspace</div>
+          {PRIMARY.map(navigationButton)}
+          <div className="nav-group">Advanced</div>
+          {ADVANCED.map(navigationButton)}
+        </nav>
+        <History controller={conversations} state={history} open={() => setActive("chat")} />
+        <div className="sidebar-bottom">
+          {navigationButton("doctor")}
+          <div className="sidebar-status">
+            <span className={`status-dot ${boot ? "online" : ""}`} />
+            <span className="nav-label">
+              {connectionLabel}
+              <small>
+                {boot
+                  ? `${boot.status.version} · ${boot.status.edition}`
+                  : "Your workspace stays here"}
+              </small>
+            </span>
+          </div>
+        </div>
+      </aside>
+      <div className="workspace">
+        <header className="toolbar">
+          <div className="toolbar-leading">
+            <button
+              className="icon-button"
+              onClick={toggleSidebar}
+              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              title="Toggle sidebar (⌘/Ctrl B)"
+            >
+              <Icon name="panel" />
+            </button>
+            <span className="toolbar-divider" />
+            <span>{surface.label}</span>
+          </div>
           <button
-            key={entry.id}
-            type="button"
-            className="nav-button"
-            aria-current={entry.id === active ? "page" : undefined}
-            onClick={() => setActive(entry.id)}
+            className="search-trigger"
+            onClick={() => setPalette(true)}
+            aria-label="Search pages and commands"
           >
-            {entry.label}
+            <Icon name="search" />
+            <span>Quick navigation</span>
+            <kbd>⌘ / Ctrl K</kbd>
           </button>
-        ))}
-        <div className="nav-group">Not yet available</div>
-        {SURFACES.filter((entry) => entry.requires === null).map((entry) => (
-          <button
-            key={entry.id}
-            type="button"
-            className="nav-button unavailable"
-            aria-current={entry.id === active ? "page" : undefined}
-            onClick={() => setActive(entry.id)}
-          >
-            {entry.label}
-          </button>
-        ))}
-      </nav>
-
-      <main className="content">
-        {error !== null && <ErrorCard error={error} />}
-        {error === null && boot === null && <p className="muted">Connecting to Abbey…</p>}
-        {boot !== null && surface.id === "doctor" && surfaceIsAvailable && (
-          <DoctorView
-            status={boot.status}
-            connection={boot.connection}
-            identity={boot.identity}
-          />
-        )}
-        {boot !== null && surface.id === "claims" && surfaceIsAvailable && (
-          <ClaimsView
-            claimByIdGranted={boot.v3Grants.includes("read_claims_by_id")}
-          />
-        )}
-        {boot !== null && surface.id === "routes" && surfaceIsAvailable && <RoutesView />}
-        {boot !== null && surface.id === "runs" && surfaceIsAvailable && <RunsView />}
-        {boot !== null && surface.id === "memory" && surfaceIsAvailable && <MemoryView />}
-        {boot !== null && surface.id === "models" && surfaceIsAvailable && <ModelsView />}
-        {boot !== null && surface.requires !== null && !surfaceIsAvailable && (
-          <>
-            <h1>{surface.label}</h1>
-            <div className="card error">
-              <strong>Capability not granted</strong>
-              <p className="claim-note">
-                This build of Abbey did not grant <code>{surface.requires}</code>, so
-                the view has no data source. Availability is read from{" "}
-                <code>app_status</code> or <code>app_v3_grants</code> at runtime,
-                never assumed.
-              </p>
+        </header>
+        <main
+          className={`content ${active === "chat" ? "chat-content" : ""}`}
+          id="main-content"
+        >
+          {(loading || error !== null) && (
+            <div
+              className={`connection-banner ${error ? "connection-error" : ""}`}
+              role="status"
+            >
+              <span className="status-dot" />
+              <span>
+                {loading
+                  ? "Connecting to your Abbey runtime…"
+                  : "The runtime couldn’t be reached. Check that Abbey is running, then retry."}
+              </span>
+              {error && (
+                <>
+                  <ErrorCard error={error} />
+                  <button onClick={retry}>
+                    <Icon name="refresh" />
+                    Retry connection
+                  </button>
+                </>
+              )}
             </div>
-          </>
-        )}
-        {surface.requires === null && <UnavailableView surface={surface} />}
-      </main>
+          )}
+          {active === "chat" ? (
+            <ConversationWorkspace controller={conversations} state={history} navigate={setActive} />
+          ) : active === "doctor" ? (
+            <>
+              <div className="page-heading">
+                <p className="eyebrow">MAKE YOURSELF AT HOME</p>
+                <h1>Settings</h1>
+                <p className="subtitle">
+                  A little more you. A little less friction.
+                </p>
+              </div>
+              <section className="card settings-section">
+                <div>
+                  <h2>Appearance</h2>
+                  <p className="muted">
+                    Follow your system appearance, or choose a light or dark theme for this window.
+                  </p>
+                </div>
+                <div className="segmented" aria-label="Appearance">
+                  {(["system", "light", "dark"] as Appearance[]).map(
+                    (value) => (
+                      <button
+                        key={value}
+                        aria-pressed={appearance === value}
+                        onClick={() => setAppearance(value)}
+                      >
+                        {value[0]!.toUpperCase() + value.slice(1)}
+                      </button>
+                    ),
+                  )}
+                </div>
+              </section>
+              <section className="card settings-section">
+                <div>
+                  <h2>Connection</h2>
+                  <p className="muted">{connectionLabel}</p>
+                </div>
+                <button onClick={retry} disabled={loading}>
+                  <Icon name="refresh" />
+                  {loading ? "Connecting…" : "Reconnect"}
+                </button>
+              </section>
+              <PresentationSettings material={material} density={density} setMaterial={setMaterial} setDensity={setDensity} resetPresentation={resetPresentation} />
+              <details className="card diagnostics">
+                <summary>Runtime diagnostics</summary>
+                {error && <ErrorCard error={error} />}
+                {boot && granted ? (
+                  <DoctorView
+                    status={boot.status}
+                    connection={boot.connection}
+                    identity={boot.identity}
+                  />
+                ) : (
+                  <p className="muted">
+                    {loading
+                      ? "Waiting for runtime status…"
+                      : "Runtime diagnostics are unavailable. Retry the connection above."}
+                  </p>
+                )}
+              </details>
+            </>
+          ) : surface.requires === null ? (
+            <UnavailableView key={active} surface={surface} />
+          ) : boot && granted ? (
+            <div key={`${active}-${boot.status.version}`} className="data-view">
+              {active === "claims" && (
+                <ClaimsView
+                  claimByIdGranted={boot.v3Grants.includes("read_claims_by_id")}
+                />
+              )}
+              {active === "routes" && <RoutesView />}
+              {active === "runs" && <RunsView />}
+              {active === "memory" && <MemoryView />}
+              {active === "models" && <ModelsView />}
+            </div>
+          ) : (
+            <div className="empty-state">
+              <div className="empty-icon">
+                <Icon name={active} />
+              </div>
+              <h1>{surface.label}</h1>
+              <p>
+                {loading
+                  ? "Checking what’s available in your runtime…"
+                  : boot
+                    ? "This view needs a capability your connected runtime hasn’t granted."
+                    : "Connect to your Abbey runtime to explore this view."}
+              </p>
+              <button onClick={retry} disabled={loading}>
+                {loading ? "Checking connection…" : "Retry connection"}
+              </button>
+              {boot && (
+                <details>
+                  <summary>Capability details</summary>
+                  <p>
+                    Required runtime grant: <code>{surface.requires}</code>
+                  </p>
+                </details>
+              )}
+            </div>
+          )}
+        </main>
+        <footer className="workspace-footer">
+          <span>Abbey · Your work, thoughtfully connected</span>
+          <span>{connectionLabel}</span>
+        </footer>
+      </div>
+      {palette && (
+        <CommandPalette close={() => setPalette(false)} navigate={setActive} />
+      )}
     </div>
   );
 }

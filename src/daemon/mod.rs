@@ -11,10 +11,13 @@
 //! daemon can persist, decide, cancel, and execute
 //! one digest-bound request to mark a memory record obsolete; execution needs
 //! an identical explicit resubmission after approval and records prepared
-//! intent before the effect. Requests never choose a program, argument recipe,
-//! environment, workspace, or memory backend; raw memory payloads and source
-//! metadata, shell, prompt inference, automations, live subscriptions, and
-//! non-Unix transports remain unavailable. A separately configured signed
+//! intent before the effect. Protocol v4 persists conversation, task,
+//! permission, and automation definitions. It admits a turn without starting a
+//! provider, and fails that turn when no worker adopts it, without inventing
+//! assistant text or replaying an effect. Requests never choose a program, argument
+//! recipe, environment, workspace, or memory backend. Raw memory payloads and
+//! source metadata, shell, prompt inference, live subscriptions, computer
+//! effects, and non-Unix transports remain unavailable. A separately configured signed
 //! registry can serve exact durable download/load/unload/status operations
 //! without becoming a global model route or changing MCP.
 
@@ -25,9 +28,10 @@ mod protocol;
 mod runtime_config;
 mod runtime_handler;
 mod runtime_v3;
+mod runtime_v4;
 mod server;
 
-pub use client::{ClientError, DaemonClient, V3DaemonSession};
+pub use client::{ClientError, DaemonClient, V3DaemonSession, V4ClientError, V4DaemonSession};
 pub use config::{AuthenticatedRateLimit, BearerSecret, DaemonConfig};
 pub use federation::{
     CONTRACT_MAJOR as FEDERATION_CONTRACT_MAJOR, CONTRACT_REVISION as FEDERATION_CONTRACT_REVISION,
@@ -39,6 +43,7 @@ pub use federation::{
 pub use protocol::{
     CURRENT_PROTOCOL_VERSION, PROTOCOL_VERSION, RequestEnvelope, ResponseEnvelope, ResponsePayload,
     SUPPORTED_PROTOCOL_VERSIONS, V3RequestEnvelope, V3ResponseEnvelope, V3ResponsePayload,
+    V4RequestEnvelope, V4ResponseEnvelope, V4ResponsePayload,
 };
 pub use runtime_config::{RuntimeConfigError, RuntimeDaemonConfig};
 pub use runtime_handler::RuntimeHandler;

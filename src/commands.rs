@@ -523,6 +523,7 @@ fn negotiate_model_reads() -> Result<V3DaemonSession> {
 
 #[cfg(not(unix))]
 fn negotiate_model_reads() -> Result<crate::daemon::V3DaemonSession> {
+    // Windows named-pipe stub for v3 model reads (used by `abbey daemon models`).
     Err(ClientError::UnsupportedPlatform.into())
 }
 
@@ -534,6 +535,7 @@ fn request_daemon(command: AppCommand) -> Result<AppEvent> {
 
 #[cfg(not(unix))]
 fn request_daemon(_command: AppCommand) -> Result<AppEvent> {
+    // Windows pipe stub (daemon commands surface).
     Err(ClientError::UnsupportedPlatform.into())
 }
 

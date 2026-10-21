@@ -4,6 +4,7 @@ import {
   DESKTOP_READ_CAPABILITIES,
 } from "../ipc/generated.samples";
 import { PERSONAL_EDITION, SAFE_EDITION } from "../ipc/generated.editions";
+import { UpdateCheck } from "../components/UpdateCheck";
 
 interface Props {
   status: RuntimeStatus;
@@ -67,14 +68,14 @@ export function DoctorView({ status, connection, identity }: Props) {
 
       <h2>Granted capabilities</h2>
       <div className="card">
-        <p className="muted" style={{ marginTop: 0 }}>
+        <p className="muted no-top-margin">
           The responding runtime granted {granted.length} capabilities. This
-          desktop consumes only {DESKTOP_READ_CAPABILITIES.length}: status and
-          claims. Additional run capabilities do not create a desktop run UI.
+          desktop recognizes {DESKTOP_READ_CAPABILITIES.length} read capabilities across status,
+          claims, routes, task events, memory, and model inventory. Each view requires its corresponding runtime grant.
         </p>
         <dl className="kv">
           {ALL_APP_CAPABILITIES.map((capability) => (
-            <div key={capability} style={{ display: "contents" }}>
+            <div key={capability} className="kv-row">
               <dt className="mono">{capability}</dt>
               <dd>{granted.includes(capability) ? "granted" : "not granted"}</dd>
             </div>
@@ -133,6 +134,8 @@ export function DoctorView({ status, connection, identity }: Props) {
           </>
         )}
       </div>
+
+      <UpdateCheck />
     </>
   );
 }

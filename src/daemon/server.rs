@@ -8,6 +8,7 @@ use thiserror::Error;
 
 use crate::app_core::{
     AppCommand, AppEvent, AppService, V3CapabilitySet, V3Command, V3ErrorCode, V3Event,
+    V4CapabilitySet, V4Command, V4Event,
 };
 
 use super::config::DaemonConfig;
@@ -16,7 +17,8 @@ use super::federation::{
 };
 use super::protocol::{
     CURRENT_PROTOCOL_VERSION, PROTOCOL_VERSION, RequestEnvelope, ResponseEnvelope,
-    SUPPORTED_PROTOCOL_VERSIONS, V3RequestEnvelope, V3ResponseEnvelope,
+    SUPPORTED_PROTOCOL_VERSIONS, V3RequestEnvelope, V3ResponseEnvelope, V4RequestEnvelope,
+    V4ResponseEnvelope,
 };
 
 const MAX_REQUEST_ID_LEN: usize = 128;
@@ -57,6 +59,24 @@ pub trait DaemonHandler: Send + Sync + 'static {
         Err(HandlerFailure::new(
             "capability_denied",
             "protocol-v3 authority is unavailable",
+        ))
+    }
+
+    /// Whether this handler owns any protocol-v4 conversation authority.
+    fn supports_v4(&self) -> bool {
+        false
+    }
+
+    /// Prove an echoed v4 grant set contains the command and no extra authority.
+    fn authorizes_v4(&self, _grants: &V4CapabilitySet, _command: &V4Command) -> bool {
+        false
+    }
+
+    /// Handle one already authenticated and structurally validated v4 command.
+    fn handle_v4(&self, _command: V4Command) -> Result<V4Event, HandlerFailure> {
+        Err(HandlerFailure::new(
+            "capability_denied",
+            "protocol-v4 authority is unavailable",
         ))
     }
 
@@ -145,6 +165,11 @@ impl<H: DaemonHandler> DaemonServer<H> {
 
     #[cfg(not(unix))]
     pub fn serve(self, _shutdown: Shutdown) -> Result<(), ServerError> {
+        // Windows named-pipe server stub: owner-restricted named pipes, private
+        // store checks, supervised process termination via Job Objects, etc.
+        // remain unavailable until desktop-assistant plan Task 5 lands. All
+        // callers (including desktop) see explicit UnsupportedPlatform and must
+        // not fall back. Unix sockets only for the authenticated control plane.
         Err(ServerError::UnsupportedPlatform)
     }
 }
@@ -154,6 +179,8 @@ pub enum ServerError {
     #[error(
         "abbeyd local transport is not implemented on this platform; named-pipe support is required"
     )]
+    /// Explicit marker that Windows named-pipe + Job Object support is not yet
+    /// implemented. See serve() stub and desktop plan.
     UnsupportedPlatform,
     #[error("socket path has no parent directory: {0}")]
     MissingSocketParent(PathBuf),
@@ -352,6 +379,9 @@ impl AuthenticatedRateLimiter {
         true
     }
 }
+
+#[path = "server/v4.rs"]
+mod v4;
 
 #[cfg(unix)]
 #[path = "server/unix.rs"]
@@ -760,4 +790,6 @@ mod tests {
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
         path
     }
+
+    include!("server/v4_socket_test.rs");
 }

@@ -18,6 +18,10 @@ echo "== clippy =="
 cargo clippy --all-targets -- -D warnings
 
 echo "== test =="
+# Process-level integration tests execute CARGO_BIN_EXE_* artifacts. Build the
+# normal binaries explicitly so a prior feature cohort cannot leave a stale
+# target/debug executable for the tests to exercise.
+cargo build --bins
 cargo test
 
 # The wdbx backend is behind an off-by-default feature, so the default-feature
@@ -26,6 +30,7 @@ echo "== clippy (--features wdbx) =="
 cargo clippy --features wdbx --all-targets -- -D warnings
 
 echo "== test (--features wdbx) =="
+cargo build --bins --features wdbx
 cargo test --features wdbx
 
 # The personal edition is a compile-time cfg: its identity table, path
@@ -35,6 +40,7 @@ echo "== clippy (--features personal-edition) =="
 cargo clippy --features personal-edition --all-targets -- -D warnings
 
 echo "== test (--features personal-edition) =="
+cargo build --bins --features personal-edition
 cargo test --features personal-edition
 
 # The accelerator bridge (src/accel/bridge.rs) sits behind an off-by-default
@@ -47,6 +53,7 @@ echo "== clippy (--features accel) =="
 cargo clippy --features accel --all-targets -- -D warnings
 
 echo "== test (--features accel) =="
+cargo build --bins --features accel
 cargo test --features accel
 
 # Private-item documentation is part of the source contract, and feature-gated
@@ -125,30 +132,11 @@ if bad:
 print("ok")
 PY
 
-# Soft cross-compile smoke: only when the target is already installed.
+# Soft cross-compile smoke (Linux/Windows guard): delegated to prepared script.
 # Does not download toolchains — keeps the gate offline-friendly.
-cross_check() {
-  target="$1"
-  if rustup target list --installed 2>/dev/null | grep -qx "$target"; then
-    echo "== cargo check --target ${target} (soft) =="
-    if ! cargo check --target "$target" --quiet; then
-      echo "WARN: cross-check ${target} failed (linker/sysroot?) — not a hard gate"
-      return 0
-    fi
-    if ! cargo check --features wdbx --target "$target" --quiet; then
-      echo "WARN: cross-check ${target} +wdbx failed — not a hard gate"
-    fi
-  else
-    echo "== skip cross-check ${target} (not installed) =="
-  fi
-}
-# From macOS/linux hosts, optionally verify the Windows + other-unix portable set.
-case "$(uname -s 2>/dev/null || echo unknown)" in
-  Darwin|Linux)
-    cross_check x86_64-pc-windows-gnu
-    cross_check x86_64-unknown-linux-gnu
-    ;;
-esac
+# These are soft checks (never hard gate). Part of Phase 2 / working-ci
+# readiness for portable surfaces. Script is executable and self-contained.
+sh tools/ci/cross-compile-guard.sh || echo "WARN: cross guard script non-zero (soft, continuing)"
 
 # Soft coverage report — opt-in only (it re-runs the default suite
 # instrumented, roughly doubling test time) and never a hard gate.

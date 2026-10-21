@@ -1,20 +1,14 @@
-//! The complete set of Tauri commands the Abbey desktop client exposes.
-//!
-//! Twelve, all read-only, all enumerated in `main.rs`'s `generate_handler!`. The
-//! webview can invoke nothing else: there is no `exec`, no submit, no cancel, no
-//! invoke, no obsolete, no command-name parameter that resolves to a subprocess,
-//! and no plugin in `Cargo.toml` that would provide one.
-//!
-//! Protocol v1/v2 reads use `AppCommand`. Protocol-v3 memory search/metadata
-//! and model inventory use a separate session that requests exactly
-//! `ReadMemory`, `ReadModels`, and `ReadClaimsById` — all read-only. No
-//! mutating grant is ever requested, so model download/load/unload are
-//! unreachable from here.
+//! Enumerated reads, signed-model lifecycle and daemon-only conversation metadata/history.
+//! No generic effect, inference, shell, credentials, or paths cross IPC.
 
 use abbey::app_core::{
-    ClaimsQuery, ClaimsSnapshot, RouteAuditPage, RouteAuditQuery, RunEventPage, RunEventsQuery,
-    RunQuery, RunSnapshot, RuntimeStatus, V3CapabilitySet, V3EntityPage, V3EntityRecord,
-    V3PageQuery, V3ResourceQuery, V3SearchRequest, V3StableClaim,
+    ClaimsQuery, ClaimsSnapshot, ConversationId, RouteAuditPage, RouteAuditQuery, RunEventPage,
+    RunEventsQuery, RunId, RunQuery, RunSnapshot, RunState, RuntimeStatus, V3CapabilitySet,
+    V3EntityPage, V3EntityRecord, V3ModelAction, V3ModelDetails, V3OperationStatus, V3PageQuery,
+    V3ResourceQuery, V3SearchRequest, V3StableClaim, V4CapabilitySet, V4ContentPage,
+    V4ContentQuery, V4Conversation, V4ConversationCreate, V4ConversationPage, V4ConversationQuery,
+    V4ConversationRename, V4MessagePage, V4MessageQuery, V4ResourceQuery, V4Route, V4SubmitTurn,
+    V4TurnSubmission,
 };
 use abbey::edition::ACTIVE;
 
@@ -80,12 +74,10 @@ pub fn app_memory_metadata(query: V3ResourceQuery) -> Result<V3EntityRecord, Ipc
     backend::memory_metadata(query)
 }
 
-/// `ReadModels` — one bounded page of the model inventory. Inventory only:
-/// download, load, and unload are separate grants this process never requests,
-/// so they are not reachable from the webview.
+/// `ReadModels` — bounded inventory via the unchanged read-only session.
 #[tauri::command]
-pub fn app_models_list(query: V3PageQuery) -> Result<V3EntityPage, IpcError> {
-    backend::models_list(query)
+pub async fn app_models_list(query: V3PageQuery) -> Result<V3EntityPage, IpcError> {
+    model_task(move || backend::models_list(query)).await
 }
 
 /// `ReadClaimsById` — one canonical claim by exact stable ID. Complements the
@@ -124,4 +116,136 @@ pub fn bundle_identity(configured_bundle_id: String) -> BundleIdentity {
         bundle_id: identity.bundle_id.to_owned(),
         configured_bundle_id,
     }
+}
+
+#[tauri::command]
+pub async fn app_model_grants() -> Result<V3CapabilitySet, IpcError> {
+    model_task(backend::model_grants).await
+}
+
+#[tauri::command]
+pub async fn app_model_details(query: V3ResourceQuery) -> Result<V3ModelDetails, IpcError> {
+    model_task(move || backend::model_details(query)).await
+}
+
+#[tauri::command]
+pub async fn app_model_download(action: V3ModelAction) -> Result<V3OperationStatus, IpcError> {
+    model_task(move || backend::model_download(action)).await
+}
+
+#[tauri::command]
+pub async fn app_model_load(action: V3ModelAction) -> Result<V3OperationStatus, IpcError> {
+    model_task(move || backend::model_load(action)).await
+}
+
+#[tauri::command]
+pub async fn app_model_unload(action: V3ModelAction) -> Result<V3OperationStatus, IpcError> {
+    model_task(move || backend::model_unload(action)).await
+}
+
+#[tauri::command]
+pub async fn app_model_download_status(
+    query: V3ResourceQuery,
+) -> Result<V3OperationStatus, IpcError> {
+    model_task(move || backend::model_download_status(query)).await
+}
+
+#[tauri::command]
+pub async fn app_model_lifecycle_status(
+    query: V3ResourceQuery,
+) -> Result<V3OperationStatus, IpcError> {
+    model_task(move || backend::model_lifecycle_status(query)).await
+}
+
+// Unix IPC blocks; keep both inventory and lifecycle exchanges off the UI thread.
+async fn model_task<T: Send + 'static>(
+    task: impl FnOnce() -> Result<T, IpcError> + Send + 'static,
+) -> Result<T, IpcError> {
+    tauri::async_runtime::spawn_blocking(task)
+        .await
+        .map_err(|_| {
+            IpcError::new(
+                crate::ipc::IpcErrorKind::Transport,
+                "model request worker was interrupted; check existing operation status",
+            )
+        })?
+}
+
+// Separate explicit v4 conversation authority; no execution or arbitrary IPC.
+#[tauri::command]
+pub async fn app_conversation_grants() -> Result<V4CapabilitySet, IpcError> {
+    conversation_task(backend::conversation_grants).await
+}
+#[tauri::command]
+pub async fn app_conversations_list(
+    query: V4ConversationQuery,
+) -> Result<V4ConversationPage, IpcError> {
+    conversation_task(move || backend::conversations_list(query)).await
+}
+#[tauri::command]
+pub async fn app_conversations_search(
+    query: V4ConversationQuery,
+) -> Result<V4ConversationPage, IpcError> {
+    conversation_task(move || backend::conversations_search(query)).await
+}
+#[tauri::command]
+pub async fn app_conversation_read(query: V4ResourceQuery) -> Result<V4Conversation, IpcError> {
+    conversation_task(move || backend::conversation_read(query)).await
+}
+#[tauri::command]
+pub async fn app_conversation_create(
+    query: V4ConversationCreate,
+) -> Result<V4Conversation, IpcError> {
+    conversation_task(move || backend::conversation_create(query)).await
+}
+#[tauri::command]
+pub async fn app_conversation_rename(
+    query: V4ConversationRename,
+) -> Result<V4Conversation, IpcError> {
+    conversation_task(move || backend::conversation_rename(query)).await
+}
+#[tauri::command]
+pub async fn app_conversation_archive(query: V4ResourceQuery) -> Result<V4Conversation, IpcError> {
+    conversation_task(move || backend::conversation_archive(query)).await
+}
+#[tauri::command]
+pub async fn app_conversation_delete(query: V4ResourceQuery) -> Result<(), IpcError> {
+    conversation_task(move || backend::conversation_delete(query)).await
+}
+#[tauri::command]
+pub async fn app_conversation_messages(query: V4MessageQuery) -> Result<V4MessagePage, IpcError> {
+    conversation_task(move || backend::conversation_messages(query)).await
+}
+#[tauri::command]
+pub async fn app_conversation_content(query: V4ContentQuery) -> Result<V4ContentPage, IpcError> {
+    conversation_task(move || backend::conversation_content(query)).await
+}
+#[tauri::command]
+pub async fn app_conversation_routes() -> Result<Vec<V4Route>, IpcError> {
+    conversation_task(backend::conversation_routes).await
+}
+#[tauri::command]
+pub async fn app_conversation_submit_turn(
+    request: V4SubmitTurn,
+) -> Result<V4TurnSubmission, IpcError> {
+    conversation_task(move || backend::conversation_submit_turn(request)).await
+}
+#[tauri::command]
+pub async fn app_conversation_cancel_turn(
+    conversation_id: ConversationId,
+    run_id: RunId,
+) -> Result<RunState, IpcError> {
+    conversation_task(move || backend::conversation_cancel_turn(conversation_id, run_id)).await
+}
+async fn conversation_task<T: Send + 'static>(
+    task: impl FnOnce() -> Result<T, IpcError> + Send + 'static,
+) -> Result<T, IpcError> {
+    tauri::async_runtime::spawn_blocking(task)
+        .await
+        .map_err(|_| {
+            IpcError::new(
+                crate::ipc::IpcErrorKind::Transport,
+                "conversation outcome unknown: request worker interrupted; reconcile through reads",
+            )
+        })?
 }

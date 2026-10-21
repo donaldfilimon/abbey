@@ -9,6 +9,354 @@
 // serde output of real Rust values, so a wrong field name or tag fails `tsc`.
 
 // ---------------------------------------------------------------------------
+// src/app_core/v4.rs — protocol-v4 conversations
+// ---------------------------------------------------------------------------
+
+export type V4Capability =
+  | "read_conversations"
+  | "write_conversations"
+  | "submit_turns"
+  | "read_turns"
+  | "cancel_turns"
+  | "read_routes"
+  | "read_tasks"
+  | "write_tasks"
+  | "read_automations"
+  | "write_automations"
+  | "read_permissions"
+  | "write_permissions"
+  | "decide_actions";
+
+export interface V4CapabilitySet {
+  capabilities: Array<V4Capability>;
+}
+
+export interface V4Conversation {
+  conversation_id: ConversationId;
+  id: string;
+  title: string;
+  created_at_ms: number;
+  updated_at_ms: number;
+  archived: boolean;
+  pinned: boolean;
+  sequence: number;
+  message_count: number;
+}
+
+export interface V4ConversationPatch {
+  title: string | null;
+  archived: boolean | null;
+  pinned: boolean | null;
+}
+
+export interface V4ConversationQuery {
+  search: string | null;
+  after: ConversationId | null;
+  limit: number;
+  archived: boolean;
+}
+
+export interface V4MessageQuery {
+  conversation_id: ConversationId;
+  after: number | null;
+  limit: number;
+}
+
+export interface V4SubmitTurn {
+  conversation_id: ConversationId;
+  idempotency_key: string;
+  route_id: string;
+  input: string;
+}
+
+export interface V4TurnSubmission {
+  conversation_id: ConversationId;
+  run_id: RunId;
+  idempotency_key: string;
+  user_message_sequence: number;
+  state: RunState;
+  duplicate: boolean;
+}
+
+export type V4MessageRole =
+  | "user"
+  | "assistant";
+
+export interface V4Message {
+  conversation_id: ConversationId;
+  run_id: RunId;
+  sequence: number;
+  role: V4MessageRole;
+  state: RunState;
+  text: string;
+  text_bytes: number;
+  text_complete: boolean;
+  created_at_ms: number;
+}
+
+export interface V4Route {
+  route_id: string;
+  backend: string;
+  label: string;
+  available: boolean;
+}
+
+export interface V4ConversationPage {
+  conversations: Array<V4Conversation>;
+  next_after: ConversationId | null;
+}
+
+export interface V4MessagePage {
+  conversation_id: ConversationId;
+  messages: Array<V4Message>;
+  next_after: number | null;
+}
+
+export interface V4PageQuery {
+  after: number;
+  through: number | null;
+  limit: number;
+}
+
+export interface V4SearchQuery {
+  query: string;
+  page: V4PageQuery;
+}
+
+export interface V4ResourceQuery {
+  resource_id: string;
+}
+
+export interface V4Task {
+  id: string;
+}
+
+export interface V4TaskPage {
+  tasks: Array<V4Task>;
+  next_after: number | null;
+}
+
+export interface V4TaskCreate {
+  title: string;
+}
+
+export interface V4TaskState {
+}
+
+export interface V4Automation {
+}
+
+export interface V4AutomationPage {
+  automations: Array<V4Automation>;
+  next_after: number | null;
+}
+
+export interface V4PermissionProfile {
+  profile_id: string;
+  tool_ids: Array<string>;
+  application_ids: Array<string>;
+  filesystem_roots: Array<string>;
+  browser_domains: Array<string>;
+  max_runtime_ms: number;
+  max_output_bytes: number;
+}
+
+export interface V4Error {
+  code: V4ErrorCode;
+  message: string;
+}
+
+export type V4ActionDecisionKind =
+  | "Approve"
+  | "Deny";
+
+export interface V4Action {
+  resource_id: string;
+  operation_id: string;
+}
+
+export interface V4GrantNegotiation {
+  protocol_version: number;
+  schema_version: number;
+  granted: V4CapabilitySet;
+}
+
+export interface V4GrantRequest {
+  supported_versions: Array<number>;
+  requested: V4CapabilitySet;
+}
+
+export type V4TurnState =
+  | "Queued"
+  | "Starting"
+  | "Running"
+  | "Succeeded"
+  | "Failed"
+  | "Cancelled"
+  | "CancelRequested"
+  | "Interrupted";
+
+export interface V4AutomationUpsert {
+  automation_id: string;
+  instruction: string;
+  schedule: V4ScheduleKind;
+  cron: string | null;
+  timezone: string;
+  route_id: string;
+  permission_profile_id: string;
+  budget_tokens: number;
+  enabled: boolean;
+}
+
+export type V4ScheduleKind =
+  | "Cron";
+
+export interface V4ConversationCreate {
+  title: string;
+}
+
+export interface V4ConversationRename {
+  conversation_id: string;
+  title: string;
+}
+
+export interface V4ActionDecision {
+  action_id: string;
+  decision_id: string;
+  kind: V4ActionDecisionKind;
+}
+
+// ---------------------------------------------------------------------------
+// src/app_core/v4_content.rs — protocol-v4 visible content events
+// ---------------------------------------------------------------------------
+
+export type V4ContentPayload =
+  | { kind: "text_delta"; data: {
+      text: string;
+    } }
+  | { kind: "tool"; data: {
+      tool_id: string;
+      state: V4ToolState;
+    } }
+  | { kind: "notice"; data: {
+      code: V4NoticeCode;
+    } }
+  | { kind: "usage"; data: {
+      input_tokens: number;
+      output_tokens: number;
+    } }
+  | { kind: "terminal"; data: {
+      state: RunState;
+    } };
+
+export type V4ToolState =
+  | "started"
+  | "succeeded"
+  | "failed"
+  | "cancelled";
+
+export type V4NoticeCode =
+  | "truncated"
+  | "reconnecting"
+  | "provider_unavailable"
+  | "recovery_required";
+
+export interface V4ContentEvent {
+  conversation_id: ConversationId;
+  run_id: RunId;
+  sequence: number;
+  timestamp_ms: number;
+  payload: V4ContentPayload;
+}
+
+export interface V4ContentQuery {
+  conversation_id: ConversationId;
+  run_id: RunId;
+  after: number;
+  limit: number;
+}
+
+export interface V4ContentPage {
+  conversation_id: ConversationId;
+  run_id: RunId;
+  after: number;
+  events: Array<V4ContentEvent>;
+  next_after: number | null;
+}
+
+// ---------------------------------------------------------------------------
+// src/app_core/v4_protocol.rs — protocol-v4 commands and events
+// ---------------------------------------------------------------------------
+
+export type V4Command =
+  | { command: "negotiate"; data: V4GrantRequest }
+  | { command: "list_conversations"; data: V4ConversationQuery }
+  | { command: "create_conversation"; data: string }
+  | { command: "read_conversation"; data: ConversationId }
+  | { command: "export_conversation"; data: V4ResourceQuery }
+  | { command: "archive_conversation"; data: V4ResourceQuery }
+  | { command: "rename_conversation"; data: V4ConversationRename }
+  | { command: "update_conversation"; data: [ConversationId, V4ConversationPatch] }
+  | { command: "read_messages"; data: V4MessageQuery }
+  | { command: "submit_turn"; data: V4SubmitTurn }
+  | { command: "read_content"; data: V4ContentQuery }
+  | { command: "cancel_turn"; data: [ConversationId, RunId] }
+  | { command: "list_routes" }
+  | { command: "search_conversations"; data: V4SearchQuery }
+  | { command: "delete_conversation"; data: V4ResourceQuery }
+  | { command: "list_messages"; data: V4MessageQuery }
+  | { command: "list_content_events"; data: V4ContentQuery }
+  | { command: "list_tasks"; data: V4PageQuery }
+  | { command: "create_task"; data: V4TaskCreate }
+  | { command: "list_automations"; data: V4PageQuery }
+  | { command: "upsert_automation"; data: V4AutomationUpsert }
+  | { command: "read_permission_profile"; data: V4ResourceQuery }
+  | { command: "put_permission_profile"; data: V4PermissionProfile }
+  | { command: "decide_action"; data: V4ActionDecision }
+  | { command: "read_task"; data: V4ResourceQuery }
+  | { command: "cancel_task"; data: V4ResourceQuery }
+  | { command: "retry_task"; data: V4ResourceQuery }
+  | { command: "set_automation_enabled"; data: V4ResourceQuery }
+  | { command: "run_automation_now"; data: V4ResourceQuery };
+
+export type V4Event =
+  | { event: "negotiated"; data: V4GrantNegotiation }
+  | { event: "conversations"; data: V4ConversationPage }
+  | { event: "conversation"; data: V4Conversation }
+  | { event: "messages"; data: V4MessagePage }
+  | { event: "turn_submitted"; data: V4TurnSubmission }
+  | { event: "content"; data: V4ContentPage }
+  | { event: "turn_cancelled"; data: [ConversationId, RunId, RunState] }
+  | { event: "routes"; data: Array<V4Route> }
+  | { event: "deleted"; data: V4ResourceQuery }
+  | { event: "turn_accepted"; data: V4TurnSubmission }
+  | { event: "content_events"; data: V4ContentPage }
+  | { event: "tasks"; data: V4TaskPage }
+  | { event: "task"; data: V4Task }
+  | { event: "automations"; data: V4AutomationPage }
+  | { event: "automation"; data: V4Automation }
+  | { event: "permission_profile"; data: V4PermissionProfile }
+  | { event: "action_decision"; data: V4ActionDecision }
+  | { event: "error"; data: V4Error };
+
+export type V4ErrorCode =
+  | "invalid_request"
+  | "unauthorized"
+  | "not_found"
+  | "conflict"
+  | "unavailable"
+  | "limit_exceeded"
+  | "internal"
+  | "invalid_command"
+  | "unsupported_version"
+  | "capability_denied"
+  | "cancelled"
+  | "deadline_exceeded"
+  | "budget_exceeded"
+  | "rate_limited"
+  | "response_too_large";
+
+// ---------------------------------------------------------------------------
 // src/app_core/ids.rs — opaque identifiers
 // ---------------------------------------------------------------------------
 
@@ -204,7 +552,7 @@ export interface ConversationMetadata {
 
 /**
  * Bounded tail query over the append-only routing audit log.
- * 
+ *
  * This is deliberately *not* a cursor. The route log is append-only JSONL with
  * no stable sequence column, so the honest contract is "the most recent N
  * decisions", the same thing `abbey routes -n` has always shown.
@@ -270,7 +618,7 @@ export interface RouteAuditPage {
 
 /**
  * Abbey edition represented by this public-safe contract.
- * 
+ *
  * Mirrors the compile-time `edition::Edition` so a client is never told it is
  * talking to the safe edition when it is not. Neither variant grants extra
  * capabilities — [`CapabilitySet`] is identical in both.
@@ -446,7 +794,7 @@ export interface BundleIdentity {
   bundle_id: string;
   /**
    * Bundle identifier the running window was actually configured with.
-   * 
+   *
    * Equal to `bundle_id` in a correctly built app; the startup check in
    * `main.rs` refuses to run if they differ, so a personal build can never
    * present itself under the safe edition's identity.
@@ -460,6 +808,7 @@ export interface BundleIdentity {
  */
 export type IpcErrorKind =
   | "configuration"
+  | "not_found"
   | "transport"
   | "protocol"
   | "rejected"
@@ -567,7 +916,7 @@ export interface V3EntityPage {
 
 /**
  * Exact-identifier claim lookup result.
- * 
+ *
  * Distinct from the protocol-v1 `ClaimsSnapshot`/`ClaimsQuery` pair that the
  * Claims view already renders: this is a single canonical record fetched by
  * stable ID through `ReadClaimsById`, not a filtered ledger page. `status`
@@ -579,4 +928,35 @@ export interface V3StableClaim {
   name: string;
   status: ClaimStatus;
   note: string;
+}
+
+/**
+ * Exact immutable signed-model action, with single-use operation identity.
+ */
+export interface V3ModelAction {
+  model_id: string;
+  revision: string;
+  operation_id: string;
+}
+
+export type V3ModelDevice =
+  | "cpu"
+  | "metal"
+  | "cuda";
+
+export interface V3ModelDetails {
+  model_id: string;
+  revision: string;
+  architecture: string;
+  configured_device: V3ModelDevice;
+  license_sha256: string;
+  license_accepted: boolean;
+  loaded: boolean;
+}
+
+export interface V3OperationStatus {
+  operation_id: string;
+  resource_id: string;
+  state: V3OperationState;
+  progress_basis_points: number;
 }

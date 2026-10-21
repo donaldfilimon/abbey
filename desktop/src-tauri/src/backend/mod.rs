@@ -1,4 +1,4 @@
-//! Routing from the desktop's read-only invoke surface to Abbey's application core.
+//! Routing from the desktop's enumerated invoke surface to Abbey's application core.
 //!
 //! Two routes, chosen once per call and never blended:
 //!
@@ -10,6 +10,14 @@
 //! * **In-process** — no bearer is configured for this edition at all, so there
 //!   is no daemon to be a client of, and the desktop reads the app core it is
 //!   linked against. `ConnectionInfo::source` always says which one answered.
+//!
+//! Native platform adapters (macOS Accessibility, Windows UI Automation,
+//! Linux AT-SPI + portals) for GUI inspection/control and external MCP/ACP
+//! clients are explicitly unavailable on the current desktop bridge. They are
+//! part of desktop-assistant plan Task 8 and remain report-only inventory via
+//! `abbey platform ui`. All code paths must treat them as absent; no stubs
+//! that fabricate observations or grant control authority exist. See also
+//! platform.rs print_ui_surfaces and the "unavailable" honesty surfaces.
 
 use abbey::app_core::{
     AppCommand, AppEvent, AppService, AppServiceError, ClaimsQuery, ClaimsSnapshot, RouteAuditPage,
@@ -20,7 +28,14 @@ use abbey::edition::ACTIVE;
 
 use crate::ipc::{BearerSource, ConnectionInfo, ConnectionSource, IpcError, IpcErrorKind};
 
+mod conversations;
+pub use conversations::*;
+mod models;
 mod v3;
+pub use models::{
+    model_details, model_download, model_download_status, model_grants, model_lifecycle_status,
+    model_load, model_unload,
+};
 
 pub use v3::{claim_by_id, memory_metadata, memory_search, models_list, v3_grants};
 
@@ -42,7 +57,7 @@ pub(crate) fn bearer_source() -> Option<BearerSource> {
 
 pub(crate) fn route() -> Result<Route, IpcError> {
     if bearer_source().is_none() {
-        return Ok(Route::InProcess(Box::new(AppService::default())));
+        return Ok(Route::InProcess(Box::default()));
     }
     match DaemonConfig::from_env() {
         Ok(config) => Ok(Route::Daemon(Box::new(DaemonClient::new(config)))),
@@ -174,7 +189,8 @@ pub(crate) fn from_client_error(error: ClientError) -> IpcError {
         ClientError::UnsupportedPlatform => (
             IpcErrorKind::UnsupportedPlatform,
             Some(
-                "abbeyd has no Windows named-pipe transport yet; run the desktop client on a \
+                "abbeyd has no Windows named-pipe transport yet (native adapters for \
+                 accessibility/GUI control also unavailable); run the desktop client on a \
                  Unix host, or unset the bearer variables to read the linked application core."
                     .to_owned(),
             ),

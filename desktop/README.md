@@ -1,18 +1,23 @@
 # Abbey desktop (Tauri 2 + React + TypeScript)
 
 A desktop **client of Abbey's shared application core**. It is not a second
-Abbey: it owns no agent, no memory, no tools, and no execution path. The current
-scaffold exposes read-only `Status`, `Claims`, `ReadRoutes`, protocol-v2
-`GetRun`/`RunEvents`, and protocol-v3 memory summary search/metadata, plus
-connection and bundle-identity metadata. Submit, cancel, invoke, and obsolete
-remain unregistered.
+Abbey: it owns no agent or memory. The current shell exposes read-only `Status`, `Claims`, `ReadRoutes`, protocol-v2
+`GetRun`/`RunEvents`, protocol-v3 memory summaries/model inventory/exact claims,
+and connection/bundle identity. A separate model session exposes exact signed
+model details and confirmed download/load/unload with operation-status recovery.
+A separate v4 conversation session exposes metadata CRUD/title search, authorized paged text history, configured routes, one-shot turn submission and correlated assistant content (create/rename/archive/delete + window-session drafts + polling). Turns use the daemon's fixed startup-bound provider route; this is not a generic tool-execution or inference bridge. Cancel, computer control, external tools and automation remain unavailable.
 
 Ledger status: `desktop-tauri-react` is **Proposed**. Nothing here changes that.
 The client compiles, typechecks, and reads the linked application core when no
 bearer is set. With a bearer, process-level reads go through a real scratch
-`abbeyd` (`desktop/scripts/prove-daemon-read.sh`). It has not been packaged,
-signed, or notarized. The safe macOS Routes view now has native window
-acceptance against a scratch daemon; see [Unmet bars](#unmet-bars).
+`abbeyd` (`desktop/scripts/prove-daemon-read.sh`). It now packages and signs on
+macOS — an ad-hoc signature with the hardened runtime, **not** notarized, so
+first launch on another machine is still unproven. The safe macOS Routes view
+now has native window acceptance against a scratch daemon; see
+[Unmet bars](#unmet-bars). Chat/history surfaces + basic nav are additional
+demonstrated read surfaces (full assistant Proposed).
+
+`desktop/check.sh` is the local gate; it includes live-daemon history/turn fixtures and an opt-in macOS Routes window acceptance run.
 
 ## Layout
 
@@ -21,6 +26,11 @@ desktop/
   package.json  tsconfig.json  vite.config.ts  index.html   bun + Vite + React 19
   Cargo.toml                                                 separate workspace (see below)
   scripts/verify-bundle.mjs                                  artifact security checks
+  scripts/release-macos.sh                                   package → sign → verify (both editions)
+  scripts/assemble-update-feed.sh                             per-edition updater feed assembly
+  scripts/render-icon.swift                                  the 1024 icon master renderer
+  scripts/prove-packaged-macos.sh                            packaged-app Routes acceptance
+  scripts/prove-menu-icon-macos.sh                           packaged menu/icon acceptance
   codegen/                                                    Rust → TypeScript generator
     src/main.rs        driver, --check drift mode
     src/tsgen.rs       syn projection of serde contracts
@@ -28,21 +38,22 @@ desktop/
     src/editions.rs    bundle identity → tauri configs + TS
   src/
     main.tsx  App.tsx  styles.css  surfaces.ts
-    ipc/client.ts                  typed wrappers over the twelve commands
+    components/UpdateCheck.tsx       the single updater trigger surface
+    ipc/client.ts                  typed wrappers over the 28 enumerated commands
     ipc/generated.ts               @generated — IPC types
     ipc/generated.samples.ts       @generated — serde cross-check fixtures
     ipc/generated.editions.ts      @generated — edition identity
     views/DoctorView.tsx  ClaimsView.tsx  RoutesView.tsx  RunsView.tsx
-                               MemoryView.tsx  UnavailableView.tsx  ErrorCard.tsx
+                               MemoryView.tsx  ModelsView.tsx  UnavailableView.tsx  ErrorCard.tsx
   src-tauri/
     Cargo.toml  build.rs  tauri.conf.json  tauri.personal.conf.json
     capabilities/default.json      core:default only
-    icons/                         placeholder marks, not brand assets
+    icons/                         1024 master + regenerated macOS/Windows chain
     src/main.rs                    generate_handler! — the whole IPC surface
-    src/commands.rs                the twelve commands
-    src/backend/                   daemon-first v1/v2 routing + v3 memory reads
+    src/commands.rs                the 28 enumerated commands
+    src/backend/                   daemon-first v1/v2 reads + separate v3 read/model and v4 conversation sessions
     src/ipc.rs                     desktop-only transport types
-    src/v3_ipc.rs                  codegen-only v3 memory/grant wire shapes
+    src/v3_ipc.rs                  codegen-only v3 memory/grant/model wire shapes
 ```
 
 `desktop/Cargo.toml` is a **separate workspace**. The root `abbey` manifest has
@@ -162,19 +173,21 @@ Verified negatively: changing `CapabilitySet` to `Array<AppCapability>` and the
 *private*, and the serde wire shape is an object, not a bare array.
 
 
+**Task17 verification note:** the generated inventory below is the last retained snapshot. The current source has 28 commands and adds `read_conversations` to Chat; regeneration and Rust/scratch acceptance are blocked by concurrent app-core v4 contract replacement. Frontend typecheck/build/security and controller tests pass against the retained generated types. No current bridge-Rust or native-rendered acceptance is claimed.
+
 <!-- BEGIN abbey-generated:desktop-capability-summary -->
 <!-- Generated by tools/check_claims_sync.py; do not edit. -->
-Desktop source inventory: **12 enumerated commands · 8 read capabilities · 6 available views · 4 unavailable views**.
+Desktop source inventory: **32 enumerated commands · 9 read capabilities · 7 available views · 4 unavailable views**.
 
-- Invoke IDs: `app_status`, `app_claims`, `app_routes`, `app_run_status`, `app_run_events`, `app_v3_grants`, `app_memory_search`, `app_memory_metadata`, `app_models_list`, `app_claim_by_id`, `app_connection`, `app_bundle_identity`
-- Read capability IDs: `read_status`, `read_claims`, `read_routes`, `read_run`, `read_run_events`, `read_memory`, `read_models`, `read_claims_by_id`
-- Available view IDs: `doctor` → `read_status`, `claims` → `read_claims`, `runs` → `read_run`, `memory` → `read_memory`, `models` → `read_models`, `routes` → `read_routes`
-- Unavailable view IDs: `chat`, `tools`, `training`, `cluster`
+- Invoke IDs: `app_status`, `app_claims`, `app_routes`, `app_run_status`, `app_run_events`, `app_v3_grants`, `app_memory_search`, `app_memory_metadata`, `app_models_list`, `app_model_grants`, `app_model_details`, `app_model_download`, `app_model_load`, `app_model_unload`, `app_model_download_status`, `app_model_lifecycle_status`, `app_claim_by_id`, `app_connection`, `app_bundle_identity`, `app_conversation_grants`, `app_conversations_list`, `app_conversations_search`, `app_conversation_read`, `app_conversation_create`, `app_conversation_rename`, `app_conversation_archive`, `app_conversation_delete`, `app_conversation_messages`, `app_conversation_content`, `app_conversation_routes`, `app_conversation_submit_turn`, `app_conversation_cancel_turn`
+- Read capability IDs: `read_status`, `read_claims`, `read_routes`, `read_run`, `read_run_events`, `read_memory`, `read_models`, `read_claims_by_id`, `read_conversations`
+- Available view IDs: `doctor` → `read_status`, `claims` → `read_claims`, `chat` → `read_conversations`, `runs` → `read_run`, `memory` → `read_memory`, `models` → `read_models`, `routes` → `read_routes`
+- Unavailable view IDs: `automations`, `tools`, `training`, `cluster`
 <!-- END abbey-generated:desktop-capability-summary -->
 
 ## The complete Tauri command surface
 
-Twelve commands, all read-only, enumerated in `generate_handler!`:
+28 commands are enumerated in `generate_handler!`: the existing 19 commands plus nine async v4 conversation methods. Existing read/model sessions stay unchanged; the separate conversation session requests exactly `ReadConversations` and `WriteConversations`. No conversation operation falls back to an in-process store.
 
 | Command | Returns | Backed by |
 | --- | --- | --- |
@@ -187,13 +200,30 @@ Twelve commands, all read-only, enumerated in `generate_handler!`:
 | `app_memory_search(request: V3SearchRequest)` | `V3EntityPage` | v3 `SearchMemory` |
 | `app_memory_metadata(query: V3ResourceQuery)` | `V3EntityRecord` | v3 `ReadMemoryMetadata` |
 | `app_models_list(query: V3PageQuery)` | `V3EntityPage` | v3 `ListModels` (`ReadModels`) |
+| `app_model_grants` | `V3CapabilitySet` | separate model-session negotiation |
+| `app_model_details(query: V3ResourceQuery)` | `V3ModelDetails` | v3 exact `ModelDetails` (`ReadModels`) |
+| `app_model_download(action: V3ModelAction)` | `V3OperationStatus` | v3 `DownloadModel` (`DownloadModels`) |
+| `app_model_load(action: V3ModelAction)` | `V3OperationStatus` | v3 `LoadModel` (`ManageModels`) |
+| `app_model_unload(action: V3ModelAction)` | `V3OperationStatus` | v3 `UnloadModel` (`ManageModels`) |
+| `app_model_download_status(query: V3ResourceQuery)` | `V3OperationStatus` | v3 exact-operation `ModelDownloadStatus` (`ReadModels`) |
+| `app_model_lifecycle_status(query: V3ResourceQuery)` | `V3OperationStatus` | v3 exact-operation status (`ReadModels`); no inference command |
 | `app_claim_by_id(query: V3ResourceQuery)` | `V3StableClaim` | v3 `ClaimById` (`ReadClaimsById`) |
 | `app_connection` | `ConnectionInfo` | local; describes the route, reads no Abbey state |
 | `app_bundle_identity` | `BundleIdentity` | `abbey::edition` + the running Tauri config |
+| `app_conversation_grants` | `V4CapabilitySet` | separate v4 read/write conversation negotiation |
+| `app_conversations_list(query: V4PageQuery)` | `V4ConversationPage` | v4 fixed-watermark history summaries |
+| `app_conversations_search(query: V4SearchQuery)` | `V4ConversationPage` | v4 title-only search |
+| `app_conversation_read(query: V4ResourceQuery)` | `V4Conversation` | v4 exact metadata read |
+| `app_conversation_create(query: V4ConversationCreate)` | `V4Conversation` | v4 create metadata once |
+| `app_conversation_rename(query: V4ConversationRename)` | `V4Conversation` | v4 rename once |
+| `app_conversation_archive(query: V4ResourceQuery)` | `V4Conversation` | v4 archive once |
+| `app_conversation_delete(query: V4ResourceQuery)` | `()` | v4 delete once, after destructive UI confirmation |
+| `app_conversation_messages(query: V4MessageQuery)` | `V4MessagePage` | v4 bounded authorized text bodies |
+| `app_conversation_cancel_turn(conversationId, runId)` | `RunState` | exact durable v4 pair; one cancellation request, then history/content reads |
 
-There is no `exec`, no submit, no cancel, no invoke, no obsolete, no
+There is no `exec`, no generic run submit/cancel, no tool invoke, no obsolete, no
 command-name parameter that resolves to a subprocess, and no plugin that
-would provide one. In-process `GetRun`/`RunEvents`/memory reads are rejected.
+would provide one. Model effects are limited to exact signed download/load/unload; there is no inference command. In-process `GetRun`/`RunEvents`/memory/model authority is rejected.
 
 **Routing.** If a daemon bearer is configured for the active edition, every app-core read
 goes over `abbeyd`'s authenticated owner-only Unix socket and a failure is
@@ -213,6 +243,7 @@ answered.
 | Narrow enumerated commands | `generate_handler!` | `verify-bundle.mjs` rejects any `invoke` outside `src/ipc/client.ts` and any command name off the list |
 | Least-privilege capability | `capabilities/default.json` → `core:default` | asserted in `main.rs` tests |
 | Secrets never echoed | `ipc.rs` has no field that can hold a bearer | `backend.rs::tests::connection_detail_never_contains_bearer_material` |
+| Updater artifacts verify against the pinned key | `plugins.updater.pubkey` + `tests/updater_signature.rs` | `cargo test -p abbey-desktop --test updater_signature` — the same `minisign-verify` path the plugin uses; the release workflow re-runs it against each built artifact before publishing |
 
 The shipped CSP is:
 
@@ -231,6 +262,54 @@ Secret hygiene is a type-level property: no field on any type in `ipc.rs` can
 hold a bearer token. The daemon bearer is reported as a boolean plus a *source
 kind* (`inline_env` / `token_file` / `conflicting`) — never a value, never the
 token file's contents, and `DaemonConfig` is never formatted into an IPC type.
+
+## Native menu, icon, and the update trigger
+
+Four surfaces shipped on 2026-10-20 and are proven against the **packaged**
+app, not only in source.
+
+**Menu bar.** `src/main.rs` builds the menu with `.menu(...)`: an app menu
+(About carrying the same version the Doctor surface prints, then hide/quit),
+an Edit menu (undo/redo/cut/copy/paste/select-all — so the composer gets the
+standard macOS shortcuts), and a Window menu (fullscreen/minimize/zoom/
+bring-all-to-front/close). Every entry is an OS-provided role; there are no
+custom handlers, so no menu item can reach webview state, the daemon, or the
+filesystem. The first submenu becomes the macOS app menu, whose name the OS
+takes from the bundle rather than from the submenu title.
+
+**Icon.** The tracked icon used to be a flat placeholder rectangle.
+`scripts/render-icon.swift` renders a 1024 master from vector geometry
+(gradient squircle, white Romanesque abbey-arch doorway) and `bun run tauri
+icon` regenerates the whole chain from it; the master is tracked, so the chain
+is reproducible. `public/favicon.png` gives the webview the same mark.
+
+**Window defaults.** `tauri.conf.json` centers the window on first launch, and
+the title is set at startup from the edition's product name — the personal
+build never presents itself as "Abbey".
+
+Settings also offers automatic/glass/solid webview material, comfortable/compact
+density, and a presentation-only restore-defaults action. Automatic material is
+macOS-only, with opaque fallback elsewhere and when reduced transparency,
+increased contrast, or forced colors apply. This is glass-inspired CSS over an
+opaque native window, **not native Apple Liquid Glass**. It adds no startup,
+background-service, model-route, or tool permissions. See
+[`2026-10-21-desktop-presentation.md`](../docs/verification/2026-10-21-desktop-presentation.md)
+for evidence and remaining qualification work.
+
+**Update trigger.** The updater plugin is registered with the pinned Ed25519
+public key and `requireSignedVersion: true`, so the version announced in a
+feed must equal the version inside that artifact's signature. There is one
+endpoint per edition: the safe edition reads `latest.json`, the personal
+edition's overlay reads `latest-personal.json`. The only trigger is the
+Doctor surface's Updates card (`src/components/UpdateCheck.tsx`): checks are
+user-initiated, the plugin verifies the artifact against the pinned key before
+installing it, and there is no in-app relaunch (no process plugin is
+registered — the capability set stays exactly `core:default` +
+`updater:default`), so the surface says to quit and reopen. Feeds are
+assembled by `scripts/assemble-update-feed.sh` and published by
+`.github/workflows/desktop-release.yml`; that workflow is **authored, not
+executed** — it needs the owner's Apple credentials and production updater
+key, and it creates draft releases only.
 
 ## Edition identity
 
@@ -258,6 +337,8 @@ bun run tauri build --config src-tauri/tauri.personal.conf.json
 
 **Real** (backed by live capabilities the desktop bridge consumes):
 
+- **Chat** — sidebar title search/history with paged summaries and text-only messages. Create/rename/archive/delete metadata require v4 write grants; delete has an explicit confirmation. The composer submits one turn to an available configured daemon route and reads correlated assistant content. Drafts use window-session memory only: at most 32 nonempty drafts, each capped at 8,192 UTF-16 code units; the controller refuses to evict existing drafts. History is bounded to 256 summaries/messages per window view; search or refresh starts a new page snapshot. Unknown submission outcomes are not replayed; history reconciliation checks for the exact sent user message. Pin, unarchive, and full transcript export remain unavailable. Stop targets the active selected conversation turn through its exact durable run identity and reconciles cancellation through reads. This is not a task-delegation or tool-execution loop.
+
 - **Doctor** — runtime state, protocol/schema versions, build stamp, edition,
   granted capabilities, connection route, bundle identity (`ReadStatus`).
 - **Capabilities** — the canonical ledger with the core-validated filter (`ReadClaims`).
@@ -270,8 +351,10 @@ bun run tauri build --config src-tauri/tauri.personal.conf.json
   v3 grant). No payload, provenance, path, or raw record id. Obsolete is not
   registered. In-process never opens the store.
 
-**Placeholder** — Chat, Tools & approvals, Models, Training, Cluster.
-These five views render **no data at all**. Each states the contract-level
+- **Models** — bounded fixed-watermark inventory plus exact signed-model details when startup authority exists. Details expose revision, architecture, configured device, license digest/acceptance, and actual loaded state. Download/load/unload require their distinct grants and concrete confirmation; license terms are never accepted by the desktop. Each operation is sent once and tracked by immutable ID in window-session memory. Ambiguous responses retain their ID for status-only recovery. Inventory-only authorities remain readable without lifecycle controls. Loaded status does not demonstrate inference.
+
+**Unavailable execution surfaces** — governed tasks, Tools & approvals, Automations, Training, Cluster, browser/files/computer control.
+These views render no fabricated operational data. Each states the contract-level
 reason and then shows the *live* ledger rows for a filter, so the UI never
 asserts a status it invented.
 
@@ -292,9 +375,12 @@ and evidence slice.
 
 Phase 7 in `tasks/todo.md` asks for more than this slice delivers:
 
-- **Not packaged, signed, or notarized.** No `tauri build` bundle was produced.
-  Apple Developer ID + notarization and Windows/Linux signing keys are
-  owner-controlled release blockers; no credential was manufactured or embedded.
+- **Not notarized.** `tauri build` bundles are produced and signed (ad-hoc, with
+  the hardened runtime) by `scripts/release-macos.sh` for both editions, and the
+  packaged app is accepted by `scripts/prove-packaged-macos.sh`. What is still
+  missing is Apple Developer ID signing plus notarization (and Windows/Linux
+  signing keys) — all owner-controlled release blockers; no credential was
+  manufactured or embedded.
 - **The existing backend smoke remains process-level.**
   `desktop/scripts/prove-daemon-read.sh` starts an owner-only scratch daemon
   and drives the shipped desktop `status` / `run_status` / `run_events`
@@ -305,24 +391,31 @@ Phase 7 in `tasks/todo.md` asks for more than this slice delivers:
   `scripts/prove-routes-macos.sh` opened the ordinary safe-edition Tauri window
   and passed all seven scenario checks against real scratch daemons. Thirteen
   assertion/isolation tests, the complete desktop gate with native acceptance
-  required, and root `./check.sh` passed. Packaging, other views, the personal
-  edition GUI, and other platforms remain unproven.
+  required, and root `./check.sh` passed. The same seven scenarios now also
+  pass against the **packaged** app (`scripts/prove-packaged-macos.sh`, 2026-10-20).
+  Other views, the personal edition GUI, and other platforms remain unproven.
 - **Not run on Ubuntu ARM64 or Win11 ARM.** `ClientError::UnsupportedPlatform`
   is surfaced honestly on Windows, where `abbeyd` has no named-pipe transport.
+  Native adapters (macOS accessibility, etc.) are unavailable (report-only inventory).
 - **The Linux desktop graph retains one upstream dependency advisory.** The
   current Tauri 2.11.5 graph selects GTK 0.18.2 and `glib` 0.18.5; GitHub's
   medium-severity `VariantStrIter` advisory requires `glib` 0.20 or newer.
   That incompatible transitive upgrade is not available through the current
   Tauri release, so the proposed desktop must not be described as
   vulnerability-free or release-ready.
-- **Five of the ten first-release views have no data source.** Doctor, Claims,
-  Routes, Runs & trace, and Memory are wired. Chat, Tools, Models, Training,
-  and Cluster stay placeholders. Submit, cancel, invoke, and obsolete are not
+- **Governed tasks, Tools, Automations, Training, and Cluster execution remain unavailable.** Chat submits bounded turns only through the daemon's configured provider route. Settings/Doctor, Claims, Routes, Runs & trace, Memory, and Models consume real bridge contracts. Cancel, tool invocation, and obsolete are not
   on the invoke surface.
 - **No per-edition capability manifest split.** Both editions ship the same
   `capabilities/default.json`; `CapabilitySet` is identical in both editions
   today, so there is nothing to differentiate yet.
-- **Icons are placeholder marks**, not brand assets, and there is no `.icns`.
+- **Icons and the native menu are now real, and their packaged proof is
+  macOS-only.** The icon chain is rendered from the tracked 1024 master and
+  `scripts/prove-menu-icon-macos.sh` checks the menu bar, the icon identity and
+  the per-edition window title against the packaged app. No Windows or Linux
+  packaging has been produced. The generated Windows `.ico` is listed in the
+  bundle configuration, but that is preparation, not Windows runtime evidence.
 - `ClaimRecord` carries no stable claim `id`, only display text, so placeholder
   views cite the ledger by substring filter rather than by id. Fixing that means
   changing `src/app_core/`, which this slice deliberately did not do.
+
+Desktop Stop is available for an active selected conversation turn when the daemon grants `cancel_turns`. It preserves drafts and transcript content, blocks duplicate Stop requests immediately, and reconciles requested or ambiguous outcomes through history/content reads. A completion race reports the actual terminal state. Cancellation never targets a legacy run or another conversation, and transport ambiguity never replays the request.

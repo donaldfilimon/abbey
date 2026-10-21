@@ -171,6 +171,7 @@ fn no_abi_route_still_negotiates_safe_tools_and_canonical_claim_reads() {
                 V3Capability::CancelTools,
                 V3Capability::ReadMemory,
                 V3Capability::ReadModels,
+                V3Capability::ReadWorkers,
                 V3Capability::ReadClaimsById,
                 V3Capability::InferModels,
             ])
@@ -187,6 +188,7 @@ fn no_abi_route_still_negotiates_safe_tools_and_canonical_claim_reads() {
             V3Capability::DecideToolApprovals,
             V3Capability::CancelTools,
             V3Capability::ReadMemory,
+            V3Capability::ReadWorkers,
             V3Capability::ReadClaimsById,
         ]
     } else {
@@ -194,6 +196,7 @@ fn no_abi_route_still_negotiates_safe_tools_and_canonical_claim_reads() {
             V3Capability::ListTools,
             V3Capability::InvokeTools,
             V3Capability::ReadMemory,
+            V3Capability::ReadWorkers,
             V3Capability::ReadClaimsById,
         ]
     };
@@ -336,3 +339,83 @@ fn no_abi_route_still_negotiates_safe_tools_and_canonical_claim_reads() {
 }
 
 include!("tests/approval_tests.rs");
+
+#[test]
+fn inventory_only_authority_refuses_exact_model_details() {
+    let route = abi_route();
+    let authority =
+        V3RuntimeAuthority::from_provider_routes([&route], vec![], store(), memory_route(), None)
+            .unwrap();
+    let command = V3Command::ModelDetails(V3ResourceQuery {
+        resource_id: "abi-local:local".into(),
+    });
+    assert!(!authority.authorizes(&V3CapabilitySet::deny_all(), &command));
+    let forged =
+        V3CapabilitySet::from_sorted(vec![V3Capability::ReadModels, V3Capability::ManageModels])
+            .unwrap();
+    assert!(!authority.authorizes(&forged, &command));
+    assert!(
+        authority
+            .handle(V3Command::ModelDetails(V3ResourceQuery {
+                resource_id: "abi-local:local".into()
+            }))
+            .is_err()
+    );
+}
+
+#[test]
+fn read_workers_grant_yields_basic_empty_list_and_not_found_queries() {
+    // Low-risk worker dispatch test: grant is always offered; lists are empty stubs;
+    // specific health/job queries are not-found. Ties into future abi-worker without
+    // promoting any capability claim.
+    let authority =
+        V3RuntimeAuthority::from_provider_routes([], Vec::new(), store(), memory_route(), None)
+            .unwrap();
+    let requested = V3CapabilitySet::from_sorted(vec![V3Capability::ReadWorkers]).unwrap();
+    let V3Event::Negotiated(negotiated) = authority
+        .handle(V3Command::Negotiate(V3GrantRequest {
+            supported_versions: vec![3],
+            requested,
+        }))
+        .unwrap()
+    else {
+        panic!("expected negotiation");
+    };
+    assert_eq!(negotiated.granted.as_slice(), &[V3Capability::ReadWorkers]);
+
+    let V3Event::Workers(workers) = authority
+        .handle(V3Command::ListWorkers(V3PageQuery::default()))
+        .unwrap()
+    else {
+        panic!("expected workers page");
+    };
+    assert_eq!(workers.after, 0);
+    assert_eq!(workers.through, 0);
+    assert!(workers.records.is_empty());
+
+    let V3Event::Clusters(clusters) = authority
+        .handle(V3Command::ListClusters(V3PageQuery::default()))
+        .unwrap()
+    else {
+        panic!("expected clusters page");
+    };
+    assert!(clusters.records.is_empty());
+
+    let bad = V3ResourceQuery {
+        resource_id: "no-such-worker".into(),
+    };
+    assert_eq!(
+        authority
+            .handle(V3Command::WorkerHealth(bad.clone()))
+            .unwrap_err()
+            .code(),
+        "not_found"
+    );
+    assert_eq!(
+        authority
+            .handle(V3Command::JobStatus(bad))
+            .unwrap_err()
+            .code(),
+        "not_found"
+    );
+}

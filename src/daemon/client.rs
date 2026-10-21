@@ -19,6 +19,8 @@ use super::{
 };
 
 mod v3;
+mod v4;
+pub use v4::{V4ClientError, V4DaemonSession};
 
 /// Object-oriented client for one configured Abbey daemon installation.
 #[derive(Clone)]
@@ -50,7 +52,13 @@ impl DaemonClient {
         }
     }
 
-    /// Windows remains fail-closed until the named-pipe transport lands.
+    /// Windows named-pipe transport stub.
+    ///
+    /// Named pipes + owner-only private-store checks + Job Object process supervision
+    /// for Windows remain unavailable (desktop-assistant plan Task 5). All call sites
+    /// receive `UnsupportedPlatform` and must fail closed. Unix sockets only on the
+    /// current primary surfaces. Do not add fallback, silent in-process, or
+    /// cross-platform client paths.
     #[cfg(not(unix))]
     pub fn request(&self, _command: AppCommand) -> Result<AppEvent, ClientError> {
         Err(ClientError::UnsupportedPlatform)
@@ -92,7 +100,11 @@ impl DaemonClient {
         })
     }
 
-    /// Windows remains fail-closed until the named-pipe transport lands.
+    /// Windows named-pipe transport stub (v3 negotiate).
+    ///
+    /// See request() above. Protocol-v3 envelopes over named pipes are part of the
+    /// same deferred Windows support; fail-closed here preserves the Unix-only
+    /// authenticated contract.
     #[cfg(not(unix))]
     pub fn negotiate_v3(
         &self,
@@ -321,7 +333,7 @@ mod unix {
         }
     }
 
-    fn round_trip<T: serde::Serialize>(
+    pub(super) fn round_trip<T: serde::Serialize>(
         config: &DaemonConfig,
         request: &T,
     ) -> Result<Vec<u8>, ClientError> {
@@ -626,6 +638,7 @@ fn v3_event_name(event: &V3Event) -> &'static str {
         V3Event::MemorySearchResults(_) => "memory search results",
         V3Event::MemoryMetadata(_) => "memory metadata",
         V3Event::Models(_) => "model inventory",
+        V3Event::ModelDetails(_) => "model details",
         V3Event::ModelStatus(_) => "model status",
         V3Event::ModelInference(_) => "model inference",
         V3Event::TrainingDatasetStatus(_) => "training dataset status",

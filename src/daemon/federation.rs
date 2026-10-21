@@ -173,6 +173,14 @@ impl FederationService {
                 "next_cursor": null,
                 "live_subscription": false,
             })),
+            // One authority-bearing method wired (low-risk stub). The catalog still
+            // reports it disabled; full durable authorization, consent, WDBX episodes,
+            // cognition and execution paths remain to be integrated per the claim.
+            // This closes the "prepare one" gap without enabling production use.
+            FederationMethod::Authorize => Err(FederationError {
+                code: FederationErrorCode::CapabilityDisabled,
+                message: "Authorize authority path prepared (stub); durable replay, consent, and execution not yet integrated".into(),
+            }),
             method => Err(FederationError {
                 code: FederationErrorCode::CapabilityDisabled,
                 message: format!(
@@ -285,6 +293,9 @@ impl FederationClient {
         &self,
         _request: &FederationRequest,
     ) -> Result<FederationResponse, FederationClientError> {
+        // abbey.v1 federation over Windows named pipes is not implemented.
+        // The transport contract remains Unix-socket only; non-Unix callers
+        // receive the explicit UnsupportedPlatform marker.
         Err(FederationClientError::UnsupportedPlatform)
     }
 
@@ -297,6 +308,7 @@ impl FederationClient {
 #[derive(Debug, Error)]
 pub enum FederationClientError {
     #[error("abbey.v1 local transport requires Unix domain sockets")]
+    /// Windows named-pipe federation transport stub (see request_exact above).
     UnsupportedPlatform,
     #[error("cannot connect to abbey.v1 socket at {path}: {source}")]
     Connect {
@@ -573,6 +585,14 @@ mod tests {
                 .len(),
             9
         );
+        // Explicit coverage for the one authority method whose dispatch path is now
+        // integrated (still disabled per catalog; prepares the family).
+        let authz = request(FederationMethod::Authorize, json!({}));
+        validate_request(&authz).unwrap();
+        let err = service.handle(authz).unwrap_err();
+        assert_eq!(err.code, FederationErrorCode::CapabilityDisabled);
+        assert!(err.message.contains("Authorize authority path prepared"));
+
         let change = request(FederationMethod::ExecuteChange, json!({}));
         validate_request(&change).unwrap();
         assert_eq!(

@@ -1,0 +1,284 @@
+name: Desktop Release
+
+# Release publication for the desktop client on tag pushes only:
+# `abbey-desktop-v*` tags on donaldfilimon/abbey, or a manual dispatch.
+#
+# Trust boundary (same as rust.yml and desktop.yml, narrowed further): only
+# trusted same-repository events reach this file. There is no fork-reachable
+# event of any kind here — fork pull requests can never schedule this job
+# (tag creation and dispatch both require write access to the canonical
+# repository), so the self-hosted runner never sees foreign code and the
+# Apple/notarization/updater secrets referenced below stay unreachable.
+#
+# This workflow is the ONE deliberate exemption to the read-only token rule
+# the WorkflowGuards and DesktopWorkflowGuards enforce: its whole purpose is
+# creating a draft release, which requires `contents: write`. Everything
+# else still holds — same self-hosted runner pool, same availability guard,
+# same immutable sibling and action pins, secrets materialized fail-closed
+# with mode 600 under RUNNER_TEMP and never echoed, and the updater key
+# never read from any owner-machine staging path.
+
+on:
+  push:
+    tags: ["abbey-desktop-v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: desktop-release-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Deliberate exemption: creating the draft release is this job's purpose and
+# needs contents: write on the default GITHUB_TOKEN. There is still no
+# fork-reachable trigger in this file, so the elevated token is never exposed
+# to foreign code.
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  ABBEY_TOOLCHAIN: 1.99.1
+  # These must match rust.yml until the immutable integration pins advance.
+  ABI_TOOLCHAIN: 1.99.1
+  ABI_REVISION: 7b9519b6cfb25cc9bc9db2982e0a901318ba039b
+  WDBX_REVISION: 5182bc3a60300e1dd152611025e774c4b906638b
+  # Same exact bun release pin as desktop.yml — the release reads the same
+  # bun.lock and runs the same verify:bundle gate.
+  BUN_VERSION: 1.4.4
+
+jobs:
+  release-macos:
+    name: desktop release (macOS ARM64 adjunct)
+    if: >-
+      vars.ABBEY_MACOS_ARM64_RUNNER == 'enabled' &&
+      github.repository == 'donaldfilimon/abbey'
+    runs-on: [self-hosted, macOS, ARM64, abbey]
+    steps:
+      - name: Check out Abbey
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: abbey
+          persist-credentials: false
+
+      - name: Check out the verified ABI dependency
+        run: >-
+          ./abbey/tools/ci/checkout-public-revision.sh
+          donaldfilimon/abi "${ABI_REVISION}" abi
+
+      - name: Check out the public WDBX substrate
+        run: >-
+          ./abbey/tools/ci/checkout-public-revision.sh
+          donaldfilimon/wdbx "${WDBX_REVISION}" wdbx
+
+      - name: Prefer system compiler and linker tools
+        run: |
+          for directory in /usr/bin /bin /usr/sbin /sbin; do
+            echo "$directory" >> "$GITHUB_PATH"
+          done
+          export PATH="/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+          test "$(command -v cc)" = /usr/bin/cc
+
+      - name: Install pinned Abbey toolchain
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: ${{ env.ABBEY_TOOLCHAIN }}
+          components: rustfmt, clippy
+
+      - name: Ensure pinned bun
+        run: |
+          expected="${BUN_VERSION}"
+          command -v bun >/dev/null 2>&1 || true
+          version="$(bun --version 2>/dev/null || true)"
+          if [ "$version" = "$expected" ]; then
+            echo "bun ${version} already pinned"
+            exit 0
+          fi
+          echo "runner bun ${version:-absent}; installing exactly bun-v${expected}"
+          base="${RUNNER_TEMP}/abbey-bun"
+          rm -rf "$base"
+          mkdir -p "$base"
+          curl -fsSL "https://github.com/oven-sh/bun/releases/download/bun-v${expected}/bun-darwin-aarch64.zip" \
+            -o "$base/bun-darwin-aarch64.zip"
+          unzip -q "$base/bun-darwin-aarch64.zip" -d "$base"
+          test -x "$base/bun-darwin-aarch64/bun"
+          echo "$base/bun-darwin-aarch64" >> "$GITHUB_PATH"
+          test "$(bun --version)" = "$expected"
+
+      - name: Fail closed until every release secret is configured
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_KEY_B64: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          ABBEY_UPDATER_SIGNING_KEY: ${{ secrets.ABBEY_UPDATER_SIGNING_KEY }}
+          ABBEY_UPDATER_SIGNING_KEY_PASSWORD: ${{ secrets.ABBEY_UPDATER_SIGNING_KEY_PASSWORD }}
+        run: |
+          # Until the owner fills the repository secrets this job is only a
+          # specification. Fail before any build with the exact list of
+          # missing secrets — never a silent ad-hoc or unnotarized release.
+          # Only secret NAMES are printed; contents are never echoed.
+          missing=""
+          check_secret() {
+            if [ -z "${!1:-}" ]; then
+              if [ -n "$missing" ]; then missing="$missing, "; fi
+              missing="${missing}${1}"
+            fi
+          }
+          check_secret APPLE_SIGNING_IDENTITY
+          check_secret APPLE_API_KEY_B64
+          check_secret APPLE_API_KEY_ID
+          check_secret APPLE_API_ISSUER
+          check_secret ABBEY_UPDATER_SIGNING_KEY
+          if [ -n "$missing" ]; then
+            echo "::error::missing secret(s) for the desktop release: ${missing}" >&2
+            echo "       set them under Settings > Secrets and variables > Actions" >&2
+            echo "       (APPLE_SIGNING_IDENTITY, APPLE_API_KEY, APPLE_API_KEY_ID," >&2
+            echo "       APPLE_API_ISSUER, ABBEY_UPDATER_SIGNING_KEY, and optionally" >&2
+            echo "       ABBEY_UPDATER_SIGNING_KEY_PASSWORD), then push the tag again" >&2
+            exit 1
+          fi
+          materialized="${RUNNER_TEMP}/abbey-release-secrets"
+          rm -rf "$materialized"
+          mkdir -p "$materialized"
+          key_file="${materialized}/AuthKey_${APPLE_API_KEY_ID}.p8"
+          printf '%s' "${APPLE_API_KEY_B64}" | base64 -d > "$key_file"
+          chmod 600 "$key_file"
+          updater_key="${materialized}/abbey-updater.key"
+          printf '%s\n' "${ABBEY_UPDATER_SIGNING_KEY}" > "$updater_key"
+          chmod 600 "$updater_key"
+          # Hand the materialization across steps through GITHUB_ENV. The
+          # multiline form is required for the key body (the Tauri signer
+          # writes a minisign-format file); the delimiter line must stand
+          # alone, which the printf above guarantees.
+          password="${ABBEY_UPDATER_SIGNING_KEY_PASSWORD:-}"
+          {
+            echo "APPLE_SIGNING_IDENTITY=${APPLE_SIGNING_IDENTITY}"
+            echo "APPLE_API_KEY_PATH=${key_file}"
+            echo "APPLE_API_KEY_ID=${APPLE_API_KEY_ID}"
+            echo "APPLE_API_ISSUER=${APPLE_API_ISSUER}"
+            echo "UPDATER_KEY_FILE=${updater_key}"
+            echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD=${password}"
+            echo "TAURI_SIGNING_PRIVATE_KEY<<ABBEY_UPDATER_KEY_EOF"
+            cat "$updater_key"
+            echo "ABBEY_UPDATER_KEY_EOF"
+          } >> "${GITHUB_ENV}"
+          echo "release secrets materialized under ${materialized} (mode 600); values never echoed"
+
+      - name: Desktop gate (typecheck, codegen drift, bun tests, both editions, daemon proof)
+        working-directory: abbey/desktop
+        run: ./check.sh
+
+      - name: Build both editions (bundler signing + notarization from the materialized secrets)
+        working-directory: abbey/desktop
+        run: |
+          # APPLE_SIGNING_IDENTITY and the notary env are already exported:
+          # release-macos.sh hands them to the bundler, so the .app and .dmg
+          # are really signed and stapled, not staged ad-hoc. Full builds
+          # only: a release must publish installable DMG images, never an
+          # app-only bundle.
+          ./scripts/release-macos.sh --updater-key "${UPDATER_KEY_FILE}"
+          # Both editions write one shared SHA256SUMS.txt into the same
+          # bundle directory, so snapshot each edition's checksums under a
+          # distinct name before the next build overwrites the shared file.
+          cp target/release/bundle/macos/SHA256SUMS.txt \
+            target/release/bundle/SHA256SUMS-abbey.txt
+          ./scripts/release-macos.sh --personal --updater-key "${UPDATER_KEY_FILE}"
+          cp target/release/bundle/macos/SHA256SUMS.txt \
+            target/release/bundle/SHA256SUMS-abbey-personal.txt
+
+      - name: Verify both updater artifacts against the pinned public key
+        working-directory: abbey/desktop
+        run: |
+          # The artifact the release is about to publish must verify against
+          # the key the shipped client pins, using the same crate the updater
+          # plugin uses. A release that publishes an unverifiable artifact
+          # would leave every client unable to update, so this aborts first.
+          # The path is relative to the crate root (desktop/src-tauri).
+          for print in Abbey "Abbey Personal"; do
+            ABBEY_DESKTOP_UPDATE_ARTIFACT="../target/release/bundle/macos/${print}.app.tar.gz" \
+              cargo test --quiet --locked -p abbey-desktop --test updater_signature -- --nocapture
+          done
+
+      - name: Assemble updater feeds for both editions
+        working-directory: abbey/desktop
+        run: |
+          feeds="${RUNNER_TEMP}/abbey-release"
+          rm -rf "$feeds"
+          mkdir -p "$feeds"
+          # The version comes from the pushed tag, never hardcoded, and must
+          # match the built bundle: a wrong tag aborts before any feed
+          # points at a wrong asset.
+          version="${GITHUB_REF_NAME#abbey-desktop-v}"
+          bundle="target/release/bundle/macos"
+          for print in Abbey "Abbey Personal"; do
+            built="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
+              "$bundle/$print.app/Contents/Info.plist")"
+            if [ "$built" != "$version" ]; then
+              echo "::error::tag ${GITHUB_REF_NAME} implies version ${version}, but the built bundle reports ${built}" >&2
+              exit 1
+            fi
+          done
+          # Assets of a draft release become publicly downloadable exactly
+          # when the draft is published, which is when these URLs start
+          # resolving — the updater clients will then see the real feed.
+          ./scripts/assemble-update-feed.sh \
+            --artifact "$bundle/Abbey.app.tar.gz" \
+            --sig "$bundle/Abbey.app.tar.gz.sig" \
+            --url "https://github.com/donaldfilimon/abbey/releases/download/${GITHUB_REF_NAME}/Abbey.app.tar.gz" \
+            --version "$version" \
+            --platform darwin-aarch64 \
+            --out "$feeds/latest.json"
+          ./scripts/assemble-update-feed.sh \
+            --artifact "$bundle/Abbey Personal.app.tar.gz" \
+            --sig "$bundle/Abbey Personal.app.tar.gz.sig" \
+            --url "https://github.com/donaldfilimon/abbey/releases/download/${GITHUB_REF_NAME}/Abbey%20Personal.app.tar.gz" \
+            --version "$version" \
+            --platform darwin-aarch64 \
+            --out "$feeds/latest-personal.json"
+
+      - name: Create the draft release with gh and upload both editions' assets
+        working-directory: abbey/desktop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version="${GITHUB_REF_NAME#abbey-desktop-v}"
+          # gh must already exist on this runner. Installing it from brew as
+          # a fallback is deliberately not allowed here (an undisclosed
+          # supply chain would be signing and publishing releases); fail
+          # with instructions instead.
+          if ! command -v gh >/dev/null 2>&1; then
+            echo "::error::gh CLI is missing on this self-hosted runner — provision the pinned gh" >&2
+            echo "       release yourself; the 'brew install gh' fallback is deliberately not allowed" >&2
+            exit 1
+          fi
+          # The draft is the review gate: assets land, but nothing is public
+          # until the draft is explicitly published from the Releases page.
+          assets=(
+            "target/release/bundle/dmg/Abbey_${version}_aarch64.dmg"
+            "target/release/bundle/dmg/Abbey Personal_${version}_aarch64.dmg"
+            "target/release/bundle/macos/Abbey.app.tar.gz"
+            "target/release/bundle/macos/Abbey.app.tar.gz.sig"
+            "target/release/bundle/macos/Abbey Personal.app.tar.gz"
+            "target/release/bundle/macos/Abbey Personal.app.tar.gz.sig"
+            "target/release/bundle/SHA256SUMS-abbey.txt"
+            "target/release/bundle/SHA256SUMS-abbey-personal.txt"
+            "${RUNNER_TEMP}/abbey-release/latest.json"
+            "${RUNNER_TEMP}/abbey-release/latest-personal.json"
+          )
+          for asset in "${assets[@]}"; do
+            if [ ! -f "$asset" ]; then
+              echo "::error::missing release asset: $asset" >&2
+              exit 1
+            fi
+          done
+          gh release create "$GITHUB_REF_NAME" \
+            --draft \
+            --title "Abbey Desktop ${version}" \
+            --notes "Abbey Desktop ${version} for macOS (Apple silicon): safe and personal editions as notarized DMGs, plus signed updater artifacts and tauri-plugin-updater v2 feeds (latest.json / latest-personal.json). Verify checksums against the SHA256SUMS files." \
+            "${assets[@]}"
+
+      - name: Clean runner workspace
+        if: always()
+        run: |
+          for checkout in abbey abi wdbx; do
+            rm -rf "$GITHUB_WORKSPACE/${checkout}"
+          done

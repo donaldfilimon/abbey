@@ -65,6 +65,12 @@ class RunEvidence(unittest.TestCase):
         self.assertIn("1 job", reason)
 
     def test_successful_macos_gate_is_narrow_execution_evidence(self) -> None:
+        """macOS adjunct success is soft/narrow evidence only.
+
+        It exercises the shared checkout, pinned siblings, check.sh gate,
+        install smoke, etc. on one platform, but does not satisfy the
+        ci-self-hosted-linux-proof requirement (Linux ARM64 primary + Windows).
+        """
         run = {"status": "completed", "conclusion": "success"}
         job = self.primary_job()
         job["name"] = "gate (macOS ARM64 adjunct)"

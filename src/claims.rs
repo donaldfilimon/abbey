@@ -615,7 +615,7 @@ pub fn refuse(verb: &str) -> Result<i32> {
         "accel" | "accelerator" | "accelerators" => ("GPU/NPU/TPU", ACCEL_REFUSAL_DETAIL),
         "gui" | "window" | "windowed" | "desktop" | "tauri" | "react" => (
             "Tauri 2",
-            "The Tauri 2 + React/TypeScript desktop GUI is Proposed but not implemented. The ratatui TUI is Current.",
+            "The Tauri 2 + React/TypeScript desktop is partially implemented with daemon-backed chat/history and model/read surfaces on macOS. Full governed tasks and automations, browser/files/computer control, external MCP/ACP clients, Windows transport, and signed packaged-product acceptance remain Proposed. The ratatui TUI remains Current.",
         ),
         "speech" | "local-speech" | "image" | "video" | "neural-media" => (
             "neural speech",

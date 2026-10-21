@@ -33,12 +33,12 @@ export function UnavailableView({ surface }: { surface: Surface }) {
 
       <div className="card">
         <strong>{REASON_HEADLINE[unavailable.reason]}</strong>
-        <p className="claim-note">{unavailable.detail}</p>
+        <details className="unavailable-details"><summary>Why this isn’t available yet</summary><p className="claim-note">{unavailable.detail}</p>
         <p className="claim-note">{REASON_NOTE[unavailable.reason]}</p>
         <p className="claim-note">
-          No placeholder data is rendered on this screen. There is no sample
-          conversation, no fake run, and no mock metric anywhere in this window.
-        </p>
+          This page can’t start or change work. The live capability ledger below
+          provides the current runtime evidence.
+        </p></details>
       </div>
 
       <h2>

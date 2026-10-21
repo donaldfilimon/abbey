@@ -105,6 +105,8 @@ pub fn append_route_record(state_dir: &Path, rec: &RouteRecord) -> Result<()> {
         .with_context(|| format!("open {}", path.display()))?;
     serde_json::to_writer(&mut f, rec)?;
     f.write_all(b"\n")?;
+    f.flush()?;
+    let _ = f.sync_all();
     Ok(())
 }
 

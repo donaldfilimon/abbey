@@ -124,9 +124,94 @@ pub struct V3StableClaim {
     pub note: String,
 }
 
+/// Exact immutable signed-model action, with single-use operation identity.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct V3ModelAction {
+    pub model_id: String,
+    pub revision: String,
+    pub operation_id: String,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum V3ModelDevice {
+    Cpu,
+    Metal,
+    Cuda,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct V3ModelDetails {
+    pub model_id: String,
+    pub revision: String,
+    pub architecture: String,
+    pub configured_device: V3ModelDevice,
+    pub license_sha256: String,
+    pub license_accepted: bool,
+    pub loaded: bool,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct V3OperationStatus {
+    pub operation_id: String,
+    pub resource_id: String,
+    pub state: V3OperationState,
+    pub progress_basis_points: u16,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn exact_model_wire_matches_core_and_rejects_extra_authority() {
+        let action = abbey::app_core::V3ModelAction {
+            model_id: "fixture".into(),
+            revision: "revision-1".into(),
+            operation_id: "operation-1".into(),
+        };
+        let json = serde_json::to_value(&action).unwrap();
+        let mirror: V3ModelAction = serde_json::from_value(json.clone()).unwrap();
+        assert_eq!(serde_json::to_value(mirror).unwrap(), json);
+        let mut invalid = json;
+        invalid["path"] = serde_json::json!("/tmp/arbitrary");
+        assert!(serde_json::from_value::<V3ModelAction>(invalid).is_err());
+        for device in [
+            abbey::app_core::V3ModelDevice::Cpu,
+            abbey::app_core::V3ModelDevice::Metal,
+            abbey::app_core::V3ModelDevice::Cuda,
+        ] {
+            let details = abbey::app_core::V3ModelDetails {
+                model_id: "fixture".into(),
+                revision: "revision-1".into(),
+                architecture: "abi-bigram-v1".into(),
+                configured_device: device,
+                license_sha256: "a".repeat(64),
+                license_accepted: true,
+                loaded: false,
+            };
+            let json = serde_json::to_value(&details).unwrap();
+            let mirror: V3ModelDetails = serde_json::from_value(json.clone()).unwrap();
+            assert_eq!(serde_json::to_value(mirror).unwrap(), json);
+        }
+        for state in [
+            abbey::app_core::V3OperationState::Queued,
+            abbey::app_core::V3OperationState::Running,
+            abbey::app_core::V3OperationState::Succeeded,
+            abbey::app_core::V3OperationState::Failed,
+            abbey::app_core::V3OperationState::Cancelled,
+        ] {
+            let status = abbey::app_core::V3OperationStatus {
+                operation_id: "operation-1".into(),
+                resource_id: "fixture".into(),
+                state,
+                progress_basis_points: 2718,
+            };
+            let json = serde_json::to_value(&status).unwrap();
+            let mirror: V3OperationStatus = serde_json::from_value(json.clone()).unwrap();
+            assert_eq!(serde_json::to_value(mirror).unwrap(), json);
+        }
+    }
 
     /// Exhaustive: the `mirror_for` match has no wildcard arm, so a new
     /// `abbey::app_core::V3Capability` variant fails this test file to
@@ -182,8 +267,7 @@ mod tests {
         for (index, core) in core_variants.into_iter().enumerate() {
             let mirror = mirror_for(core);
             let core_json = serde_json::to_string(&core).expect("serialize core capability");
-            let mirror_json =
-                serde_json::to_string(&mirror).expect("serialize mirror capability");
+            let mirror_json = serde_json::to_string(&mirror).expect("serialize mirror capability");
             assert_eq!(core_json, mirror_json, "wire mismatch for {core:?}");
             // `#[serde(rename_all = "snake_case")]` on a fieldless enum
             // serializes each variant to its own name regardless of

@@ -22,7 +22,7 @@ use abbey::app_core::{
     RouteAuditEntry, RouteAuditPage, RouteAuditQuery, RunEventPage, RunEventRecord, RunId,
     RunLifecycleEvent, RunMode, RunQuery, RunRequest, RunRouteCapability, RunSnapshot, RunState,
     RuntimeState, RuntimeStatus, V3Capability, V3CapabilitySet, V3EntityPage, V3EntityRecord,
-    V3OperationState, V3PageQuery, V3SearchRequest,
+    V3OperationState, V3PageQuery, V3SearchRequest, V4Capability,
 };
 use anyhow::{Context, Result};
 use std::fmt::Write as _;
@@ -277,6 +277,7 @@ import type {
     desktop_caps.push(serde_json::to_value(V3Capability::ReadMemory)?);
     desktop_caps.push(serde_json::to_value(V3Capability::ReadModels)?);
     desktop_caps.push(serde_json::to_value(V3Capability::ReadClaimsById)?);
+    desktop_caps.push(serde_json::to_value(V4Capability::ReadConversations)?);
 
     writeln!(
         out,

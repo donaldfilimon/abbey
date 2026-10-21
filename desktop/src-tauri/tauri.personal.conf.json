@@ -1,5 +1,12 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Abbey Personal",
-  "identifier": "com.donaldfilimon.abbey-personal"
+  "identifier": "com.donaldfilimon.abbey-personal",
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/donaldfilimon/abbey/releases/latest/download/latest-personal.json"
+      ]
+    }
+  }
 }

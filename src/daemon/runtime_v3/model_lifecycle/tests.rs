@@ -550,3 +550,83 @@ fn safetensors_fixture() -> Vec<u8> {
     }
     bytes
 }
+
+#[test]
+fn exact_model_details_report_acceptance_and_actual_loaded_state_without_secrets() {
+    let fixture = fixture(true);
+    let query = V3ResourceQuery {
+        resource_id: MODEL_ID.into(),
+    };
+    let V3Event::ModelDetails(details) = fixture.authority.details(query.clone()).unwrap() else {
+        panic!("expected details")
+    };
+    assert!(details.license_accepted);
+    assert!(!details.loaded);
+    assert_eq!(details.model_id, MODEL_ID);
+    assert_eq!(details.revision, REVISION);
+    assert_eq!(details.license_sha256, "07".repeat(32));
+    let serialized = serde_json::to_string(&details).unwrap();
+    for forbidden in [
+        PRINCIPAL,
+        "https://",
+        "fixture-only-1.0",
+        fixture.root.to_str().unwrap(),
+    ] {
+        assert!(!serialized.contains(forbidden));
+    }
+    let download_action = action("details-load");
+    fixture.authority.download(download_action.clone()).unwrap();
+    assert_eq!(
+        wait_for(&fixture.authority, "details-load", true).state,
+        V3OperationState::Succeeded
+    );
+    let mut load = download_action;
+    load.operation_id = "details-load-2".into();
+    fixture.authority.load(load).unwrap();
+    assert_eq!(
+        wait_for(&fixture.authority, "details-load-2", false).state,
+        V3OperationState::Succeeded
+    );
+    let V3Event::ModelDetails(details) = fixture.authority.details(query.clone()).unwrap() else {
+        panic!("expected details")
+    };
+    assert!(details.loaded);
+    assert_eq!(details.configured_device, V3ModelDevice::Cpu);
+    fixture.authority.unload(action("details-unload")).unwrap();
+    let V3Event::ModelDetails(details) = fixture.authority.details(query.clone()).unwrap() else {
+        panic!("expected details")
+    };
+    assert!(!details.loaded);
+    let mut wrong = query;
+    wrong.resource_id = "wrong".into();
+    assert!(fixture.authority.details(wrong).is_err());
+    let unaccepted = super::tests::fixture(false);
+    let V3Event::ModelDetails(details) = unaccepted
+        .authority
+        .details(V3ResourceQuery {
+            resource_id: MODEL_ID.into(),
+        })
+        .unwrap()
+    else {
+        panic!("expected details")
+    };
+    assert!(!details.license_accepted);
+}
+
+#[test]
+fn model_details_acceptance_is_scoped_to_startup_principal() {
+    let mut fixture = fixture(true);
+    Arc::get_mut(&mut fixture.authority.inner)
+        .unwrap()
+        .principal = "different@example.invalid".into();
+    let V3Event::ModelDetails(details) = fixture
+        .authority
+        .details(V3ResourceQuery {
+            resource_id: MODEL_ID.into(),
+        })
+        .unwrap()
+    else {
+        panic!("expected details")
+    };
+    assert!(!details.license_accepted);
+}

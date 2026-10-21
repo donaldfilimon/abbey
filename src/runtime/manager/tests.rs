@@ -565,7 +565,7 @@ fn start_conflict_settles_cancel_requested_before_releasing_admission() {
         executor.as_ref(),
         WorkItem {
             run_id: run.id.clone(),
-            request,
+            payload: WorkPayload::Legacy(request),
         },
     )
     .unwrap();

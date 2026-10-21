@@ -1,4 +1,12 @@
 //! Typed protocol-v3 session reads over the shared bounded daemon transport.
+//!
+//! All non-Unix (Windows) entry points are explicit stubs returning
+//! ClientError::UnsupportedPlatform. Windows named-pipe transport is
+//! unavailable until implemented (desktop plan Task 5). The many per-method
+//! `#[cfg(not(unix))]` blocks below carry the same "remains fail-closed"
+//! comments; they exist so that adding Windows support touches only the
+//! transport layer, not the typed surface. Native adapters are separate
+//! (unavailable).
 
 use crate::app_core::{
     V3Action, V3Capability, V3Command, V3EntityPage, V3Event, V3ModelAction,
@@ -392,6 +400,190 @@ impl V3DaemonSession {
         Err(ClientError::UnsupportedPlatform)
     }
 
+    /// Bounded fixed-watermark list of clusters (stub; always empty until worker integration).
+    #[cfg(unix)]
+    pub fn list_clusters(&self, query: V3PageQuery) -> Result<V3EntityPage, ClientError> {
+        query
+            .validate()
+            .map_err(|_| ClientError::InvalidV3Request)?;
+        if !self.negotiation.granted.contains(V3Capability::ReadWorkers) {
+            return Err(ClientError::V3CapabilityNotGranted {
+                capability: V3Capability::ReadWorkers,
+            });
+        }
+        let event = super::unix::request_v3(
+            &self.client.config,
+            self.negotiation.granted.clone(),
+            V3Command::ListClusters(query),
+        )?;
+        let V3Event::Clusters(page) = event else {
+            return Err(ClientError::UnexpectedV3Event {
+                expected: "cluster inventory",
+                received: super::v3_event_name(&event),
+            });
+        };
+        page.validate()
+            .map_err(|_| ClientError::InvalidV3Response)?;
+        Ok(page)
+    }
+
+    /// Windows remains fail-closed until the named-pipe transport lands.
+    #[cfg(not(unix))]
+    pub fn list_clusters(&self, _query: V3PageQuery) -> Result<V3EntityPage, ClientError> {
+        Err(ClientError::UnsupportedPlatform)
+    }
+
+    /// Bounded fixed-watermark list of workers (stub; always empty until worker integration).
+    #[cfg(unix)]
+    pub fn list_workers(&self, query: V3PageQuery) -> Result<V3EntityPage, ClientError> {
+        query
+            .validate()
+            .map_err(|_| ClientError::InvalidV3Request)?;
+        if !self.negotiation.granted.contains(V3Capability::ReadWorkers) {
+            return Err(ClientError::V3CapabilityNotGranted {
+                capability: V3Capability::ReadWorkers,
+            });
+        }
+        let event = super::unix::request_v3(
+            &self.client.config,
+            self.negotiation.granted.clone(),
+            V3Command::ListWorkers(query),
+        )?;
+        let V3Event::Workers(page) = event else {
+            return Err(ClientError::UnexpectedV3Event {
+                expected: "worker inventory",
+                received: super::v3_event_name(&event),
+            });
+        };
+        page.validate()
+            .map_err(|_| ClientError::InvalidV3Response)?;
+        Ok(page)
+    }
+
+    /// Windows remains fail-closed until the named-pipe transport lands.
+    #[cfg(not(unix))]
+    pub fn list_workers(&self, _query: V3PageQuery) -> Result<V3EntityPage, ClientError> {
+        Err(ClientError::UnsupportedPlatform)
+    }
+
+    /// Health record for one worker (stub: always not-found until integration).
+    #[cfg(unix)]
+    pub fn worker_health(
+        &self,
+        query: V3ResourceQuery,
+    ) -> Result<crate::app_core::V3EntityRecord, ClientError> {
+        query
+            .validate()
+            .map_err(|_| ClientError::InvalidV3Request)?;
+        if !self.negotiation.granted.contains(V3Capability::ReadWorkers) {
+            return Err(ClientError::V3CapabilityNotGranted {
+                capability: V3Capability::ReadWorkers,
+            });
+        }
+        let event = super::unix::request_v3(
+            &self.client.config,
+            self.negotiation.granted.clone(),
+            V3Command::WorkerHealth(query.clone()),
+        )?;
+        let V3Event::WorkerHealth(record) = event else {
+            return Err(ClientError::UnexpectedV3Event {
+                expected: "worker health",
+                received: super::v3_event_name(&event),
+            });
+        };
+        record
+            .validate()
+            .map_err(|_| ClientError::InvalidV3Response)?;
+        // For stub, resource_id need not match anything specific.
+        Ok(record)
+    }
+
+    /// Windows remains fail-closed until the named-pipe transport lands.
+    #[cfg(not(unix))]
+    pub fn worker_health(
+        &self,
+        _query: V3ResourceQuery,
+    ) -> Result<crate::app_core::V3EntityRecord, ClientError> {
+        Err(ClientError::UnsupportedPlatform)
+    }
+
+    /// Status for one job (stub: always not-found until integration).
+    #[cfg(unix)]
+    pub fn job_status(&self, query: V3ResourceQuery) -> Result<V3OperationStatus, ClientError> {
+        query
+            .validate()
+            .map_err(|_| ClientError::InvalidV3Request)?;
+        if !self.negotiation.granted.contains(V3Capability::ReadWorkers) {
+            return Err(ClientError::V3CapabilityNotGranted {
+                capability: V3Capability::ReadWorkers,
+            });
+        }
+        let event = super::unix::request_v3(
+            &self.client.config,
+            self.negotiation.granted.clone(),
+            V3Command::JobStatus(query.clone()),
+        )?;
+        let V3Event::JobStatus(status) = event else {
+            return Err(ClientError::UnexpectedV3Event {
+                expected: "job status",
+                received: super::v3_event_name(&event),
+            });
+        };
+        status
+            .validate()
+            .map_err(|_| ClientError::InvalidV3Response)?;
+        Ok(status)
+    }
+
+    /// Windows remains fail-closed until the named-pipe transport lands.
+    #[cfg(not(unix))]
+    pub fn job_status(&self, _query: V3ResourceQuery) -> Result<V3OperationStatus, ClientError> {
+        Err(ClientError::UnsupportedPlatform)
+    }
+
+    /// Discover one exact immutable signed startup model without retry or replay.
+    #[cfg(unix)]
+    pub fn model_details(
+        &self,
+        query: V3ResourceQuery,
+    ) -> Result<crate::app_core::V3ModelDetails, ClientError> {
+        query
+            .validate()
+            .map_err(|_| ClientError::InvalidV3Request)?;
+        if !self.negotiation.granted.contains(V3Capability::ReadModels) {
+            return Err(ClientError::V3CapabilityNotGranted {
+                capability: V3Capability::ReadModels,
+            });
+        }
+        let event = super::unix::request_v3(
+            &self.client.config,
+            self.negotiation.granted.clone(),
+            V3Command::ModelDetails(query.clone()),
+        )?;
+        let V3Event::ModelDetails(details) = event else {
+            return Err(ClientError::UnexpectedV3Event {
+                expected: "model details",
+                received: super::v3_event_name(&event),
+            });
+        };
+        details
+            .validate()
+            .map_err(|_| ClientError::InvalidV3Response)?;
+        if details.model_id != query.resource_id {
+            return Err(ClientError::InvalidV3Response);
+        }
+        Ok(details)
+    }
+
+    /// Windows remains fail-closed until the named-pipe transport lands.
+    #[cfg(not(unix))]
+    pub fn model_details(
+        &self,
+        _query: V3ResourceQuery,
+    ) -> Result<crate::app_core::V3ModelDetails, ClientError> {
+        Err(ClientError::UnsupportedPlatform)
+    }
+
     /// Start one exact immutable-revision model download, sending it once.
     #[cfg(unix)]
     pub fn download_model(&self, action: V3ModelAction) -> Result<V3OperationStatus, ClientError> {
@@ -459,6 +651,48 @@ impl V3DaemonSession {
     /// Windows remains fail-closed until the named-pipe transport lands.
     #[cfg(not(unix))]
     pub fn unload_model(&self, _action: V3ModelAction) -> Result<V3OperationStatus, ClientError> {
+        Err(ClientError::UnsupportedPlatform)
+    }
+
+    /// Cancel a queued or running model lifecycle operation (download/load/unload).
+    /// Operation must not be terminal; returns updated status on success.
+    #[cfg(unix)]
+    pub fn cancel_model(&self, action: V3Action) -> Result<V3OperationStatus, ClientError> {
+        action
+            .validate()
+            .map_err(|_| ClientError::InvalidV3Request)?;
+        if !self
+            .negotiation
+            .granted
+            .contains(V3Capability::ManageModels)
+        {
+            return Err(ClientError::V3CapabilityNotGranted {
+                capability: V3Capability::ManageModels,
+            });
+        }
+        let event = super::unix::request_v3(
+            &self.client.config,
+            self.negotiation.granted.clone(),
+            V3Command::CancelModel(action.clone()),
+        )?;
+        let V3Event::ModelStatus(status) = event else {
+            return Err(ClientError::UnexpectedV3Event {
+                expected: "model status",
+                received: super::v3_event_name(&event),
+            });
+        };
+        status
+            .validate()
+            .map_err(|_| ClientError::InvalidV3Response)?;
+        if status.operation_id != action.operation_id {
+            return Err(ClientError::InvalidV3Response);
+        }
+        Ok(status)
+    }
+
+    /// Windows remains fail-closed until the named-pipe transport lands.
+    #[cfg(not(unix))]
+    pub fn cancel_model(&self, _action: V3Action) -> Result<V3OperationStatus, ClientError> {
         Err(ClientError::UnsupportedPlatform)
     }
 

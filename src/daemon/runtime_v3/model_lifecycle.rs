@@ -14,7 +14,8 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::app_core::{
-    V3EntityRecord, V3Event, V3ModelAction, V3OperationState, V3OperationStatus, V3ResourceQuery,
+    V3Action, V3EntityRecord, V3Event, V3ModelAction, V3OperationState, V3OperationStatus,
+    V3ResourceQuery,
 };
 use crate::runtime::{
     AuditMetadata, ModelOperationKind, ModelOperationRecord, ModelOperationState, NewAuditEvent,
@@ -197,6 +198,43 @@ impl ModelLifecycleAuthority {
             .collect()
     }
 
+    pub(super) fn details(&self, query: V3ResourceQuery) -> Result<V3Event, HandlerFailure> {
+        query.validate().map_err(|_| invalid_command_failure())?;
+        let manifest = self
+            .inner
+            .registry
+            .get(&query.resource_id)
+            .ok_or_else(not_found_failure)?;
+        let configured_device = match self.inner.device {
+            DevicePreference::Cpu => crate::app_core::V3ModelDevice::Cpu,
+            DevicePreference::Metal => crate::app_core::V3ModelDevice::Metal,
+            DevicePreference::Cuda => crate::app_core::V3ModelDevice::Cuda,
+        };
+        let loaded = self
+            .inner
+            .loaded
+            .lock()
+            .map_err(|_| runtime_failure())?
+            .contains_key(&ModelKey {
+                model_id: query.resource_id.clone(),
+                revision: manifest.revision.as_str().to_owned(),
+            });
+        let details = crate::app_core::V3ModelDetails {
+            model_id: query.resource_id,
+            revision: manifest.revision.as_str().to_owned(),
+            architecture: manifest.architecture.as_str().to_owned(),
+            configured_device,
+            license_sha256: manifest.license_sha256.to_hex(),
+            license_accepted: self
+                .inner
+                .ledger
+                .is_accepted_for(manifest, &self.inner.principal),
+            loaded,
+        };
+        details.validate().map_err(|_| invalid_command_failure())?;
+        Ok(V3Event::ModelDetails(details))
+    }
+
     pub(super) fn download(&self, action: V3ModelAction) -> Result<V3Event, HandlerFailure> {
         self.validate_action(&action)?;
         self.inner
@@ -247,6 +285,28 @@ impl ModelLifecycleAuthority {
         })();
         self.release_active(&active_key);
         result
+    }
+
+    pub(super) fn cancel(&self, action: V3Action) -> Result<V3Event, HandlerFailure> {
+        action.validate().map_err(|_| invalid_command_failure())?;
+        // Low-risk extension to model lifecycle: support cancel of queued/running
+        // operations using the existing state machine (Q/R -> Cancelled is permitted).
+        // Ties to ABI via the shared store + operation ledger (no ABI worker yet).
+        // resource_id is accepted for correlation (typically model) but lookup uses operation_id.
+        let cur = self
+            .inner
+            .store
+            .model_operation(&action.operation_id)
+            .map_err(map_store_error)?
+            .ok_or_else(not_found_failure)?;
+        let progress = cur.progress_basis_points;
+        let updated = self.transition(
+            &action.operation_id,
+            ModelOperationState::Cancelled,
+            progress,
+        )?;
+        let _ = self.audit(&updated); // best-effort; audit failure does not revert the terminal state
+        Ok(V3Event::ModelStatus(status(updated)))
     }
 
     pub(super) fn download_status(

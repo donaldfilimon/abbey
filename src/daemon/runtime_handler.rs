@@ -1,4 +1,6 @@
-//! Protocol-v2 runtime plus the first deny-by-default protocol-v3 authority.
+//! Protocol-v2 runtime, deny-by-default protocol-v3 authority, and store-backed
+//! protocol-v4 records. V4 turns admit through the shared run manager; providers
+//! run only when [`crate::runtime::Executor::execute_v4`] is bound.
 
 use std::sync::Arc;
 
@@ -7,11 +9,11 @@ use abi_agent_runtime::RunBudget;
 use crate::app_core::{
     APP_PROTOCOL_V1, APP_PROTOCOL_VERSION, AppCommand, AppContext, AppEvent, AppService,
     BackendSelection, RunMode, RunRouteCapability, RunSubmission, RunSubmissionDisposition,
-    V3Command, V3Event,
+    V3Command, V3Event, V4Command, V4Event, V4Route,
 };
 use crate::runtime::{
     FixedProviderKind, FixedRecipeProvider, ManagerError, ModelProviderExecutor, ProviderRoute,
-    RunManager, RuntimeStore, StoreError, SubmitDisposition, SystemClock,
+    RunManager, RuntimeStore, StoreError, SubmitDisposition, SystemClock, v4_route_id,
 };
 
 use super::runtime_config::{RuntimeConfigError, RuntimeDaemonConfig, open_private_store};
@@ -27,6 +29,7 @@ pub struct RuntimeHandler {
     store: Arc<RuntimeStore>,
     manager: RunManager<ModelProviderExecutor, SystemClock>,
     routes: Vec<RunRouteCapability>,
+    v4_routes: Vec<V4Route>,
     v3: V3RuntimeAuthority,
     federation: FederationService,
 }
@@ -35,6 +38,9 @@ impl RuntimeHandler {
         #[cfg(not(unix))]
         {
             let _ = config;
+            // Windows named-pipe + JobObject stubs: refuse daemon runtime handler
+            // construction on non-Unix. Desktop and CLI clients already gate on
+            // transport; this ensures no in-process bypass on Windows builds.
             return Err(RuntimeConfigError::UnsupportedPlatform);
         }
 
@@ -91,6 +97,11 @@ impl RuntimeHandler {
                 .routes()
                 .map(|provider| route(provider.backend()))
                 .collect::<Vec<_>>();
+            let v4_routes = executor
+                .routes()
+                .map(|provider| v4_route(provider.backend(), provider.model()))
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|_| RuntimeConfigError::Routes)?;
             let memory = MemoryEffectRoute::new(parts.state_root.clone(), parts.memory_backend);
             let manifest_models = model_inventory::build(parts.model_manifest_dir.as_deref())
                 .map_err(|_| RuntimeConfigError::ModelManifests)?;
@@ -124,6 +135,7 @@ impl RuntimeHandler {
                 store,
                 manager,
                 routes,
+                v4_routes,
                 v3,
                 federation: FederationService,
             })
@@ -232,6 +244,53 @@ impl DaemonHandler for RuntimeHandler {
         self.v3.handle(command)
     }
 
+    fn supports_v4(&self) -> bool {
+        true
+    }
+
+    fn authorizes_v4(
+        &self,
+        grants: &crate::app_core::V4CapabilitySet,
+        command: &V4Command,
+    ) -> bool {
+        super::runtime_v4::authorizes(grants, command)
+    }
+
+    fn handle_v4(&self, command: V4Command) -> Result<V4Event, HandlerFailure> {
+        match command {
+            V4Command::Negotiate(request) => super::runtime_v4::negotiate(request, true),
+            V4Command::CancelTurn(conversation_id, run_id) => {
+                // Validate the durable v4 association BEFORE touching RunManager.
+                // A valid legacy run ID or a different conversation confers no authority.
+                self.store
+                    .v4_require_turn(&conversation_id, &run_id)
+                    .map_err(map_store_error)?;
+                let run = self.manager.cancel(&run_id).map_err(map_manager_error)?;
+                let event = V4Event::TurnCancelled(conversation_id, run_id, run.status);
+                event.validate().map_err(|_| internal_failure())?;
+                Ok(event)
+            }
+            V4Command::SubmitTurn(request) => {
+                let submission = self.manager.submit_v4(request).map_err(map_manager_error)?;
+                let event = V4Event::TurnSubmitted(submission);
+                event.validate().map_err(|_| internal_failure())?;
+                Ok(event)
+            }
+            V4Command::ListRoutes => {
+                let event = V4Event::Routes(self.v4_routes.clone());
+                event.validate().map_err(|_| internal_failure())?;
+                Ok(event)
+            }
+            other => {
+                let elapsed = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_err(|_| internal_failure())?;
+                let now_ms = u64::try_from(elapsed.as_millis()).map_err(|_| internal_failure())?;
+                super::runtime_v4::handle(&self.store, other, now_ms)
+            }
+        }
+    }
+
     fn supports_federation(&self) -> bool {
         true
     }
@@ -245,10 +304,15 @@ impl DaemonHandler for RuntimeHandler {
     }
 }
 
+/// Per-turn provider ceilings shared by legacy and v4 chat runs: large enough
+/// for an ordinary streaming reply, small enough to stop a runaway provider.
+const TURN_MAX_EVENTS: u64 = 4096;
+const TURN_MAX_OUTPUT_TOKENS: u64 = 1024;
+
 fn provider_budget(limits: crate::runtime::DelegatedLimits) -> RunBudget {
     RunBudget::unlimited()
-        .with_max_events(8)
-        .with_max_output_tokens(1)
+        .with_max_events(TURN_MAX_EVENTS)
+        .with_max_output_tokens(TURN_MAX_OUTPUT_TOKENS)
         .with_max_duration(limits.timeout)
 }
 
@@ -257,6 +321,22 @@ fn route(backend: BackendSelection) -> RunRouteCapability {
         backend,
         modes: vec![RunMode::OneShot, RunMode::Background],
     }
+}
+
+fn v4_route(backend: BackendSelection, model: &str) -> Result<V4Route, ()> {
+    let (backend_name, label) = match backend {
+        BackendSelection::Abi => ("abi", "ABI local"),
+        BackendSelection::FoundationModels => ("foundation_models", "Foundation Models"),
+        BackendSelection::Cursor | BackendSelection::Grok => return Err(()),
+    };
+    let route = V4Route {
+        route_id: v4_route_id(backend, model),
+        backend: backend_name.into(),
+        label: format!("{label} ({model})"),
+        available: true,
+    };
+    route.validate().map_err(|_| ())?;
+    Ok(route)
 }
 
 fn route_permits(routes: &[RunRouteCapability], backend: BackendSelection, mode: RunMode) -> bool {
@@ -292,6 +372,10 @@ fn map_store_error(error: StoreError) -> HandlerFailure {
         | StoreError::ModelOperationCapacity => invalid_command_failure(),
         StoreError::ToolApprovalNotFound(_) | StoreError::ToolExecutionNotFound(_) => {
             not_found_failure()
+        }
+        StoreError::AssistantNotFound => HandlerFailure::new("not_found", "resource was not found"),
+        StoreError::AssistantConflict => {
+            HandlerFailure::new("conflict", "resource conflicts with stored state")
         }
         StoreError::ModelOperationNotFound(_) => not_found_failure(),
         StoreError::CorruptData(_)

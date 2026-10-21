@@ -7,6 +7,7 @@ from pathlib import Path
 import platform
 import re
 import secrets
+import shutil
 import socket as socket_api
 import subprocess
 import sys
@@ -28,7 +29,7 @@ def sha(path):
 
 def build_env():
     env = {key: os.environ[key] for key in ("HOME", "USER", "LOGNAME", "TMPDIR", "DEVELOPER_DIR", "SDKROOT") if key in os.environ}
-    env.update(PATH=f"{Path.home()}/.cargo/bin:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin", RUSTUP_TOOLCHAIN="nightly-2026-09-01", CC="/usr/bin/clang", CXX="/usr/bin/clang++")
+    env.update(PATH=f"{Path.home()}/.cargo/bin:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin", RUSTUP_TOOLCHAIN="1.99.1", CC="/usr/bin/clang", CXX="/usr/bin/clang++")
     return env
 
 
@@ -112,9 +113,11 @@ class Smoke:
         )
 
     def launch(self, binary, env, label):
-        with (self.scratch / (label + ".log")).open("wb") as log:
+        log_path = self.scratch / (label + ".log")
+        with log_path.open("wb") as log:
             proc = subprocess.Popen([str(binary)], cwd=self.scratch / "work", env=env, stdout=log, stderr=log)
         self.processes.append(proc)
+        proc._abbey_log_path = log_path
         return proc
 
     def daemon(self, state):
@@ -132,7 +135,17 @@ class Smoke:
         return self.launch(DESKTOP / "target/debug/abbey-desktop", self.env("desktop", socket, bearer), "desktop")
 
     def ax(self, proc, action="snapshot", *args):
-        require(proc.poll() is None, "owned_desktop_exited")
+        if proc.poll() is not None:
+            try:
+                details = proc._abbey_log_path.read_text(errors="replace")[-2000:]
+                for secret in self.secrets:
+                    details = details.replace(secret, "[REDACTED]")
+                print(f"owned process exited with status {proc.returncode}", file=sys.stderr)
+                if details.strip():
+                    print("owned process startup log (redacted): " + details, file=sys.stderr)
+            except OSError:
+                pass
+            raise ProofFailure("owned_process_unavailable")
         try:
             result = subprocess.run([str(self.driver), str(proc.pid), action, *args], capture_output=True, timeout=15)
         except subprocess.TimeoutExpired:
@@ -181,6 +194,9 @@ class Smoke:
         raise ProofFailure("timeout_" + last)
 
     def connected(self, proc):
+        # Connection details live on the Doctor surface in the current desktop
+        # shell; navigate there before asserting the authenticated source.
+        self.ax(proc, "doctor")
         self.wait(proc, lambda snap: require("abbeyd (authenticated Unix socket)" in inspect(snap, self.secrets), "daemon_connection_missing"))
         self.ax(proc, "routes")
 
@@ -239,6 +255,7 @@ def main():
     harness_files = ("prove-routes-macos.sh", "prove_routes_macos.py", "routes_assertions.py", "routes-ax.swift")
     receipt["harness"] = {name: sha(DESKTOP / "scripts" / name) for name in harness_files}
     smoke = None
+    scratch_path = None
     try:
         require(platform.system() == "Darwin", "macos_required")
         env = build_env()
@@ -255,13 +272,14 @@ def main():
         run_build(["bun", "run", "tauri", "build", "--debug", "--no-bundle"], DESKTOP, env, OUT / "desktop-build.log")
         receipt["artifacts"]["desktop"] = sha(DESKTOP / "target/debug/abbey-desktop")
         receipt["frontend"] = {str(path.relative_to(DESKTOP / "dist")): sha(path) for path in sorted((DESKTOP / "dist").rglob("*")) if path.is_file()}
-        with tempfile.TemporaryDirectory(prefix="abbey-routes-", dir="/tmp") as temporary:
-            try:
-                smoke = Smoke(Path(temporary), driver, receipt)
-                smoke.execute()
-            finally:
-                if smoke is not None:
-                    smoke.close()
+        temporary = tempfile.mkdtemp(prefix="abbey-routes-", dir="/tmp")
+        scratch_path = Path(temporary)
+        try:
+            smoke = Smoke(Path(temporary), driver, receipt)
+            smoke.execute()
+        finally:
+            if smoke is not None:
+                smoke.close()
         require(receipt["completed_scenarios"] == [
             "authenticated-25", "limit-10", "limit-50", "authentication-rejection",
             "daemon-loss-no-fallback", "empty-log", "route-files-unchanged",
@@ -274,6 +292,12 @@ def main():
         receipt["failure"] = str(error) if isinstance(error, ProofFailure) else "runner_system_failure"
         print("FAIL " + receipt["failure"], file=sys.stderr)
     finally:
+        if scratch_path is not None:
+            if receipt["status"] == "passed":
+                shutil.rmtree(scratch_path, ignore_errors=True)
+            else:
+                # Keep failed synthetic inputs and redacted process logs for diagnosis.
+                receipt["scratch_diagnostics"] = str(scratch_path)
         receipt["finished_at"] = datetime.now(timezone.utc).isoformat()
         (OUT / "receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
         print("Receipt: desktop/target/routes-acceptance/receipt.json", flush=True)

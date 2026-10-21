@@ -34,6 +34,15 @@ env:
 # reach local developer state or credentials, so fork pull requests get no job.
 # The Linux ARM64 gate (no such runner is registered) and the GitHub-hosted
 # fork gate (hosted Actions are billing-locked) were removed on 2026-09-28.
+#
+# macOS ARM64 adjunct successes are narrow/soft evidence for execution of the
+# pinned checkout + check.sh path; they do not constitute Linux or Windows
+# runtime proof. Linux/Windows self-hosted guard patterns are prepared in
+# tools/tests/test_workflow_guards.py and tools/ci/require_executed_run.py
+# (PRIMARY remains the Linux gate for full ci-self-hosted-linux-proof closure).
+# Cross-compile soft checks (x86_64-pc-windows-gnu, x86_64-unknown-linux-gnu)
+# live in check.sh (delegated to tools/ci/cross-compile-guard.sh) and are
+# skipped when targets are uninstalled (never a hard gate).
 jobs:
   gate-macos:
     name: gate (macOS ARM64 adjunct)

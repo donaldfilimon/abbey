@@ -64,3 +64,5 @@ pub use entry::run_cli;
 
 #[cfg(all(test, unix))]
 mod owned_cancel_tests;
+
+pub mod automation_schedule;
