@@ -121,4 +121,53 @@ mod tests {
         assert_eq!(accent_style(&theme).fg, Some(theme.accent));
         let (_sb, _state) = scrollbar_for(100, 10, 5, &theme);
     }
+
+    #[test]
+    fn every_theme_builds_every_helper() {
+        // A palette that is added later must not be a palette that panics
+        // when a widget is drawn with it.
+        for id in ThemeId::all() {
+            let theme = Theme::from_id(id);
+            let _ = rounded_block("Test", &theme, true);
+            let _ = rounded_block("Test", &theme, false);
+            assert!(!chip_spans("model", "gpt-4", &theme).is_empty());
+            let (_sb, _state) = scrollbar_for(100, 10, 5, &theme);
+        }
+    }
+
+    #[test]
+    fn a_selected_row_is_readable_in_every_theme() {
+        // The selection is the one place the app inverts its own colours,
+        // so its text and its ground have to differ. A palette that failed
+        // this would make the selected row unreadable.
+        for id in ThemeId::all() {
+            let theme = Theme::from_id(id);
+            let style = list_highlight_style(&theme);
+            assert_eq!(style.bg, Some(theme.selection_bg));
+            assert_eq!(style.fg, Some(theme.selection_fg));
+            assert_ne!(
+                theme.selection_fg, theme.selection_bg,
+                "{id:?} must make the selected row readable"
+            );
+        }
+    }
+
+    #[test]
+    fn a_chip_is_readable_in_every_theme() {
+        // A chip inverts too: its label and its value sit on the chip's own
+        // ground.
+        for id in ThemeId::all() {
+            let theme = Theme::from_id(id);
+            let spans = chip_spans("model", "gpt-4", &theme);
+            assert_eq!(spans.len(), 2);
+            assert_ne!(
+                theme.chip_fg, theme.chip_bg,
+                "{id:?} must make the chip's value readable"
+            );
+            assert_ne!(
+                theme.fg_dim, theme.chip_bg,
+                "{id:?} must make the chip's label readable"
+            );
+        }
+    }
 }
