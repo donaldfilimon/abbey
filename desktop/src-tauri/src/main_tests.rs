@@ -306,25 +306,32 @@ fn the_native_appearance_is_wired_and_never_makes_the_window_transparent() {
     // down to an opaque no-op.
     assert!(APPEARANCE.contains("#[cfg(target_os = \"macos\")]"));
     assert!(APPEARANCE.contains("unsupported()"));
-    // Material is installed in the window frame only. The webview is never
-    // made transparent: the module must not fade the window, and it must keep
-    // an opaque safety panel behind the webview so the window can never
-    // become a see-through hole.
+    // The material covers the whole window, so the webview is transparent
+    // and the material shows through it. The window must still never become
+    // a see-through hole: the module must not fade the window, and it must
+    // keep a safety panel behind the webview with the window's own
+    // background painted under both.
     assert!(
         !APPEARANCE.contains("setAlphaValue"),
         "the appearance module must not fade the window"
     );
     assert!(
         APPEARANCE.contains("NSBox"),
-        "the appearance module must keep an opaque panel behind the webview"
+        "the appearance module must keep a safety panel behind the webview"
     );
     assert!(
-        APPEARANCE.contains("setTransparent(false)"),
-        "the safety panel behind the webview must stay opaque"
+        APPEARANCE.contains("setTransparent(true)"),
+        "the safety panel must let the material show through it"
     );
     assert!(
         APPEARANCE.contains("setOpaque(true)"),
         "removing the material must restore the opaque window"
+    );
+    // The material is installed *below* the content, so the webview's own
+    // panels float on it rather than covering it.
+    assert!(
+        APPEARANCE.contains("NSWindowOrderingMode::Below"),
+        "the material must sit below the webview"
     );
     // The degrade path is part of the contract, not an afterthought.
     assert!(APPEARANCE.contains("reduce_transparency"));

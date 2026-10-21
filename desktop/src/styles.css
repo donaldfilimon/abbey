@@ -247,6 +247,117 @@ ul.tight {
   --status-blocked: #a13f38;
   --status-out_of_scope: #66616d;
 }
+
+/* Native-looking surfaces.
+ *
+ * macOS gives an application the platform's own material behind its
+ * content: the desktop client already installs `NSGlassEffectView` in the
+ * window's titlebar strip, and these tokens let the *webview's* surfaces
+ * take the same treatment, so the whole window reads as one piece of
+ * native glass rather than a native strip around a flat web page.
+ *
+ * Three layers, from the back:
+ *   --glass-backdrop  what shows through the surface (the desktop, blurred)
+ *   --glass-tint      the surface's own wash of colour
+ *   --glass-edge      the hairline where the surface meets its background
+ *
+ * The material is opt-out twice over: `data-material` is "solid" whenever
+ * the user asked for reduced transparency or forced colours, or the
+ * platform cannot blur. The `prefers-reduced-transparency` and
+ * `forced-colors` media queries below repeat that check in CSS, so the
+ * treatment is gone even if the attribute never arrives.
+ */
+:root {
+  --glass-blur: 28px;
+  --glass-saturate: 180%;
+  --glass-tint: #ffffff5c;
+  --glass-backdrop: #ffffff2e;
+  --glass-edge: #ffffff8c;
+  --glass-shadow: 0 1px 2px #30233e0f, 0 8px 24px #30233e14;
+}
+:root[data-appearance="dark"] {
+  --glass-tint: #ffffff14;
+  --glass-backdrop: #ffffff0a;
+  --glass-edge: #ffffff1f;
+  --glass-shadow: 0 1px 2px #0006, 0 8px 24px #0005;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-appearance="light"]):not([data-appearance="dark"]) {
+    --glass-tint: #ffffff14;
+    --glass-backdrop: #ffffff0a;
+    --glass-edge: #ffffff1f;
+    --glass-shadow: 0 1px 2px #0006, 0 8px 24px #0005;
+  }
+}
+
+/* The glass treatment itself.
+ *
+ * Every surface that opts in gets the same three layers: a blurred
+ * backdrop, its own tint, and a hairline edge. The blur is what makes it
+ * read as material rather than as a translucent rectangle.
+ */
+:root[data-material="glass"] .glass-surface {
+  background: var(--glass-backdrop), var(--glass-tint);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border-color: var(--glass-edge);
+  box-shadow: var(--glass-shadow);
+}
+/* The surfaces that carry the treatment. Named here rather than as a class
+   on every element, so the choice lives in one place: the navigation rail
+   and the toolbar are the window's frame, the cards and the composer are
+   the content's own furniture. */
+:root[data-material="glass"] :is(.sidebar, .toolbar, .card, .composer, .suggestion, .search-trigger, .new-chat, .palette) {
+  background: var(--glass-backdrop), var(--glass-tint);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border-color: var(--glass-edge);
+  box-shadow: var(--glass-shadow);
+}
+/* The window's own ground has to let something through for the material to
+   have anything to blur. With the glass treatment the window's background
+   is the desktop picture behind the window, which the AppKit material
+   already samples; the reading column keeps an opaque ground so the text
+   never sits on a busy picture. */
+:root[data-material="glass"] .workspace {
+  background: transparent;
+}
+:root[data-material="glass"] .content {
+  background: var(--bg);
+}
+:root[data-material="glass"] .sidebar {
+  background: var(--glass-backdrop), var(--glass-tint);
+}
+:root[data-material="glass"] .toolbar {
+  background: var(--glass-backdrop), var(--glass-tint);
+}
+/* The reading column is a sheet of its own: the text sits on an opaque
+   ground, and the material shows around it in the frame and the rail. */
+:root[data-material="glass"] .content {
+  background: var(--bg);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+/* The two accessibility opt-outs, repeated in CSS so the material is gone
+   even if the attribute never arrives. */
+@media (prefers-reduced-transparency: reduce) {
+  :root[data-material="glass"] .glass-surface {
+    background: var(--panel);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    border-color: var(--border);
+    box-shadow: none;
+  }
+}
+@media (forced-colors: active) {
+  :root[data-material="glass"] .glass-surface {
+    background: Canvas;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    border-color: CanvasText;
+    box-shadow: none;
+  }
+}
 :root[data-appearance="dark"] {
   --bg: #1c1b20;
   --panel: #242228;
@@ -333,10 +444,20 @@ button:disabled {
 }
 .sidebar {
   background: var(--sidebar);
-  padding: 27px 16px 18px;
+  /* The window uses a transparent title bar, so the traffic lights float
+     over the sidebar's own top edge. Without an inset the brand sits under
+     them. The inset is the height macOS reserves for them, plus the
+     sidebar's own breathing room. */
+  padding: 52px 16px 18px;
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 20px;
+  /* The sidebar's own content can exceed a short window. It scrolls
+     rather than clipping: a clipped status row hides the connection
+     state, which is the one thing a reader looks for when something is
+     wrong. */
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .brand {
   display: flex;
@@ -374,7 +495,18 @@ button:disabled {
   padding: 10px 12px;
 }
 .sidebar nav {
-  flex: 1;
+  /* The nav takes the space that is left over and scrolls inside it. The
+     status row stays pinned at the bottom: it carries the connection state,
+     and a window too short for the whole nav must not push that state off
+     the screen. The nav itself is the only part that gives way. */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* A scroll region that ends exactly at an item's baseline cuts that item
+     in half, which reads as a broken layout rather than as "there is more
+     below". The padding gives the last item somewhere to end. */
+  padding-bottom: 8px;
 }
 .nav-group {
   padding: 2px 12px 9px;
@@ -409,6 +541,9 @@ button:disabled {
 }
 .sidebar-bottom {
   margin-top: auto;
+  /* The status row is the one thing a reader looks for when something is
+     wrong, so it never shrinks or gets cut in half by a short window. */
+  flex-shrink: 0;
 }
 .sidebar-status {
   display: flex;
@@ -441,6 +576,10 @@ button:disabled {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  /* The workspace paints the window's own ground. Without this it inherits
+     the body's, and the two whites differ enough to show as a seam along
+     the right edge of a wide window. */
+  background: var(--bg);
 }
 .toolbar {
   min-height: 69px;
@@ -448,8 +587,20 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 30px;
+  /* The window's title bar is transparent, so the toolbar's own top strip is
+     where the traffic lights live. The toolbar's content starts below them
+     and the strip itself is the drag handle. */
+  padding: 26px 30px 14px;
   gap: 16px;
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+/* The controls inside the drag strip must stay clickable. */
+.toolbar button,
+.toolbar input,
+.toolbar a {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
 }
 .toolbar-leading {
   display: flex;
@@ -491,8 +642,16 @@ kbd {
 .content {
   flex: 1;
   min-height: 0;
-  padding: 40px clamp(22px, 5vw, 76px);
+  /* The gutter scales with the window, but it never eats so much of a
+     narrow window that the content column becomes unreadable — the floor
+     is what the reading column needs, not a proportion of the frame. */
+  padding: 40px clamp(18px, 4vw, 76px);
+  /* The content scrolls. Without this the reading column is clipped by the
+     window instead of scrolling, and a long surface loses its heading and
+     its first lines. */
   overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .content > * {
   max-width: 1050px;
@@ -554,9 +713,12 @@ kbd {
   width: 100%;
 }
 .chat-landing {
+  /* One centre, not two. The content column already centres its children,
+     and the workspace centres itself inside that; centring the landing a
+     third time pushed it off the optical centre of a wide window. */
   width: 100%;
   max-width: 780px;
-  margin: auto;
+  margin: 0 auto;
   padding: 24px 0 30px;
 }
 .welcome {
@@ -933,7 +1095,10 @@ code,
     padding-right: 10px;
   }
   .toolbar {
-    padding: 0 20px;
+    /* The traffic-light inset is kept: it is the window's own chrome, not
+       a spacing preference, and dropping it would put the buttons under
+       the traffic lights at this width. */
+    padding: 22px 20px 12px;
   }
   .search-trigger span {
     display: none;
@@ -960,8 +1125,9 @@ code,
     grid-template-columns: 66px minmax(0, 1fr);
   }
   .sidebar {
-    padding: 22px 8px 12px;
-    gap: 20px;
+    /* The traffic-light inset is kept at this width too. */
+    padding: 46px 8px 12px;
+    gap: 16px;
   }
   .sidebar .nav-label,
   .sidebar .nav-group {
@@ -983,7 +1149,7 @@ code,
   }
   .toolbar {
     min-height: 58px;
-    padding: 0 12px;
+    padding: 20px 12px 10px;
   }
   .toolbar-leading {
     gap: 8px;
@@ -1115,7 +1281,7 @@ code,
 }
 
 /* Authorized conversation history shares the existing warm navigation rail. */
-.conversation-history { min-height: 100px; flex: 1; overflow: auto; margin: 12px 0; border-top: 1px solid var(--border); padding-top: 8px; }
+.conversation-history { min-height: 0; flex: 1 1 auto; overflow: auto; margin: 12px 0; border-top: 1px solid var(--border); padding-top: 8px; }
 .history-search { display: flex; align-items: center; gap: 3px; }
 .history-search input { min-width: 0; width: 100%; border: 0; background: transparent; padding: 8px; font-size: 12px; }
 .history-heading { display: flex; align-items: center; justify-content: space-between; font-size: 11px; opacity: .7; padding: 0 8px; }
@@ -1133,6 +1299,15 @@ code,
 .conversation-toolbar { display: flex; gap: 16px; justify-content: space-between; align-items: center; margin: 16px 0; }
 .conversation-toolbar h1 { font-size: 22px; overflow-wrap: anywhere; margin: 0 0 6px; }
 .conversation-toolbar p { font-size: 12px; margin: 0; }
+/* With no conversation open, the landing below has its own heading. The
+   toolbar's placeholder repeated it, left-aligned against the landing's
+   centred one, which read as a misaligned pair rather than as one title.
+   The placeholder returns as soon as a conversation is open, where it is
+   the conversation's actual title. */
+.conversation-workspace:not(.has-conversation) .conversation-toolbar h1 { display: none; }
+/* The action stays at the column's right edge, level with the landing's own
+   edge, rather than drifting to the far side of a wide window. */
+.conversation-workspace:not(.has-conversation) .conversation-toolbar { justify-content: flex-start; }
 .conversation-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .conversation-actions button { font-size: 11px; }
 .conversation-workspace .chat-landing { padding-top: 20px; }

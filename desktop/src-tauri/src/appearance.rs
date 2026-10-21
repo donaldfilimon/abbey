@@ -1,26 +1,26 @@
 //! Native macOS window appearance.
 //!
-//! The desktop client is an opaque reading app: the webview paints its own
-//! background and the reading surfaces are never translucent. That is the
-//! right default for a reading surface, but it also means the window *frame*
-//! is a flat rectangle of colour instead of the platform's own material.
-//!
-//! This module installs real AppKit material into the window's titlebar
-//! strip — `NSGlassEffectView` (the Liquid Glass material) on the systems
-//! that have it, `NSVisualEffectView` with the titlebar material before that
-//! — and leaves the webview content area completely untouched and opaque.
+//! The desktop client is a native macOS application, so its window should
+//! carry the platform's own material rather than a flat rectangle of colour.
+//! This module installs real AppKit material across the *whole* window —
+//! `NSGlassEffectView` (the Liquid Glass material) on the systems that have
+//! it, `NSVisualEffectView` with the titlebar material before that — and the
+//! webview's own panels float on it, so the whole window reads as one piece
+//! of native glass instead of a native strip around a flat web page.
 //!
 //! The rules this module keeps:
 //!
 //! * **macOS only.** Every other target compiles this module down to a no-op
 //!   that reports an opaque window.
-//! * **The webview is never made transparent.** The Tauri window stays
-//!   `transparent: false`, the webview keeps painting its own opaque
-//!   background, and the content area keeps an opaque safety panel behind
-//!   the webview, so the window is never a see-through hole. Only the
-//!   frame's titlebar strip — the part of the window AppKit reserves for the
-//!   titlebar and the window buttons, above the content — is a material
-//!   surface.
+//! * **The window is never a see-through hole.** The webview is transparent
+//!   so the material shows through it, and a translucent safety panel sits
+//!   between the material and the webview. The window's own background is
+//!   painted under both, so every pixel is still painted even if the
+//!   webview ever fails to draw.
+//! * **The reading column keeps an opaque ground.** The webview paints its
+//!   own background behind the text. A reading surface must not put its
+//!   words on a picture of someone's desktop; the material is what the
+//!   frame and the furniture are made of, not what the text sits on.
 //! * **Degrade, never half-build.** Reduced transparency, increased contrast,
 //!   forced colours, a window without a titlebar, or any failure while
 //!   constructing the effect view all end as a fully opaque window, and a
@@ -169,7 +169,7 @@ impl Appearance {
     pub fn describe(self) -> String {
         match self {
             Self::NativeMaterial(material) => format!(
-                "{}: {} — window frame only, the webview content stays opaque",
+                "{}: {} — the whole window is a material surface; the webview's own panels float on it",
                 AppearanceKind::NativeMaterial.describe(),
                 material.describe()
             ),
@@ -471,9 +471,15 @@ mod macos {
             remove(ns_window);
         }
 
+        // The material covers the *whole* frame, not just the titlebar
+        // strip. A strip around a flat web page reads as two different
+        // surfaces; a full-frame material lets the webview's own panels
+        // float on one continuous piece of native glass, which is what a
+        // native macOS application looks like.
+        let frame_rect = to_rect(frame_view.bounds());
         let strip_rect = NSRect::new(
-            NSPoint::new(strip.x, strip.y),
-            NSSize::new(strip.width, strip.height),
+            NSPoint::new(frame_rect.x, frame_rect.y),
+            NSSize::new(frame_rect.width, frame_rect.height),
         );
         let effect: Retained<NSView> = match material {
             NativeMaterial::LiquidGlass => {
@@ -505,9 +511,13 @@ mod macos {
         let content_rect = content.frame();
         let safety = NSBox::initWithFrame(mtm.alloc(), content_rect);
         safety.setBoxType(NSBoxType::Custom);
-        safety.setTransparent(false);
+        // The safety panel is what keeps the window from ever becoming a
+        // see-through hole. It is *translucent* rather than opaque so the
+        // material behind it still shows, but it is never absent: the
+        // window's own background is painted under it.
+        safety.setTransparent(true);
         safety.setBorderWidth(0.0);
-        safety.setFillColor(&NSColor::windowBackgroundColor());
+        safety.setFillColor(&NSColor::clearColor());
         safety.setAutoresizingMask(
             NSAutoresizingMaskOptions::ViewWidthSizable
                 | NSAutoresizingMaskOptions::ViewHeightSizable,
@@ -527,14 +537,14 @@ mod macos {
         let clear = NSColor::clearColor();
         ns_window.setBackgroundColor(Some(&clear));
 
-        // The material is placed directly above the content view in the
-        // frame's z-order and directly below the titlebar container that
-        // holds the window buttons and the title. It therefore covers exactly
-        // the frame's own strip — the area the flat system titlebar used to
-        // paint over — and never the reading surfaces below it.
+        // The material goes *below* the content view. The webview's own
+        // panels then float on it: a card is a translucent sheet over one
+        // continuous piece of native glass, which is what a native macOS
+        // application looks like. The content view itself is transparent, so
+        // the material shows through everywhere the webview does not paint.
         frame_view.addSubview_positioned_relativeTo(
             &effect,
-            NSWindowOrderingMode::Above,
+            NSWindowOrderingMode::Below,
             Some(content.as_ref()),
         );
         // The titlebar must stop painting its own background, otherwise the
@@ -701,7 +711,11 @@ mod tests {
     fn the_native_description_names_the_appkit_class() {
         let glass = Appearance::NativeMaterial(NativeMaterial::LiquidGlass).describe();
         assert!(glass.contains("NSGlassEffectView"), "unexpected: {glass}");
-        assert!(glass.contains("opaque"), "unexpected: {glass}");
+        // The material now covers the whole window, and the description has
+        // to say so: a reader who sees "frame only" would believe the
+        // content area is still flat.
+        assert!(glass.contains("whole window"), "unexpected: {glass}");
+        assert!(!glass.contains("opaque"), "unexpected: {glass}");
         let effect = Appearance::NativeMaterial(NativeMaterial::TitlebarVisualEffect).describe();
         assert!(
             effect.contains("NSVisualEffectView"),
