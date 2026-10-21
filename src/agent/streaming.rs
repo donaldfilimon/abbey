@@ -136,6 +136,11 @@ fn capture(
     };
     use std::time::Duration;
     let agent = cfg.exec_path()?;
+    // Same no-auto-pull gate as the interactive and captured paths: under
+    // Ollama, `ollama run <tag>` would pull a missing tag from the network.
+    // The streamed spawn has to ask `ollama list` first, exactly like
+    // `run_interactive` and `run_capture` do.
+    cfg.preflight_check(&agent)?;
     let args = cfg.build_args(resume_id, prompt_and_rest);
     let spec = ProcessSpec::inherited(
         agent.clone(),
@@ -195,7 +200,35 @@ mod tests {
     use std::os::unix::fs::PermissionsExt as _;
     use std::sync::mpsc;
 
-    fn scratch(tag: &str, script: &str) -> (std::path::PathBuf, AbbeyState, AgentConfig) {
+    /// `ollama list` output that names the default local tag, so the
+    /// no-auto-pull preflight passes and the turn reaches the spawn.
+    const LISTED_DEFAULT: &str =
+        "printf 'NAME\\tID\\tSIZE\\tMODIFIED\\ngemma4:26b-mlx\\tabc\\t1GB\\tnow\\n'";
+
+    /// `ollama list` output with a header and no model row: the model is not
+    /// present locally, so the preflight must refuse the run.
+    const LISTED_NONE: &str = "printf 'NAME\\tID\\tSIZE\\tMODIFIED\\n'";
+
+    /// Quote a path for a POSIX shell without letting it expand.
+    fn shell_quote(path: &std::path::Path) -> String {
+        format!("'{}'", path.to_string_lossy().replace('\'', "'\\''"))
+    }
+
+    /// A stub executor for the Ollama backend.
+    ///
+    /// Every streamed turn asks `ollama list` first (the no-auto-pull
+    /// preflight), so the stub answers `list` with `listing` and runs
+    /// `script` for every other invocation.
+    ///
+    /// The stub leaves two markers behind: `ollama-listed` when `list` was
+    /// asked, and `ollama-spawned` when a model run was actually spawned.
+    /// Together they prove whether the preflight ran and whether the spawn
+    /// still happened.
+    fn scratch_with_listing(
+        tag: &str,
+        listing: &str,
+        script: &str,
+    ) -> (std::path::PathBuf, AbbeyState, AgentConfig) {
         let dir = std::env::temp_dir().join(format!(
             "abbey-stream-{tag}-{}-{}",
             std::process::id(),
@@ -204,7 +237,21 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("by-cwd")).unwrap();
         let agent = dir.join("agent");
-        std::fs::write(&agent, script).unwrap();
+        // The stub is one script: the shebang belongs at the top, and the
+        // fixture body follows the `list` branch.
+        let body = script.strip_prefix("#!/bin/sh\n").unwrap_or(script);
+        std::fs::write(
+            &agent,
+            format!(
+                "#!/bin/sh\n\
+                 if [ \"$1\" = list ]; then\n\
+                 printf x > {listed}\n{listing}\nexit 0\nfi\n\
+                 printf x > {spawned}\n{body}",
+                listed = shell_quote(&dir.join("ollama-listed")),
+                spawned = shell_quote(&dir.join("ollama-spawned")),
+            ),
+        )
+        .unwrap();
         let mut perm = std::fs::metadata(&agent).unwrap().permissions();
         perm.set_mode(0o700);
         std::fs::set_permissions(&agent, perm).unwrap();
@@ -224,6 +271,10 @@ mod tests {
             ..AgentConfig::default()
         };
         (dir, state, cfg)
+    }
+
+    fn scratch(tag: &str, script: &str) -> (std::path::PathBuf, AbbeyState, AgentConfig) {
+        scratch_with_listing(tag, LISTED_DEFAULT, script)
     }
 
     fn drain(rx: &mpsc::Receiver<StreamEvent>) -> Vec<StreamEvent> {
@@ -376,6 +427,39 @@ mod tests {
                 .iter()
                 .any(|e| matches!(e, StreamEvent::Notice(n) if n.contains("new chat")))
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The streamed spawn is an Ollama model run like any other: it must not
+    /// be allowed to reach `ollama run` with a tag that is not present
+    /// locally, because that would pull the model.
+    #[test]
+    fn streamed_turn_refuses_to_pull_a_missing_local_model() {
+        let (dir, state, mut cfg) = scratch_with_listing(
+            "no-pull",
+            LISTED_NONE,
+            "#!/bin/sh\nprintf 'pulled the model\\n'\n",
+        );
+        state.save_chat("keep-chat").unwrap();
+        let (tx, rx) = mpsc::channel();
+        let result = crate::actions::run_agent(
+            &mut cfg,
+            &state,
+            &["x".into()],
+            crate::actions::RunSpec::resume().streaming(StreamTap::new(tx)),
+        );
+        let err = format!("{:#}", result.unwrap_err());
+        assert!(err.contains("no-auto-pull"), "{err}");
+        assert!(err.contains("gemma4:26b-mlx"), "{err}");
+        assert!(
+            dir.join("ollama-listed").exists(),
+            "the preflight must ask `ollama list`"
+        );
+        assert!(
+            !dir.join("ollama-spawned").exists(),
+            "`ollama run` must never be invoked for a missing local model"
+        );
+        assert_eq!(drain(&rx).last(), Some(&StreamEvent::Done { exit: 1 }));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
