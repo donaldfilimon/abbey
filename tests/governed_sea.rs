@@ -575,13 +575,22 @@ fn canonical_proposal_gate_preserves_signed_bytes_and_reports_refusal() {
         contract_digest: [9; 32],
         guilds: std::collections::BTreeMap::from([(
             "guild_ref".into(),
-            GuildEpisodePolicy {
-                learning_enabled: true,
-                policy_version: "v1".into(),
-                token_budget: 100,
-                storage_budget_bytes: 1_000_000,
-                current_consent_epoch: Some(7),
-            },
+            // Built from its serialized form rather than a struct literal:
+            // the sibling's `GuildEpisodePolicy` gained optional retention
+            // fields, and a literal has to name every field exactly, so it
+            // would compile against one sibling revision and fail against
+            // the other. The added fields are `#[serde(default)]`, so a
+            // document that omits them parses under either revision.
+            serde_json::from_str(
+                r#"{
+                    "learning_enabled": true,
+                    "policy_version": "v1",
+                    "token_budget": 100,
+                    "storage_budget_bytes": 1000000,
+                    "current_consent_epoch": 7
+                }"#,
+            )
+            .expect("the guild policy document is valid"),
         )]),
     };
     let signer = || EpisodeSigner::new(ed25519_dalek::SigningKey::from_bytes(&[1; 32]));

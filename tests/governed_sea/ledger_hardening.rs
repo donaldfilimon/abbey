@@ -32,17 +32,30 @@ fn policy() -> StorePolicy {
     StorePolicy {
         contract_revision: 2,
         contract_digest: [9; 32],
-        guilds: BTreeMap::from([(
-            "guild_ref".into(),
-            GuildEpisodePolicy {
-                learning_enabled: true,
-                policy_version: "v1".into(),
-                token_budget: 100,
-                storage_budget_bytes: 1_000_000,
-                current_consent_epoch: Some(7),
-            },
-        )]),
+        guilds: BTreeMap::from([("guild_ref".into(), guild_policy())]),
     }
+}
+
+/// The one guild policy these fixtures use.
+///
+/// Built from its serialized form rather than a struct literal. The sibling's
+/// `GuildEpisodePolicy` gained optional retention fields, and a struct
+/// literal has to name every field exactly — so a literal that compiles
+/// against one sibling revision fails against the other, and the gate has to
+/// build against both. The added fields are `#[serde(default)]`, so a
+/// document that omits them parses under either revision and keeps its
+/// previous meaning.
+fn guild_policy() -> GuildEpisodePolicy {
+    serde_json::from_str(
+        r#"{
+            "learning_enabled": true,
+            "policy_version": "v1",
+            "token_budget": 100,
+            "storage_budget_bytes": 1000000,
+            "current_consent_epoch": 7
+        }"#,
+    )
+    .expect("the guild policy document is valid")
 }
 
 fn write(index: usize, event: EpisodeEvent) -> EpisodeWrite {

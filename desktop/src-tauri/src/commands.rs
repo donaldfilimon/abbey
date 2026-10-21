@@ -616,7 +616,7 @@ mod tests {
     /// must be that route's model — not the runtime's first available one.
     #[cfg(unix)]
     #[test]
-    fn live_daemon_the_selected_route_answers_the_effective_model() {
+    fn live_daemon_desktop_the_selected_route_answers_the_effective_model() {
         if std::env::var_os("ABBEY_DESKTOP_LIVE_DAEMON").is_none() {
             return;
         }
