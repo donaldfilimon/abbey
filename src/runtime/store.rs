@@ -734,3 +734,7 @@ mod tests;
 #[cfg(test)]
 #[path = "store/v4_tests.rs"]
 mod v4_tests;
+
+#[cfg(test)]
+#[path = "store/v4_context_tests.rs"]
+mod v4_context_tests;

@@ -716,17 +716,7 @@ pub struct V4AutomationPage {
     pub next_after: Option<u64>,
 }
 
-// Task2 support (minimal to enable store compile against contracts)
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct V4PermissionProfile {
-    pub profile_id: String,
-    pub tool_ids: Vec<String>,
-    pub application_ids: Vec<String>,
-    pub filesystem_roots: Vec<String>,
-    pub browser_domains: Vec<String>,
-    pub max_runtime_ms: u64,
-    pub max_output_bytes: u64,
-}
+pub use super::v4_permission::V4PermissionProfile;
 
 // Missing v4 protocol types (stubs sufficient for compilation and current tests; full validation later).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -17,7 +17,7 @@ use std::path::PathBuf;
 use std::process::{Command, ExitStatus, Stdio};
 
 pub use argv::{abi_normalize_model, ollama_normalize_model, truncate_utf8_bytes, utf8_tail};
-pub(crate) use argv::{fm_model, looks_like_flags};
+pub(crate) use argv::{conversation_context_prefix, fm_model, looks_like_flags};
 
 const MAX_LOCAL_TRANSCRIPT_BYTES: u64 = 1024 * 1024;
 const MAX_TRANSCRIPT_PROMPT_BYTES: usize = 16 * 1024;

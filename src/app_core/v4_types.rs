@@ -564,6 +564,7 @@ impl V4AutomationToggle {
     }
 }
 
+/// Historical dormant profile declaration; the compiled canonical record is in v4_permission.rs.
 /// Bounded permission profile. Lists name authority; they do not execute it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

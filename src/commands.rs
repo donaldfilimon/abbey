@@ -19,8 +19,8 @@ use crate::daemon::ClientError;
 use crate::daemon::{DaemonClient, DaemonConfig, V3DaemonSession};
 use crate::deferred;
 use crate::doctor::{
-    cmd_debug, cmd_doctor, cmd_init, cmd_memory_store, cmd_persona, cmd_role, print_config,
-    print_permissions,
+    cmd_debug, cmd_doctor, cmd_init, cmd_memory_store, cmd_persona, cmd_role, print_permissions,
+    render_config_snapshot,
 };
 use crate::generate::{self, GenKind};
 use crate::gitops;
@@ -372,7 +372,12 @@ pub fn run_cli(cli: Cli, state: AbbeyState, mut cfg: AgentConfig) -> Result<i32>
             Ok(0)
         }
         Some(Commands::Config { init }) => {
-            let ac = config::AbbeyConfig::load().unwrap_or_default();
+            let ac = config::AbbeyConfig::load().map_err(|error| {
+                anyhow::anyhow!(
+                    "load config {}: {error:#}",
+                    config::AbbeyConfig::config_path().display()
+                )
+            })?;
             if init {
                 let existed = std::fs::symlink_metadata(config::AbbeyConfig::config_path()).is_ok();
                 let path = ac.ensure_default_file()?;
@@ -385,8 +390,9 @@ pub fn run_cli(cli: Cli, state: AbbeyState, mut cfg: AgentConfig) -> Result<i32>
                     eprintln!("abbey: wrote default config {}", path.display());
                 }
             }
-            print_config(&state, &cfg);
-            for line in ac.status_lines() {
+            let live = config::AbbeyConfig::live_session(&cfg, &state);
+            let snap = ac.snapshot(&live);
+            for line in render_config_snapshot(&snap) {
                 println!("{line}");
             }
             Ok(0)

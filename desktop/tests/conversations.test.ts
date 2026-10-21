@@ -234,18 +234,19 @@ test("ambiguous turn submission locks that conversation against duplicate sends"
   expect(store.snapshot().draft).toBe("send once");
 });
 
-test("history read resolves an ambiguous send only when the exact recent user message is visible", async () => {
-  let include=false;
+test("exact-key lookup resolves an ambiguous send without replay", async () => {
+  let include=false, key="";
   const {store}=fixture({
     grants:async () => ({capabilities:["read_conversations", "write_conversations", "read_routes"]}),
-    routes:async () => [route("local")], submit:async () => {throw {kind:"transport"};},
+    routes:async () => [route("local")], submit:async q => {key=q.idempotency_key;throw {kind:"transport"};},
+    lookupTurn:async cid => include ? {conversation_id:cid,run_id:"accepted",idempotency_key:key,user_message_sequence:1,state:"queued",duplicate:false} : null,
     messages:async q => ({conversation_id:q.conversation_id, next_after:null, messages:include ? [{...message(q.conversation_id, 1, "same text"), role:"user" as const, created_at_ms:Date.now()+1}] : []}),
   });
   await store.connect(); await store.select("a"); store.draft("same text"); await store.send();
   expect(store.snapshot().sendUnknownFor).toBe("a");
   include=true; await store.select("a");
   expect(store.snapshot().sendUnknownFor).toBeNull(); expect(store.snapshot().draft).toBe("");
-  expect(store.snapshot().note).toContain("present in this conversation’s history");
+  expect(store.snapshot().note).toContain("confirmed by its idempotency key");
 });
 
 test("repeated daemon poll failures move chat offline and remove write authority", async () => {

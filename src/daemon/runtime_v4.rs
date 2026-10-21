@@ -119,6 +119,13 @@ pub(crate) fn handle(
             // RunManager::submit_v4; store-only callers keep the queued receipt.
             V4Event::TurnSubmitted(store.v4_admit_turn(&request, now_ms).map_err(map_store)?)
         }
+        V4Command::LookupTurn(conversation, key) => V4Event::TurnLookup(
+            conversation.clone(),
+            key.clone(),
+            store
+                .v4_lookup_turn(&conversation, &key)
+                .map_err(map_store)?,
+        ),
         V4Command::ListMessages(query) => {
             V4Event::Messages(store.v4_messages(&query).map_err(map_store)?)
         }

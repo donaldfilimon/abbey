@@ -22,7 +22,17 @@ use crate::app_core::{
     BackendSelection, RunId, RunMode, RunRequest, V4ContentPayload, V4SubmitTurn,
 };
 
+mod content_sink;
+mod conversation;
 mod process;
+use content_sink::V4ContentSink;
+
+#[cfg(test)]
+#[path = "provider/content_tests.rs"]
+mod content_tests;
+#[cfg(test)]
+#[path = "provider/conversation_tests.rs"]
+mod conversation_tests;
 
 pub use process::{FixedProviderKind, FixedRecipeProvider, FixedRecipeProviderError};
 
@@ -221,7 +231,8 @@ impl Executor for ModelProviderExecutor {
         let route = self
             .route_for_v4(&request.route_id)
             .ok_or_else(unsupported)?;
-        let model_request = ModelRequest::new(&route.model).with_user(request.input);
+        let prompt = conversation::prompt_for_turn(store, run_id, &request)?;
+        let model_request = ModelRequest::new(&route.model).with_user(prompt);
         let mut sink = V4ContentSink::new(store, run_id, &route.model);
         let report = run_provider(
             route.provider.as_ref(),
@@ -296,78 +307,6 @@ impl EventSink for ProviderBoundarySink<'_> {
                 self.started = true;
             }
             ModelEvent::TextDelta { .. } if self.started && !self.terminal => {}
-            ModelEvent::Finished { .. } if self.started && !self.terminal => {
-                self.terminal = true;
-            }
-            ModelEvent::ToolCall(_) | ModelEvent::ToolResult(_) => self.invalid = true,
-            _ => self.invalid = true,
-        }
-    }
-}
-
-/// Persist visible v4 text deltas while enforcing the same boundary rules as
-/// [`ProviderBoundarySink`]. Write failures invalidate the run.
-struct V4ContentSink<'a> {
-    store: &'a RuntimeStore,
-    run_id: &'a RunId,
-    expected_model: &'a str,
-    started: bool,
-    terminal: bool,
-    invalid: bool,
-}
-
-impl<'a> V4ContentSink<'a> {
-    const fn new(store: &'a RuntimeStore, run_id: &'a RunId, expected_model: &'a str) -> Self {
-        Self {
-            store,
-            run_id,
-            expected_model,
-            started: false,
-            terminal: false,
-            invalid: false,
-        }
-    }
-
-    fn validate(&self) -> Result<(), ExecutionError> {
-        if self.started && self.terminal && !self.invalid {
-            Ok(())
-        } else {
-            Err(unsupported())
-        }
-    }
-
-    fn now_ms() -> u64 {
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|elapsed| u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX))
-            .unwrap_or(0)
-    }
-}
-
-impl EventSink for V4ContentSink<'_> {
-    fn emit(&mut self, event: &ModelEvent) {
-        match event {
-            ModelEvent::Started { model }
-                if !self.started && !self.terminal && model == self.expected_model =>
-            {
-                self.started = true;
-            }
-            ModelEvent::TextDelta { text } if self.started && !self.terminal => {
-                if text.is_empty() {
-                    return;
-                }
-                if self
-                    .store
-                    .v4_append_content(
-                        self.run_id,
-                        V4ContentPayload::TextDelta { text: text.clone() },
-                        Self::now_ms(),
-                    )
-                    .is_err()
-                {
-                    self.invalid = true;
-                }
-            }
             ModelEvent::Finished { .. } if self.started && !self.terminal => {
                 self.terminal = true;
             }

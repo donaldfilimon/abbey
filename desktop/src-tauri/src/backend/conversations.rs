@@ -217,7 +217,62 @@ mod tests {
             .iter()
             .any(|c| c.id == created.id)
         );
+        let pinned = conversation_update(
+            created.conversation_id.clone(),
+            V4ConversationPatch {
+                title: None,
+                archived: None,
+                pinned: Some(true),
+            },
+        )
+        .unwrap();
+        assert!(pinned.pinned);
         assert!(conversation_archive(q.clone()).unwrap().archived);
+        assert!(
+            !conversation_update(
+                created.conversation_id.clone(),
+                V4ConversationPatch {
+                    title: None,
+                    archived: Some(false),
+                    pinned: None
+                }
+            )
+            .unwrap()
+            .archived
+        );
+        let route = conversation_routes()
+            .unwrap()
+            .into_iter()
+            .find(|route| route.available)
+            .expect("scratch available route");
+        let request = V4SubmitTurn {
+            conversation_id: created.conversation_id.clone(),
+            idempotency_key: IdempotencyKey::new(),
+            route_id: route.route_id,
+            input: "Lookup desktop turn fixture".into(),
+        };
+        let accepted = conversation_submit_turn(request.clone()).unwrap();
+        let mut terminal = false;
+        for _ in 0..100 {
+            let found = conversation_lookup_turn(
+                created.conversation_id.clone(),
+                request.idempotency_key.clone(),
+            )
+            .unwrap()
+            .expect("admitted turn");
+            assert_eq!(found.run_id, accepted.run_id);
+            if found.state.is_terminal() {
+                terminal = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert!(terminal, "scratch turn finishes without resubmission");
+        assert!(
+            conversation_lookup_turn(created.conversation_id.clone(), IdempotencyKey::new())
+                .unwrap()
+                .is_none()
+        );
         let history = conversations_search(V4ConversationQuery {
             search: Some("Seeded desktop history".into()),
             after: None,
@@ -253,4 +308,24 @@ mod tests {
             IpcErrorKind::NotFound
         );
     }
+}
+
+/// Exact read-only recovery of an admitted turn; never submits work.
+pub fn conversation_lookup_turn(
+    conversation_id: ConversationId,
+    idempotency_key: IdempotencyKey,
+) -> Result<Option<V4TurnSubmission>, IpcError> {
+    session()?
+        .lookup_turn(conversation_id, idempotency_key)
+        .map_err(error)
+}
+
+/// Only the canonical bounded title/pin/archive patch crosses this boundary.
+pub fn conversation_update(
+    conversation_id: ConversationId,
+    patch: V4ConversationPatch,
+) -> Result<V4Conversation, IpcError> {
+    session()?
+        .update_conversation(conversation_id, patch)
+        .map_err(error)
 }

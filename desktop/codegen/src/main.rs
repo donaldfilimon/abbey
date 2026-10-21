@@ -28,6 +28,10 @@ const SOURCES: &[(&str, &str)] = &[
         "src/app_core/v4.rs — protocol-v4 conversations",
     ),
     (
+        "src/app_core/v4_permission.rs",
+        "src/app_core/v4_permission.rs — validated internal permission profiles",
+    ),
+    (
         "src/app_core/v4_content.rs",
         "src/app_core/v4_content.rs — protocol-v4 visible content events",
     ),

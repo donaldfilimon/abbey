@@ -13,6 +13,7 @@ export function History({controller, state, open}: {controller:Conversations; st
       <input id={queryId} type="search" placeholder="Search conversations…" value={query} maxLength={256} onChange={event => setQuery(event.target.value)} disabled={!state.canRead}/>
       <button className="icon-button" aria-label="Search conversation titles" disabled={!state.canRead}><Icon name="search"/></button>
     </form>
+    <label className="history-heading">History view<select aria-label="Conversation archive filter" disabled={!state.canRead} value={state.archived ? "archived" : "active"} onChange={event=>void controller.filterArchived(event.target.value==="archived")}><option value="active">Active</option><option value="archived">Archived</option></select></label>
     <div className="history-heading"><span>Conversations</span><button className="icon-button" aria-label="Refresh conversation history" disabled={!state.canRead || state.listing} onClick={() => void controller.refresh()}><Icon name="refresh"/></button></div>
     {state.items.length ? <ul>{state.items.map(item => <li key={item.id}><button aria-current={state.selectedId === item.id ? "true" : undefined} title={item.title} onClick={() => {open(); void controller.select(item.id); setPicker(false);}}>
       <span className="history-title">{item.title}</span><span className="history-meta">{item.pinned ? "Pinned · " : ""}{item.archived ? "Archived · " : ""}{item.message_count} messages</span>

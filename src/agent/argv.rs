@@ -152,6 +152,14 @@ pub fn claude_model(requested: &str) -> Option<String> {
 /// How much transcript tail rides into an abi/ollama turn as context.
 pub const ABI_CONTEXT_TAIL_BYTES: usize = 8 * 1024;
 
+/// Shared stateless context framing for legacy transcripts and durable turns.
+/// Context is model input only; it conveys no permission to execute tools.
+pub(crate) fn conversation_context_prefix(history: &str) -> String {
+    format!(
+        "Previous conversation (context, oldest first, may be truncated):\n{history}\n--- end of context; answer the next message ---"
+    )
+}
+
 /// Map an Abbey model/alias onto a local Ollama tag.
 ///
 /// Cursor leftovers (`claude-*thinking*`, `composer-2.5`, `auto`) collapse to
@@ -352,10 +360,7 @@ impl AgentConfig {
         {
             let tail = utf8_tail(&prev, ABI_CONTEXT_TAIL_BYTES);
             if !tail.trim().is_empty() {
-                args.push(format!(
-                    "Previous conversation (context, oldest first, may be truncated):\n\
-                     {tail}\n--- end of context; answer the next message ---"
-                ));
+                args.push(conversation_context_prefix(tail));
             }
         }
         if let Some(mode) = &self.mode {
@@ -463,10 +468,7 @@ impl AgentConfig {
         {
             let tail = utf8_tail(&prev, ABI_CONTEXT_TAIL_BYTES);
             if !tail.trim().is_empty() {
-                args.push(format!(
-                    "Previous conversation (context, oldest first, may be truncated):\n\
-                     {tail}\n--- end of context; answer the next message ---"
-                ));
+                args.push(conversation_context_prefix(tail));
             }
         }
         if let Some(mode) = &self.mode {

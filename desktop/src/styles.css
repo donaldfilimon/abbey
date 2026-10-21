@@ -1164,3 +1164,19 @@ code,
 @media (max-width: 760px) {
   .history-open { display: flex; }
 }
+
+/* Safe conversation Markdown; content remains selectable without remote assets. */
+.message-content { min-width: 0; user-select: text; }
+.message .message-content > p + p { margin-top: .5em; }
+.message .message-content .message-heading { font-weight: 650; margin: .8em 0 .35em; }
+.message .message-content .message-heading-1 { font-size: 20px; }
+.message .message-content .message-heading-2 { font-size: 18px; }
+.message-content ul, .message-content ol { padding-left: 1.5em; line-height: 1.7; overflow-wrap: anywhere; }
+.message-content p code, .message-content li code { padding: .12em .3em; border-radius: 4px; background: var(--panel); border: 1px solid var(--border); }
+.message-code { margin: 12px 0; border: 1px solid var(--border); border-radius: 9px; overflow: hidden; }
+.message-code-toolbar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 12px; }
+.message-code-toolbar button { font-size: 11px; }
+.message-code pre { overflow-x: auto; max-width: 100%; margin: 0; padding: 14px; tab-size: 4; line-height: 1.6; font-size: 13px; white-space: pre; }
+.message-code pre:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
+.message .message-content .message-content-note, .message .message-copy-status { color: var(--muted); font-size: 12px; padding: 4px 0; }
+.message-content .message-plain { margin: 0; font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }

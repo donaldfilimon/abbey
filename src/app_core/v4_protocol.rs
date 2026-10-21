@@ -30,6 +30,7 @@ pub enum V4Command {
     SubmitTurn(V4SubmitTurn),
     ReadContent(V4ContentQuery),
     CancelTurn(ConversationId, RunId),
+    LookupTurn(ConversationId, IdempotencyKey),
     ListRoutes,
     SearchConversations(V4SearchQuery),
     DeleteConversation(V4ResourceQuery),
@@ -60,12 +61,14 @@ impl V4Command {
             Self::ReadMessages(query) => query.validate(),
             Self::UpdateConversation(_, patch) => patch.validate(),
             Self::SubmitTurn(request) => request.validate(),
+            Self::PutPermissionProfile(profile) => profile.validate(),
             Self::ReadContent(query) => query.validate(),
             Self::ReadConversation(_)
             | Self::ExportConversation(_)
             | Self::ArchiveConversation(_)
             | Self::RenameConversation(_)
             | Self::CancelTurn(_, _)
+            | Self::LookupTurn(_, _)
             | Self::ListRoutes
             | Self::SearchConversations(_)
             | Self::DeleteConversation(_)
@@ -76,7 +79,6 @@ impl V4Command {
             | Self::ListAutomations(_)
             | Self::UpsertAutomation(_)
             | Self::ReadPermissionProfile(_)
-            | Self::PutPermissionProfile(_)
             | Self::DecideAction(_)
             | Self::ReadTask(_)
             | Self::CancelTask(_)
@@ -100,7 +102,9 @@ impl V4Command {
             | Self::ArchiveConversation(_)
             | Self::RenameConversation(_) => V4Capability::WriteConversations,
             Self::SubmitTurn(_) => V4Capability::SubmitTurns,
-            Self::ReadContent(_) | Self::ListContentEvents(_) => V4Capability::ReadTurns,
+            Self::ReadContent(_) | Self::ListContentEvents(_) | Self::LookupTurn(_, _) => {
+                V4Capability::ReadTurns
+            }
             Self::CancelTurn(_, _) => V4Capability::CancelTurns,
             Self::ListRoutes => V4Capability::ReadRoutes,
             Self::ListTasks(_) | Self::ReadTask(_) => V4Capability::ReadTasks,
@@ -138,6 +142,7 @@ pub enum V4Event {
     TurnSubmitted(V4TurnSubmission),
     Content(V4ContentPage),
     TurnCancelled(ConversationId, RunId, RunState),
+    TurnLookup(ConversationId, IdempotencyKey, Option<V4TurnSubmission>),
     Routes(Vec<V4Route>),
     Deleted(V4ResourceQuery),
     TurnAccepted(V4TurnSubmission),
@@ -189,6 +194,16 @@ impl V4Event {
             Self::Messages(page) => page.validate(),
             Self::TurnSubmitted(submission) => submission.validate(),
             Self::Content(page) => page.validate(),
+            Self::TurnLookup(conversation, key, submission) => {
+                if let Some(submission) = submission {
+                    submission.validate()?;
+                    super::v4::ensure(
+                        &submission.conversation_id == conversation
+                            && &submission.idempotency_key == key,
+                    )?;
+                }
+                Ok(())
+            }
             Self::TurnCancelled(_, _, state) => {
                 super::v4::ensure(*state == RunState::CancelRequested || state.is_terminal())
             }
@@ -236,6 +251,7 @@ impl<'de> Deserialize<'de> for V4Command {
             SubmitTurn(V4SubmitTurn),
             ReadContent(V4ContentQuery),
             CancelTurn(ConversationId, RunId),
+            LookupTurn(ConversationId, IdempotencyKey),
             ListRoutes,
             SearchConversations(V4SearchQuery),
             DeleteConversation(V4ResourceQuery),
@@ -269,6 +285,7 @@ impl<'de> Deserialize<'de> for V4Command {
             Wire::SubmitTurn(request) => Self::SubmitTurn(request),
             Wire::ReadContent(query) => Self::ReadContent(query),
             Wire::CancelTurn(conversation_id, run_id) => Self::CancelTurn(conversation_id, run_id),
+            Wire::LookupTurn(conversation, key) => Self::LookupTurn(conversation, key),
             Wire::ListRoutes => Self::ListRoutes,
             Wire::SearchConversations(query) => Self::SearchConversations(query),
             Wire::DeleteConversation(query) => Self::DeleteConversation(query),
@@ -309,6 +326,7 @@ impl<'de> Deserialize<'de> for V4Event {
             TurnSubmitted(V4TurnSubmission),
             Content(V4ContentPage),
             TurnCancelled(ConversationId, RunId, RunState),
+            TurnLookup(ConversationId, IdempotencyKey, Option<V4TurnSubmission>),
             Routes(Vec<V4Route>),
             Deleted(V4ResourceQuery),
             TurnAccepted(V4TurnSubmission),
@@ -332,6 +350,9 @@ impl<'de> Deserialize<'de> for V4Event {
             Wire::Content(value) => Self::Content(value),
             Wire::TurnCancelled(conversation_id, run_id, state) => {
                 Self::TurnCancelled(conversation_id, run_id, state)
+            }
+            Wire::TurnLookup(conversation, key, submission) => {
+                Self::TurnLookup(conversation, key, submission)
             }
             Wire::Routes(value) => Self::Routes(value),
             Wire::Deleted(value) => Self::Deleted(value),

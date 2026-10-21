@@ -93,6 +93,8 @@ fn invoke_surface_has_only_enumerated_model_and_conversation_effects() {
         "routes",
         "submit_turn",
         "cancel_turn",
+        "lookup_turn",
+        "update",
     ] {
         assert!(handler.contains(&format!("commands::app_conversation_{name}")));
     }

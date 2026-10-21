@@ -11,6 +11,7 @@ mod v3_ipc;
 
 use abbey::edition::ACTIVE;
 use tauri::Manager;
+use tauri_plugin_updater::UpdaterExt;
 
 fn main() {
     tauri::Builder::default()
@@ -50,20 +51,21 @@ fn main() {
             // endpoint — the same code path the Doctor surface's UpdateCheck
             // uses. No auto-check, no background scheduler, and no install
             // without an explicit button press (that stays in UpdateCheck).
-            let check_for_updates = MenuItemBuilder::with_id("check-for-updates", "Check for Updates…")
-                .build(handle)?;
+            let check_for_updates =
+                MenuItemBuilder::with_id("check-for-updates", "Check for Updates…")
+                    .build(handle)?;
             let app_menu = SubmenuBuilder::new(handle, product_name)
                 .about(Some(about))
                 .item(&check_for_updates)
                 .separator()
-            .services()
-            .separator()
-            .hide()
-            .hide_others()
-            .show_all()
-            .separator()
-            .quit()
-            .build()?;
+                .services()
+                .separator()
+                .hide()
+                .hide_others()
+                .show_all()
+                .separator()
+                .quit()
+                .build()?;
             let edit_menu = SubmenuBuilder::new(handle, "Edit")
                 .undo()
                 .redo()
@@ -113,10 +115,10 @@ fn main() {
             // the edition overlay replaces arrays wholesale, so the title is
             // applied here from the same product name the bundle and the
             // menu use.
-            if let Some(window) = app.get_webview_window("main") {
-                if let Some(product_name) = app.config().product_name.clone() {
-                    let _ = window.set_title(&product_name);
-                }
+            if let Some(window) = app.get_webview_window("main")
+                && let Some(product_name) = app.config().product_name.clone()
+            {
+                let _ = window.set_title(&product_name);
             }
             // Route the single custom menu item ("Check for Updates…") to the
             // updater plugin's manual check: user-initiated (menu click only),
@@ -173,6 +175,8 @@ fn main() {
             commands::app_conversation_routes,
             commands::app_conversation_submit_turn,
             commands::app_conversation_cancel_turn,
+            commands::app_conversation_lookup_turn,
+            commands::app_conversation_update,
         ])
         .run(tauri::generate_context!())
         .expect("abbey-desktop failed to start");

@@ -68,6 +68,7 @@ impl AgentBackend {
     /// Where the cached backend choice came from, for `doctor` honesty:
     /// `"default"`, or the auto-fallback note when ollama is absent.
     /// Env/config sources keep their existing richer formatting in `doctor`.
+    #[allow(dead_code)]
     pub fn from_env_source() -> &'static str {
         Self::from_env_with_source().1
     }

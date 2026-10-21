@@ -237,7 +237,9 @@ The latest frontend review fixed route-read ambiguity, unavailable-route selecti
 
 ### Task 19: Faithful bounded assistant content (continuation of Tasks1–4)
 
-- [ ] Remove fabricated admission text from future content, preserve actual provider bytes and all historical stored records.
+- [x] Remove fabricated admission text from future content, preserve actual provider bytes and all historical stored records.
 - [ ] Record actual cumulative assistant text bytes independently of bounded UTF-8 preview, atomically; propagate preview-write errors and enforce cumulative output bounds with visible terminal outcome.
 - [ ] Return bounded serialized content pages and split large provider deltas losslessly; test reconnect after completed long output and exact complete-history reconstruction.
 - [ ] Independently review focused code/tests and requalify affected gates. Remaining canonical provider/session, governed tasks/tools, automations and production-native/package requirements remain tracked in the production master plan.
+
+2026-10-21 Task19 receipt: `docs/verification/2026-10-21-production-content-storage.md`. Durable totals, bounded pages and provider chunking are implemented and independently reviewed. Combined qualification remains open because concurrent configuration edits changed the source and broke the root gate; isolated content-candidate results are recorded separately.

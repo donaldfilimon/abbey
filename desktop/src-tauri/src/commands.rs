@@ -2,13 +2,13 @@
 //! No generic effect, inference, shell, credentials, or paths cross IPC.
 
 use abbey::app_core::{
-    ClaimsQuery, ClaimsSnapshot, ConversationId, RouteAuditPage, RouteAuditQuery, RunEventPage,
-    RunEventsQuery, RunId, RunQuery, RunSnapshot, RunState, RuntimeStatus, V3CapabilitySet,
-    V3EntityPage, V3EntityRecord, V3ModelAction, V3ModelDetails, V3OperationStatus, V3PageQuery,
-    V3ResourceQuery, V3SearchRequest, V3StableClaim, V4CapabilitySet, V4ContentPage,
-    V4ContentQuery, V4Conversation, V4ConversationCreate, V4ConversationPage, V4ConversationQuery,
-    V4ConversationRename, V4MessagePage, V4MessageQuery, V4ResourceQuery, V4Route, V4SubmitTurn,
-    V4TurnSubmission,
+    ClaimsQuery, ClaimsSnapshot, ConversationId, IdempotencyKey, RouteAuditPage, RouteAuditQuery,
+    RunEventPage, RunEventsQuery, RunId, RunQuery, RunSnapshot, RunState, RuntimeStatus,
+    V3CapabilitySet, V3EntityPage, V3EntityRecord, V3ModelAction, V3ModelDetails,
+    V3OperationStatus, V3PageQuery, V3ResourceQuery, V3SearchRequest, V3StableClaim,
+    V4CapabilitySet, V4ContentPage, V4ContentQuery, V4Conversation, V4ConversationCreate,
+    V4ConversationPage, V4ConversationQuery, V4ConversationRename, V4MessagePage, V4MessageQuery,
+    V4ResourceQuery, V4Route, V4SubmitTurn, V4TurnSubmission,
 };
 use abbey::edition::ACTIVE;
 
@@ -236,6 +236,21 @@ pub async fn app_conversation_cancel_turn(
     run_id: RunId,
 ) -> Result<RunState, IpcError> {
     conversation_task(move || backend::conversation_cancel_turn(conversation_id, run_id)).await
+}
+#[tauri::command]
+pub async fn app_conversation_lookup_turn(
+    conversation_id: ConversationId,
+    idempotency_key: IdempotencyKey,
+) -> Result<Option<V4TurnSubmission>, IpcError> {
+    conversation_task(move || backend::conversation_lookup_turn(conversation_id, idempotency_key))
+        .await
+}
+#[tauri::command]
+pub async fn app_conversation_update(
+    conversation_id: ConversationId,
+    patch: V4ConversationPatch,
+) -> Result<V4Conversation, IpcError> {
+    conversation_task(move || backend::conversation_update(conversation_id, patch)).await
 }
 async fn conversation_task<T: Send + 'static>(
     task: impl FnOnce() -> Result<T, IpcError> + Send + 'static,

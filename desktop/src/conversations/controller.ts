@@ -1,4 +1,4 @@
-import type { RunState, V4CapabilitySet, V4ContentPage, V4Conversation, V4ConversationCreate, V4ConversationPage, V4ConversationQuery, V4ConversationRename, V4Message, V4MessagePage, V4MessageQuery, V4ResourceQuery, V4Route, V4SubmitTurn, V4TurnSubmission } from "../ipc/generated";
+import type { RunState, V4CapabilitySet, V4ContentPage, V4Conversation, V4ConversationCreate, V4ConversationPatch, V4ConversationPage, V4ConversationQuery, V4ConversationRename, V4Message, V4MessagePage, V4MessageQuery, V4ResourceQuery, V4Route, V4SubmitTurn, V4TurnSubmission } from "../ipc/generated";
 export interface ConversationApi {
   daemon?: () => Promise<boolean>;
   grants: () => Promise<V4CapabilitySet>;
@@ -8,18 +8,22 @@ export interface ConversationApi {
   messages: (q: V4MessageQuery) => Promise<V4MessagePage>;
   content?: (q: {conversation_id:string; run_id:string; after:number; limit:number}) => Promise<V4ContentPage>;
   create: (q: V4ConversationCreate) => Promise<V4Conversation>;
+  update?: (conversationId:string, patch:V4ConversationPatch) => Promise<V4Conversation>;
   rename: (q: V4ConversationRename) => Promise<V4Conversation>;
   archive: (q: V4ResourceQuery) => Promise<V4Conversation>;
   delete: (q: V4ResourceQuery) => Promise<void>;
   routes: () => Promise<V4Route[]>;
   submit: (request: V4SubmitTurn) => Promise<V4TurnSubmission>;
+  lookupTurn?: (conversationId:string, idempotencyKey:string) => Promise<V4TurnSubmission | null>;
   cancel?: (conversationId:string, runId:string) => Promise<RunState>;
 }
 export type MutationKind = "create" | "rename" | "archive" | "delete";
-interface Mutation { kind: MutationKind; id: string | null; title: string; phase: "sending" | "unknown" }
+interface Mutation { kind: MutationKind | "update"; patch?:V4ConversationPatch; id: string | null; title: string; phase: "sending" | "unknown" }
 interface StopState { conversationId:string; runId:string; phase:"sending" | "requested" | "unknown" | "rejected" | "settled"; note:string }
 const activeState = (value:RunState) => ["queued", "starting", "running", "cancel_requested"].includes(value);
+interface RetryAttempt { idempotencyKey:string; state:RunState | null; conversationId:string; originalRunId:string; runId:string | null; routeId:string; phase:"sending" | "accepted" | "unknown" | "rejected" }
 interface Snapshot {
+  retries: RetryAttempt[]; canUpdate:boolean; archived:boolean;
   access: "loading" | "ready" | "read-only" | "no-daemon" | "no-grant" | "offline";
   canRead: boolean; canWrite: boolean; canCancel:boolean; activeRunId:string | null; stop:StopState | null; query: string; items: V4Conversation[];
   listing: boolean; more: boolean; selectedId: string | null; selected: V4Conversation | null;
@@ -35,21 +39,25 @@ const PAGE = 16;
 const kindOf = (error: unknown) => typeof error === "object" && error !== null && "kind" in error ? error.kind : null;
 // One controller per application window. Never persisted or logged. No timers/retries.
 export function createConversations(api: ConversationApi) {
-  let state: Snapshot = {access:"loading", canRead:false, canWrite:false, canCancel:false, activeRunId:null, stop:null, query:"", items:[], listing:false, more:false, selectedId:null, selected:null, messages:[], reading:false, moreMessages:false, draft:"", mutation:null, note:null, routes:[], routeId:null, routeStatus:"loading", sendUnknownFor:null, sendUnknownText:null, sendUnknownAt:null, sending:false};
+  let state: Snapshot = {retries:[], canUpdate:!!api.update, archived:false, access:"loading", canRead:false, canWrite:false, canCancel:false, activeRunId:null, stop:null, query:"", items:[], listing:false, more:false, selectedId:null, selected:null, messages:[], reading:false, moreMessages:false, draft:"", mutation:null, note:null, routes:[], routeId:null, routeStatus:"loading", sendUnknownFor:null, sendUnknownText:null, sendUnknownAt:null, sending:false};
   const stops = new Map<string, StopState>();
   const listeners = new Set<() => void>();
   const drafts = new Map<string, string>();
+  const draftVersions = new Map<string, number>();
+  const unknownSends = new Map<string, {key:string; input:string; at:number; draftVersion:number}>();
   let accessGeneration = 0, listGeneration = 0, readGeneration = 0, metadataGeneration = 0, pollGeneration = 0;
   let pollFailures = 0, quietPolls = 0, pollDelay = 250;
   // A cursor belongs only to the successful first page of its exact query.
   // Conversation list uses ID cursors (after: ConvId, next_after); messages use numeric sequence.
-  let listSnapshot: {query: string; after: string | null} | null = null;
+  let listSnapshot: {query: string; archived:boolean; after: string | null} | null = null;
   let messageAfter = 0;
   const contentByRun = new Map<string, {after:number; text:string; done:boolean}>();
   const contentTargets = new Map<string, {message:V4Message; conversationId:string}>();
   let pollTimer: ReturnType<typeof setTimeout> | null = null;
   const update = (patch: Partial<Snapshot>) => {
     state = {...state, ...patch};
+    const unknown=state.selectedId ? unknownSends.get(state.selectedId) : undefined;
+    state={...state,sendUnknownFor:unknown ? state.selectedId : null,sendUnknownText:unknown?.input ?? null,sendUnknownAt:unknown?.at ?? null};
     const runs = new Map<string, V4Message>();
     for (const message of state.messages) {
       if (message.conversation_id === state.selectedId) runs.set(message.run_id, message);
@@ -115,7 +123,8 @@ export function createConversations(api: ConversationApi) {
             messageAfter = merged.at(-1)?.sequence ?? messageAfter;
             activity = messageAfter > previousAfter;
             update({messages: merged});
-            reconcileUnknownSend(id, tail.messages);
+            await reconcileUnknownSend(id);
+            if(gen !== pollGeneration || state.selectedId !== id)return;
             for (const message of tail.messages) {
               if (message.role === "assistant" && (!message.text_complete || message.text_bytes > new TextEncoder().encode(message.text).length)) {
                 contentTargets.set(message.run_id, {message, conversationId:id});
@@ -142,16 +151,21 @@ export function createConversations(api: ConversationApi) {
     metadataGeneration++;
     update({selected});
   };
-  const reconcileUnknownSend = (conversationId: string, messages: V4Message[]) => {
-    if (state.sendUnknownFor !== conversationId || state.sendUnknownText === null || state.sendUnknownAt === null) return;
-    const accepted = messages.some(message => message.role === "user" && message.text === state.sendUnknownText && message.created_at_ms >= state.sendUnknownAt!);
-    if (!accepted) return;
-    drafts.delete(conversationId);
-    update({sendUnknownFor:null, sendUnknownText:null, sendUnknownAt:null, ...(state.selectedId === conversationId ? {draft:""} : {}), note:"The submitted message is present in this conversation’s history. It was not sent again."});
+  const reconcileUnknownSend = async (conversationId:string) => {
+    const pending=unknownSends.get(conversationId);
+    if(!pending || !api.lookupTurn)return;
+    try {
+      const result=await api.lookupTurn(conversationId,pending.key);
+      if(unknownSends.get(conversationId)!==pending || !result || result.conversation_id!==conversationId || result.idempotency_key!==pending.key || !result.run_id || !["queued","starting","running","cancel_requested","succeeded","failed","interrupted","cancelled"].includes(result.state))return;
+      unknownSends.delete(conversationId);
+      const unchanged=(draftVersions.get(conversationId) ?? 0)===pending.draftVersion;
+      if(unchanged)drafts.delete(conversationId);
+      update(state.selectedId===conversationId ? {...(unchanged ? {draft:""} : {}),note:"The exact submitted turn was confirmed by its idempotency key. It was not sent again."} : {});
+    } catch { /* Missing/failed lookup leaves this exact pending send untouched. */ }
   };
   const refresh = async (append = false) => {
     const previous = append ? listSnapshot : null;
-    if (!state.canRead || (append && (state.listing || !state.more || !previous || previous.query !== state.query))) return;
+    if (!state.canRead || (append && (state.listing || !state.more || !previous || previous.query !== state.query || previous.archived !== state.archived))) return;
     const generation = append ? listGeneration : ++listGeneration;
     const qtext = state.query;
     // Build canonical conversation query; list supports search term directly (search surface is narrow).
@@ -159,7 +173,7 @@ export function createConversations(api: ConversationApi) {
       search: qtext ? qtext : null,
       after: previous?.after ?? null,
       limit: PAGE,
-      archived: false,
+      archived: state.archived,
     };
     // Keep visible rows on failure, but never retain their cursor under a new snapshot.
     if (!append) listSnapshot = null;
@@ -169,10 +183,20 @@ export function createConversations(api: ConversationApi) {
       if (generation !== listGeneration) return;
       const items = append ? [...state.items, ...result.conversations] : result.conversations;
       const next = result.next_after ?? null;
-      listSnapshot = {query: qtext, after: next };
+      listSnapshot = {query: qtext, archived:convQ.archived, after: next };
       update({items:items.slice(0, 256), listing:false, more: next !== null && items.length < 256});
     } catch {
       if (generation === listGeneration) update({listing:false, note:"Conversation history couldn’t be read. Your current view and drafts are kept. Refresh to try the read again."});
+    }
+  };
+  const reconcileRetries = async (conversationId:string) => {
+    if(!api.lookupTurn)return;
+    for(const attempt of state.retries.filter(current=>current.conversationId===conversationId && current.phase==="unknown")) {
+      try {
+        const result=await api.lookupTurn(conversationId,attempt.idempotencyKey);
+        if(!result || result.conversation_id!==conversationId || result.idempotency_key!==attempt.idempotencyKey || !result.run_id || result.run_id===attempt.originalRunId || !["queued","starting","running","cancel_requested","succeeded","failed","interrupted","cancelled"].includes(result.state))continue;
+        update({retries:state.retries.map(current=>current===attempt ? {...attempt,phase:"accepted",runId:result.run_id,state:result.state} : current)});
+      } catch { /* Unknown remains unknown; exact lookup never resubmits. */ }
     }
   };
   const select = async (id: string) => {
@@ -195,7 +219,10 @@ export function createConversations(api: ConversationApi) {
       // A completed metadata effect/reconciliation outranks an older read, while
       // its independently valid history still finishes loading and keeps paging.
       update({...(metadataVersion === metadataGeneration ? {selected} : {}), messages:histMsgs, reading:false, moreMessages: history.next_after !== null });
-      reconcileUnknownSend(id, histMsgs);
+      await reconcileUnknownSend(id);
+      if(generation !== readGeneration)return;
+      await reconcileRetries(id);
+      if(generation !== readGeneration)return;
       for (const message of histMsgs) if (message.role === "assistant" && (!message.text_complete || message.text_bytes > new TextEncoder().encode(message.text).length)) contentTargets.set(message.run_id, {message, conversationId:id});
       schedulePoll();
     } catch {
@@ -227,7 +254,7 @@ export function createConversations(api: ConversationApi) {
       if (generation !== accessGeneration) return;
       const routeId = routes.some(route => route.available && route.route_id === state.routeId) ? state.routeId : routes.find(route => route.available)?.route_id ?? null;
       update({canRead, canWrite:canRead && canWrite, canCancel:canRead && !!api.cancel && grants.capabilities.includes("cancel_turns"), access:canRead ? canWrite ? "ready" : "read-only" : "no-grant", routes, routeId, routeStatus});
-      if (canRead) { await refresh(); if(generation === accessGeneration && state.selectedId) await select(state.selectedId); }
+      if (canRead) { for(const id of [...unknownSends.keys()]) await reconcileUnknownSend(id); for(const id of new Set(state.retries.filter(attempt=>attempt.phase==="unknown").map(attempt=>attempt.conversationId))) await reconcileRetries(id); await refresh(); if(generation === accessGeneration && state.selectedId) await select(state.selectedId); }
       else { stopPoll(); }
     } catch {
       stopPoll();
@@ -265,7 +292,7 @@ export function createConversations(api: ConversationApi) {
     try {
       const current = await api.read({resource_id:mutation.id});
       if (state.mutation !== mutation) return;
-      if ((mutation.kind === "rename" && current.title === mutation.title) || (mutation.kind === "archive" && current.archived)) {
+      if (current.id === mutation.id && ((mutation.kind === "update" && mutation.patch && (mutation.patch.title === null || current.title === mutation.patch.title) && (mutation.patch.pinned === null || current.pinned === mutation.patch.pinned) && (mutation.patch.archived === null || current.archived === mutation.patch.archived)) || (mutation.kind === "rename" && current.title === mutation.title) || (mutation.kind === "archive" && current.archived))) {
         update({mutation:null, note:"Current conversation state matches the requested change (read reconciliation)."});
         if(state.selectedId === current.id) acceptMetadata(current);
       }
@@ -276,12 +303,43 @@ export function createConversations(api: ConversationApi) {
       }
     }
   };
+  const canRetry = (conversationId:string, runId:string) => {
+    if (conversationId !== state.selectedId || !state.canWrite || state.reading || state.sending || state.mutation || state.activeRunId || state.sendUnknownFor === conversationId || state.retries.some(attempt => (attempt.phase === "unknown" && attempt.conversationId === conversationId) || (attempt.phase === "accepted" && attempt.conversationId === conversationId && (attempt.state === null || activeState(attempt.state)) && !state.messages.some(message => message.run_id === attempt.runId && !activeState(message.state))) || (attempt.conversationId === conversationId && attempt.originalRunId === runId && attempt.phase !== "rejected")) || state.retries.length >= 256 || state.routeStatus !== "ready" || !state.routes.some(route => route.available && route.route_id === state.routeId)) return false;
+    const messages = state.messages.filter(message => message.conversation_id === conversationId && message.run_id === runId);
+    const latest = messages.at(-1);
+    const original = messages.find(message => message.role === "user");
+    return !!latest && ["failed", "interrupted", "cancelled"].includes(latest.state) && !!original && original.text_complete && original.text.trim().length > 0 && new TextEncoder().encode(original.text).length === original.text_bytes;
+  };
   return {
     snapshot: () => state,
     subscribe(fn: () => void) {listeners.add(fn); return () => {listeners.delete(fn);};},
     connect, select, newDraft, mutate, reconcile,
+    async filterArchived(archived:boolean) {
+      if(state.archived===archived)return;
+      listGeneration++;listSnapshot=null;
+      update({archived,items:[],more:false,listing:false});
+      await refresh();
+    },
+    async updateMetadata(patch:V4ConversationPatch) {
+      if(!state.canWrite || !api.update || !state.selectedId || state.mutation || state.reading)return;
+      const id=state.selectedId;
+      const exact={title:patch.title,archived:patch.archived,pinned:patch.pinned};
+      const mutation:Mutation={kind:"update",id,title:"",patch:exact,phase:"sending"};
+      update({mutation,note:null});
+      try {
+        const current=await api.update(id,{...exact});
+        if(current.id!==id)throw Error("Uncorrelated conversation update");
+        update({mutation:null,...(state.selectedId===id ? {note:"Conversation saved."} : {})});
+        if(state.selectedId===id)acceptMetadata(current);
+        await refresh();
+      } catch(error) {
+        const rejected=["rejected","configuration","unsupported_platform","not_found"].includes(String(kindOf(error)));
+        update({mutation:rejected ? null : {...mutation,phase:"unknown"},note:rejected ? "Conversation update rejected. Your draft is kept." : "Update outcome unknown. Check current state before making another change; it will not be sent again."});
+      }
+    },
     draft(value: string) {
       const key = draftKey();
+      draftVersions.set(key,(draftVersions.get(key) ?? 0)+1);
       if (!drafts.has(key) && drafts.size >= 32 && value) {update({note:"This window holds 32 drafts. Clear an existing draft before adding another."}); return;}
       const draft = value.slice(0, 8192); if(draft) drafts.set(key, draft); else drafts.delete(key); update({draft});
     },
@@ -319,13 +377,34 @@ export function createConversations(api: ConversationApi) {
       update({});
       if (state.selectedId === conversationId) schedulePoll();
     },
+    canRetry,
+    async retry(conversationId:string, originalRunId:string) {
+      if (!canRetry(conversationId, originalRunId)) return;
+      const input = state.messages.find(message => message.conversation_id === conversationId && message.run_id === originalRunId && message.role === "user")!.text;
+      const routeId = state.routeId!;
+      const idempotency = `turn-${crypto.randomUUID()}`;
+      const attempt:RetryAttempt = {conversationId, originalRunId, routeId, runId:null, idempotencyKey:idempotency, state:null, phase:"sending"};
+      update({sending:true, retries:[...state.retries.filter(previous => previous.conversationId !== conversationId || previous.originalRunId !== originalRunId), attempt], note:null});
+      const finish = (patch:Partial<RetryAttempt>, note:string | null) => update({sending:false, retries:state.retries.map(current => current === attempt ? {...attempt, ...patch} : current), ...(state.selectedId === conversationId ? {note} : {})});
+      try {
+        const result = await api.submit({conversation_id:conversationId, idempotency_key:idempotency, route_id:routeId, input});
+        if (result.conversation_id !== conversationId || result.idempotency_key !== idempotency || !result.run_id || result.run_id === originalRunId || result.duplicate) throw new Error("Uncorrelated retry response");
+        finish({phase:"accepted", runId:result.run_id, state:result.state}, "Retry accepted. Your composer draft is kept.");
+        if (state.selectedId === conversationId) await select(conversationId);
+      } catch (error) {
+        const rejected = ["rejected", "configuration", "unsupported_platform", "not_found"].includes(String(kindOf(error)));
+        finish({phase:rejected ? "rejected" : "unknown"}, rejected ? "Retry rejected. Your draft is kept." : "Retry outcome unknown. It will not be sent again; inspect history. Your draft is kept.");
+      }
+    },
     async send() {
-      if (!state.canWrite || state.sending || state.mutation || (state.selectedId !== null && state.sendUnknownFor === state.selectedId) || !state.routeId || state.routeStatus !== "ready" || !state.routes.some(route => route.available && route.route_id === state.routeId)) return;
+      if (!state.canWrite || state.sending || state.retries.some(attempt => attempt.phase === "unknown" && attempt.conversationId === state.selectedId) || state.mutation || (state.selectedId !== null && state.sendUnknownFor === state.selectedId) || !state.routeId || state.routeStatus !== "ready" || !state.routes.some(route => route.available && route.route_id === state.routeId)) return;
+      if(unknownSends.size>=256) {update({note:"This window holds 256 unresolved sends. Reconcile an existing send before submitting another."});return;}
       const input = state.draft.trim();
       if (!input) return;
       const idempotency = `turn-${crypto.randomUUID()}`;
       const routeId = state.routeId;
       let submittedAt = 0;
+      const originalDraftVersion=draftVersions.get(draftKey()) ?? 0;
       update({sending:true, note:null});
       let conversationId = state.selectedId;
       if (!conversationId) {
@@ -335,6 +414,7 @@ export function createConversations(api: ConversationApi) {
           conversationId = created.id;
           drafts.delete("@new");
           drafts.set(conversationId, input);
+          draftVersions.set(conversationId,originalDraftVersion);
           update({selectedId:created.id, selected:created});
         } catch (error) {
           const rejected = ["rejected", "configuration", "unsupported_platform", "not_found"].includes(String(kindOf(error)));
@@ -344,14 +424,16 @@ export function createConversations(api: ConversationApi) {
       }
       try {
         submittedAt = Date.now();
-        await api.submit({conversation_id:conversationId, idempotency_key:idempotency, route_id:routeId, input});
-        drafts.delete(conversationId);
-        update({sending:false, draft:"", note:null});
-        await select(conversationId);
+        const result=await api.submit({conversation_id:conversationId, idempotency_key:idempotency, route_id:routeId, input});
+        if(result.conversation_id!==conversationId || result.idempotency_key!==idempotency || !result.run_id || !["queued","starting","running","cancel_requested","succeeded","failed","interrupted","cancelled"].includes(result.state))throw new Error("Uncorrelated submission response");
+        const unchanged=(draftVersions.get(conversationId) ?? 0)===originalDraftVersion;
+        if(unchanged)drafts.delete(conversationId);
+        update({sending:false,...(state.selectedId===conversationId ? {...(unchanged ? {draft:""} : {}),note:null} : {})});
+        if(state.selectedId===conversationId)await select(conversationId);
       } catch (error) {
         const rejected = ["rejected", "configuration", "unsupported_platform", "not_found"].includes(String(kindOf(error)));
-        drafts.set(conversationId, input);
-        update({sending:false, ...(rejected ? {} : {sendUnknownFor:conversationId, sendUnknownText:input, sendUnknownAt:submittedAt}), note:rejected ? "The message was rejected. Your draft is kept." : "Outcome unknown: this message may have been submitted. It will not be sent again. Refresh this conversation before continuing."});
+        if(!rejected)unknownSends.set(conversationId,{key:idempotency,input,at:submittedAt,draftVersion:originalDraftVersion});
+        update({sending:false,...(state.selectedId===conversationId ? {note:rejected ? "The message was rejected. Your draft is kept." : "Outcome unknown: this message may have been submitted. It will not be sent again. Refresh this conversation before continuing."} : {})});
       }
     },
     refresh: () => refresh(), more: () => refresh(true),

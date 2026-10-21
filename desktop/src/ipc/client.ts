@@ -6,7 +6,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   V4CapabilitySet, V4ContentPage, V4ContentQuery, V4Conversation, V4ConversationCreate,
-  V4ConversationQuery, V4ConversationRename, V4ConversationPage, V4ResourceQuery, V4Route,
+  V4ConversationQuery, V4ConversationRename, V4ConversationPatch, V4ConversationPage, V4ResourceQuery, V4Route,
   V4MessagePage, V4MessageQuery, V4SubmitTurn, V4TurnSubmission,
   BundleIdentity,
   ClaimsQuery,
@@ -73,6 +73,8 @@ export const COMMANDS = [
   "app_conversation_routes",
   "app_conversation_submit_turn",
   "app_conversation_cancel_turn",
+  "app_conversation_lookup_turn",
+  "app_conversation_update",
 
 ] as const;
 
@@ -238,4 +240,14 @@ export function appConversationSubmitTurn(request: V4SubmitTurn): Promise<V4Turn
 /** Send once; the Rust client checks exact response conversation/run correlation. */
 export function appConversationCancelTurn(conversationId: ConversationId, runId: RunId): Promise<RunState> {
   return invoke<RunState>("app_conversation_cancel_turn", { conversationId, runId });
+}
+
+/** Read-only recovery; a missing receipt never triggers submission. */
+export function appConversationLookupTurn(conversationId: ConversationId, idempotencyKey: string): Promise<V4TurnSubmission | null> {
+  return invoke<V4TurnSubmission | null>("app_conversation_lookup_turn", { conversationId, idempotencyKey });
+}
+
+/** Existing daemon metadata patch; no execution or arbitrary configuration authority. */
+export function appConversationUpdate(conversationId: ConversationId, patch: V4ConversationPatch): Promise<V4Conversation> {
+  return invoke<V4Conversation>("app_conversation_update", { conversationId, patch });
 }

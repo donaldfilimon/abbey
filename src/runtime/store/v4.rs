@@ -17,6 +17,9 @@ use crate::app_core::{
 use chrono::{DateTime, SecondsFormat, Utc};
 use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, params};
 
+#[path = "v4_context.rs"]
+mod context;
+
 #[path = "v4_admin.rs"]
 mod admin;
 #[path = "v4_turn.rs"]
@@ -267,12 +270,12 @@ fn list_conversations(
     let pat = q.search.as_deref().map(like_contains);
     let after_seq: i64 = if let Some(ref after) = q.after {
         tx.query_row(
-            "SELECT sequence FROM assistant_conversations WHERE id=?1",
-            [after.as_str()],
+            "SELECT sequence FROM assistant_conversations WHERE id=?1 AND deleted=0 AND archived=?2 AND (?3 IS NULL OR title LIKE ?3 ESCAPE '\\')",
+            params![after.as_str(), i64::from(q.archived), pat],
             |r| r.get(0),
         )
         .optional()?
-        .unwrap_or(0)
+        .ok_or(StoreError::InvalidInput("conversation cursor invalid"))?
     } else {
         0
     };

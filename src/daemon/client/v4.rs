@@ -1,10 +1,11 @@
 //! Send-once protocol-v4 client. It does not retry, downgrade, or replay an effect.
 use super::DaemonClient;
 use crate::app_core::{
-    APP_PROTOCOL_V4, APP_SCHEMA_V4, ConversationId, RunId, RunState, V4CapabilitySet, V4Command,
-    V4ContentPage, V4ContentQuery, V4Conversation, V4ConversationPage, V4ConversationPatch,
-    V4ConversationQuery, V4ConversationRename, V4ErrorCode, V4Event, V4GrantRequest, V4MessagePage,
-    V4MessageQuery, V4ResourceQuery, V4Route, V4SubmitTurn, V4TurnSubmission,
+    APP_PROTOCOL_V4, APP_SCHEMA_V4, ConversationId, IdempotencyKey, RunId, RunState,
+    V4CapabilitySet, V4Command, V4ContentPage, V4ContentQuery, V4Conversation, V4ConversationPage,
+    V4ConversationPatch, V4ConversationQuery, V4ConversationRename, V4ErrorCode, V4Event,
+    V4GrantRequest, V4MessagePage, V4MessageQuery, V4ResourceQuery, V4Route, V4SubmitTurn,
+    V4TurnSubmission,
 };
 use crate::daemon::{V4RequestEnvelope, V4ResponseEnvelope, V4ResponsePayload};
 use std::fmt;
@@ -88,6 +89,22 @@ impl V4DaemonSession {
     ) -> Result<V4Conversation, V4ClientError> {
         match self.request(V4Command::CreateConversation(title.into()))? {
             V4Event::Conversation(c) => Ok(c),
+            _ => Err(V4ClientError::InvalidResponse),
+        }
+    }
+
+    /// Read an exact accepted turn without replaying submission after a lost response.
+    pub fn lookup_turn(
+        &self,
+        conversation: ConversationId,
+        key: IdempotencyKey,
+    ) -> Result<Option<V4TurnSubmission>, V4ClientError> {
+        match self.request(V4Command::LookupTurn(conversation.clone(), key.clone()))? {
+            V4Event::TurnLookup(found_conversation, found_key, submission)
+                if found_conversation == conversation && found_key == key =>
+            {
+                Ok(submission)
+            }
             _ => Err(V4ClientError::InvalidResponse),
         }
     }
@@ -310,3 +327,7 @@ mod tests {
 #[cfg(all(test, unix))]
 #[path = "v4/cancellation_tests.rs"]
 mod cancellation_tests;
+
+#[cfg(all(test, unix))]
+#[path = "v4/lookup_tests.rs"]
+mod lookup_tests;

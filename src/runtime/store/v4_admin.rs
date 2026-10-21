@@ -11,7 +11,8 @@ use crate::app_core::{
     V4Automation, V4AutomationPage, V4AutomationUpsert, V4ConversationQuery, V4PermissionProfile,
     V4Task, V4TaskCreate, V4TaskPage,
 };
-use rusqlite::params;
+use rusqlite::{OptionalExtension, params};
+const MAX_PROFILE_DOCUMENT_BYTES: usize = 65_536;
 
 impl RuntimeStore {
     pub(crate) fn v4_put_permission_profile(
@@ -21,23 +22,33 @@ impl RuntimeStore {
     ) -> Result<(), StoreError> {
         p.validate()
             .map_err(|_| StoreError::InvalidInput("profile"))?;
+        let document = serde_json::to_string(p)?;
+        if document.len() > MAX_PROFILE_DOCUMENT_BYTES {
+            return Err(StoreError::InvalidInput("profile document bound"));
+        }
         let conn = self.conn.lock().expect("lock");
-        conn.execute("INSERT OR REPLACE INTO assistant_permission_profiles(profile_id, document_json, updated_at_ms) VALUES (?1,?2,?3)", params![&p.profile_id, "{}", super::ms(now)? ])?;
+        conn.execute("INSERT INTO assistant_permission_profiles(profile_id, document_json, updated_at_ms) VALUES (?1,?2,?3) ON CONFLICT(profile_id) DO UPDATE SET document_json=excluded.document_json, updated_at_ms=excluded.updated_at_ms", params![&p.profile_id, document, super::ms(now)? ])?;
         Ok(())
     }
     pub(crate) fn v4_permission_profile(
         &self,
         id: &str,
     ) -> Result<V4PermissionProfile, StoreError> {
-        Ok(V4PermissionProfile {
-            profile_id: id.to_owned(),
-            tool_ids: vec![],
-            application_ids: vec![],
-            filesystem_roots: vec![],
-            browser_domains: vec![],
-            max_runtime_ms: 60000,
-            max_output_bytes: 4096,
-        })
+        let conn = self.conn.lock().expect("lock");
+        // CASE bounds materialization in the same SQLite snapshot as lookup.
+        let document: Option<Option<String>> = conn.query_row("SELECT CASE WHEN length(CAST(document_json AS BLOB)) BETWEEN 2 AND ?2 THEN document_json ELSE NULL END FROM assistant_permission_profiles WHERE profile_id=?1",params![id,MAX_PROFILE_DOCUMENT_BYTES as i64],|row|row.get(0)).optional()?;
+        let document = document
+            .ok_or(StoreError::AssistantNotFound)?
+            .ok_or(StoreError::CorruptData("profile document bound"))?;
+        let profile: V4PermissionProfile = serde_json::from_str(&document)
+            .map_err(|_| StoreError::CorruptData("profile document invalid"))?;
+        profile
+            .validate()
+            .map_err(|_| StoreError::CorruptData("profile invalid"))?;
+        if profile.profile_id != id {
+            return Err(StoreError::CorruptData("profile identity mismatch"));
+        }
+        Ok(profile)
     }
     pub(crate) fn v4_tasks(&self, _p: &V4ConversationQuery) -> Result<V4TaskPage, StoreError> {
         Ok(V4TaskPage {
@@ -75,8 +86,6 @@ impl RuntimeStore {
     }
 }
 
-impl V4PermissionProfile {
-    pub fn validate(&self) -> Result<(), crate::app_core::ValidationError> {
-        Ok(())
-    }
-}
+#[cfg(test)]
+#[path = "v4_profile_tests.rs"]
+mod profile_tests;

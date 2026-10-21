@@ -24,6 +24,33 @@ use uuid::Uuid;
 const MAX_SEQUENCE: u64 = 65_536;
 
 impl RuntimeStore {
+    /// Read an exact admitted turn without resubmitting or adopting work.
+    pub(crate) fn v4_lookup_turn(
+        &self,
+        conversation: &ConversationId,
+        key: &IdempotencyKey,
+    ) -> Result<Option<V4TurnSubmission>, StoreError> {
+        let conn = self.conn.lock().expect("runtime sqlite lock poisoned");
+        if conversation_row(&conn, conversation)?.is_none() {
+            return Err(StoreError::AssistantNotFound);
+        }
+        let Some(run) = run_by_idempotency_key(&conn, key.as_str())? else {
+            return Ok(None);
+        };
+        if run.conversation_id.as_ref() != Some(conversation) {
+            return Err(StoreError::AssistantNotFound);
+        }
+        let bound: bool = conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM assistant_turns WHERE run_id=?1 AND conversation_id=?2)",
+            params![run.id.as_str(), conversation.as_str()],
+            |row| row.get(0),
+        )?;
+        if !bound {
+            return Err(StoreError::AssistantNotFound);
+        }
+        submission_for(&conn, &run.id).map(Some)
+    }
+
     /// Check the immutable v4 turn binding before permitting a manager effect.
     /// Legacy runs have no assistant_turns row and cannot acquire v4 authority.
     pub(crate) fn v4_require_turn(
@@ -70,6 +97,16 @@ impl RuntimeStore {
         if active_runs(&tx, &conv_id)? > 0 {
             return Err(StoreError::AssistantConflict);
         }
+        // Admission must retain room for visible output and a terminal marker.
+        // The old synthetic admission event implicitly checked capacity here.
+        let last_content = scalar(
+            &tx,
+            "SELECT COALESCE(MAX(sequence), 0) FROM assistant_content_events WHERE conversation_id=?1",
+            [conv_id.as_str()],
+        )?;
+        if last_content > MAX_SEQUENCE - 2 {
+            return Err(StoreError::AssistantConflict);
+        }
         let run_id = RunId::new();
         let stamp = stamp(now_ms)?;
         tx.execute(
@@ -91,16 +128,6 @@ impl RuntimeStore {
         tx.execute(
             "INSERT INTO assistant_turns(run_id, conversation_id, user_message_id, assistant_message_id, user_sequence, route_id, permission_profile_id, created_at_ms) VALUES (?1,?2,?3,NULL,?4,?5,'desk.default',?6)",
             params![run_id.as_str(), conv_id.as_str(), msg_id, sql_sequence(seq)?, &submit.route_id, ms(now_ms)?],
-        )?;
-        // content queued event (no full prompt in event)
-        insert_content_event(
-            &tx,
-            &conv_id,
-            &run_id,
-            V4ContentPayload::TextDelta {
-                text: "[admitted]".into(),
-            },
-            now_ms,
         )?;
         tx.execute(
             "UPDATE assistant_conversations SET updated_at_ms=?2 WHERE id=?1",
@@ -144,7 +171,7 @@ impl RuntimeStore {
         // update message preview for assistant deltas
         if let V4ContentPayload::TextDelta { text } = &event.payload {
             if !text.is_empty() {
-                let _ = update_assistant_preview(&tx, run_id, text, now_ms);
+                update_assistant_preview(&tx, run_id, text, now_ms)?;
             }
         }
         tx.commit()?;
@@ -160,7 +187,7 @@ impl RuntimeStore {
         if conversation_row(&tx, &query.conversation_id)?.is_none() {
             return Err(StoreError::AssistantNotFound);
         }
-        let events = content_page(
+        let mut events = content_page(
             &tx,
             &query.conversation_id,
             &query.run_id,
@@ -168,6 +195,23 @@ impl RuntimeStore {
             query.limit,
         )?;
         tx.commit()?;
+        // Account for JSON escaping and envelope fields, not just text bytes.
+        while !events.is_empty() {
+            let candidate = V4ContentPage {
+                conversation_id: query.conversation_id.clone(),
+                run_id: query.run_id.clone(),
+                after: query.after,
+                next_after: events.last().and_then(|event| {
+                    (!matches!(event.payload, V4ContentPayload::Terminal { .. }))
+                        .then_some(event.sequence)
+                }),
+                events: events.clone(),
+            };
+            if serde_json::to_vec(&candidate)?.len() <= crate::app_core::MAX_V4_PAGE_BYTES {
+                break;
+            }
+            events.pop();
+        }
         let terminal = events
             .last()
             .is_some_and(|event| matches!(event.payload, V4ContentPayload::Terminal { .. }));
@@ -204,9 +248,13 @@ impl RuntimeStore {
     ) -> Result<(), StoreError> {
         let mut conn = self.conn.lock().expect("runtime sqlite lock poisoned");
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        // mark the assistant message complete for this run
+        let run = run_by_id(&tx, run_id)?.ok_or(StoreError::AssistantNotFound)?;
+        if !final_state.is_terminal() || run.status != final_state {
+            return Err(StoreError::AssistantConflict);
+        }
+        // Completeness describes the preview, not whether execution is terminal.
         tx.execute(
-            "UPDATE assistant_messages SET state=?2, text_complete=1 WHERE run_id=?1 AND role='assistant'",
+            "UPDATE assistant_messages SET state=?2, text_complete=(length(CAST(body AS BLOB))=text_bytes) WHERE run_id=?1 AND role='assistant'",
             params![run_id.as_str(), state_as_str(final_state)],
         )?;
         // The run transition already writes the one terminal content event
@@ -334,6 +382,9 @@ fn insert_content_event(
     payload: V4ContentPayload,
     now_ms: u64,
 ) -> Result<V4ContentEvent, StoreError> {
+    payload
+        .validate()
+        .map_err(|_| StoreError::InvalidInput("content payload invalid"))?;
     let last = scalar(
         tx,
         "SELECT COALESCE(MAX(sequence), 0) FROM assistant_content_events WHERE conversation_id=?1",
@@ -343,11 +394,19 @@ fn insert_content_event(
         .checked_add(1)
         .filter(|s| *s <= MAX_SEQUENCE)
         .ok_or(StoreError::AssistantConflict)?;
-    // persist kind+payload via run_events or payloads table (use run for correlation, no leak)
-    let pjson = serde_json::to_string(&payload).unwrap_or_default();
+    // Keep capacity for the lifecycle's terminal marker.
+    if !matches!(payload, V4ContentPayload::Terminal { .. }) && seq == MAX_SEQUENCE {
+        return Err(StoreError::AssistantConflict);
+    }
+    let pjson = serde_json::to_string(&payload)?;
+    // The existing schema bounds content bytes, not escaped JSON bytes.
+    let byte_count = match &payload {
+        V4ContentPayload::TextDelta { text } => text.len(),
+        _ => pjson.len(),
+    };
     tx.execute(
         "INSERT INTO assistant_content_events(conversation_id, sequence, request_id, run_id, kind, byte_count, timestamp_ms) VALUES (?1,?2,?3,?4,?5,?6,?7)",
-        params![cid.as_str(), sql_sequence(seq)?, rid.as_str(), rid.as_str(), kind_of(&payload), pjson.len() as i64, ms(now_ms)? ],
+        params![cid.as_str(), sql_sequence(seq)?, rid.as_str(), rid.as_str(), kind_of(&payload), byte_count as i64, ms(now_ms)? ],
     )?;
     // store full payload in assistant_content_payloads for recovery
     tx.execute(
@@ -389,29 +448,35 @@ fn update_assistant_preview(
     delta: &str,
     now: u64,
 ) -> Result<(), StoreError> {
-    let existing: Option<String> = tx
+    let existing: Option<(String, i64)> = tx
         .query_row(
-            "SELECT body FROM assistant_messages WHERE run_id=?1 AND role='assistant'",
+            "SELECT body, text_bytes FROM assistant_messages WHERE run_id=?1 AND role='assistant'",
             [rid.as_str()],
-            |r| r.get(0),
+            |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .optional()?;
-    let combined = match &existing {
-        Some(b) => {
-            let mut c = b.clone();
-            c.push_str(delta);
-            if c.len() > 16 * 1024 {
-                let mut boundary = 16 * 1024;
-                while !c.is_char_boundary(boundary) {
-                    boundary -= 1;
-                }
-                c.truncate(boundary);
-            }
-            c
+    let total = existing
+        .as_ref()
+        .map_or(0, |(_, bytes)| *bytes)
+        .checked_add(delta.len() as i64)
+        .filter(|bytes| (0..=crate::app_core::MAX_V4_CONTENT_BYTES as i64).contains(bytes))
+        .ok_or(StoreError::AssistantConflict)?;
+    let mut combined = existing
+        .as_ref()
+        .map_or_else(String::new, |(body, _)| body.clone());
+    // Once a preview is truncated it must remain a prefix, even when a later
+    // ASCII delta could fit after a multi-byte character that did not fit.
+    if existing
+        .as_ref()
+        .is_none_or(|(body, bytes)| i64::try_from(body.len()).ok() == Some(*bytes))
+    {
+        let mut end = delta.len().min(16 * 1024 - combined.len());
+        while !delta.is_char_boundary(end) {
+            end -= 1;
         }
-        None => delta.to_owned(),
-    };
-    let b = combined.len() as i64;
+        combined.push_str(&delta[..end]);
+    }
+    let b = total;
     if existing.is_some() {
         tx.execute("UPDATE assistant_messages SET body=?2, text_bytes=?3, text_complete=0, state='running' WHERE run_id=?1 AND role='assistant'", params![rid.as_str(), combined, b])?;
     } else {
@@ -419,7 +484,7 @@ fn update_assistant_preview(
             tx,
             &turn_conversation(tx, rid.as_str())?
                 .parse()
-                .unwrap_or_else(|_| ConversationId::new()),
+                .map_err(|_| StoreError::CorruptData("bad cid"))?,
         )?;
         let mid = Uuid::new_v4().to_string();
         tx.execute(
@@ -437,6 +502,18 @@ fn content_page(
     after: u64,
     limit: u16,
 ) -> Result<Vec<V4ContentEvent>, StoreError> {
+    if turn_conversation(tx, rid.as_str())? != cid.as_str() {
+        return Err(StoreError::AssistantNotFound);
+    }
+    if after != 0 {
+        let belongs: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM assistant_content_events WHERE conversation_id=?1 AND run_id=?2 AND sequence=?3)",
+            params![cid.as_str(), rid.as_str(), sql_sequence(after)?], |row| row.get(0),
+        )?;
+        if !belongs {
+            return Err(StoreError::InvalidInput("content cursor invalid"));
+        }
+    }
     let mut stmt = tx.prepare("SELECT e.sequence, e.timestamp_ms, p.payload_json FROM assistant_content_events e LEFT JOIN assistant_content_payloads p ON p.conversation_id=e.conversation_id AND p.sequence=e.sequence WHERE e.conversation_id=?1 AND e.run_id=?2 AND e.sequence > ?3 ORDER BY e.sequence LIMIT ?4")?;
     let rows = stmt
         .query_map(
@@ -449,11 +526,14 @@ fn content_page(
             |r| {
                 let seq: i64 = r.get(0)?;
                 let ts: i64 = r.get(1)?;
-                let pjson: String = r.get(2).unwrap_or_else(|_| "{}".into());
-                let payload: V4ContentPayload =
-                    serde_json::from_str(&pjson).unwrap_or(V4ContentPayload::Notice {
-                        code: crate::app_core::V4NoticeCode::RecoveryRequired,
-                    });
+                let pjson: String = r.get(2)?;
+                let payload: V4ContentPayload = serde_json::from_str(&pjson).map_err(|error| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        2,
+                        rusqlite::types::Type::Text,
+                        Box::new(error),
+                    )
+                })?;
                 Ok((
                     u64::try_from(seq).unwrap_or(0),
                     u64::try_from(ts).unwrap_or(0),
@@ -490,7 +570,7 @@ pub(crate) fn mark_interrupted(
     now_ms: u64,
 ) -> Result<(), StoreError> {
     tx.execute(
-        "UPDATE assistant_messages SET state='interrupted', text_complete=1 WHERE run_id=?1",
+        "UPDATE assistant_messages SET state='interrupted', text_complete=(length(CAST(body AS BLOB))=text_bytes) WHERE run_id=?1",
         [rid.as_str()],
     )?;
     let cid = turn_conversation_id(tx, rid)?;
@@ -522,10 +602,9 @@ pub(crate) fn sync_message_state(
     if exists.is_none() {
         return Ok(());
     }
-    let complete = i64::from(next.is_terminal());
     tx.execute(
-        "UPDATE assistant_messages SET state=?2, text_complete=CASE WHEN ?3=1 THEN 1 ELSE text_complete END WHERE run_id=?1",
-        params![rid.as_str(), state_as_str(next), complete],
+        "UPDATE assistant_messages SET state=?2, text_complete=(length(CAST(body AS BLOB))=text_bytes) WHERE run_id=?1",
+        params![rid.as_str(), state_as_str(next)],
     )?;
     if !next.is_terminal() {
         return Ok(());

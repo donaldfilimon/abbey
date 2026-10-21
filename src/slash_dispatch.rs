@@ -4,7 +4,8 @@ use crate::actions::{RunSpec, fork_prompt, run_agent, run_commit, run_pr, run_re
 use crate::agent::AgentConfig;
 use crate::config;
 use crate::doctor::{
-    cmd_debug, cmd_doctor, cmd_init, cmd_persona, cmd_role, print_config, print_permissions,
+    cmd_debug, cmd_doctor, cmd_init, cmd_persona, cmd_role, print_permissions,
+    render_config_snapshot,
 };
 use crate::generate::{self, GenKind};
 use crate::gitops;
@@ -354,9 +355,13 @@ pub fn dispatch_slash(input: &str, state: &AbbeyState, cfg: &mut AgentConfig) ->
             Ok(0)
         }
         "config" => {
+            let live = config::AbbeyConfig::live_session(cfg, state);
             println!("Live session (current selection; no provider probe):");
-            println!("backend:   {}", cfg.backend.label());
-            print_config(state, cfg);
+            println!("backend:   {}", live.backend);
+            println!("model:     {}", live.model);
+            println!("state:     {}", live.state_dir.display());
+            println!("per-cwd:   {}", live.per_cwd);
+            println!("cwd:       {}", live.cwd.display());
             println!("Local configuration (file/defaults + environment overrides):");
             let ac = config::AbbeyConfig::load().map_err(|error| {
                 anyhow::anyhow!(
@@ -364,7 +369,8 @@ pub fn dispatch_slash(input: &str, state: &AbbeyState, cfg: &mut AgentConfig) ->
                     config::AbbeyConfig::config_path().display()
                 )
             })?;
-            for line in ac.status_lines() {
+            let snap = ac.snapshot(&live);
+            for line in render_config_snapshot(&snap) {
                 println!("{line}");
             }
             Ok(0)

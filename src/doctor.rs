@@ -2,7 +2,7 @@
 
 use crate::agent::{self, AgentConfig, run_resilient};
 use crate::build_info;
-use crate::cli::{MemoryCmd, MemoryFilterArgs, VERSION};
+use crate::cli::{MemoryCmd, MemoryFilterArgs};
 use crate::config;
 use crate::gitops;
 use crate::init;
@@ -499,49 +499,72 @@ pub fn print_permissions(cfg: &AgentConfig) {
     println!("model:        {}", cfg.model);
 }
 
-pub fn print_config(state: &AbbeyState, cfg: &AgentConfig) {
-    println!("abbey {VERSION}");
-    println!("agent:     {}", cfg.agent_path.display());
-    println!("model:     {}", cfg.model);
-    println!("state:     {}", state.state_dir.display());
-    println!("per-cwd:   {}", state.per_cwd);
-    println!("cwd:       {}", state.cwd.display());
-    println!(
-        "ABBEY_MODEL={}",
-        std::env::var("ABBEY_MODEL").unwrap_or_default()
-    );
-    println!(
-        "ABBEY_FORCE={}",
-        std::env::var("ABBEY_FORCE").unwrap_or_default()
-    );
-    println!(
-        "ABBEY_PER_CWD={}",
-        std::env::var("ABBEY_PER_CWD").unwrap_or_else(|_| "1".into())
-    );
-    print_permissions(cfg);
+/// Render a config snapshot as printable lines, suitable for `/config` and
+/// `abbey config`. The first line names the config file path.
+pub fn render_config_snapshot(snap: &config::ConfigSnapshot) -> Vec<String> {
+    let mut lines = Vec::new();
+    lines.push(format!("config:          {}", snap.config_path.display()));
+    lines.push(format!(
+        "persona_policy:  {} ({})",
+        snap.persona_policy.value,
+        snap.persona_policy.source.label()
+    ));
+    lines.push(format!(
+        "default_role:    {} ({})",
+        snap.default_role.value,
+        snap.default_role.source.label()
+    ));
+    lines.push(format!(
+        "role.max →       {} ({})",
+        snap.roles["max"].value,
+        snap.roles["max"].source.label()
+    ));
+    lines.push(format!(
+        "role.gemma →     {} ({})",
+        snap.roles["gemma"].value,
+        snap.roles["gemma"].source.label()
+    ));
+    lines.push(format!(
+        "memory_backend:  {} ({})",
+        snap.memory_backend.value,
+        snap.memory_backend.source.label()
+    ));
+    match &snap.abi_bin {
+        Some(f) => lines.push(format!(
+            "abi_bin:         {} ({})",
+            f.value,
+            f.source.label()
+        )),
+        None => lines.push(format!(
+            "abi_bin:         (PATH) ({})",
+            config::ConfigSource::Default.label()
+        )),
+    }
+    lines.push(format!(
+        "backend:         {} ({})",
+        snap.backend.value,
+        snap.backend.source.label()
+    ));
+    for key in ["provider", "endpoint", "model", "dimension", "language"] {
+        let f = &snap.embeddings[key];
+        lines.push(format!(
+            "{:17} {} ({})",
+            key_label(key),
+            f.value,
+            f.source.label()
+        ));
+    }
+    lines
 }
 
-/// Where the active backend choice came from — env, config key, or default.
-///
-/// Printing `ABBEY_BACKEND=<label>` unconditionally used to lie whenever the
-/// backend came from the config key (or was the plain default).
-fn backend_source() -> String {
-    if let Ok(v) = std::env::var("ABBEY_BACKEND")
-        && !v.trim().is_empty()
-    {
-        return format!("ABBEY_BACKEND={}", v.trim());
-    }
-    match config::AbbeyConfig::load()
-        .ok()
-        .and_then(|c| c.backend.clone())
-    {
-        Some(v) => format!("config backend={v}"),
-        None if std::env::var("ABBEY_AGENT").is_ok_and(|value| !value.trim().is_empty()) => {
-            "ABBEY_AGENT (legacy cursor-compatible override)".into()
-        }
-        // "default" — or the auto-fallback note when cursor-agent is not
-        // installed and another executor was picked up instead.
-        None => agent::AgentBackend::from_env_source().into(),
+fn key_label(key: &str) -> &str {
+    match key {
+        "provider" => "embedding:",
+        "endpoint" => "embedding_endpoint:",
+        "model" => "embedding_model:",
+        "dimension" => "embedding_dim:",
+        "language" => "embedding_language:",
+        _ => key,
     }
 }
 
@@ -562,6 +585,9 @@ pub fn cmd_doctor(state: &AbbeyState, cfg: &AgentConfig) -> Result<i32> {
     } else {
         cfg.agent_path.display().to_string()
     };
+    let abbey_cfg = config::AbbeyConfig::load().unwrap_or_default();
+    let live = config::AbbeyConfig::live_session(cfg, state);
+    let snap = abbey_cfg.snapshot(&live);
     let lines = [
         format!("agent:     {agent_path}"),
         format!(
@@ -590,18 +616,17 @@ pub fn cmd_doctor(state: &AbbeyState, cfg: &AgentConfig) -> Result<i32> {
             if cfg.stream.is_some() {
                 "live TUI configuration".into()
             } else {
-                backend_source()
+                snap.backend.source.label().to_string()
             }
         ),
     ];
     for line in &lines {
         let _ = doctor_line(cfg, line);
     }
-    let abbey_cfg = config::AbbeyConfig::load().unwrap_or_default();
     for line in persona::persona_status_lines("") {
         let _ = doctor_line(cfg, line);
     }
-    for line in roles::role_status_lines(&abbey_cfg.roles.max, &abbey_cfg.roles.gemma) {
+    for line in roles::role_status_lines(&snap.roles["max"].value, &snap.roles["gemma"].value) {
         let _ = doctor_line(cfg, line);
     }
     let _ = doctor_line(
@@ -680,7 +705,7 @@ pub fn cmd_doctor(state: &AbbeyState, cfg: &AgentConfig) -> Result<i32> {
     }
     let _ = doctor_line(
         cfg,
-        memory::backend_status(&state.state_dir, &abbey_cfg.memory_backend),
+        memory::backend_status(&state.state_dir, &snap.memory_backend.value),
     );
     let _ = doctor_line(cfg, memory::feature_status());
     let embedding_line = match memory::build_embedder(&abbey_cfg.embeddings) {
@@ -780,7 +805,7 @@ pub fn cmd_doctor(state: &AbbeyState, cfg: &AgentConfig) -> Result<i32> {
                 if cfg.stream.is_some() {
                     "live TUI configuration".into()
                 } else {
-                    backend_source()
+                    snap.backend.source.label().to_string()
                 },
                 p.display()
             ),

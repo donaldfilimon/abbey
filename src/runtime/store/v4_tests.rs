@@ -223,7 +223,7 @@ fn v4_append_content_and_page() {
             limit: 10,
         })
         .unwrap();
-    assert_eq!(page.events.len(), 3); // admit + 2
+    assert_eq!(page.events.len(), 2); // provider text only
     assert!(page.events.iter().any(
         |e| matches!(e.payload, V4ContentPayload::TextDelta { ref text } if text == "hello ")
     ));
@@ -252,6 +252,15 @@ fn v4_second_turn_content_validates_with_conversation_global_gap() {
     // conversation, so a per-run read from `after=0` starts with a gap.
     let second = store
         .v4_admit_turn(&submit(&id, "turn-2", "second"), NOW)
+        .unwrap();
+    store
+        .v4_append_content(
+            &second.run_id,
+            V4ContentPayload::TextDelta {
+                text: "second reply".into(),
+            },
+            NOW,
+        )
         .unwrap();
     let page = store
         .v4_content(&V4ContentQuery {
@@ -560,3 +569,6 @@ fn v4_message_pages_trim_to_the_byte_ceiling() {
     assert!(!rest.messages.is_empty());
     assert!(rest.messages[0].sequence > page.messages.last().unwrap().sequence);
 }
+
+#[path = "v4_content_tests.rs"]
+mod content;

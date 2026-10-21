@@ -151,16 +151,6 @@ export interface V4AutomationPage {
   next_after: number | null;
 }
 
-export interface V4PermissionProfile {
-  profile_id: string;
-  tool_ids: Array<string>;
-  application_ids: Array<string>;
-  filesystem_roots: Array<string>;
-  browser_domains: Array<string>;
-  max_runtime_ms: number;
-  max_output_bytes: number;
-}
-
 export interface V4Error {
   code: V4ErrorCode;
   message: string;
@@ -224,6 +214,23 @@ export interface V4ActionDecision {
   action_id: string;
   decision_id: string;
   kind: V4ActionDecisionKind;
+}
+
+// ---------------------------------------------------------------------------
+// src/app_core/v4_permission.rs — validated internal permission profiles
+// ---------------------------------------------------------------------------
+
+/**
+ * Bounded permission profile. Lists name authority; they do not execute it.
+ */
+export interface V4PermissionProfile {
+  profile_id: string;
+  tool_ids: Array<string>;
+  application_ids: Array<string>;
+  filesystem_roots: Array<string>;
+  browser_domains: Array<string>;
+  max_runtime_ms: number;
+  max_output_bytes: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -301,6 +308,7 @@ export type V4Command =
   | { command: "submit_turn"; data: V4SubmitTurn }
   | { command: "read_content"; data: V4ContentQuery }
   | { command: "cancel_turn"; data: [ConversationId, RunId] }
+  | { command: "lookup_turn"; data: [ConversationId, string] }
   | { command: "list_routes" }
   | { command: "search_conversations"; data: V4SearchQuery }
   | { command: "delete_conversation"; data: V4ResourceQuery }
@@ -327,6 +335,7 @@ export type V4Event =
   | { event: "turn_submitted"; data: V4TurnSubmission }
   | { event: "content"; data: V4ContentPage }
   | { event: "turn_cancelled"; data: [ConversationId, RunId, RunState] }
+  | { event: "turn_lookup"; data: [ConversationId, string, V4TurnSubmission | null] }
   | { event: "routes"; data: Array<V4Route> }
   | { event: "deleted"; data: V4ResourceQuery }
   | { event: "turn_accepted"; data: V4TurnSubmission }
