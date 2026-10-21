@@ -336,14 +336,35 @@ def replace_desktop_summary(text: str, replacement: str) -> str:
     return text.replace(anchor, f"\n\n{replacement}\n{anchor}", 1)
 
 
+def find_cargo() -> str:
+    from shutil import which
+    found = which("cargo")
+    if found:
+        return found
+    for fallback in [
+        Path.home() / ".cargo/bin/cargo",
+        Path("/opt/homebrew/bin/cargo"),
+        Path("/usr/local/bin/cargo"),
+    ]:
+        if fallback.is_file() and os.access(fallback, os.X_OK):
+            return str(fallback)
+    return "cargo"
+
+
 def canonical_manifest() -> tuple[dict[str, Any], str]:
+    cargo_bin = find_cargo()
+    env = os.environ.copy()
+    cargo_dir = str(Path(cargo_bin).parent)
+    if cargo_dir not in env.get("PATH", "").split(os.pathsep):
+        env["PATH"] = f"{cargo_dir}{os.pathsep}{env.get('PATH', '')}"
     result = subprocess.run(
-        ["cargo", "run", "--quiet", "--bin", "abbey", "--", "claims", "manifest"],
+        [cargo_bin, "run", "--quiet", "--bin", "abbey", "--", "claims", "manifest"],
         cwd=ROOT,
         check=True,
         capture_output=True,
         text=True,
         timeout=120,
+        env=env,
     )
     raw = json.loads(result.stdout)
     manifest = normalize_manifest(raw)

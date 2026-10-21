@@ -296,6 +296,24 @@ impl AgentConfig {
         }
     }
 
+    /// Verify that local model requirements are satisfied before execution.
+    /// Under Ollama, this ensures the model tag is present locally without triggering
+    /// an implicit automatic download/pull.
+    pub(crate) fn preflight_check(&self, agent: &std::path::Path) -> Result<()> {
+        if self.backend == AgentBackend::Ollama {
+            let model = argv::ollama_normalize_model(&self.model);
+            if !backend::ollama_lists_model(agent, &model) {
+                bail!(
+                    "ollama model '{}' is not present in local `ollama list`; \
+                     Abbey enforces a strict no-auto-pull policy. Run `ollama pull {}` manually first.",
+                    model,
+                    model
+                );
+            }
+        }
+        Ok(())
+    }
+
     /// Interactive hand-off: inherit stdio (full TUI agent session).
     pub fn run_interactive(
         &self,
@@ -308,6 +326,7 @@ impl AgentConfig {
             warn_if_prompt_looks_like_flags(prompt_and_rest);
         }
         let agent = self.exec_path()?;
+        self.preflight_check(&agent)?;
         let args = self.build_args(resume_id, prompt_and_rest);
         let status = Command::new(&agent)
             .args(&args)
@@ -329,6 +348,7 @@ impl AgentConfig {
             warn_if_prompt_looks_like_flags(prompt_and_rest);
         }
         let agent = self.exec_path()?;
+        self.preflight_check(&agent)?;
         let mut cfg = self.clone();
         cfg.print = true;
         // The original tap owns cancellation; captured argv stays headless.
