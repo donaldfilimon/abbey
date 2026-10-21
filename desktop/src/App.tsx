@@ -44,7 +44,16 @@ const V3_GATED_CAPABILITIES = new Set<string>(
   ),
 );
 
-function available(
+/**
+ * Whether the window may show this surface.
+ *
+ * Exported so the grant rule is testable directly: it is the one place
+ * that decides whether a capability the daemon refused still shows a view.
+ * A surface whose capability is v3-gated needs the v3 grant; every other
+ * surface needs the protocol-v1 status grant; and a surface that requires
+ * nothing is never available.
+ */
+export function available(
   surface: Surface,
   status: RuntimeStatus | null,
   v3Grants: V3Capability[],
