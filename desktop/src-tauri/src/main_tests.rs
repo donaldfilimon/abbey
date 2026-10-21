@@ -212,13 +212,18 @@ fn the_menu_keeps_apple_roles_and_one_user_initiated_handler() {
 }
 
 #[test]
-fn the_window_is_never_globally_transparent() {
+fn the_window_is_transparent_only_so_the_material_can_show() {
     for (name, config) in [("safe", SAFE_CONFIG), ("personal", PERSONAL_CONFIG)] {
         let window = window(config);
+        // The webview is transparent so AppKit's material shows through it.
+        // The window is still never a see-through hole: the appearance
+        // module keeps a safety panel behind the webview and paints the
+        // window's own background under both, and it degrades to a fully
+        // opaque window whenever the user asked for no transparency.
         assert_eq!(
             window.get("transparent").and_then(Value::as_bool),
-            Some(false),
-            "the {name} edition must not enable a transparent window"
+            Some(true),
+            "the {name} edition's webview must be transparent for the material"
         );
         // A standard, visible title bar is what carries the native material;
         // an overlay title bar would put the webview over it.
@@ -226,6 +231,13 @@ fn the_window_is_never_globally_transparent() {
             window.get("titleBarStyle").and_then(Value::as_str),
             Some("Transparent"),
             "the {name} edition must keep a transparent title bar"
+        );
+        // The native title would be drawn over the traffic lights, and the
+        // window draws its own title in the toolbar.
+        assert_eq!(
+            window.get("hiddenTitle").and_then(Value::as_bool),
+            Some(true),
+            "the {name} edition must hide the native title"
         );
     }
 }

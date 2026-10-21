@@ -453,13 +453,17 @@ mod macos {
         // not use. The content layout rect is the area the webview is given;
         // whatever is left above it is the frame's own strip, which is where
         // the titlebar and the window buttons live.
-        let strip = match titlebar_strip(
+        // The material now covers the whole frame, so the titlebar strip is
+        // not where it goes. The strip is still *measured*, because a window
+        // without a titlebar has no frame to host material in at all.
+        if titlebar_strip(
             to_rect(frame_view.bounds()),
             to_rect(ns_window.contentLayoutRect()),
-        ) {
-            Some(strip) => strip,
-            None => return Err(OpaqueReason::NoTitlebar),
-        };
+        )
+        .is_none()
+        {
+            return Err(OpaqueReason::NoTitlebar);
+        }
 
         // Already installed with the same material: leave it exactly where it
         // is so that a re-evaluation (the window regaining focus, say) does

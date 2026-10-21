@@ -516,6 +516,12 @@ button:disabled {
 .nav-group:not(:first-child) {
   padding-top: 28px;
 }
+/* The nav scrolls when the window is short, and a group label cut by the
+   scroll edge reads as a broken layout rather than as "there is more
+   below". The label gets room to end on its own line. */
+.nav-group:last-child {
+  padding-bottom: 6px;
+}
 .nav-button {
   display: flex;
   align-items: center;
