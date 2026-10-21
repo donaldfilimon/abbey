@@ -116,6 +116,30 @@ test("the doctor names the selected route as the authority for the answer", () =
   );
   expect(html).toContain("the route the Chat surface has selected");
   expect(html).toContain("runtime-route");
+  // The route itself is named, so the answer can be checked against the
+  // Chat surface's selection rather than taken on trust.
+  expect(html).toContain("fm.gemma-4-12b");
+});
+
+test("the doctor shows no route when none is selected", () => {
+  // With no selection the answer is the runtime's default available route,
+  // and the Doctor must not imply that some particular route was chosen.
+  const html = renderToStaticMarkup(
+    <DoctorView
+      status={status}
+      connection={connection}
+      identity={identity}
+      routeId={null}
+      effectiveModel={{
+        backend: "abi",
+        raw: "local",
+        resolved: "local",
+        source: "runtime-route",
+      }}
+    />,
+  );
+  expect(html).toContain("because no route is selected");
+  expect(html).not.toContain("fm.gemma-4-12b");
 });
 
 test("the doctor says the default route is the authority when none is selected", () => {

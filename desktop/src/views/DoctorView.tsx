@@ -125,6 +125,12 @@ export function DoctorView({
             <dd className="mono">{effectiveModel.resolved}</dd>
             <dt>Live</dt>
             <dd className="mono">{effectiveModel.raw === "" ? "(unset)" : effectiveModel.raw}</dd>
+            {routeId !== null && (
+              <>
+                <dt>Route</dt>
+                <dd className="mono">{routeId}</dd>
+              </>
+            )}
             <dt>Source</dt>
             <dd className="mono">{effectiveModel.source}</dd>
           </dl>
