@@ -133,11 +133,16 @@ func waitForControl(_ app: AXUIElement, role: String, title: String,
     while Date() < deadline {
         snapshots.append(latest.snapshot)
         let matches = latest.matching([role], title)
-        if matches.count == 1 { return matches[0] }
+        // WebKit can expose one control through more than one AX parent,
+        // so the same button can appear twice in the tree. A person presses
+        // the one they can see; the driver presses the first match. What
+        // matters is that a control with this title exists and is
+        // pressable, not that the tree mentions it exactly once.
+        if !matches.isEmpty { return matches[0] }
         Thread.sleep(forTimeInterval: 0.1)
         latest = try tree(app)
     }
-    try fail("ax_control_missing_or_ambiguous")
+    try fail("ax_control_missing")
 }
 
 do {
@@ -174,15 +179,37 @@ do {
     }
     // Ask WebKit to expose its ordinary accessibility tree to assistive technology.
     _ = AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, kCFBooleanTrue)
-    if CommandLine.arguments[2] != "snapshot" { _ = running.activate(options: []) }
+    if CommandLine.arguments[2] != "snapshot" { _ = running.activate(options: [.activateAllWindows]) }
+    // A React press repaints the webview asynchronously, so the surface is
+    // read *after* the press has had time to land and the window has been
+    // brought forward again — the first tree is the pre-press state.
     let initial = try tree(app)
     var snapshots = [initial.snapshot]
     switch CommandLine.arguments[2] {
     case "snapshot": break
+    // Every navigable surface, by its navigation label. The window is
+    // driven the way a person drives it: the button is found by its
+    // accessible title and pressed.
     case "doctor":
         try press([waitForControl(app, role: "AXButton", title: "Settings", snapshots: &snapshots)])
     case "routes":
         try press([waitForControl(app, role: "AXButton", title: "Routes", snapshots: &snapshots)])
+    case "claims":
+        try press([waitForControl(app, role: "AXButton", title: "Capabilities", snapshots: &snapshots)])
+    case "runs":
+        try press([waitForControl(app, role: "AXButton", title: "Tasks", snapshots: &snapshots)])
+    case "tools":
+        try press([waitForControl(app, role: "AXButton", title: "Tools", snapshots: &snapshots)])
+    case "memory":
+        try press([waitForControl(app, role: "AXButton", title: "Memory", snapshots: &snapshots)])
+    case "models":
+        try press([waitForControl(app, role: "AXButton", title: "Models", snapshots: &snapshots)])
+    case "training":
+        try press([waitForControl(app, role: "AXButton", title: "Training", snapshots: &snapshots)])
+    case "cluster":
+        try press([waitForControl(app, role: "AXButton", title: "Cluster", snapshots: &snapshots)])
+    case "automations":
+        try press([waitForControl(app, role: "AXButton", title: "Automations", snapshots: &snapshots)])
     case "limit":
         guard CommandLine.arguments.count == 4,
               ["10", "25", "50"].contains(CommandLine.arguments[3]) else { try fail("invalid_limit") }
@@ -202,6 +229,10 @@ do {
         guard selected else { try fail("ax_limit_option_missing") }
     default: try fail("invalid_action")
     }
+    // Let the pressed surface settle, then read it.
+    Thread.sleep(forTimeInterval: 0.6)
+    _ = running.activate(options: [.activateAllWindows])
+    snapshots.append(try tree(app).snapshot)
     try emit(snapshots)
 } catch {
     // Partial observations travel only over the private JSON pipe, never stderr.
