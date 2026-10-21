@@ -9,39 +9,44 @@ echo "== toolchain =="
 ./tools/cargo.sh --abbey-qualify-toolchain
 ABBEY_TOOLCHAIN_ROOT=$(pwd)
 . "$ABBEY_TOOLCHAIN_ROOT/tools/toolchain-env.sh"
-cargo check --quiet
+cargo check --quiet --locked
 
 echo "== rustfmt =="
-cargo fmt --all -- --check
+# Package-scoped on purpose. `cargo fmt --all` also formats the *path
+# dependencies* — the sibling ../abi and ../wdbx checkouts — so a sibling
+# repository's formatting (or its rustfmt edition) could fail Abbey's gate,
+# and a plain `cargo fmt` run would silently rewrite the sibling's sources.
+# The siblings have their own gates; this one judges Abbey.
+cargo fmt --package abbey -- --check
 
 echo "== clippy =="
-cargo clippy --all-targets -- -D warnings
+cargo clippy --locked --all-targets -- -D warnings
 
 echo "== test =="
 # Process-level integration tests execute CARGO_BIN_EXE_* artifacts. Build the
 # normal binaries explicitly so a prior feature cohort cannot leave a stale
 # target/debug executable for the tests to exercise.
-cargo build --bins
-cargo test
+cargo build --locked --bins
+cargo test --locked
 
 # The wdbx backend is behind an off-by-default feature, so the default-feature
 # clippy/test runs above never compile it. Gate it explicitly or it can rot.
 echo "== clippy (--features wdbx) =="
-cargo clippy --features wdbx --all-targets -- -D warnings
+cargo clippy --locked --features wdbx --all-targets -- -D warnings
 
 echo "== test (--features wdbx) =="
-cargo build --bins --features wdbx
-cargo test --features wdbx
+cargo build --locked --bins --features wdbx
+cargo test --locked --features wdbx
 
 # The personal edition is a compile-time cfg: its identity table, path
 # resolution, and isolation tests are invisible to the default-feature runs
 # above. Gate it explicitly or the separated edition rots unnoticed.
 echo "== clippy (--features personal-edition) =="
-cargo clippy --features personal-edition --all-targets -- -D warnings
+cargo clippy --locked --features personal-edition --all-targets -- -D warnings
 
 echo "== test (--features personal-edition) =="
-cargo build --bins --features personal-edition
-cargo test --features personal-edition
+cargo build --locked --bins --features personal-edition
+cargo test --locked --features personal-edition
 
 # The accelerator bridge (src/accel/bridge.rs) sits behind an off-by-default
 # feature, so every run above compiles only its refusal path. Gate it here or
@@ -50,27 +55,27 @@ cargo test --features personal-edition
 # nothing — so this is safe on non-Apple CI. It does need abi-gpu's build
 # script to succeed, which on macOS means an Xcode toolchain for `xcrun swiftc`.
 echo "== clippy (--features accel) =="
-cargo clippy --features accel --all-targets -- -D warnings
+cargo clippy --locked --features accel --all-targets -- -D warnings
 
 echo "== test (--features accel) =="
-cargo build --bins --features accel
-cargo test --features accel
+cargo build --locked --bins --features accel
+cargo test --locked --features accel
 
 # Private-item documentation is part of the source contract, and feature-gated
 # links can rot independently. Keep each supported product mode explicit so a
 # default-only documentation build cannot conceal a broken WDBX, personal, or
 # accelerator surface.
 echo "== rustdoc (default, warning denied, private items) =="
-RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --document-private-items
+RUSTDOCFLAGS="-D warnings" cargo doc --locked --no-deps --document-private-items
 
 echo "== rustdoc (--features wdbx, warning denied, private items) =="
-RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --document-private-items --features wdbx
+RUSTDOCFLAGS="-D warnings" cargo doc --locked --no-deps --document-private-items --features wdbx
 
 echo "== rustdoc (--features personal-edition, warning denied, private items) =="
-RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --document-private-items --features personal-edition
+RUSTDOCFLAGS="-D warnings" cargo doc --locked --no-deps --document-private-items --features personal-edition
 
 echo "== rustdoc (--features accel, warning denied, private items) =="
-RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --document-private-items --features accel
+RUSTDOCFLAGS="-D warnings" cargo doc --locked --no-deps --document-private-items --features accel
 
 echo "== claims/docs synchronization =="
 "$ABBEY_PYTHON" -m unittest discover -s tools/tests -p 'test_*.py'
