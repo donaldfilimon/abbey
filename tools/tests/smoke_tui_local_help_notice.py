@@ -9,15 +9,20 @@ import tempfile
 sys.dont_write_bytecode = True
 import smoke_tui_slash_pty as harness
 
+# Each case is (name, command, marker). A case may also name the background
+# colour the terminal reports for the `OSC 11` query; the default is a dark
+# one, and a light one makes the TUI pick its light palette.
 CASES = (
-    ("subagents-empty", "/subagents run", b"not a multi-node mesh"),
-    ("subagents-help", "/subagents run --help", b"not a multi-node mesh"),
-    ("distill-help", "/learn distill --help", b"default chain is local first"),
-    ("improve-help", "/improve run --help", b"ABBEY_CHECK_CMD overrides ./check.sh"),
+    ("subagents-empty", "/subagents run", b"not a multi-node mesh", None),
+    ("subagents-help", "/subagents run --help", b"not a multi-node mesh", None),
+    ("distill-help", "/learn distill --help", b"default chain is local first", None),
+    ("improve-help", "/improve run --help", b"ABBEY_CHECK_CMD overrides ./check.sh", None),
+    # A light terminal: the palette changes, the behaviour does not.
+    ("light-terminal-help", "/subagents run --help", b"not a multi-node mesh", "ffff/ffff/ffff"),
 )
 
 
-def retained(binary, root, command, marker):
+def retained(binary, root, command, marker, background=None):
     owned = harness.Fixture(root, backend="abi")
     # CLI grammar/reporting is a positive control before the actual TUI entry.
     owned.set_control(marker="must-not-generate-cli-help")
@@ -26,6 +31,10 @@ def retained(binary, root, command, marker):
     harness.require(not owned.events(owned.nonce),
                     "control: CLI help/empty command contacted generation")
     session = harness.OwnedSession(binary, owned)
+    # A terminal that reports a light background: the TUI picks its light
+    # palette, and must still draw and still answer.
+    if background is not None:
+        session.background_color = background
     try:
         owned.set_control(marker="must-not-generate-tui-help")
         prior_chat = (root / "state" / "chat-id").read_bytes()
@@ -46,10 +55,10 @@ def retained(binary, root, command, marker):
 def main():
     harness.OPTIONS = OPTIONS
     proofs, failures = [], []
-    for name, command, marker in CASES:
+    for name, command, marker, background in CASES:
         try:
             with tempfile.TemporaryDirectory(prefix="abbey-local-help-", dir="/tmp") as scratch:
-                retained(Path(OPTIONS.binary).resolve(), Path(scratch), command, marker)
+                retained(Path(OPTIONS.binary).resolve(), Path(scratch), command, marker, background)
             proofs.append(dict(scenario=name, status="passed"))
         except Exception as error:
             failures.append(dict(scenario=name, status="failed", error=str(error)))

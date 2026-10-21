@@ -23,6 +23,8 @@ fn local_help_and_empty_run_output_survive_real_terminal_redraw_without_generati
     );
     let proof: serde_json::Value = serde_json::from_slice(&output.stdout).expect("PTY proof JSON");
     assert_eq!(proof["status"], "passed");
-    assert_eq!(proof["scenarios"].as_array().unwrap().len(), 4);
+    // Five scenarios, the last of which drives a terminal that reports a
+    // light background: the palette changes, the behaviour does not.
+    assert_eq!(proof["scenarios"].as_array().unwrap().len(), 5);
     assert!(proof["failures"].as_array().unwrap().is_empty());
 }
