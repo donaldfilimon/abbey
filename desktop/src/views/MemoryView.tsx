@@ -10,8 +10,21 @@ import { appMemoryMetadata, appMemorySearch, toIpcError } from "../ipc/client";
 import type { IpcError, V3EntityRecord } from "../ipc/generated";
 import { ErrorCard } from "./ErrorCard";
 
-const SPACE_ID = "memory-v1-summary";
-const LIMITS = [8, 16, 32] as const;
+/**
+ * The one memory space this window reads.
+ *
+ * The daemon negotiates exactly one summary-only space, so the window
+ * names it rather than accepting a space from the reader.
+ */
+export const SPACE_ID = "memory-v1-summary";
+
+/**
+ * The page sizes this window offers.
+ *
+ * Mirrors the bounded page the application core accepts; the core
+ * validates the limit, and this is the set it is asked to.
+ */
+export const LIMITS = [8, 16, 32] as const;
 
 export function MemoryView() {
   const [draft, setDraft] = useState("");
