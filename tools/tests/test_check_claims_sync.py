@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import copy
 import importlib.util
+import os
 from pathlib import Path
+import shutil
 import stat
+import sys
 import tempfile
 import unittest
+from unittest import mock
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "check_claims_sync.py"
@@ -397,6 +401,257 @@ Body.
             self.assertEqual(
                 claims_sync.validate_test_references([claim], root=root), []
             )
+
+
+class ManifestInvocationTests(unittest.TestCase):
+    """The manifest step shells out to a real `cargo run`.
+
+    Two failure modes used to reach the gate as opaque tracebacks: a budget
+    that expired while the crate was still compiling, and a build error whose
+    real diagnosis lived on cargo's stderr but was never shown.
+    """
+
+    def test_timeout_budget_defaults_high_and_is_overridable(self) -> None:
+        original = os.environ.pop(claims_sync.TIMEOUT_ENV, None)
+        try:
+            self.assertEqual(
+                claims_sync.manifest_timeout_seconds(),
+                claims_sync.DEFAULT_MANIFEST_TIMEOUT_SECONDS,
+            )
+            # A two-minute budget was shorter than a normal rebuild of the
+            # crate, so it turned an ordinary rebuild into a gate failure.
+            self.assertGreater(claims_sync.DEFAULT_MANIFEST_TIMEOUT_SECONDS, 120)
+            os.environ[claims_sync.TIMEOUT_ENV] = "1800"
+            self.assertEqual(claims_sync.manifest_timeout_seconds(), 1800)
+        finally:
+            os.environ.pop(claims_sync.TIMEOUT_ENV, None)
+            if original is not None:
+                os.environ[claims_sync.TIMEOUT_ENV] = original
+
+    def test_invalid_timeout_budget_is_refused(self) -> None:
+        original = os.environ.get(claims_sync.TIMEOUT_ENV)
+        try:
+            for value in ("soon", "0", "-1"):
+                with self.subTest(value=value):
+                    os.environ[claims_sync.TIMEOUT_ENV] = value
+                    with self.assertRaises(SystemExit) as raised:
+                        claims_sync.manifest_timeout_seconds()
+                    self.assertIn(claims_sync.TIMEOUT_ENV, str(raised.exception))
+        finally:
+            if original is None:
+                os.environ.pop(claims_sync.TIMEOUT_ENV, None)
+            else:
+                os.environ[claims_sync.TIMEOUT_ENV] = original
+
+    def _run_with_stubbed_cargo(self, outcome: object) -> None:
+        """Drive `canonical_manifest` with a stubbed cargo invocation.
+
+        The seam is the module's own `run_manifest_command`, so the test never
+        mutates the shared standard-library `subprocess` module.
+        """
+        original_runner = claims_sync.run_manifest_command
+        original_cargo = claims_sync.find_cargo
+        original_policy = claims_sync.assert_qualified_toolchain
+
+        def fake_runner(*args: object, **kwargs: object) -> tuple[str, str, int]:
+            if isinstance(outcome, BaseException):
+                raise outcome
+            return (outcome.stdout, outcome.stderr, outcome.returncode)
+
+        claims_sync.find_cargo = lambda: "/bin/true"
+        claims_sync.assert_qualified_toolchain = lambda: None
+        claims_sync.run_manifest_command = fake_runner
+        try:
+            claims_sync.canonical_manifest()
+        finally:
+            claims_sync.run_manifest_command = original_runner
+            claims_sync.find_cargo = original_cargo
+            claims_sync.assert_qualified_toolchain = original_policy
+
+    def test_expired_build_budget_reports_the_budget_not_a_traceback(self) -> None:
+        # A real invocation: the budget expires while the child is still
+        # running, and the step has to say so instead of raising a traceback.
+        with self.assertRaises(SystemExit) as raised:
+            claims_sync.run_manifest_command(
+                [sys.executable, "-c", "import time; time.sleep(30)"],
+                os.environ.copy(),
+                1,
+            )
+        message = str(raised.exception)
+        self.assertIn(claims_sync.TIMEOUT_ENV, message)
+        self.assertIn("building", message)
+        self.assertNotIn("Traceback", message)
+
+    def test_failed_build_reports_cargos_own_diagnosis(self) -> None:
+        with self.assertRaises(SystemExit) as raised:
+            self._run_with_stubbed_cargo(
+                _Result(
+                    stdout="",
+                    stderr="error[E0425]: cannot find value `x` in this scope",
+                    returncode=101,
+                )
+            )
+        message = str(raised.exception)
+        self.assertIn("cannot find value", message)
+        self.assertNotIn("Traceback", message)
+
+    def test_non_json_manifest_output_is_refused_clearly(self) -> None:
+        with self.assertRaises(SystemExit) as raised:
+            self._run_with_stubbed_cargo(_Result(stdout="warning: something else\n"))
+        self.assertIn("not valid JSON", str(raised.exception))
+
+    def _capture_the_manifest_command(self) -> dict[str, object]:
+        captured: dict[str, object] = {}
+
+        def fake_runner(command: list[str], env: dict[str, str], timeout: int):
+            captured["command"] = command
+            captured["path"] = env.get("PATH", "")
+            return ("not json", "", 0)
+
+        original_runner = claims_sync.run_manifest_command
+        original_cargo = claims_sync.find_cargo
+        original_policy = claims_sync.assert_qualified_toolchain
+        claims_sync.run_manifest_command = fake_runner
+        claims_sync.find_cargo = lambda: "/toolchain/bin/cargo"
+        claims_sync.assert_qualified_toolchain = lambda: None
+        try:
+            with self.assertRaises(SystemExit):
+                claims_sync.canonical_manifest()
+        finally:
+            claims_sync.run_manifest_command = original_runner
+            claims_sync.find_cargo = original_cargo
+            claims_sync.assert_qualified_toolchain = original_policy
+        return captured
+
+    def test_the_manifest_build_cannot_rewrite_the_tracked_lockfile(self) -> None:
+        # A resolved-graph difference must not silently change Cargo.lock.
+        command = self._capture_the_manifest_command()["command"]
+        self.assertIn("--locked", command)
+
+    def test_the_manifest_build_prefers_the_cargo_s_own_toolchain(self) -> None:
+        # The cargo's own directory has to come first, or an earlier rustc
+        # would shadow the one it was built with.
+        path = str(self._capture_the_manifest_command()["path"])
+        self.assertTrue(path.startswith("/toolchain/bin"), path)
+
+    def test_manifest_prefers_the_pinned_toolchain_over_the_path_cargo(self) -> None:
+        # A non-rustup cargo on PATH (a Homebrew install, say) does not read
+        # `rust-toolchain.toml`, so the manifest would come from an
+        # unqualified compiler. The pinned toolchain wins when rustup can
+        # resolve it.
+        original_pinned = claims_sync.pinned_toolchain_cargo
+        try:
+            # A candidate has to be a real executable, so the pinned one is
+            # the running interpreter here.
+            claims_sync.pinned_toolchain_cargo = lambda: sys.executable
+            with mock.patch.object(
+                claims_sync, "cargo_builds_the_pinned_toolchain", return_value=True
+            ):
+                self.assertEqual(claims_sync.find_cargo(), sys.executable)
+        finally:
+            claims_sync.pinned_toolchain_cargo = original_pinned
+
+    def test_manifest_falls_back_to_the_path_cargo_without_a_pinned_toolchain(self) -> None:
+        original_pinned = claims_sync.pinned_toolchain_cargo
+        original_which = shutil.which
+        try:
+            claims_sync.pinned_toolchain_cargo = lambda: None
+            shutil.which = lambda name: sys.executable if name == "cargo" else None
+            with mock.patch.object(
+                claims_sync, "cargo_builds_the_pinned_toolchain", return_value=True
+            ):
+                self.assertEqual(claims_sync.find_cargo(), sys.executable)
+        finally:
+            claims_sync.pinned_toolchain_cargo = original_pinned
+            shutil.which = original_which
+
+    def test_manifest_refuses_a_cargo_that_would_not_build_the_pinned_toolchain(self) -> None:
+        # Falling back to an arbitrary compiler is the failure this closes:
+        # the claims digest is the repository's canonical evidence anchor.
+        original_pinned = claims_sync.pinned_toolchain_cargo
+        original_which = shutil.which
+        try:
+            claims_sync.pinned_toolchain_cargo = lambda: None
+            shutil.which = lambda name: sys.executable if name == "cargo" else None
+            with mock.patch.object(
+                claims_sync, "cargo_builds_the_pinned_toolchain", return_value=False
+            ):
+                with self.assertRaises(SystemExit) as raised:
+                    claims_sync.find_cargo()
+            self.assertIn("pinned toolchain", str(raised.exception))
+        finally:
+            claims_sync.pinned_toolchain_cargo = original_pinned
+            shutil.which = original_which
+
+    def test_pinned_toolchain_cargo_survives_a_missing_or_failing_rustup(self) -> None:
+        original_which = shutil.which
+        original_run = claims_sync.subprocess.run
+        try:
+            # rustup is absent.
+            shutil.which = lambda name: None
+            self.assertIsNone(claims_sync.pinned_toolchain_cargo())
+
+            # rustup is present but cannot resolve the toolchain.
+            shutil.which = lambda name: "/usr/bin/rustup" if name == "rustup" else None
+            claims_sync.subprocess.run = lambda *args, **kwargs: _Result(
+                stderr="boom", returncode=1
+            )
+            self.assertIsNone(claims_sync.pinned_toolchain_cargo())
+        finally:
+            shutil.which = original_which
+            claims_sync.subprocess.run = original_run
+
+    def test_pinned_toolchain_cargo_ignores_an_environment_toolchain_override(self) -> None:
+        # `RUSTUP_TOOLCHAIN` overrides the directory override, so the pinned
+        # toolchain would not be the one that gets resolved.
+        captured: dict[str, object] = {}
+
+        def fake_run(command, cwd=None, capture_output=None, text=None, timeout=None, env=None):
+            captured["env"] = env
+            return _Result(stdout="/toolchain/bin/cargo\n")
+
+        original_which = shutil.which
+        original_run = claims_sync.subprocess.run
+        original_env = os.environ.get("RUSTUP_TOOLCHAIN")
+        try:
+            shutil.which = lambda name: "/usr/bin/rustup" if name == "rustup" else None
+            claims_sync.subprocess.run = fake_run
+            os.environ["RUSTUP_TOOLCHAIN"] = "stable"
+            claims_sync.pinned_toolchain_cargo()
+            self.assertNotIn("RUSTUP_TOOLCHAIN", captured["env"])
+        finally:
+            shutil.which = original_which
+            claims_sync.subprocess.run = original_run
+            if original_env is None:
+                os.environ.pop("RUSTUP_TOOLCHAIN", None)
+            else:
+                os.environ["RUSTUP_TOOLCHAIN"] = original_env
+
+    def test_substituted_compiler_fails_the_manifest_closed(self) -> None:
+        # The claims digest is the repository's canonical evidence anchor, so
+        # it must come from the qualified toolchain. The repository's own
+        # policy tool decides that; the manifest step has to honour it.
+        original_run = claims_sync.subprocess.run
+        try:
+            claims_sync.subprocess.run = lambda *args, **kwargs: _Result(
+                stderr="stable qualification rejects compiler substitution: environment RUSTC",
+                returncode=1,
+            )
+            with self.assertRaises(SystemExit) as raised:
+                claims_sync.assert_qualified_toolchain()
+            self.assertIn("qualified toolchain", str(raised.exception))
+            self.assertIn("rejects compiler substitution", str(raised.exception))
+        finally:
+            claims_sync.subprocess.run = original_run
+
+
+class _Result:
+    """A stand-in for a completed subprocess."""
+
+    def __init__(self, stdout: str = "", stderr: str = "", returncode: int = 0) -> None:
+        self.stdout = stdout
+        self.stderr = stderr
+        self.returncode = returncode
 
 
 if __name__ == "__main__":

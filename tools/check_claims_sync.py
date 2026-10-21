@@ -9,8 +9,10 @@ import json
 import os
 from pathlib import Path
 import re
+import signal
 import stat
 import subprocess
+import sys
 import tempfile
 from typing import Any
 
@@ -209,6 +211,7 @@ def desktop_inventory(
     typescript_client: str,
     typescript_surfaces: str,
     generated_samples: str,
+    readme: str = "",
 ) -> dict[str, tuple[str, ...] | tuple[tuple[str, str], ...]]:
     """Derive the desktop capability summary from its enumerated source surfaces."""
 
@@ -273,12 +276,49 @@ def desktop_inventory(
             raise ValueError(
                 f"desktop surface {surface} requires undeclared capability {required}"
             )
+    if readme:
+        _check_desktop_readme(readme, rust_commands)
     return {
         "commands": rust_commands,
         "capabilities": capabilities,
         "available": available,
         "unavailable": unavailable,
     }
+
+
+def _check_desktop_readme(readme: str, commands: tuple[str, ...]) -> None:
+    """Fail when the hand-written command surface drifts from the code.
+
+    The generated capability summary is machine-written, but the prose around
+    it — the enumerated-command count and the "complete Tauri command
+    surface" table — is hand-written. Nothing compared them to the code, so
+    they rotted silently: the count lagged the enumeration and the table
+    lost rows, including rows that predate the current cohort. Both are the
+    same defect, so both are checked here.
+    """
+    count = re.search(
+        r"(\d+)\s+commands are enumerated in `generate_handler!`", readme
+    )
+    if count is None:
+        raise ValueError(
+            "desktop README lacks the enumerated-command count prose"
+        )
+    stated = int(count.group(1))
+    if stated != len(commands):
+        raise ValueError(
+            "desktop command count drift: the README says "
+            f"{stated} commands, generate_handler! enumerates {len(commands)}"
+        )
+
+    documented = set(
+        re.findall(r"^\|\s*`(app_[a-z0-9_]+)(?:\(|`)", readme, re.MULTILINE)
+    )
+    missing = [command for command in commands if command not in documented]
+    if missing:
+        raise ValueError(
+            "desktop command table drift: the README's command table has no "
+            "row for " + ", ".join(missing)
+        )
 
 
 def canonical_desktop_inventory() -> dict[
@@ -289,6 +329,7 @@ def canonical_desktop_inventory() -> dict[
         (ROOT / "desktop/src/ipc/client.ts").read_text(encoding="utf-8"),
         (ROOT / "desktop/src/surfaces.ts").read_text(encoding="utf-8"),
         (ROOT / "desktop/src/ipc/generated.samples.ts").read_text(encoding="utf-8"),
+        (ROOT / "desktop/README.md").read_text(encoding="utf-8"),
     )
 
 
@@ -336,37 +377,269 @@ def replace_desktop_summary(text: str, replacement: str) -> str:
     return text.replace(anchor, f"\n\n{replacement}\n{anchor}", 1)
 
 
-def find_cargo() -> str:
+def pinned_toolchain_channel() -> str:
+    """The toolchain channel `rust-toolchain.toml` pins."""
+    manifest = ROOT / "rust-toolchain.toml"
+    try:
+        text = manifest.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    match = re.search(r'^channel\s*=\s*"([^"]+)"', text, re.MULTILINE)
+    return match.group(1) if match else ""
+
+
+def pinned_toolchain_cargo() -> str | None:
+    """The cargo of the toolchain `rust-toolchain.toml` pins, when resolvable.
+
+    `rustup which cargo` is resolved with the repository as the working
+    directory, so the answer follows this repository's toolchain override
+    rather than the caller's default toolchain.
+
+    `RUSTUP_TOOLCHAIN` would override that directory override, so it is
+    removed for this call: an environment-selected toolchain is not the
+    pinned one, and the manifest has to be built by the pinned one.
+    """
     from shutil import which
+
+    rustup = which("rustup")
+    if rustup is None:
+        return None
+    env = os.environ.copy()
+    env.pop("RUSTUP_TOOLCHAIN", None)
+    try:
+        result = subprocess.run(
+            [rustup, "which", "cargo"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            env=env,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    path = result.stdout.strip()
+    if path and Path(path).is_file():
+        return path
+    return None
+
+
+def cargo_builds_the_pinned_toolchain(cargo_bin: str) -> bool:
+    """Whether `cargo_bin` would build with the pinned compiler.
+
+    A cargo that is not rustup-managed does not read `rust-toolchain.toml`,
+    so it would use whatever `rustc` it finds. Asking that `rustc` for its
+    release is the only way to know whether the manifest would come from
+    the qualified toolchain.
+    """
+    channel = pinned_toolchain_channel()
+    if not channel:
+        return True
+    rustc = str(Path(cargo_bin).parent / "rustc")
+    if not Path(rustc).is_file():
+        return False
+    try:
+        result = subprocess.run(
+            [rustc, "-vV"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return result.returncode == 0 and f"release: {channel}" in result.stdout
+
+
+def find_cargo() -> str:
+    """The cargo that builds the claims manifest.
+
+    The repository pins its compiler in `rust-toolchain.toml`, and the gate
+    runs with that toolchain on `PATH`. A standalone run of this tool can
+    find a *different* cargo first -- a Homebrew install, say -- and a
+    non-rustup cargo does not read `rust-toolchain.toml`, so the manifest
+    would then be produced by an unqualified compiler. Prefer the toolchain
+    this repository pins, then the caller's cargo, then the usual install
+    locations so the tool still works in a constrained sandbox without rustup.
+
+    A candidate is only accepted when the compiler it would use is the
+    pinned one, so the manifest can never be produced by an unqualified
+    toolchain. When no candidate qualifies, this fails closed rather than
+    falling back to an arbitrary compiler.
+    """
+    candidates: list[str] = []
+    pinned = pinned_toolchain_cargo()
+    if pinned:
+        candidates.append(pinned)
+    from shutil import which
+
     found = which("cargo")
     if found:
-        return found
-    for fallback in [
-        Path.home() / ".cargo/bin/cargo",
-        Path("/opt/homebrew/bin/cargo"),
-        Path("/usr/local/bin/cargo"),
-    ]:
-        if fallback.is_file() and os.access(fallback, os.X_OK):
-            return str(fallback)
-    return "cargo"
+        candidates.append(found)
+    candidates.extend(
+        str(candidate)
+        for candidate in (
+            Path.home() / ".cargo/bin/cargo",
+            Path("/opt/homebrew/bin/cargo"),
+            Path("/usr/local/bin/cargo"),
+        )
+    )
+
+    for candidate in candidates:
+        path = Path(candidate)
+        if not path.is_file() or not os.access(path, os.X_OK):
+            continue
+        if cargo_builds_the_pinned_toolchain(candidate):
+            return candidate
+    raise SystemExit(
+        "the claims manifest requires the pinned toolchain "
+        f"({pinned_toolchain_channel() or 'unknown channel'}); no cargo on "
+        "this machine builds with it"
+    )
+
+
+def assert_qualified_toolchain() -> None:
+    """Fail closed when the compiler could be substituted.
+
+    `tools/toolchain_policy.py` is the repository's own rule against a Cargo
+    configuration or environment that points the build at another compiler.
+    The claims manifest is the canonical evidence anchor, so it must be
+    produced by the qualified toolchain and not by a substituted one.
+    """
+    policy = ROOT / "tools" / "toolchain_policy.py"
+    if not policy.is_file():
+        raise SystemExit(
+            "the toolchain policy is missing; the claims manifest cannot be "
+            "qualified without it"
+        )
+    try:
+        result = subprocess.run(
+            [sys.executable, str(policy)],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        raise SystemExit(f"could not run the toolchain policy check: {error}")
+    if result.returncode != 0:
+        raise SystemExit(
+            "claims manifest requires the qualified toolchain: "
+            + (result.stderr or result.stdout or "").strip()
+        )
+
+
+# The manifest is produced by a real `cargo run`, so this budget has to cover
+# a *build* of the crate, not just the manifest emission. `check.sh` builds
+# several feature cohorts before the synchronizer runs, so the default-feature
+# binary is usually stale by the time the manifest is requested, and the
+# rebuild of a ~90k-line crate plus its link step regularly exceeds a
+# two-minute budget. A budget that is too small turns a normal rebuild into a
+# spurious gate failure, so the default is generous and overridable.
+DEFAULT_MANIFEST_TIMEOUT_SECONDS = 900
+TIMEOUT_ENV = "ABBEY_CLAIMS_SYNC_TIMEOUT"
+
+
+def manifest_timeout_seconds() -> int:
+    raw = os.environ.get(TIMEOUT_ENV, "").strip()
+    if not raw:
+        return DEFAULT_MANIFEST_TIMEOUT_SECONDS
+    try:
+        value = int(raw)
+    except ValueError:
+        raise SystemExit(
+            f"{TIMEOUT_ENV} must be a positive integer number of seconds"
+        )
+    if value <= 0:
+        raise SystemExit(
+            f"{TIMEOUT_ENV} must be a positive integer number of seconds"
+        )
+    return value
+
+
+def run_manifest_command(
+    command: list[str], env: dict[str, str], timeout: int
+) -> tuple[str, str, int]:
+    """Run the manifest command and return its stdout, stderr, and status.
+
+    `cargo` spawns rustc children. Killing only cargo on a timeout leaves
+    those children running against the shared target directory, so the build
+    runs in its own process group and the whole group is torn down.
+    """
+    isolated_group = os.name == "posix"
+    try:
+        process = subprocess.Popen(
+            command,
+            cwd=ROOT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=env,
+            start_new_session=isolated_group,
+        )
+    except OSError as error:
+        raise SystemExit(f"could not start the claims manifest build: {error}")
+    try:
+        stdout, stderr = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        if isolated_group:
+            try:
+                os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+            except (OSError, ProcessLookupError):
+                process.kill()
+        else:
+            process.kill()
+        process.wait()
+        # A bare traceback here hides the fact that the tool was still
+        # compiling; say what happened and how to widen the budget.
+        raise SystemExit(
+            "claims manifest timed out while building `abbey`; rerun with a "
+            f"larger budget, e.g. {TIMEOUT_ENV}=1800"
+        )
+    return stdout, stderr, process.returncode
 
 
 def canonical_manifest() -> tuple[dict[str, Any], str]:
+    assert_qualified_toolchain()
     cargo_bin = find_cargo()
     env = os.environ.copy()
-    cargo_dir = str(Path(cargo_bin).parent)
-    if cargo_dir not in env.get("PATH", "").split(os.pathsep):
-        env["PATH"] = f"{cargo_dir}{os.pathsep}{env.get('PATH', '')}"
-    result = subprocess.run(
-        [cargo_bin, "run", "--quiet", "--bin", "abbey", "--", "claims", "manifest"],
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=120,
-        env=env,
+    # Prepend unconditionally: the cargo that is about to run has to find the
+    # matching rustc and rustdoc beside it, and a cargo directory that is on
+    # PATH but not first would be shadowed by an earlier one.
+    env["PATH"] = f"{Path(cargo_bin).parent}{os.pathsep}{env.get('PATH', '')}"
+    # `--locked` keeps the tracked lockfile from being rewritten by a
+    # resolved-graph difference: this step must not change the repository.
+    command = [
+        cargo_bin,
+        "run",
+        "--quiet",
+        "--locked",
+        "--bin",
+        "abbey",
+        "--",
+        "claims",
+        "manifest",
+    ]
+    stdout, stderr, status = run_manifest_command(
+        command, env, manifest_timeout_seconds()
     )
-    raw = json.loads(result.stdout)
+    if status != 0:
+        # cargo's real diagnosis is on stderr. Reporting only the exit status
+        # would hide a compile error behind "returned non-zero exit status" —
+        # surface it instead.
+        detail = (stderr or stdout or "").strip()
+        raise SystemExit(
+            "claims manifest build failed:\n"
+            + (detail or f"`cargo run` exited {status}")
+        )
+    try:
+        raw = json.loads(stdout)
+    except json.JSONDecodeError as error:
+        raise SystemExit(
+            "claims manifest is not valid JSON; the binary printed something "
+            f"other than the manifest: {error}"
+        )
     manifest = normalize_manifest(raw)
     canonical = json.dumps(manifest, ensure_ascii=False, separators=(",", ":"))
     return manifest, hashlib.sha256(canonical.encode()).hexdigest()
@@ -859,8 +1132,12 @@ def synchronized_documents(
         rendered[path] = replace_generated_region(text, mode, region)
     rendered[GENERATED_LEDGER] = render_evidence_document(manifest, digest, workflow)
     desktop_text = DESKTOP_SUMMARY.read_text(encoding="utf-8")
+    try:
+        inventory = canonical_desktop_inventory()
+    except ValueError as error:
+        raise SystemExit(f"desktop source inventory is inconsistent: {error}")
     rendered[DESKTOP_SUMMARY] = replace_desktop_summary(
-        desktop_text, render_desktop_summary(canonical_desktop_inventory())
+        desktop_text, render_desktop_summary(inventory)
     )
     return rendered
 
