@@ -23,6 +23,29 @@ const BEARER: &str = "abbey-model-lifecycle-bearer-00000001";
 const MODEL_ID: &str = "fixture-bigram";
 const REVISION: &str = "0123456789abcdef0123456789abcdef01234567";
 const PRINCIPAL: &str = "operator@example.invalid";
+/// Bounded attempts at one exact-model inference run on a Metal device.
+///
+/// The daemon caps a single run at one second, and Candle compiles its Metal
+/// shader source on first use. One attempt may therefore be refused by the
+/// daemon's own run budget on a cold device; the compiled library is cached
+/// in-process, so a later attempt answers.
+const METAL_INFERENCE_ATTEMPTS: usize = 3;
+
+/// How long the Metal branch waits for one inference attempt.
+///
+/// The daemon's own one-second run budget is not the only bound. The pinned
+/// ABI revision's `RunContext::finish` reports `StopReason::Completed`
+/// without consulting the elapsed duration, so a cold Metal compile that
+/// happens *before the first event* is not caught by the budget at all: the
+/// client stops waiting first. The default five-second read deadline is
+/// therefore the bound that actually decides a cold attempt, and it is too
+/// tight for a first-use shader compile.
+///
+/// This is a *client* deadline, raised only for the Metal branch of this
+/// test. It does not change the daemon's budget, does not change the
+/// fail-closed guarantee (a host with no Metal device still refuses the load
+/// and the inference), and does not change the default cohort at all.
+const METAL_READ_TIMEOUT: Duration = Duration::from_secs(60);
 
 struct Harness {
     root: PathBuf,
@@ -34,7 +57,18 @@ struct Harness {
 }
 
 impl Harness {
+    /// Start a daemon whose startup document selects the CPU device.
     fn start() -> Self {
+        Self::start_with_device("cpu")
+    }
+
+    /// Start a daemon whose startup document selects an exact device.
+    ///
+    /// The device string is the daemon's only device authority: it is parsed
+    /// once at startup and handed to ABI's `LocalModelProvider::load`, which
+    /// fails closed on an unavailable device instead of substituting another
+    /// one. `cpu`, `metal`, and `cuda` are the only accepted values.
+    fn start_with_device(device: &str) -> Self {
         let root = PathBuf::from("/tmp").join(format!(
             "abbey-daemon-model-lifecycle-{}-{}",
             std::process::id(),
@@ -83,7 +117,7 @@ impl Harness {
                 "acceptance_ledger_path": acceptance,
                 "storage_root": storage.path(),
                 "principal": PRINCIPAL,
-                "device": "cpu",
+                "device": device,
                 "max_artifact_bytes": 1024 * 1024
             })
             .to_string(),
@@ -132,6 +166,16 @@ impl Harness {
     }
 
     fn session(&self) -> V3DaemonSession {
+        self.session_with_read_timeout(Duration::from_secs(5))
+    }
+
+    /// A session with an explicit client read deadline.
+    ///
+    /// The deadline is a *client* bound, not the daemon's run budget: it
+    /// decides how long the client waits for a response that the daemon has
+    /// already begun producing. The Metal branch needs a longer one because
+    /// a cold device compiles its shader before the daemon's first event.
+    fn session_with_read_timeout(&self, read_timeout: Duration) -> V3DaemonSession {
         let requested = V3CapabilitySet::from_sorted(vec![
             V3Capability::ReadModels,
             V3Capability::DownloadModels,
@@ -139,12 +183,10 @@ impl Harness {
             V3Capability::InferModels,
         ])
         .unwrap();
-        DaemonClient::new(DaemonConfig::local(
-            self.socket.clone(),
-            BearerSecret::parse(BEARER).unwrap(),
-        ))
-        .negotiate_v3(requested)
-        .unwrap()
+        let mut config =
+            DaemonConfig::local(self.socket.clone(), BearerSecret::parse(BEARER).unwrap());
+        config.read_timeout = read_timeout;
+        DaemonClient::new(config).negotiate_v3(requested).unwrap()
     }
 }
 
@@ -248,6 +290,202 @@ fn real_daemon_downloads_loads_reports_unloads_and_reopens_exact_model_state() {
         })
     ));
 
+    let database = std::fs::read(harness.state.join("daemon/runtime.sqlite")).unwrap();
+    let rendered = String::from_utf8_lossy(&database);
+    assert!(!rendered.contains("models.example.invalid"));
+    assert!(!rendered.contains(PRINCIPAL));
+    assert!(!rendered.contains("hello"));
+    assert!(!rendered.contains("world again"));
+}
+
+/// Real-process proof that the startup-selected Metal device never silently
+/// falls back to some other device.
+///
+/// The daemon's startup document is the only device authority: the requested
+/// device is parsed once at startup and handed to ABI's
+/// `LocalModelProvider::load`. A real Metal device exists only when Abbey is
+/// built with `--features accel` (which turns on ABI's
+/// `abi-model-runtime/metal`) *and* the host actually exposes one. Every
+/// other host must fail closed: the model is never advertised as available,
+/// inference is refused, and no CPU execution stands in for the requested
+/// device. The branch is decided at runtime by what the daemon reports, so
+/// the same assertions hold in every build cohort.
+#[test]
+fn real_daemon_runs_the_exact_fixture_on_metal_without_falling_back() {
+    let harness = Harness::start_with_device("metal");
+    // A cold Metal device compiles its shader before the daemon's first
+    // event, and the pinned ABI's run budget is not consulted at that
+    // point, so the *client* deadline is the bound that decides a cold
+    // attempt. Give this branch a deadline that can outlast a first-use
+    // shader compile. The daemon's own budget, the fail-closed guarantee,
+    // and the default cohort are unchanged.
+    let session = harness.session_with_read_timeout(METAL_READ_TIMEOUT);
+
+    // The startup document is the only device authority: the daemon must
+    // report exactly the configured Metal device before anything is loaded.
+    let details = session
+        .model_details(V3ResourceQuery {
+            resource_id: MODEL_ID.to_owned(),
+        })
+        .unwrap();
+    assert_eq!(details.model_id, MODEL_ID);
+    assert_eq!(details.revision, REVISION);
+    assert_eq!(details.configured_device, V3ModelDevice::Metal);
+    assert!(details.license_accepted);
+    assert!(!details.loaded);
+
+    assert_eq!(
+        session
+            .download_model(action("download-metal-1"))
+            .unwrap()
+            .state,
+        V3OperationState::Queued
+    );
+    assert_eq!(
+        wait_for(&session, "download-metal-1", true).state,
+        V3OperationState::Succeeded
+    );
+
+    assert_eq!(
+        session.load_model(action("load-metal-1")).unwrap().state,
+        V3OperationState::Queued
+    );
+    let loaded = wait_for(&session, "load-metal-1", false);
+    assert!(
+        matches!(
+            loaded.state,
+            V3OperationState::Succeeded | V3OperationState::Failed
+        ),
+        "the Metal load must reach a terminal state, saw {:?}",
+        loaded.state
+    );
+
+    let request = V3ModelInferenceRequest::new(MODEL_ID, REVISION, "hello", 4).unwrap();
+    match loaded.state {
+        V3OperationState::Succeeded => {
+            eprintln!(
+                "metal branch: native — a real Metal device was compiled in and initialized, so the \
+                 daemon loaded and executed the exact fixture on Metal"
+            );
+            let readiness = session
+                .inference_status(V3ResourceQuery {
+                    resource_id: MODEL_ID.to_owned(),
+                })
+                .unwrap();
+            assert_eq!(readiness.state, V3OperationState::Available);
+            assert_eq!(readiness.progress_basis_points, 0);
+            // The daemon bounds one exact-model run at a single second
+            // (src/daemon/runtime_v3/model_lifecycle/model_inference.rs). Candle
+            // compiles its Metal shader source on first use and caches the
+            // compiled library in-process, so a cold Metal device can overrun
+            // that ceiling once: the daemon then refuses to report the run
+            // rather than substituting a device. Re-issue the identical request
+            // a bounded number of times so a warm run can answer; every
+            // attempt that does answer must still carry native Metal evidence,
+            // and a run that never answers fails the test rather than
+            // downgrading the assertion.
+            //
+            // The client deadline is what decides a cold attempt, because the
+            // pinned ABI revision's `RunContext::finish` reports completion
+            // without consulting the elapsed duration, and the cold compile
+            // happens before the daemon's first event. This branch uses
+            // `METAL_READ_TIMEOUT` for that reason. A client read deadline is
+            // still retried the same way, because it is the same "not
+            // answered in time" outcome; a client that can never get an
+            // answer still fails the test.
+            let mut answered = None;
+            let mut refusals: Vec<String> = Vec::new();
+            for _ in 0..METAL_INFERENCE_ATTEMPTS {
+                match session.infer_model(request.clone()) {
+                    Ok(result) => {
+                        answered = Some(result);
+                        break;
+                    }
+                    Err(ClientError::DaemonV3 {
+                        code: V3ErrorCode::Internal,
+                        message,
+                    }) => refusals.push(message),
+                    Err(ClientError::Read(source))
+                        if matches!(
+                            source.kind(),
+                            std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                        ) =>
+                    {
+                        refusals.push(format!("client read deadline elapsed: {source}"));
+                    }
+                    Err(other) => {
+                        panic!("unexpected exact-model inference failure: {other:?}");
+                    }
+                }
+            }
+            let inference = answered.unwrap_or_else(|| {
+                panic!(
+                    "the daemon refused every bounded exact-model inference attempt: {refusals:?}"
+                )
+            });
+            eprintln!(
+                "metal branch: output={:?} requested_device={:?} executed_device={:?} \
+                 native_operations={} fallback_used={} mixed_execution={}",
+                inference.output,
+                inference.requested_device,
+                inference.executed_device,
+                inference.native_operations,
+                inference.fallback_used,
+                inference.mixed_execution,
+            );
+            assert_eq!(inference.output, "world again");
+            assert_eq!(inference.requested_device, V3ModelDevice::Metal);
+            assert_eq!(inference.executed_device, V3ModelDevice::Metal);
+            assert!(inference.native_operations > 0);
+            assert!(!inference.fallback_used);
+            assert!(!inference.mixed_execution);
+        }
+        V3OperationState::Failed => {
+            eprintln!(
+                "metal branch: fail-closed — no Metal device was available in this build or on this \
+                 host, so the daemon refused to load the model instead of substituting a device"
+            );
+            // The model is not advertised as available.
+            assert!(matches!(
+                session.inference_status(V3ResourceQuery {
+                    resource_id: MODEL_ID.to_owned(),
+                }),
+                Err(ClientError::DaemonV3 {
+                    code: V3ErrorCode::NotFound,
+                    ..
+                })
+            ));
+            // Inference is refused for a model that was never loaded.
+            assert!(matches!(
+                session.infer_model(request.clone()),
+                Err(ClientError::DaemonV3 {
+                    code: V3ErrorCode::NotFound,
+                    ..
+                })
+            ));
+            // Nothing was loaded, so no CPU execution stood in for Metal.
+            let details = session
+                .model_details(V3ResourceQuery {
+                    resource_id: MODEL_ID.to_owned(),
+                })
+                .unwrap();
+            assert!(!details.loaded);
+            assert_eq!(details.configured_device, V3ModelDevice::Metal);
+        }
+        other => panic!("unexpected model load state: {other:?}"),
+    }
+
+    // Operation ids are globally single-use: the terminal load id cannot drive
+    // a second load, so a failed Metal attempt is never silently replayed.
+    assert!(matches!(
+        session.load_model(action("load-metal-1")),
+        Err(ClientError::DaemonV3 {
+            code: V3ErrorCode::Conflict,
+            ..
+        })
+    ));
+
+    // The durable store keeps neither the prompt nor the output.
     let database = std::fs::read(harness.state.join("daemon/runtime.sqlite")).unwrap();
     let rendered = String::from_utf8_lossy(&database);
     assert!(!rendered.contains("models.example.invalid"));

@@ -13,7 +13,16 @@ use std::time::{Duration, Instant};
 
 const ABBEY_BIN: &str = env!("CARGO_BIN_EXE_abbey");
 const RAW_ID: &str = "private-provider-identity-canary";
-const BARRIER_TIMEOUT: Duration = Duration::from_secs(2);
+/// How long a barrier waits for a state the fixture observes.
+///
+/// This is a *bounded* wait, not a deadline on the behaviour under test: it
+/// only decides how long the fixture tolerates a slow filesystem or a busy
+/// machine before it reports a failure. A bound tight enough to trip under
+/// load turns a slow run into a false failure, and this fixture waits on
+/// real processes writing real files. Fifteen seconds is long enough to
+/// absorb a loaded machine and short enough that a genuinely broken
+/// recovery still fails the test promptly.
+const BARRIER_TIMEOUT: Duration = Duration::from_secs(15);
 
 struct Scratch(PathBuf);
 
@@ -134,7 +143,19 @@ impl ProcessFixture {
 
     fn wait_for_pending(&self, expected: bool) {
         wait_until("conversation pending marker state", || {
-            self.journal.join("pending.json").is_file() == expected
+            // `Path::is_file` follows symlinks, so a *dangling* `pending.json`
+            // would read as "no marker" even though the marker exists. The
+            // recovery path itself does not make that distinction: it reads
+            // `symlink_metadata` and requires a regular file
+            // (`src/state/conversation.rs::remove_pending`). Observing with
+            // the same rule the writer and the recovery path use is what
+            // makes this check agree with the behaviour it is checking.
+            let marker = self.journal.join("pending.json");
+            match fs::symlink_metadata(&marker) {
+                Ok(metadata) => metadata.file_type().is_file() == expected,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => !expected,
+                Err(_) => false,
+            }
         });
     }
 }
@@ -253,6 +274,43 @@ fn shared_state_control_reproduces_the_missing_pending_marker_symptom() {
     let sibling = fixture.run(&["history", "10"], None, None, None);
     assert!(sibling.status.success(), "{:?}", sibling.stderr);
     fixture.wait_for_pending(false);
+}
+
+/// The pending marker is observed with the same rule the recovery path uses.
+///
+/// `Path::is_file` follows symlinks, so a *dangling* `pending.json` would
+/// read as "no marker" while the marker plainly exists. The recovery path
+/// itself (`src/state/conversation.rs::remove_pending`) reads
+/// `symlink_metadata` and requires a regular file. An observer that used a
+/// different rule could report a marker as absent — or, worse, report a
+/// present marker as absent while the recovery path is about to act on it.
+/// This test pins the observer to the recovery path's rule.
+#[test]
+fn the_pending_marker_observer_uses_the_recovery_paths_rule() {
+    let fixture = ProcessFixture::new("dangling-symlink-cwd");
+    let marker = fixture.journal.join("pending.json");
+    fs::create_dir_all(&fixture.journal).unwrap();
+
+    // A dangling symlink: the path exists, and it is not a regular file.
+    // `Path::is_file` says false; `symlink_metadata` says "exists, and not a
+    // regular file" — which is exactly what the recovery path refuses.
+    std::os::unix::fs::symlink(fixture.root.join("nowhere"), &marker).unwrap();
+    assert!(
+        !marker.is_file(),
+        "a dangling symlink is not a regular file"
+    );
+    let metadata = fs::symlink_metadata(&marker).unwrap();
+    assert!(!metadata.file_type().is_file());
+
+    // The observer must not report a dangling symlink as the pending
+    // marker: it is not a regular file, so it is not the marker.
+    fixture.wait_for_pending(false);
+
+    // A real regular file *is* the marker, and the observer says so.
+    fs::remove_file(&marker).unwrap();
+    fs::write(&marker, b"{}\n").unwrap();
+    assert!(marker.is_file());
+    fixture.wait_for_pending(true);
 }
 
 fn prove_clear_failpoint(failpoint: &str, all: bool) {
