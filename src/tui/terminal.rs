@@ -48,7 +48,7 @@ pub(super) struct TerminalGuard<C: Control = NativeControl> {
 }
 
 impl<C: Control> TerminalGuard<C> {
-    fn new(control: C) -> Self {
+    pub(super) fn new(control: C) -> Self {
         Self {
             control,
             armed: false,

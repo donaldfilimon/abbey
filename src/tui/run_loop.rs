@@ -2,7 +2,7 @@
 //! loop, and suspend/resume for `$EDITOR` and interactive slash commands.
 
 use super::app::{App, Suspend};
-use super::terminal::TerminalGuard;
+use super::terminal::{Control, TerminalGuard};
 use crate::agent::AgentConfig;
 use crate::state::AbbeyState;
 use anyhow::Result;
@@ -15,6 +15,22 @@ use std::time::Duration;
 type Term = Terminal<CrosstermBackend<Stdout>>;
 
 fn suspend(term: &mut Term, guard: &mut TerminalGuard, app: &mut App, what: Suspend) -> Result<()> {
+    suspend_with(term, guard, app, what)
+}
+
+/// The suspend/resume sequence, over any guard.
+///
+/// Split out so a test can drive the real sequence with a recording
+/// control: the point of the sequence is that the terminal is handed to
+/// the child and then *taken back*, and that the taking-back happens even
+/// when the child failed. A test that only exercised `TerminalGuard` in
+/// isolation would not notice if the resume were dropped.
+fn suspend_with<C: Control>(
+    term: &mut Term,
+    guard: &mut TerminalGuard<C>,
+    app: &mut App,
+    what: Suspend,
+) -> Result<()> {
     guard.restore()?;
     let action = match what {
         Suspend::Editor => edit_composer(app),
@@ -24,14 +40,25 @@ fn suspend(term: &mut Term, guard: &mut TerminalGuard, app: &mut App, what: Susp
         }
     };
     // Always try re-entry, even if the editor or slash command failed.
-    let resume = guard
-        .enter()
-        .and_then(|()| term.clear().map_err(Into::into));
+    let resumed = take_the_terminal_back(guard, || term.clear().map_err(Into::into));
     if let Err(error) = action {
         app.status = format!("suspended command: {error:#}");
         app.transcript.push_error(&app.status);
     }
-    resume
+    resumed
+}
+
+/// Take the terminal back after a suspended child.
+///
+/// The re-entry is the point: the child had the terminal, and the app has
+/// to get it back whether the child succeeded or failed. `clear` is the
+/// screen reset that follows re-entry, split out so a test can drive the
+/// guard sequence without a real terminal.
+fn take_the_terminal_back<C: Control>(
+    guard: &mut TerminalGuard<C>,
+    clear: impl FnOnce() -> Result<()>,
+) -> Result<()> {
+    guard.enter().and_then(clear)
 }
 
 fn edit_composer(app: &mut App) -> Result<()> {
@@ -98,6 +125,7 @@ pub fn run_tui(state: AbbeyState, cfg: AgentConfig) -> Result<i32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::super::terminal::Mode;
     #[test]
     fn failed_editor_preserves_the_draft() {
         let mut app =
@@ -148,5 +176,71 @@ mod tests {
         });
         assert!(app.composer.text == "other @app" || app.composer.text == "other @apple.rs ");
         assert!(app.run.is_none());
+    }
+
+    /// A control that records every mode change it is asked for.
+    struct Recorder {
+        calls: std::sync::Arc<std::sync::Mutex<Vec<(Mode, bool)>>>,
+    }
+    impl Control for Recorder {
+        fn set(&mut self, mode: Mode, enabled: bool) -> Result<()> {
+            self.calls.lock().unwrap().push((mode, enabled));
+            Ok(())
+        }
+    }
+
+    /// The terminal is handed to the child and then taken back.
+    ///
+    /// The guard's own tests cover `TerminalGuard` in isolation. This covers
+    /// the *sequence* the suspend path uses: restore every mode so the child
+    /// has a normal terminal, then re-enter every mode so the app has its
+    /// terminal back. A resume that was dropped would leave the app drawing
+    /// into a terminal the child had, and nothing in the guard's own tests
+    /// would notice.
+    #[test]
+    fn the_resume_takes_the_terminal_back_from_the_child() {
+        let calls = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let mut guard = TerminalGuard::new(Recorder {
+            calls: calls.clone(),
+        });
+        guard.enter().unwrap();
+
+        // The child gets a normal terminal: every mode is off.
+        guard.restore().unwrap();
+        // The app takes it back: every mode is on again.
+        take_the_terminal_back(&mut guard, || Ok(())).unwrap();
+
+        let recorded = calls.lock().unwrap().clone();
+        let entered = |mode: Mode| recorded.contains(&(mode, true));
+        let exited = |mode: Mode| recorded.contains(&(mode, false));
+        for mode in [Mode::Raw, Mode::Screen, Mode::Mouse, Mode::Paste] {
+            assert!(entered(mode), "{mode:?} must be re-entered after the child");
+            assert!(exited(mode), "{mode:?} must be released to the child");
+        }
+    }
+
+    /// A failing screen reset does not cost the app its terminal.
+    ///
+    /// The re-entry happens before the reset, so a reset that fails leaves
+    /// the terminal in the app's hands and only the redraw is missing.
+    #[test]
+    fn a_failing_reset_after_re_entry_still_leaves_the_terminal_in_the_apps_hands() {
+        let calls = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let mut guard = TerminalGuard::new(Recorder {
+            calls: calls.clone(),
+        });
+        guard.enter().unwrap();
+        guard.restore().unwrap();
+
+        let outcome = take_the_terminal_back(&mut guard, || anyhow::bail!("the screen reset failed"));
+        assert!(outcome.is_err(), "the reset failure must be reported");
+
+        let recorded = calls.lock().unwrap().clone();
+        for mode in [Mode::Raw, Mode::Screen, Mode::Mouse, Mode::Paste] {
+            assert!(
+                recorded.contains(&(mode, true)),
+                "{mode:?} must be re-entered even when the reset failed"
+            );
+        }
     }
 }
