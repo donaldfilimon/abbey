@@ -225,41 +225,23 @@ refusal, the pinned-toolchain preference, and the fail-closed policy check.
 
 ## Gate evidence
 
-The gate ran through the repository's own pinned-sibling helper,
-`tools/ci/verify-pinned-siblings.sh`, which reproduces the gate CI runs: the
-sibling path dependencies are overridden to clean archives of the revisions
-`.github/workflows/rust.yml` pins, and nothing in either checkout or in this
-repository is written. The helper also documents the formatting trap this
-cohort hit: `cargo fmt --all` reaches the sibling path dependencies, so the
-gate now formats only Abbey's own package with `cargo fmt --package abbey`.
-
-That trap was measured, not assumed. `cargo fmt --help` documents `--all` as
-formatting "all packages, and also their local path-based dependencies", and a
-direct instrumented run of `cargo fmt --all -- --check` was observed handing
-rustfmt **90** files from `../abi` and `../wdbx` alongside Abbey's own 36. The
-sibling's sources are not ours to reformat, and a sibling's in-flight work
-must not fail Abbey's gate.
+Both sibling checkouts were being modified by other sessions while this cohort
+ran, so the root gate was run through the repository's own pinned-sibling
+helper, `tools/ci/verify-pinned-siblings.sh`: the sibling path dependencies
+are overridden to clean archives of the revisions `.github/workflows/rust.yml`
+pins, and nothing in either checkout or in this repository is written.
 
 | Gate | Result |
 | --- | --- |
-| Root gate — default cohort | green (check, rustfmt, clippy `-D warnings`, build, tests) |
-| Root gate — `--features wdbx` cohort | green (clippy `-D warnings`, build, tests) |
+| Root gate, pinned siblings — default cohort | green (check, rustfmt, clippy `-D warnings`, build, tests) |
+| Root gate, pinned siblings — `--features wdbx` cohort | green before a concurrent session adapted the WDBX-gated fixtures to the sibling's in-flight policy fields; that adaptation needs the sibling's *uncommitted* API, so the cohort no longer compiles against the pinned revision — see the sibling note |
 | Root gate — `--features personal-edition` cohort | green (clippy `-D warnings`, build, tests) |
-| Root gate — `--features accel` cohort | green (clippy `-D warnings`, build, tests) |
+| Root gate — `--features accel` cohort | green (clippy `-D warnings`, build, tests), including the native Metal inference run |
 | Root gate — warning-denied private-item rustdoc, all four modes | green |
 | Root gate — claims/docs synchronization, Program 3 boundary, installer smoke, file-size guard | green |
-| `python3 tools/check_claims_sync.py` (write + check) | green; 59 claims, schema 2, digest `e990e27c781fb17d774aa2018c73e2915701b6e34058c17f9680bd6df29e4133` |
+| `python3 tools/check_claims_sync.py` (write + check) | green; 59 claims, schema 2 |
 | `python3 tools/check_instructions.py` | green |
-| `python3 -m unittest discover -s tools/tests -p 'test_*.py'` | green; 175 tests |
-| `desktop/check.sh` | green — codegen drift, typecheck, bun suites, frontend build, bundle security, default and personal-edition Rust tests, the live scratch-daemon proof, the configured-daemon no-fallback test, and the real linked binary |
-
-### The working tree at the time of writing
-
-47 tracked files changed and 6 untracked files, at approximately +2317 / −304
-against `HEAD`. The tree was being edited by other sessions while this cohort
-was reviewed, so these counts are a snapshot and not a contract; the
-authoritative numbers are the ones `git diff --stat HEAD` reports at the moment
-of the landing commit.
+| `desktop/check.sh` | green — codegen drift, typecheck, bun suites, frontend build, bundle security, warning-denied clippy over both desktop packages, default and personal-edition Rust tests, the live scratch-daemon proof (6 live tests, including the effective-model one and its selected-route sibling), the configured-daemon no-fallback test, and the real linked binary |
 
 ### Observed load-induced flakes (not caused by this cohort)
 
