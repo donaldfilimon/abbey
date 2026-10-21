@@ -21,7 +21,14 @@ const LIMITS = [4, 8, 16] as const;
 const CANONICAL_UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
-function eventLabel(event: RunLifecycleEvent): string {
+/**
+ * The human label for one lifecycle event.
+ *
+ * A failure, a cancellation, and an interruption each carry the reason the
+ * daemon recorded. Showing only the event kind would hide *why* a run
+ * stopped, which is the one thing a reader of this page needs.
+ */
+export function eventLabel(event: RunLifecycleEvent): string {
   switch (event.type) {
     case "failed":
       return `failed (${event.payload.failure.code})`;
@@ -34,7 +41,14 @@ function eventLabel(event: RunLifecycleEvent): string {
   }
 }
 
-function EventRow({
+/**
+ * One lifecycle event.
+ *
+ * Exported so the honesty contract is testable directly: a failed run must
+ * show the failure code and the daemon's own message, never a bare
+ * "failed".
+ */
+export function EventRow({
   sequence,
   recorded_at,
   event,

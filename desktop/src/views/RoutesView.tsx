@@ -15,11 +15,19 @@ import { ErrorCard } from "./ErrorCard";
 const LIMITS = [10, 25, 50] as const;
 
 /** Stable colour-free grouping key so one workspace reads as one column. */
-function workspaceLabel(entry: RouteAuditEntry): string {
+export function workspaceLabel(entry: RouteAuditEntry): string {
   return entry.workspace ?? "unrecorded";
 }
 
-function RouteRow({ entry }: { entry: RouteAuditEntry }) {
+/**
+ * One routing decision.
+ *
+ * Exported so the honesty contract can be tested directly: the workspace
+ * label must be the opaque digest the application core published, never a
+ * path, and an entry without a workspace must say so rather than render a
+ * blank.
+ */
+export function RouteRow({ entry }: { entry: RouteAuditEntry }) {
   return (
     <div className="claim">
       <div className="claim-head">
