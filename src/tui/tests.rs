@@ -3,6 +3,7 @@ use crate::agent::{AgentBackend, AgentConfig};
 use crate::state::AbbeyState;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 
+mod keymap;
 mod model_selection;
 
 pub(super) fn scratch_app(tag: &str, backend: AgentBackend) -> App {
