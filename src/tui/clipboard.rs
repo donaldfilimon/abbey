@@ -131,12 +131,12 @@ pub fn copy_with(command: &std::path::Path, args: &[&str], text: &str) -> CopyOu
     // The command reads the text on stdin rather than as an argument, so
     // the text never appears in a process listing and its size is not
     // bounded by an argument limit.
-    if let Some(stdin) = child.stdin.as_mut() {
-        if let Err(error) = stdin.write_all(text.as_bytes()) {
-            let _ = child.kill();
-            let _ = child.wait();
-            return CopyOutcome::Refused(error.to_string());
-        }
+    if let Some(stdin) = child.stdin.as_mut()
+        && let Err(error) = stdin.write_all(text.as_bytes())
+    {
+        let _ = child.kill();
+        let _ = child.wait();
+        return CopyOutcome::Refused(error.to_string());
     }
     // Drop stdin so the command sees EOF and finishes.
     drop(child.stdin.take());
