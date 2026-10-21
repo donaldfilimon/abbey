@@ -20,7 +20,12 @@ import uuid
 sys.dont_write_bytecode = True
 from smoke_tui_pty import Session
 
-WAIT = 4.0
+# A ceiling, not a sleep: every use exits as soon as the expected marker
+# appears. Four seconds was short enough that a loaded machine — another
+# session compiling in the same checkout — could leave the TUI unrendered
+# when the marker was checked, which read as a product failure rather than as
+# a slow machine.
+WAIT = 15.0
 # Longer than every observed cancellation assertion; release is cleanup only.
 HOLD = 20.0
 STUB = r'''

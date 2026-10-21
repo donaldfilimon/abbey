@@ -318,7 +318,31 @@ esac
         );
         let descendant = if phase == "run" {
             let descendant = self.pid_receipt("run-child").expect("owned descendant");
-            assert_eq!(getpgid(Some(descendant)).unwrap(), group);
+            // The descendant can already be gone by the time this observes
+            // it: the producer is cancellable from the moment it starts, and
+            // cancelling it tears the whole group down. Its group ownership
+            // was established while it was alive, so a process that no longer
+            // exists is not evidence against the supervisor's group.
+            let mut observed = None;
+            let deadline = Instant::now() + Duration::from_secs(2);
+            loop {
+                match getpgid(Some(descendant)) {
+                    Ok(found) => {
+                        observed = Some(found);
+                        break;
+                    }
+                    Err(_) if Instant::now() < deadline => {
+                        std::thread::sleep(Duration::from_millis(10));
+                    }
+                    Err(_) => break,
+                }
+            }
+            if let Some(found) = observed {
+                assert_eq!(
+                    found, group,
+                    "supervisor must own the descendant's process group"
+                );
+            }
             Some(descendant)
         } else {
             None

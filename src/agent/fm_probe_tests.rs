@@ -38,8 +38,32 @@ impl Probe {
         std::fs::read_to_string(self.dir.join("calls")).unwrap_or_default()
     }
 
+    /// The probe's answer, retried while it stays indeterminate.
+    ///
+    /// `fm_models_probe` answers `None` when the probe could not complete
+    /// inside its bounded window. That is an absent observation, not the
+    /// fact "the models are unavailable", and a loaded machine can push a
+    /// trivial stub past that window. Each attempt starts from a clean call
+    /// log, so the recorded invocations describe the attempt that produced
+    /// the answer rather than the attempts that preceded it.
+    fn probe_answer(&self) -> Option<FmModels> {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        loop {
+            let _ = std::fs::remove_file(self.dir.join("calls"));
+            match fm_models_probe(&self.executable) {
+                Some(observed) => return Some(observed),
+                None => {
+                    if std::time::Instant::now() >= deadline {
+                        return None;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(50));
+                }
+            }
+        }
+    }
+
     fn assert_both(&self, expected: FmModels, calls: &str) {
-        assert_eq!(fm_models_probe(&self.executable), Some(expected));
+        assert_eq!(self.probe_answer(), Some(expected));
         assert_eq!(self.calls(), calls);
         std::fs::remove_file(self.dir.join("calls")).unwrap();
         assert_eq!(
@@ -145,7 +169,12 @@ fn fm_probe_owned_cancellation_reaps_without_compatibility_fallback() {
     cfg.stream = Some(tap);
     std::thread::scope(|scope| {
         let worker = scope.spawn(|| cfg.fm_availability_owned());
-        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        // The bound here waits for the probe to *start*, so it is a liveness
+        // bound rather than the subject of the test: the subject is the
+        // cancellation and the reaping. A two-second bound turned a loaded
+        // machine's slow spawn into a failure that looked like a defect in
+        // the cancellation path.
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
         while probe.calls().is_empty() {
             assert!(std::time::Instant::now() < deadline, "probe never started");
             std::thread::sleep(Duration::from_millis(2));

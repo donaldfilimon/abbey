@@ -268,8 +268,12 @@ mod tests {
     fn git_index_uses_nul_protocol_and_reaps_slow_and_noisy_processes() {
         let scratch = Scratch::new();
         let git = scratch.script("test \"$1\" = ls-files && test \"$2\" = -z || exit 2\nprintf 'src/a.rs\\000src/b.rs\\000'");
+        // The bound here is a liveness bound for a trivial stub, not the
+        // subject of the test: the subject is the NUL protocol and the
+        // decoding. A one-second bound turned a loaded machine's slow spawn
+        // into a failure that looked like a protocol defect.
         assert_eq!(
-            git_paths_with(&scratch.0, git, Duration::from_secs(1)).unwrap(),
+            git_paths_with(&scratch.0, git, Duration::from_secs(10)).unwrap(),
             ["src/a.rs", "src/b.rs"]
         );
         for script in ["/bin/sleep 30", "/usr/bin/head -c 2097153 /dev/zero"] {

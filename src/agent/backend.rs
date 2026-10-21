@@ -708,6 +708,49 @@ mod tests {
     fn automatic_ollama_probe_requires_the_default_model() {
         use std::os::unix::fs::PermissionsExt as _;
 
+        /// The probe's exact answer, retried while it stays indeterminate.
+        ///
+        /// `ollama_lists_model_once` separates "the tag is not listed" from
+        /// "the probe could not complete inside its bounded window". The
+        /// wrapper the backend uses collapses both into "not ready", so a
+        /// loaded machine that pushes a trivial stub past that window would
+        /// otherwise read as the wrong answer rather than as no answer.
+        fn probe_answer(path: &std::path::Path, model: &str) -> bool {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+            loop {
+                match ollama_lists_model_once(path, model) {
+                    Some(answer) => return answer,
+                    None => {
+                        assert!(
+                            std::time::Instant::now() < deadline,
+                            "the readiness probe stayed indeterminate"
+                        );
+                        std::thread::sleep(std::time::Duration::from_millis(50));
+                    }
+                }
+            }
+        }
+
+        /// The wrapper the automatic backend uses, observed the same way.
+        ///
+        /// Its answer is only conclusive once the probe itself is, so it is
+        /// compared against the probe's exact answer rather than asserted
+        /// on its own.
+        fn wrapper_answer(path: &std::path::Path) -> bool {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+            loop {
+                let observed = ollama_default_ready(path);
+                if observed == probe_answer(path, crate::models::OLLAMA_DEFAULT_MODEL) {
+                    return observed;
+                }
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "the readiness probe stayed indeterminate"
+                );
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+        }
+
         let path = std::env::temp_dir().join(format!(
             "abbey-ollama-probe-{}-{}",
             std::process::id(),
@@ -723,14 +766,22 @@ mod tests {
         ));
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
         assert!(
-            ollama_default_ready(&path),
+            probe_answer(&path, default_model),
             "stub listing {default_model} must count as ready"
+        );
+        assert!(
+            wrapper_answer(&path),
+            "the backend's readiness probe must count a listed default model as ready"
         );
 
         write_stub("#!/bin/sh\nprintf 'NAME ID SIZE\\nother:latest digest 1GB\\n'\n");
         assert!(
-            !ollama_default_ready(&path),
+            !probe_answer(&path, default_model),
             "stub listing other:latest must not count the default model as ready"
+        );
+        assert!(
+            !wrapper_answer(&path),
+            "the backend's readiness probe must not count an unlisted model as ready"
         );
         std::fs::remove_file(path).unwrap();
     }
