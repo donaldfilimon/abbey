@@ -215,7 +215,7 @@ impl AgentConfig {
                 bail!("owned captured TUI execution is unavailable on this platform");
             }
             let _ = (cwd, limits);
-            super::capture::bounded_capture_output(program, args)
+            super::bounded_capture::bounded_capture_output(program, args)
         }
     }
 }

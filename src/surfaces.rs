@@ -2,8 +2,8 @@
 //!
 //! | Ask | Current | Deferred status |
 //! |-----|---------|-----------------|
-//! | Vision/video | path attach + agent/MCP gen | local neural media is Proposed |
-//! | Reasoning | Cursor thinking + structured wrap + transcript viewer | Abbey-owned hidden CoT engine/UI is OOS |
+//! | Vision/video | path attach + agent/MCP generation | local neural media is Proposed |
+//! | Reasoning | Cursor thinking + structured wrapper + transcript viewer | Abbey-owned hidden CoT engine/UI is OOS |
 //! | Tools | inventory + delegated tools during a turn | Abbey-owned runtime/MCP host is Proposed |
 
 use crate::claims;
@@ -24,36 +24,44 @@ pub fn save_cot(path: &Path, body: &str) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let mut f = fs::File::create(path)?;
+
+    let mut file = fs::File::create(path)?;
     writeln!(
-        f,
+        file,
         "# Abbey CoT transcript\n\
          \n\
          > Display of structured agent reasoning — **not** an Abbey-owned CoT engine.\n\
          > Model/runtime: cursor-agent thinking id (see `abbey reason`).\n"
     )?;
-    f.write_all(body.trim_end().as_bytes())?;
-    f.write_all(b"\n")?;
+    file.write_all(body.trim_end().as_bytes())?;
+    file.write_all(b"\n")?;
     Ok(())
 }
 
 /// Pretty-print a saved (or raw) reason transcript with section emphasis.
 pub fn render_cot(text: &str) -> String {
     let mut out = String::with_capacity(text.len() + 64);
+
     for line in text.lines() {
-        let t = line.trim_start();
-        let headed = t.starts_with("1.")
-            || t.starts_with("2.")
-            || t.starts_with("3.")
-            || t.starts_with("4.")
-            || t.starts_with("5.")
-            || t.starts_with("6.")
-            || t.starts_with('#')
-            || t.eq_ignore_ascii_case("restatement")
-            || t.to_ascii_lowercase().starts_with("conclusion")
-            || t.to_ascii_lowercase().starts_with("assumption")
-            || t.to_ascii_lowercase().starts_with("step-by-step");
-        if headed {
+        let trimmed = line.trim_start();
+        let lowercase = trimmed.to_ascii_lowercase();
+
+        let is_numbered_section = trimmed
+            .strip_prefix('#')
+            .map(|heading| heading.starts_with(|ch: char| ch.is_ascii_digit()))
+            .unwrap_or(false);
+        let is_numbered_step = trimmed
+            .split_once('.')
+            .map(|(number, _)| !number.is_empty() && number.chars().all(|ch| ch.is_ascii_digit()))
+            .unwrap_or(false);
+        let is_named_section = lowercase == "restatement"
+            || lowercase.starts_with("conclusion")
+            || lowercase.starts_with("assumption")
+            || lowercase.starts_with("step-by-step");
+        let is_heading =
+            trimmed.starts_with('#') || is_numbered_section || is_numbered_step || is_named_section;
+
+        if is_heading {
             out.push_str("\x1b[1m");
             out.push_str(line);
             out.push_str("\x1b[0m\n");
@@ -62,6 +70,7 @@ pub fn render_cot(text: &str) -> String {
             out.push('\n');
         }
     }
+
     out
 }
 
@@ -83,6 +92,7 @@ pub fn print_vision_status() -> Result<i32> {
 pub fn print_runtime_matrix() -> Result<i32> {
     println!("abbey runtime — who executes what (Abbey is NOT a tool runtime)\n");
     println!("{:<28} {:<16} detail", "capability", "executor");
+
     let rows = [
         ("prompt / chat", "cursor-agent", "or fm/grok backends"),
         (
@@ -125,9 +135,11 @@ pub fn print_runtime_matrix() -> Result<i32> {
             "Proposed (does not consume external servers)",
         ),
     ];
-    for (cap, who, note) in rows {
-        println!("{cap:<28} {who:<16} {note}");
+
+    for (capability, executor, detail) in rows {
+        println!("{capability:<28} {executor:<16} {detail}");
     }
+
     println!();
     println!(
         "rule: tools during a turn run inside cursor-agent. Abbey does not connect out\n\
@@ -140,6 +152,7 @@ pub fn print_runtime_matrix() -> Result<i32> {
 
 pub fn print_cot_status(state: &AbbeyState) -> Result<i32> {
     let path = cot_path(state);
+
     println!("abbey cot — reasoning transcript viewer (not an Abbey CoT UI/engine)\n");
     println!("Current:");
     println!("  · abbey reason / --thinking / /think  → Cursor *-thinking-* + structured wrap");
@@ -149,16 +162,19 @@ pub fn print_cot_status(state: &AbbeyState) -> Result<i32> {
     println!("Out of scope:");
     println!("  ✗ Abbey-owned chain-of-thought engine / interactive CoT UI");
     println!();
+
     if path.is_file() {
         println!("latest: {}", path.display());
     } else {
         println!("latest: (none yet — run `abbey cot run …` or `abbey reason …`)");
     }
+
     Ok(0)
 }
 
 pub fn show_cot(state: &AbbeyState) -> Result<i32> {
     let path = cot_path(state);
+
     if !path.is_file() {
         eprintln!(
             "abbey: no CoT transcript yet.\n\
@@ -166,30 +182,31 @@ pub fn show_cot(state: &AbbeyState) -> Result<i32> {
         );
         return Ok(1);
     }
+
     let text = fs::read_to_string(&path)?;
     let colour = crate::highlight::enabled();
+
     if colour {
         let _ = output::print(render_cot(&text));
     } else {
         let _ = output::print(text);
     }
+
     Ok(0)
 }
 
 pub fn dispatch_vision(args: &[String]) -> Result<i32> {
     match args.first().map(String::as_str) {
-        None | Some("status") | Some("show") | Some("-h") | Some("--help") => {
-            if matches!(args.first().map(String::as_str), Some("-h" | "--help")) {
-                println!(
-                    "abbey vision — media honesty\n\
-                     usage: abbey vision [status|refuse]\n\
-                     Current: --image/--video + imagine via agent tools\n\
-                     Proposed: local neural image/video models"
-                );
-                return Ok(0);
-            }
-            print_vision_status()
+        Some("-h") | Some("--help") => {
+            println!(
+                "abbey vision — media honesty\n\
+                 usage: abbey vision [status|refuse]\n\
+                 Current: --image/--video + imagine via agent tools\n\
+                 Proposed: local neural image/video models"
+            );
+            Ok(0)
         }
+        None | Some("status") | Some("show") => print_vision_status(),
         Some("refuse") | Some("weights") | Some("local") => claims::refuse("vision"),
         Some(other) => bail!("unknown vision subcommand `{other}` — try: status|refuse"),
     }
@@ -200,7 +217,7 @@ pub fn dispatch_cot(args: &[String], state: &AbbeyState) -> Result<i32> {
         None | Some("status") => print_cot_status(state),
         Some("show") | Some("latest") | Some("view") => show_cot(state),
         Some("run") => {
-            // Caller (commands) should route run → generate::run_reason.
+            // The command router handles `run` by calling generate::run_reason.
             bail!("internal: cot run handled by commands")
         }
         Some("refuse") | Some("engine") | Some("ui") => claims::refuse("cot"),
@@ -214,7 +231,7 @@ pub fn dispatch_cot(args: &[String], state: &AbbeyState) -> Result<i32> {
                    abbey cot run <task…>     # reason + save + view\n\
                    abbey cot refuse          # OOS: Abbey CoT engine\n\
                  \n\
-                 note: reasoning runs on Cursor thinking models; Abbey only wraps + displays."
+                 note: reasoning runs on Cursor thinking models; Abbey only wraps and displays."
             );
             Ok(0)
         }
@@ -255,9 +272,26 @@ mod tests {
     fn render_cot_bolds_numbered_sections() {
         let raw = "1. Restate\nbody\n5. Conclusion\n";
         let out = render_cot(raw);
+
         assert!(out.contains("\x1b[1m"));
         assert!(out.contains("1. Restate"));
         assert!(out.contains("body"));
+    }
+
+    #[test]
+    fn render_cot_bolds_markdown_and_named_sections() {
+        let raw = "## Assumptions\ntext\nConclusion\n";
+        let out = render_cot(raw);
+
+        assert!(out.contains("\x1b[1m## Assumptions\x1b[0m"));
+        assert!(out.contains("\x1b[1mConclusion\x1b[0m"));
+    }
+
+    #[test]
+    fn render_cot_does_not_bold_regular_text() {
+        let out = render_cot("This is ordinary text.\n");
+
+        assert_eq!(out, "This is ordinary text.\n");
     }
 
     #[test]
@@ -265,17 +299,21 @@ mod tests {
         let dir = std::env::temp_dir().join("abbey-cot-test-hdr");
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
+
         let path = dir.join("latest.md");
         save_cot(&path, "1. Restate\nok\n").unwrap();
+
         let text = fs::read_to_string(&path).unwrap();
         assert!(text.contains("Abbey-owned CoT engine"));
         assert!(text.contains("1. Restate"));
+
         let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn status_lines_distinguish_proposed_from_oos() {
         let lines = status_lines().join("\n");
+
         assert!(lines.contains("local neural models Proposed"));
         assert!(lines.contains("CoT engine OOS"));
     }

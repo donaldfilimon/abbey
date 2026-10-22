@@ -215,6 +215,13 @@ pub(super) fn run_with_checkpoint(
     use std::os::unix::process::CommandExt as _;
     command.process_group(0);
 
+    // A cancelled run must not start anything. The child could consume
+    // resources, or perform provider-side work, before the supervision loop
+    // below noticed the cancellation and tore it down.
+    if checkpoint() {
+        return Ok(SupervisorOutcome::Cancelled);
+    }
+
     let child = command.spawn().map_err(SupervisorError::Spawn)?;
     let mut guard = ChildGuard::new(child)?;
     let stdout = guard
@@ -280,12 +287,16 @@ where
             control = Some(SupervisorOutcome::Cancelled);
             break;
         }
+        // Poll the child *before* the deadline decision. A child that exited
+        // just before the deadline but has not been polled yet would
+        // otherwise be killed and reported as a timeout, which misclassifies
+        // a completion as a deadline.
+        if status.is_none() {
+            status = guard.try_wait()?;
+        }
         if Instant::now() >= deadline {
             control = Some(SupervisorOutcome::TimedOut);
             break;
-        }
-        if status.is_none() {
-            status = guard.try_wait()?;
         }
         if status.is_some() && captures.complete() {
             break;

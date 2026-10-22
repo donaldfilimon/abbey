@@ -130,12 +130,20 @@ fn draw_transcript(f: &mut Frame, area: Rect, app: &App) {
     let lines = app
         .transcript
         .lines(&app.theme, area.width.saturating_sub(1));
-    let height = usize::from(area.height);
+    // The "N lines below" hint is drawn over the transcript's last row,
+    // so the row it needs is taken out of the transcript first. Without
+    // that, scrolling up destroyed the newest visible line.
+    let scrolled = app.scroll_from_bottom > 0;
+    let body = Rect {
+        height: area.height.saturating_sub(u16::from(scrolled)),
+        ..area
+    };
+    let height = usize::from(body.height);
     let max_scroll = lines.len().saturating_sub(height);
     let from_bottom = app.scroll_from_bottom.min(max_scroll);
     let start = lines.len().saturating_sub(height + from_bottom);
     let visible: Vec<Line<'static>> = lines.into_iter().skip(start).take(height).collect();
-    f.render_widget(Paragraph::new(visible), area);
+    f.render_widget(Paragraph::new(visible), body);
     if from_bottom > 0 {
         let hint = Rect {
             x: area.x,
@@ -376,13 +384,27 @@ fn draw_activity(f: &mut Frame, area: Rect, app: &App) {
     let mut spans = Vec::new();
     if let Some(run) = &app.run {
         let frame = SPINNER[usize::try_from(app.tick / 2).unwrap_or(0) % SPINNER.len()];
-        spans.push(Span::styled(
-            format!(
-                " {frame} Running · {}s · Esc cancel ",
-                run.started.elapsed().as_secs()
-            ),
-            widgets::accent_style(&app.theme),
-        ));
+        // An interrupt that has not taken effect yet says so, and says
+        // when the app gives up on the worker. A row that only says
+        // "Running" leaves the user watching a spinner that never ends.
+        if let Some(requested) = run.cancel_requested {
+            let waited = requested.elapsed().as_secs();
+            let left = super::app::INTERRUPT_GRACE
+                .saturating_sub(requested.elapsed())
+                .as_secs();
+            spans.push(Span::styled(
+                format!(" {frame} Interrupting… · {waited}s · giving up in {left}s "),
+                widgets::accent_style(&app.theme),
+            ));
+        } else {
+            spans.push(Span::styled(
+                format!(
+                    " {frame} Running · {}s · Esc cancel ",
+                    run.started.elapsed().as_secs()
+                ),
+                widgets::accent_style(&app.theme),
+            ));
+        }
     } else {
         spans.push(Span::styled(" Ready ", widgets::accent_style(&app.theme)));
     }

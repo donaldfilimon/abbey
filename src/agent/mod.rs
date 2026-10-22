@@ -1,8 +1,7 @@
 //! Resolve and invoke the selected executor with Abbey defaults.
 
 mod argv;
-#[cfg(not(unix))]
-mod capture;
+mod bounded_capture;
 mod diagnostics;
 mod owned;
 pub(crate) use owned::CaptureCancelled;
@@ -53,6 +52,14 @@ pub struct AgentConfig {
     pub extra_args: Vec<String>,
     /// Which executor grammar `build_args` speaks.
     pub backend: AgentBackend,
+    /// Whether the model was explicitly selected for this turn (a `--model`
+    /// flag) rather than left at the backend's default.
+    ///
+    /// The role binding is injected only when it was not: an explicit model
+    /// is the user's instruction for this turn, and a role binding is the
+    /// mapping that applies when they did not choose one.
+    #[serde(default)]
+    pub model_selected: bool,
     /// Where `fm` conversation transcripts live (`fm` has no server-side chat
     /// ids, so Abbey maps its own chat id onto a transcript file).
     pub transcript_dir: Option<PathBuf>,
@@ -77,6 +84,7 @@ impl Default for AgentConfig {
         Self {
             agent_path: PathBuf::new(),
             model: "auto".into(),
+            model_selected: false,
             auto_review: env_flag("ABBEY_AUTO_REVIEW", true),
             trust: env_flag("ABBEY_TRUST", true),
             force: env_flag("ABBEY_FORCE", false),
@@ -122,6 +130,7 @@ impl AgentConfig {
         Self {
             agent_path,
             model,
+            model_selected: false,
             auto_review: false,
             trust: false,
             force: false,

@@ -180,6 +180,12 @@ case "$1" in
     if [ "$MODE" = held-run ] || [ "$MODE" = delayed-first ]; then
       trap 'printf "%s %s\n" "$NONCE" "$$" > "$ROOT/run-term"; if [ -n "$descendant" ]; then kill "$descendant" 2>/dev/null || :; wait "$descendant" 2>/dev/null || :; fi' TERM
       /bin/sleep 30 & descendant=$!
+      # The descendant's process group is recorded while it is still alive, so
+      # the test can assert the supervisor's group ownership without racing
+      # the teardown a cancellation may already have started. The group file is
+      # written first, so it is always there by the time the pid receipt is.
+      pgid=$(ps -o pgid= -p "$descendant" 2>/dev/null | tr -d ' ')
+      printf '%s %s\n' "$NONCE" "$pgid" > "$ROOT/run-child-group"
       printf '%s %s\n' "$NONCE" "$descendant" > "$ROOT/run-child"
       printf '%s %s\n' "$NONCE" "$$" > "$ROOT/run-ready"
       while [ ! -f "$ROOT/release-run" ]; do /bin/sleep 0.02; done
@@ -294,6 +300,29 @@ esac
             .then_some(Pid::from_raw(pid))
     }
 
+    /// The process group the fixture recorded for its descendant.
+    ///
+    /// The fixture captures it while the descendant is still alive, so the
+    /// assertion never has to observe a process that a concurrent teardown
+    /// may already have removed.
+    ///
+    /// `None` when the fixture could not record the group: the receipt is
+    /// missing, or the host has no `ps` to ask. That is a missing
+    /// observation, not a wrong one, and the caller says which it is.
+    fn group_receipt(&self, name: &str) -> Option<Pid> {
+        let raw = fs::read_to_string(self.root.join(name)).ok()?;
+        // A redirect can expose the file before printf finishes the receipt.
+        if !raw.ends_with('\n') {
+            return None;
+        }
+        let mut parts = raw.split_whitespace();
+        if parts.next()? != self.nonce {
+            return None;
+        }
+        let pgid = parts.next()?.parse::<i32>().ok()?;
+        (pgid > 1 && parts.next().is_none()).then_some(Pid::from_raw(pgid))
+    }
+
     fn ready(&mut self, phase: &str) -> OwnedGroup {
         let receipt = format!("{phase}-ready");
         let deadline = Instant::now() + DRIVE_LIMIT;
@@ -319,31 +348,23 @@ esac
         );
         let descendant = if phase == "run" {
             let descendant = self.pid_receipt("run-child").expect("owned descendant");
-            // The descendant can already be gone by the time this observes
-            // it: the producer is cancellable from the moment it starts, and
-            // cancelling it tears the whole group down. Its group ownership
-            // was established while it was alive, so a process that no longer
-            // exists is not evidence against the supervisor's group.
-            let mut observed = None;
-            let deadline = Instant::now() + Duration::from_secs(2);
-            loop {
-                match getpgid(Some(descendant)) {
-                    Ok(found) => {
-                        observed = Some(found);
-                        break;
-                    }
-                    Err(_) if Instant::now() < deadline => {
-                        std::thread::sleep(Duration::from_millis(10));
-                    }
-                    Err(_) => break,
-                }
-            }
-            if let Some(found) = observed {
-                assert_eq!(
-                    found, group,
-                    "supervisor must own the descendant's process group"
-                );
-            }
+            // The fixture recorded the descendant's process group while the
+            // descendant was alive, so this asserts the supervisor's group
+            // ownership directly instead of observing a process that a
+            // cancellation may already have torn down. A receipt that is
+            // not there is a missing observation, not a wrong group, and
+            // the message says which it is.
+            let recorded = self.group_receipt("run-child-group").unwrap_or_else(|| {
+                panic!(
+                    "the fixture could not observe the descendant's process group: \
+                     the run-child-group receipt is missing or unreadable \
+                     (`ps` may be unavailable on this host)"
+                )
+            });
+            assert_eq!(
+                recorded, group,
+                "supervisor must own the descendant's process group"
+            );
             Some(descendant)
         } else {
             None

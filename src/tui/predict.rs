@@ -31,6 +31,13 @@ pub struct Prediction {
     pub origin: &'static str,
     pub via: &'static str,
     pub score: u16,
+    /// Whether the user moved the menu selection onto this suggestion.
+    ///
+    /// The ranker proposes; it never chooses. The composer marks the row
+    /// the user moved onto, so the key handler can tell a suggestion the
+    /// user picked from one the ranker offered on its own. A fresh ranking
+    /// is never selected.
+    pub selected: bool,
 }
 
 /// Intent phrases that are not catalog names. Longer phrases first.
@@ -71,6 +78,22 @@ fn push_unique(out: &mut Vec<Prediction>, pred: Prediction) {
         return;
     }
     out.push(pred);
+}
+
+/// Record the user's selection in a suggestion menu.
+///
+/// The ranker proposes; it never chooses. The composer marks the row the
+/// user moved onto, so the key handler can tell a suggestion the user
+/// picked from one the ranker offered on its own.
+pub(crate) fn mark_selected(rows: &mut [Prediction], idx: usize) {
+    for (i, row) in rows.iter_mut().enumerate() {
+        row.selected = i == idx;
+    }
+}
+
+/// Whether the user has moved the selection onto a suggestion.
+pub(crate) fn has_selection(rows: &[Prediction]) -> bool {
+    rows.iter().any(|row| row.selected)
 }
 
 /// Rank commands for the current composer text.
@@ -115,6 +138,7 @@ pub fn rank(input: &str, history: &[String], llm_boost: Option<&str>) -> Vec<Pre
                     origin: slash_alias::origin_for(cmd.name),
                     via: "prefix",
                     score,
+                    selected: false,
                 });
             }
         }
@@ -136,6 +160,7 @@ pub fn rank(input: &str, history: &[String], llm_boost: Option<&str>) -> Vec<Pre
                         origin: alias.origin,
                         via: "alias",
                         score,
+                        selected: false,
                     },
                 );
             }
@@ -143,6 +168,13 @@ pub fn rank(input: &str, history: &[String], llm_boost: Option<&str>) -> Vec<Pre
     }
 
     if !slashy {
+        // Only the curated intent phrases match ordinary prose. The old
+        // help-word tier matched *any* word of a command's help text, so
+        // "next thing" proposed "/clear" (whose help reads "… next run")
+        // and Enter turned the sentence into a slash command. A help text
+        // is written for the reader, not for the ranker: its words are
+        // ordinary English, so matching them opened a suggestion menu on
+        // nearly every second sentence.
         for (phrase, target) in INTENTS {
             if lower.contains(phrase) {
                 let Some(cmd) = catalog(target) else {
@@ -156,26 +188,9 @@ pub fn rank(input: &str, history: &[String], llm_boost: Option<&str>) -> Vec<Pre
                         origin: slash_alias::origin_for(cmd.name),
                         via: "intent",
                         score: 700 + (phrase.len() as u16).min(80),
+                        selected: false,
                     },
                 );
-            }
-        }
-        if lower.contains(' ') {
-            for cmd in SLASH_CATALOG {
-                if cmd.help.to_ascii_lowercase().split_whitespace().any(|w| {
-                    w.len() >= 4 && lower.split_whitespace().any(|t| t == w.trim_matches(','))
-                }) {
-                    push_unique(
-                        &mut scored,
-                        Prediction {
-                            name: cmd.name,
-                            help: cmd.help,
-                            origin: slash_alias::origin_for(cmd.name),
-                            via: "help",
-                            score: 520,
-                        },
-                    );
-                }
             }
         }
     }
@@ -199,6 +214,7 @@ pub fn rank(input: &str, history: &[String], llm_boost: Option<&str>) -> Vec<Pre
                     origin: "history",
                     via: "history",
                     score: 560,
+                    selected: false,
                 },
             );
         }
@@ -217,6 +233,7 @@ pub fn rank(input: &str, history: &[String], llm_boost: Option<&str>) -> Vec<Pre
                 origin: slash_alias::origin_for(cmd.name),
                 via: "llm",
                 score: 880,
+                selected: false,
             });
         }
     }
@@ -389,6 +406,45 @@ mod tests {
         assert_eq!(review[0].name, "review");
         let fix = rank("please fix the failing tests", &[], None);
         assert_eq!(fix[0].name, "please-fix");
+    }
+
+    #[test]
+    fn ordinary_prose_ranks_no_command() {
+        // "next" is a word in /clear's help text ("… fresh session next
+        // run") and "diff" is a word in several help texts. The old
+        // help-word tier turned both sentences into suggestions, so the
+        // composer opened a menu on ordinary English.
+        assert!(rank("next thing", &[], None).is_empty());
+        assert!(rank("show me the diff", &[], None).is_empty());
+        assert!(
+            rank("next thing", &[], None)
+                .iter()
+                .all(|p| p.via != "help"),
+            "the help-word tier is gone"
+        );
+    }
+
+    #[test]
+    fn the_slash_prefix_still_ranks_commands() {
+        let hits = rank("/re", &[], None);
+        assert!(
+            hits.iter().any(|p| p.name == "review" && p.via == "prefix"),
+            "{hits:?}"
+        );
+        assert!(
+            hits.iter().any(|p| p.name == "clear" && p.via == "alias"),
+            "{hits:?}"
+        );
+    }
+
+    #[test]
+    fn the_menu_selection_is_the_users_choice_not_the_rankers() {
+        let mut hits = rank("/re", &[], None);
+        assert!(!has_selection(&hits), "a fresh ranking is never selected");
+        mark_selected(&mut hits, 1);
+        assert!(has_selection(&hits));
+        assert!(hits[1].selected);
+        assert!(!hits[0].selected);
     }
 
     #[test]

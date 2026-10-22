@@ -640,6 +640,53 @@ fn tool_arguments_reject_unknown_and_ill_typed_fields() {
 }
 
 #[test]
+fn the_claims_tool_advertises_and_accepts_every_canonical_status() {
+    // A status the schema does not advertise cannot be filtered on, so a
+    // caller has to ask for the whole ledger to find it. The advertised
+    // enum is therefore read from the registry's own vocabulary, and every
+    // advertised status must also be accepted by the parser.
+    let mut server = initialized();
+    let listed = frame(
+        &mut server,
+        json!({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}),
+    )
+    .expect("tools/list");
+    let claims = listed["result"]["tools"]
+        .as_array()
+        .expect("tools array")
+        .iter()
+        .find(|tool| tool["name"] == "abbey_claims")
+        .expect("abbey_claims descriptor");
+    let advertised: Vec<String> = claims["inputSchema"]["properties"]["status"]["enum"]
+        .as_array()
+        .expect("status enum")
+        .iter()
+        .map(|value| value.as_str().expect("string status").to_string())
+        .collect();
+    let expected: Vec<String> = crate::claims::Status::every()
+        .map(|status| status.key().to_string())
+        .collect();
+    assert_eq!(
+        advertised, expected,
+        "the claims filter must advertise the canonical vocabulary"
+    );
+
+    for status in &expected {
+        let response = frame(
+            &mut server,
+            json!({"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                   "params": {"name": "abbey_claims", "arguments": {"status": status}}}),
+        )
+        .expect("tools/call");
+        assert_ne!(
+            response["result"]["isError"],
+            Value::Bool(true),
+            "status `{status}` is advertised but rejected: {response}"
+        );
+    }
+}
+
+#[test]
 fn platform_tool_reports_host_facts_without_spawning_a_process() {
     let mut server = initialized();
     let response = frame(

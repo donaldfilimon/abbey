@@ -735,17 +735,26 @@ mod tests {
         ///
         /// Its answer is only conclusive once the probe itself is, so it is
         /// compared against the probe's exact answer rather than asserted
-        /// on its own.
+        /// on its own. The two are not the same clock: the wrapper gives the
+        /// child two chances and then reports "not ready" for an
+        /// indeterminate probe, while the exact probe keeps retrying. So a
+        /// persistent disagreement has two possible causes — a wrapper that
+        /// answers differently, or a machine where the wrapper's shorter
+        /// budget cannot complete — and this helper cannot tell them apart.
+        /// It reports the disagreement it observed, and names no cause it has
+        /// not established.
         fn wrapper_answer(path: &std::path::Path) -> bool {
             let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
             loop {
                 let observed = ollama_default_ready(path);
-                if observed == probe_answer(path, crate::models::OLLAMA_DEFAULT_MODEL) {
+                let exact = probe_answer(path, crate::models::OLLAMA_DEFAULT_MODEL);
+                if observed == exact {
                     return observed;
                 }
                 assert!(
                     std::time::Instant::now() < deadline,
-                    "the readiness probe stayed indeterminate"
+                    "the readiness wrapper answered {observed} while the exact probe answered {exact}, \
+                     and the two did not agree within the window"
                 );
                 std::thread::sleep(std::time::Duration::from_millis(50));
             }

@@ -132,6 +132,42 @@ fn long_draft_viewport_follows_cursor_instead_of_clipping_end() {
 }
 
 #[test]
+fn the_scroll_hint_does_not_eat_the_last_transcript_line() {
+    // The hint is drawn over the transcript's last row. Without a row
+    // reserved for it, scrolling up destroyed the newest visible line.
+    let mut app = scratch_app("render-scroll-hint", AgentBackend::Cursor);
+    let body: String = (0..100)
+        .map(|i| format!("alpha-{i:02}\n"))
+        .collect::<Vec<_>>()
+        .join("");
+    app.transcript.push_user(&body);
+    app.scroll_from_bottom = 31;
+
+    // The line the visible window ends on. The window's end does not
+    // depend on how many rows it has, so the expectation is the same
+    // before and after the fix.
+    let rendered = app.transcript.lines(&app.theme, 59);
+    let last = rendered.len() - 31 - 1;
+    let expected = rendered[last].to_string();
+
+    let (text, _) = screen(&app, 60, 20);
+    let rows: Vec<&str> = text.lines().collect();
+    let hint = rows
+        .iter()
+        .position(|row| row.contains("lines below"))
+        .expect("the scroll hint must be shown");
+    assert!(
+        text.contains(&expected),
+        "the last visible transcript line {expected:?} was overwritten by the hint"
+    );
+    assert!(
+        !rows[hint].contains("alpha-"),
+        "the hint row must hold the hint, not a transcript line: {:?}",
+        rows[hint]
+    );
+}
+
+#[test]
 fn running_queue_cancel_and_terminal_outcome_stay_visible() {
     let mut app = scratch_app("render-running", AgentBackend::Cursor);
     app.run = Some(RunHandle {
@@ -142,6 +178,8 @@ fn running_queue_cancel_and_terminal_outcome_stay_visible() {
         thread: None,
         completion: None,
         local: false,
+        cancel_requested: None,
+        abandoned: false,
     });
     app.queued.push("follow up".into());
     app.status = "queued (1)".into();

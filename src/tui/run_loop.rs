@@ -9,10 +9,46 @@ use anyhow::Result;
 use crossterm::event::{self, Event};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
+use ratatui::layout::Rect;
 use std::io::{Stdout, stdout};
 use std::time::Duration;
 
 type Term = Terminal<CrosstermBackend<Stdout>>;
+
+/// Force a full repaint without asking the terminal where the cursor is.
+///
+/// `Terminal::clear` asks the terminal to report the cursor position
+/// (`ESC[6n`) and waits up to two seconds for the answer. A terminal or
+/// multiplexer that does not answer makes the wait time out, and the
+/// error used to end the event loop. Resizing the viewport to the
+/// current size clears the screen and resets the diff buffers, so the
+/// next draw repaints everything, with no round trip.
+fn repaint(term: &mut Term) -> Result<()> {
+    let size = term.size()?;
+    term.resize(Rect::new(0, 0, size.width, size.height))?;
+    Ok(())
+}
+
+/// Whether the screen must be repainted after a pump.
+///
+/// The screen is only reset when a run has just ended: the transcript
+/// grew while the run was streaming, so the last frame's cells are not
+/// the new frame's cells.
+fn needs_repaint(was_running: bool, is_running: bool) -> bool {
+    was_running && !is_running
+}
+
+/// Repaint the screen, containing a failure.
+///
+/// A failed screen reset must not end the event loop. The reset is a
+/// convenience, not a correctness requirement: the next draw paints the
+/// whole viewport anyway, and a terminal that cannot be reset is still a
+/// terminal the app can use.
+fn repaint_quietly(app: &mut App, repaint: impl FnOnce() -> Result<()>) {
+    if let Err(error) = repaint() {
+        app.status = format!("screen refresh failed: {error:#}");
+    }
+}
 
 fn suspend(term: &mut Term, guard: &mut TerminalGuard, app: &mut App, what: Suspend) -> Result<()> {
     suspend_with(term, guard, app, what)
@@ -40,12 +76,20 @@ fn suspend_with<C: Control>(
         }
     };
     // Always try re-entry, even if the editor or slash command failed.
-    let resumed = take_the_terminal_back(guard, || term.clear().map_err(Into::into));
+    // The screen reset after a child uses the same repaint as the rest of
+    // the loop: asking the terminal where the cursor is can block for two
+    // seconds, and its failure must not end the app.
+    let resumed = take_the_terminal_back(guard, || repaint(term));
+    if let Err(error) = &resumed {
+        // The terminal is back in the app's hands; a reset that failed
+        // costs the redraw, not the session.
+        app.status = format!("screen refresh failed: {error:#}");
+    }
     if let Err(error) = action {
         app.status = format!("suspended command: {error:#}");
         app.transcript.push_error(&app.status);
     }
-    resumed
+    Ok(())
 }
 
 /// Take the terminal back after a suspended child.
@@ -86,6 +130,14 @@ fn edit_with(app: &mut App, path: &std::path::Path, editor: &str) -> Result<()> 
 }
 
 pub fn run_tui(state: AbbeyState, cfg: AgentConfig) -> Result<i32> {
+    // The handlers go in before the terminal does. A signal that arrived
+    // between the two would take the default disposition: the process
+    // would die where it stood, the guard's `Drop` would never run, and
+    // the user would be left with echo off, raw mode, and the alternate
+    // screen still up.
+    if let Err(error) = super::terminal::install_termination_handlers() {
+        eprintln!("abbey: a termination signal will not restore the terminal ({error:#})");
+    }
     let mut guard = TerminalGuard::native();
     guard.enter()?;
     // Ask the terminal what it looks like, *after* the alternate screen is
@@ -101,15 +153,35 @@ pub fn run_tui(state: AbbeyState, cfg: AgentConfig) -> Result<i32> {
     // not read back as input. A terminal that does not answer leaves the
     // dark palette; the wait is bounded, so an unsupported terminal is not
     // a visible stall.
-    let brightness = super::terminal_appearance::background_brightness();
-    let mut app = App::new_with_brightness(state, cfg, brightness)?;
+    let appearance = super::terminal_appearance::appearance();
+    let mut app = App::new_with_brightness(state, cfg, appearance.brightness)?;
+    // The question was asked on the terminal's input stream, so it took
+    // the user's keystrokes with it. They are given back here, through the
+    // same path the event loop uses, before the first draw: a keystroke is
+    // never spent on learning a colour.
+    for key in super::terminal::decode_keystrokes(&appearance.keystrokes) {
+        app.handle_key(key);
+    }
+    // The panels are filled by a background refresh: the doctor panel's
+    // `--version` probe and the memory backend's open are slow, and they
+    // must not run on the thread that draws.
+    app.request_refresh();
     let mut term = Terminal::new(CrosstermBackend::new(stdout()))?;
     let result = (|| -> Result<i32> {
         let mut was_running = false;
         loop {
+            // A termination signal ends the session the ordinary way: the
+            // loop leaves, the guard restores the terminal, and the user is
+            // not left with a broken terminal and a `reset` to type.
+            if super::terminal::termination_requested() {
+                app.should_quit = true;
+            }
             app.pump();
-            if was_running && !app.is_running() {
-                term.clear()?;
+            if needs_repaint(was_running, app.is_running()) {
+                // A screen reset that fails is reported, never fatal: the
+                // event loop has to survive a terminal that will not
+                // answer.
+                repaint_quietly(&mut app, || repaint(&mut term));
             }
             was_running = app.is_running();
             term.draw(|f| super::render::draw(f, &app))?;
@@ -121,16 +193,26 @@ pub fn run_tui(state: AbbeyState, cfg: AgentConfig) -> Result<i32> {
             }
             let wait = if app.is_running() { 33 } else { 100 };
             if event::poll(Duration::from_millis(wait))? {
-                match event::read()? {
-                    Event::Key(k) => app.handle_key(k),
-                    Event::Paste(s) => app.handle_paste(&s),
-                    Event::Mouse(m) => app.handle_mouse(m.kind),
-                    _ => {}
+                // The signal may have arrived while the loop waited, so the
+                // flag is read again before the event: the app leaves at
+                // once rather than after the next keypress.
+                if super::terminal::termination_requested() {
+                    app.should_quit = true;
+                } else {
+                    match event::read()? {
+                        Event::Key(k) => app.handle_key(k),
+                        Event::Paste(s) => app.handle_paste(&s),
+                        Event::Mouse(m) => app.handle_mouse(m.kind),
+                        _ => {}
+                    }
                 }
             }
             app.tick = app.tick.wrapping_add(1);
         }
     })();
+    // The terminal is restored whatever the loop did. `TerminalGuard` has
+    // a `Drop` that restores every mode as well, so a panic in the loop
+    // cannot leave the terminal in raw mode either.
     let shutdown = app.shutdown();
     let cleanup = guard.restore();
     // Preserve the loop's error over teardown or terminal cleanup errors.
@@ -258,5 +340,70 @@ mod tests {
                 "{mode:?} must be re-entered even when the reset failed"
             );
         }
+    }
+
+    /// The screen is only reset when a run has just ended.
+    ///
+    /// The reset used to be `Terminal::clear`, which asks the terminal
+    /// where the cursor is and waits up to two seconds for an answer that
+    /// a multiplexer may never give.
+    #[test]
+    fn the_screen_is_reset_only_when_a_run_has_just_ended() {
+        assert!(needs_repaint(true, false));
+        assert!(!needs_repaint(false, false));
+        assert!(!needs_repaint(true, true));
+        assert!(!needs_repaint(false, true));
+    }
+
+    /// A screen reset that fails does not end the event loop.
+    ///
+    /// The reset is a convenience: the next draw paints the whole
+    /// viewport anyway. A terminal that cannot be reset is still a
+    /// terminal the app can use, so the failure is reported and the loop
+    /// keeps running.
+    #[test]
+    fn a_failed_screen_reset_does_not_end_the_loop() {
+        let mut app =
+            super::super::tests::scratch_app("repaint-failure", crate::agent::AgentBackend::Ollama);
+        repaint_quietly(&mut app, || anyhow::bail!("the terminal did not answer"));
+
+        assert!(
+            app.status.contains("screen refresh failed"),
+            "the failure must be reported, said {:?}",
+            app.status
+        );
+        assert!(!app.should_quit, "a failed reset must not quit the app");
+        // The app is still usable: the loop carries on with it.
+        app.handle_key(crossterm::event::KeyEvent {
+            code: crossterm::event::KeyCode::Char('x'),
+            modifiers: crossterm::event::KeyModifiers::NONE,
+            kind: crossterm::event::KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::NONE,
+        });
+        assert_eq!(app.composer.text, "x");
+    }
+
+    /// A clipboard worker that never answers does not hold the shutdown.
+    ///
+    /// The worker exists so a hung clipboard command cannot freeze the
+    /// event loop. A shutdown that waited for it for ever would put that
+    /// freeze back, with the terminal still in raw mode.
+    #[test]
+    fn a_clipboard_worker_that_never_answers_does_not_block_the_shutdown() {
+        let mut app = super::super::tests::scratch_app(
+            "clipboard-shutdown",
+            crate::agent::AgentBackend::Ollama,
+        );
+        app.clipboard = Some(super::super::clipboard::PendingCopy::start_with(|| {
+            std::thread::sleep(std::time::Duration::from_secs(30));
+            super::super::clipboard::CopyOutcome::Copied
+        }));
+
+        let started = std::time::Instant::now();
+        app.shutdown().unwrap();
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(2),
+            "the shutdown must not wait for a clipboard worker that never answers"
+        );
     }
 }

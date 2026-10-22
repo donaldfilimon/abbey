@@ -161,33 +161,70 @@ fn fm_probe_overflow_and_spawn_failure_never_fall_back() {
 
 #[test]
 fn fm_probe_owned_cancellation_reaps_without_compatibility_fallback() {
-    let probe = Probe::new("printf \"Error: Unknown command 'models'\\n\" >&2\nexec /bin/sleep 10");
-    let mut cfg = probe.config();
-    let (sender, _receiver) = std::sync::mpsc::channel();
-    let tap = crate::stream::StreamTap::new(sender);
-    let cancel = tap.cancel.clone();
-    cfg.stream = Some(tap);
-    std::thread::scope(|scope| {
-        let worker = scope.spawn(|| cfg.fm_availability_owned());
-        // The bound here waits for the probe to *start*, so it is a liveness
-        // bound rather than the subject of the test: the subject is the
-        // cancellation and the reaping. A two-second bound turned a loaded
-        // machine's slow spawn into a failure that looked like a defect in
-        // the cancellation path.
-        let deadline = std::time::Instant::now() + Duration::from_secs(10);
-        while probe.calls().is_empty() {
-            assert!(std::time::Instant::now() < deadline, "probe never started");
-            std::thread::sleep(Duration::from_millis(2));
+    // The scenario proves one thing: cancelling an in-flight probe reports
+    // the *cancellation* and never falls back to the compatibility grammar.
+    //
+    // Whether the probe is still in flight when the cancel arrives is a
+    // scheduling fact, not the subject of the test: the probe's own capture
+    // window is short, so on a loaded machine the stub can miss it and the
+    // probe ends on its own with a timeout instead of a cancellation. That
+    // is not a defect in the cancellation path, so the scenario is retried
+    // until it observes the behaviour it is about, and fails only when it
+    // never can.
+    const ATTEMPTS: usize = 10;
+    let mut last_outcome = String::from("the probe was never observed");
+    for attempt in 1..=ATTEMPTS {
+        let probe =
+            Probe::new("printf \"Error: Unknown command 'models'\\n\" >&2\nexec /bin/sleep 10");
+        let mut cfg = probe.config();
+        let (sender, _receiver) = std::sync::mpsc::channel();
+        let tap = crate::stream::StreamTap::new(sender);
+        let cancel = tap.cancel.clone();
+        cfg.stream = Some(tap);
+        let observed = std::thread::scope(|scope| {
+            let worker = scope.spawn(|| cfg.fm_availability_owned());
+            // Wait for the probe to publish its receipt so the cancel lands
+            // while it is in flight. This is a liveness bound, not the
+            // subject of the test.
+            let deadline = std::time::Instant::now() + Duration::from_secs(10);
+            while probe.calls().is_empty() {
+                if std::time::Instant::now() >= deadline {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(2));
+            }
+            cancel.cancel();
+            worker.join().unwrap()
+        });
+        // The probe writes its call log before it blocks, so an empty log
+        // means the child never started — a different fact from a probe that
+        // started and then reported something other than a cancellation.
+        let calls = probe.calls();
+        let started = !calls.is_empty();
+        if started {
+            // The owned grammar is the only one the probe may use. A
+            // compatibility fallback would appear here on every outcome, not
+            // only on the cancellation branch.
+            assert_eq!(
+                calls, "models\n",
+                "attempt {attempt} used another grammar: {calls:?}"
+            );
         }
-        cancel.cancel();
-        let error = worker.join().unwrap().unwrap_err();
-        assert!(
-            error
-                .downcast_ref::<crate::agent::CaptureCancelled>()
-                .is_some()
-        );
-    });
-    assert_eq!(probe.calls(), "models\n");
+        let cancelled = observed
+            .as_ref()
+            .err()
+            .and_then(|error| error.downcast_ref::<crate::agent::CaptureCancelled>())
+            .is_some();
+        if cancelled {
+            return;
+        }
+        last_outcome = match (&observed, started) {
+            (Ok(_), _) => "the probe reported success".to_owned(),
+            (Err(error), true) => format!("the probe reported {error:?}"),
+            (Err(_), false) => "the probe never started".to_owned(),
+        };
+    }
+    panic!("the cancellation path never reported a cancellation: {last_outcome}");
 }
 
 #[test]

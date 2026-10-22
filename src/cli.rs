@@ -357,6 +357,11 @@ pub enum Commands {
     /// Alias for `learn stats` (train_candidate counts + % + TUI/doctor)
     #[command(name = "learn-stats", visible_alias = "train-stats")]
     LearnStats,
+    /// Bounded, consent-gated self-training pipeline (external `abi` trainer)
+    Train {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
     /// Parallel Max/Gemma/Aviva lanes (alias of `subagents run` defaults)
     Parallel {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]

@@ -116,13 +116,13 @@ impl TerminalBrightness {
     /// Classify a terminal's reported background colour.
     ///
     /// Uses the same luminance rule as the palette check below, so the
-    /// decision and the assertion agree: a colour is light when the mean of
-    /// its channels is above the midpoint. A terminal that answers with
+    /// decision and the assertion agree: a colour is light when its
+    /// relative luminance is above 0.5. A terminal that answers with
     /// something that is not a colour is treated as dark, because a palette
     /// must never be chosen from a value that could not be understood.
     pub fn from_background(background: Option<(u8, u8, u8)>) -> Self {
         match background {
-            Some((r, g, b)) if mean(r, g, b) > 127 => Self::Light,
+            Some((r, g, b)) if relative_luminance(r, g, b) > 0.5 => Self::Light,
             _ => Self::Dark,
         }
     }
@@ -141,9 +141,38 @@ impl TerminalBrightness {
     }
 }
 
-/// The mean of three channels.
-fn mean(r: u8, g: u8, b: u8) -> u32 {
-    (r as u32 + g as u32 + b as u32) / 3
+/// The relative luminance of a colour, from 0.0 (black) to 1.0 (white).
+///
+/// This is the WCAG formula: the channels are linearised first, then
+/// weighted by how much each contributes to perceived brightness. A plain
+/// channel *average* is not the same thing — it calls a saturated green
+/// dark (85), which a person reads as bright.
+pub fn relative_luminance(r: u8, g: u8, b: u8) -> f64 {
+    let linear = |channel: u8| {
+        let value = f64::from(channel) / 255.0;
+        if value <= 0.040_45 {
+            value / 12.92
+        } else {
+            ((value + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    0.212_6 * linear(r) + 0.715_2 * linear(g) + 0.072_2 * linear(b)
+}
+
+/// The WCAG contrast ratio between two colours, from 1.0 to 21.0.
+///
+/// A pair below 4.5 is too close for body text; below 3.0 is too close for
+/// a large-text or a UI border.
+///
+/// A test-time measure: the palettes are checked against it, so a colour
+/// that stops being legible fails the build rather than shipping.
+#[cfg(test)]
+pub fn contrast_ratio(a: (u8, u8, u8), b: (u8, u8, u8)) -> f64 {
+    let first = relative_luminance(a.0, a.1, a.2);
+    let second = relative_luminance(b.0, b.1, b.2);
+    let lighter = first.max(second);
+    let darker = first.min(second);
+    (lighter + 0.05) / (darker + 0.05)
 }
 
 /// The pure decision: which theme should the TUI use?
@@ -207,14 +236,14 @@ impl Theme {
             bg: rgb(250, 249, 245),
             fg: rgb(28, 30, 34),
             fg_dim: rgb(108, 112, 120),
-            accent: rgb(14, 118, 110),
+            accent: rgb(13, 112, 104),
             accent_dim: rgb(60, 132, 126),
             ok: rgb(24, 122, 84),
             warn: rgb(160, 100, 12),
             error: rgb(176, 42, 42),
-            border: rgb(196, 198, 204),
+            border: rgb(138, 142, 153),
             border_focus: rgb(14, 118, 110),
-            chip_bg: rgb(232, 234, 238),
+            chip_bg: rgb(246, 246, 248),
             chip_fg: rgb(28, 30, 34),
             selection_bg: rgb(206, 232, 228),
             selection_fg: rgb(18, 20, 24),
@@ -234,7 +263,7 @@ impl Theme {
             ok: rgb(96, 196, 140),
             warn: rgb(224, 176, 88),
             error: rgb(224, 96, 96),
-            border: rgb(56, 72, 84),
+            border: rgb(96, 114, 128),
             border_focus: rgb(72, 188, 176),
             chip_bg: rgb(24, 34, 44),
             chip_fg: rgb(235, 225, 200),
@@ -250,15 +279,15 @@ impl Theme {
         Self {
             bg: rgb(18, 12, 28),
             fg: rgb(230, 228, 240),
-            fg_dim: rgb(120, 120, 140),
+            fg_dim: rgb(134, 134, 156),
             accent: rgb(180, 120, 255),
             accent_dim: rgb(120, 80, 180),
             ok: rgb(120, 220, 160),
             warn: rgb(240, 180, 80),
             error: rgb(255, 100, 120),
-            border: rgb(80, 60, 100),
+            border: rgb(118, 96, 142),
             border_focus: rgb(180, 120, 255),
-            chip_bg: rgb(40, 30, 60),
+            chip_bg: rgb(36, 27, 53),
             chip_fg: rgb(240, 236, 248),
             selection_bg: rgb(40, 30, 60),
             selection_fg: rgb(255, 255, 255),
@@ -272,15 +301,15 @@ impl Theme {
         Self {
             bg: rgb(20, 20, 22),
             fg: rgb(200, 200, 200),
-            fg_dim: rgb(120, 120, 120),
+            fg_dim: rgb(134, 134, 134),
             accent: rgb(180, 180, 180),
             accent_dim: rgb(100, 100, 100),
             ok: rgb(120, 220, 160),
             warn: rgb(240, 180, 80),
             error: rgb(255, 90, 90),
-            border: rgb(60, 60, 60),
+            border: rgb(104, 104, 104),
             border_focus: rgb(140, 140, 140),
-            chip_bg: rgb(35, 35, 38),
+            chip_bg: rgb(29, 29, 32),
             chip_fg: rgb(200, 200, 200),
             selection_bg: rgb(50, 50, 55),
             selection_fg: rgb(255, 255, 255),
@@ -445,6 +474,74 @@ mod tests {
         );
     }
 
+    /// The contrast every palette has to clear.
+    ///
+    /// A palette is read as text on a background, and a colour that is
+    /// merely *different* from its ground is not necessarily *legible* on
+    /// it. These are the pairs the TUI actually draws, and the thresholds
+    /// are the WCAG ones: 4.5 for body text, 3 for a border or a large
+    /// label.
+    ///
+    /// The check is on every theme, so a palette added later fails here
+    /// rather than in a reader's eye.
+    #[test]
+    fn every_palette_is_legible() {
+        for id in ThemeId::all() {
+            let theme = Theme::from_id(id);
+            let rgb_of = |color: Color| match color {
+                Color::Rgb(r, g, b) => (r, g, b),
+                _ => panic!("the palettes are RGB"),
+            };
+            let bg = rgb_of(theme.bg);
+            let panel = rgb_of(theme.chip_bg);
+            let selection = rgb_of(theme.selection_bg);
+
+            // Body text.
+            for (name, color) in [
+                ("fg", theme.fg),
+                ("fg_dim", theme.fg_dim),
+                ("accent", theme.accent),
+            ] {
+                let ratio = contrast_ratio(rgb_of(color), bg);
+                assert!(
+                    ratio >= 4.5,
+                    "{id:?}: {name} on bg is {ratio:.2}:1, below the 4.5:1 body-text ratio"
+                );
+            }
+            // The chip's own label and value.
+            for (name, color) in [("chip_fg", theme.chip_fg), ("fg_dim", theme.fg_dim)] {
+                let ratio = contrast_ratio(rgb_of(color), panel);
+                assert!(
+                    ratio >= 4.5,
+                    "{id:?}: {name} on chip_bg is {ratio:.2}:1, below the 4.5:1 body-text ratio"
+                );
+            }
+            // The selected row inverts, so its text and its ground must differ.
+            let selection_ratio = contrast_ratio(rgb_of(theme.selection_fg), selection);
+            assert!(
+                selection_ratio >= 4.5,
+                "{id:?}: the selected row is {selection_ratio:.2}:1, below the 4.5:1 body-text ratio"
+            );
+            // The accent on a selected row.
+            let accent_ratio = contrast_ratio(rgb_of(theme.accent), selection);
+            assert!(
+                accent_ratio >= 4.5,
+                "{id:?}: accent on the selected row is {accent_ratio:.2}:1, below the 4.5:1 ratio"
+            );
+            // The frame and the focus border are UI, not text.
+            for (name, color) in [
+                ("border", theme.border),
+                ("border_focus", theme.border_focus),
+            ] {
+                let ratio = contrast_ratio(rgb_of(color), bg);
+                assert!(
+                    ratio >= 3.0,
+                    "{id:?}: {name} on bg is {ratio:.2}:1, below the 3:1 UI-border ratio"
+                );
+            }
+        }
+    }
+
     #[test]
     fn the_daylight_palette_keeps_the_ink_accent_family() {
         // The light palette is the same design in another light condition,
@@ -478,9 +575,15 @@ mod tests {
     }
 
     /// Whether a colour is on the light side of the range.
+    ///
+    /// The same rule the runtime decision uses: relative luminance above 0.5.
+    /// A channel *average* would disagree with it for every mid-grey — a
+    /// terminal whose background is a 60%-grey reads as light to the average
+    /// and as dark to the luminance rule — so the assertion would be checking
+    /// a rule the product does not use.
     fn is_light(color: Color) -> bool {
         match color {
-            Color::Rgb(r, g, b) => (r as u32 + g as u32 + b as u32) / 3 > 127,
+            Color::Rgb(r, g, b) => relative_luminance(r, g, b) > 0.5,
             _ => false,
         }
     }

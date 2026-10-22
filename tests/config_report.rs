@@ -120,6 +120,10 @@ fn tui_recipe_reports_current_selection_not_ambient_backend_or_model() {
         "cfg": {
             "agent_path": scratch.0.join("missing-live-claude"),
             "model": "live-model", "backend": "Claude",
+            // The recipe carries a complete current configuration, so every
+            // field of the config is named — including the flag that records
+            // an explicitly selected model.
+            "model_selected": true,
             "auto_review": false, "trust": false, "force": false,
             "no_resume": true, "mode": null, "print": false,
             "output_format": null, "worktree": null, "workspace": null,

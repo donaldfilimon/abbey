@@ -2,6 +2,7 @@
 
 mod app;
 mod clipboard;
+mod command;
 mod completion;
 mod composer;
 mod keymap;

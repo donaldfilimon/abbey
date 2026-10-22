@@ -43,6 +43,9 @@ pub(super) fn validate(args: &[String]) -> Result<()> {
         "export" if tail.len() > 1 || tail.first().is_some_and(|s| s.starts_with('-')) => {
             bail!("usage: abbey learn export [layer]");
         }
+        "promote" | "curate" if tail.len() != 1 || tail[0].trim().is_empty() => {
+            bail!("usage: abbey learn promote <train-candidate id>");
+        }
         _ => {}
     }
     Ok(())

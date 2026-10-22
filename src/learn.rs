@@ -239,10 +239,13 @@ fn collect_train_curation(mem: &dyn MemoryStore) -> Result<TrainCuration> {
         .iter()
         .filter(|r| !r.provenance.trim().is_empty())
         .count();
-    let high_confidence = rows.iter().filter(|r| r.confidence >= 0.9).count();
+    let high_confidence = rows
+        .iter()
+        .filter(|r| r.confidence >= READY_CONFIDENCE)
+        .count();
     let ready = rows
         .iter()
-        .filter(|r| !r.provenance.trim().is_empty() && r.confidence >= 0.9)
+        .filter(|r| !r.provenance.trim().is_empty() && r.confidence >= READY_CONFIDENCE)
         .count();
     Ok(TrainCuration {
         stats: TrainStats {
@@ -313,6 +316,7 @@ fn print_learn_usage_with(cfg: Option<&AgentConfig>) {
          \x20  abbey learn review [n]         # list candidates (provenance gate)\n\
          \x20  abbey learn stats              # curation counts\n\
          \x20  abbey learn train <text>       # add train_candidate with provenance\n\
+         \x20  abbey learn promote <id>       # mark a distilled candidate curated (ready)\n\
          \x20  abbey learn distill <prompt>   # fm:system → ollama → fm:pcc teacher pairs\n\
          \x20  abbey learn sft                # distill pairs as chat-messages JSONL\n\
          \x20  abbey learn correction <text>  # LTM correction\n\
@@ -320,7 +324,8 @@ fn print_learn_usage_with(cfg: Option<&AgentConfig>) {
          \x20  abbey learn routes [n]         # route.jsonl → activity\n\
          \x20  abbey learn improve [n] [--apply] # propose; apply additive steps only\n\
          \x20  abbey learn digest|export …\n\
-         note:  LoRA / fine-tune is Proposed but unavailable — curation only",
+         note:  LoRA / fine-tune is Proposed but unavailable — curation only\n\
+         \x20  abbey train plan|prepare|run|evaluate|rollback  # consented self-training orchestration",
     );
 }
 
@@ -354,7 +359,7 @@ pub fn review_train(state: &AbbeyState, limit: usize, cfg: Option<&AgentConfig>)
         if !prov_ok {
             missing_prov += 1;
         }
-        let is_ready = prov_ok && r.confidence >= 0.9;
+        let is_ready = prov_ok && r.confidence >= READY_CONFIDENCE;
         if is_ready {
             ready += 1;
         }
@@ -374,8 +379,8 @@ pub fn review_train(state: &AbbeyState, limit: usize, cfg: Option<&AgentConfig>)
     emit(
         cfg,
         &format!(
-            "\nreview: {} candidate(s); {} missing provenance; {} ready (prov+conf≥0.9)\n\
-             next:   abbey learn stats · abbey learn export train_candidate\n\
+            "\nreview: {} candidate(s); {} missing provenance; {} ready (prov+conf≥{READY_CONFIDENCE})\n\
+             next:   abbey learn promote <id> · abbey learn stats · abbey learn export train_candidate\n\
              proposed: LoRA pipeline unavailable — `abbey lora refuse`",
             rows.len(),
             missing_prov,
@@ -416,20 +421,26 @@ pub fn train_stats(state: &AbbeyState, cfg: Option<&AgentConfig>) -> Result<()> 
     );
     emit(
         cfg,
-        &format!("  high_confidence(>=0.9)={}", cur.stats.high_confidence),
+        &format!(
+            "  high_confidence(>={READY_CONFIDENCE})={}",
+            cur.stats.high_confidence
+        ),
     );
     emit(
         cfg,
-        &format!("  curation_ready(prov+conf>=0.9)={}", cur.ready),
+        &format!(
+            "  curation_ready(prov+conf>={READY_CONFIDENCE})={}",
+            cur.ready
+        ),
     );
     emit(cfg, &format!("  ready_pct={} %", ready_pct));
     emit(
         cfg,
-        "  self_learn_cycle: review → improve → export (curation only; no weights; distinct from specimen proposals and ABI --learn)",
+        "  self_learn_cycle: review → promote → improve → export (curation only; no weights; distinct from specimen proposals and ABI --learn)",
     );
     emit(
         cfg,
-        "\nnext:  abbey learn review · abbey learn export train_candidate\n\
+        "\nnext:  abbey learn review · abbey learn promote <id> · abbey learn export train_candidate\n\
          TUI: /learn-stats (owned) · doctor panel · F2 memory; visible in `abbey doctor`",
     );
     emit(
@@ -669,6 +680,56 @@ pub fn improve(
     Ok(applied)
 }
 
+/// The confidence a `train_candidate` must reach to count as curated.
+///
+/// This is the bar `abbey learn review` calls "ready" and the bar the
+/// self-training corpus requires, so it is declared once here: two
+/// different numbers for "curated" would make a review and a training run
+/// disagree about the same record.
+pub const READY_CONFIDENCE: f32 = 0.9;
+
+/// Promote one `train_candidate` record to the curated confidence bar.
+///
+/// A distilled pair is written at teacher confidence (0.6), so it is not
+/// "ready" until a human says so. This is that human step: it raises the
+/// confidence of one record to [`READY_CONFIDENCE`] and records the
+/// promotion in the provenance, so the record still names its teacher and
+/// now also names the promotion.
+///
+/// Nothing is deleted and no payload is rewritten: the pair is the same
+/// pair, marked curated.
+pub fn promote_candidate(state: &AbbeyState, id: &str) -> Result<String> {
+    let mem = open_mem(state)?;
+    let Some(mut rec) = mem.get(id)? else {
+        bail!("no train candidate with id {id}");
+    };
+    if rec.retention != "train_candidate" {
+        bail!("{id} is a {} record, not a train candidate", rec.retention);
+    }
+    if rec.obsolete {
+        bail!("{id} is obsolete; it is kept as provenance and is not promoted");
+    }
+    if rec.provenance.trim().is_empty() {
+        bail!("{id} has no provenance; a candidate without provenance is not promotable");
+    }
+    if rec.confidence >= READY_CONFIDENCE {
+        return Ok(format!(
+            "{id} is already curated (confidence {:.2})",
+            rec.confidence
+        ));
+    }
+    let stamp = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    rec.confidence = READY_CONFIDENCE;
+    if !rec.tags.iter().any(|t| t == "promoted") {
+        rec.tags.push("promoted".into());
+    }
+    rec.provenance = format!("{} · promoted @ {stamp}", rec.provenance);
+    mem.update(rec)?;
+    Ok(format!(
+        "promoted {id} to confidence {READY_CONFIDENCE:.2} (curated)"
+    ))
+}
+
 pub fn dispatch(state: &AbbeyState, args: &[String], cfg: Option<&AgentConfig>) -> Result<i32> {
     if args.is_empty() {
         status(state, cfg)?;
@@ -746,12 +807,20 @@ pub fn dispatch(state: &AbbeyState, args: &[String], cfg: Option<&AgentConfig>) 
             improve(state, n, apply, cfg)?;
             Ok(0)
         }
+        "promote" | "curate" => {
+            let id = args[1..].join(" ");
+            if id.is_empty() {
+                bail!("usage: abbey learn promote <train-candidate id>");
+            }
+            emit(cfg, &promote_candidate(state, &id)?);
+            Ok(0)
+        }
         "distill" | "teach" => crate::distill::dispatch(state, &args[1..]),
         "sft" => crate::distill::export_sft(state),
         "lora" | "finetune" | "fine-tune" | "fine_tune" => crate::claims::refuse("lora"),
         other => bail!(
             "unknown learn subcommand `{other}`\n\
-             usage: abbey learn [status|correction|train|distill|sft|preference|routes|digest|export|review|stats|improve]\n\
+             usage: abbey learn [status|correction|train|promote|distill|sft|preference|routes|digest|export|review|stats|improve]\n\
              (LoRA/fine-tune is Proposed — see `abbey claims proposed`)"
         ),
     }

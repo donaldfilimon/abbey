@@ -1,3 +1,23 @@
+[workspace]
+# The nested Tauri client is a *member* of this workspace, not a second one.
+#
+# It used to be a separate workspace with its own lockfile, which meant the
+# default `cargo build` / `cargo test` / `cargo run` in this repository never
+# built or tested the desktop app: a change to `src/app_core/` could break
+# the client and the default path would not notice. Membership makes the
+# ordinary commands cover the whole application — one lockfile, one clippy
+# run, one test run, one build.
+#
+# The client is still a *client*: it depends on the `abbey` library, never the
+# other way round, and it brings no authority into the CLI.
+resolver = "3"
+members = ["desktop/codegen", "desktop/src-tauri"]
+# Without this, a bare `cargo build` / `cargo test` / `cargo clippy` in a
+# workspace whose root is also a package selects *only* that root package.
+# Naming every member as a default member is what makes the ordinary
+# commands cover the whole application, which is the point of the unification.
+default-members = [".", "desktop/codegen", "desktop/src-tauri"]
+
 [package]
 name = "abbey"
 version = "2.6.0"
@@ -77,7 +97,7 @@ ed25519-dalek = "3"
 # build. Unix-gated: Windows has no SIGPIPE.
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
-nix = { version = "0.30", features = ["process", "signal", "user"] }
+nix = { version = "0.30", features = ["process", "signal", "user", "fs"] }
 
 [features]
 default = []

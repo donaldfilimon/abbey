@@ -2,12 +2,42 @@
 
 use super::app::{App, Overlay, Suspend};
 use super::completion;
+use super::composer::Composer;
 use super::permission;
+use super::predict;
 use super::worker::RunKind;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEventKind};
 use std::time::{Duration, Instant};
 
 const ESC_ESC_WINDOW: Duration = Duration::from_millis(600);
+
+/// The Esc-Esc recall window.
+///
+/// The window only recalls when the draft has not changed since the first
+/// Esc. Esc, then typing, then Esc is a user thinking, not a user asking
+/// for the last prompt back: recalling there would silently destroy what
+/// they just typed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct EscWindow {
+    pub(crate) at: Instant,
+    pub(crate) draft: String,
+    pub(crate) cursor: usize,
+}
+
+impl EscWindow {
+    pub(crate) fn new(at: Instant, composer: &Composer) -> Self {
+        Self {
+            at,
+            draft: composer.text.clone(),
+            cursor: composer.cursor,
+        }
+    }
+
+    /// Whether the composer still holds the draft the window saw.
+    pub(crate) fn matches(&self, composer: &Composer) -> bool {
+        self.draft == composer.text && self.cursor == composer.cursor
+    }
+}
 
 impl App {
     pub fn handle_paste(&mut self, text: &str) {
@@ -135,7 +165,7 @@ impl App {
             {
                 self.composer.newline();
             }
-            (KeyCode::Enter, _) if self.is_running() => self.submit(),
+            (KeyCode::Enter, _) if self.is_running() && self.completion.is_none() => self.submit(),
             (KeyCode::Enter, _)
                 if crate::slash::parse_slash(&self.composer.text).is_some_and(|(name, _)| {
                     let name = crate::slash_alias::resolve_name(name).unwrap_or(name);
@@ -144,12 +174,18 @@ impl App {
             {
                 self.submit()
             }
-            (KeyCode::Enter, _) | (KeyCode::Tab, _) if self.completion.is_some() => {
+            // Enter accepts a completion the user asked for, and nothing
+            // else: see `enter_accepts_completion`.
+            (KeyCode::Enter, _) if self.enter_accepts_completion() => {
                 self.accept_completion();
             }
             (KeyCode::Enter, _) => self.submit(),
+            (KeyCode::Tab, _) if self.completion.is_some() => {
+                self.accept_completion();
+            }
             (KeyCode::Up, _) if self.completion.is_some() => {
                 self.completion_idx = self.completion_idx.saturating_sub(1);
+                self.mark_completion_selection();
             }
             (KeyCode::Down, _) if self.completion.is_some() => {
                 let count = self.completion.as_ref().map_or(0, |c| match c {
@@ -160,6 +196,7 @@ impl App {
                     .completion_idx
                     .saturating_add(1)
                     .min(count.saturating_sub(1));
+                self.mark_completion_selection();
             }
             (KeyCode::Up, _) => {
                 if !self.composer.up()
@@ -211,22 +248,29 @@ impl App {
         if self.completion.take().is_some() {
             return;
         }
-        if let Some(run) = &self.run {
+        if let Some(run) = &mut self.run {
             run.cancel.cancel();
+            // Remember when the interrupt was asked for: the app gives up
+            // on a worker that does not stop, and the activity row says
+            // so while it waits.
+            run.cancel_requested = Some(Instant::now());
             self.status = "interrupting…".into();
             return;
         }
         let now = Instant::now();
-        if self
-            .last_esc
-            .is_some_and(|t| now.duration_since(t) < ESC_ESC_WINDOW)
-        {
+        // The recall only happens when the draft has not changed since the
+        // first Esc. Esc, then typing, then Esc is a user thinking, not a
+        // user asking for the last prompt back.
+        let recall = self.last_esc.as_ref().is_some_and(|window| {
+            now.duration_since(window.at) < ESC_ESC_WINDOW && window.matches(&self.composer)
+        });
+        if recall {
             if let Some(prev) = self.last_submitted.clone() {
                 self.composer.set(prev);
             }
             self.last_esc = None;
         } else {
-            self.last_esc = Some(now);
+            self.last_esc = Some(EscWindow::new(now, &self.composer));
         }
     }
 
@@ -244,13 +288,53 @@ impl App {
         self.composer.cursor = cursor;
     }
 
+    /// Whether Enter may accept the pending completion.
+    ///
+    /// Enter must never rewrite a draft the user did not ask to rewrite.
+    /// A completion is the user's own when they asked for it:
+    ///
+    /// - a path they typed after `@`,
+    /// - a command name they are typing after `/`, and
+    /// - a suggestion they moved the menu selection onto.
+    ///
+    /// A menu the ranker opened on ordinary prose is none of those, so
+    /// Enter submits the draft instead of turning the sentence into a
+    /// slash command. Tab still accepts whatever the menu holds.
+    fn enter_accepts_completion(&self) -> bool {
+        match &self.completion {
+            Some(completion::Completion::File { .. }) => true,
+            Some(completion::Completion::Slash(rows)) => {
+                predict::has_selection(rows) || self.composer.text.trim_start().starts_with('/')
+            }
+            None => false,
+        }
+    }
+
+    /// Record that the user moved the completion selection.
+    ///
+    /// The ranker proposes; the user chooses. Marking the row the user
+    /// moved onto is what tells a chosen suggestion from one the ranker
+    /// offered on its own.
+    fn mark_completion_selection(&mut self) {
+        if let Some(completion::Completion::Slash(rows)) = &mut self.completion {
+            predict::mark_selected(rows, self.completion_idx);
+        }
+    }
+
     fn handle_overlay_key(&mut self, key: KeyEvent) {
         let overlay = std::mem::replace(&mut self.overlay, Overlay::None);
+        // A chord is not a letter. Ctrl-Y must not answer the confirm
+        // dialog, and Ctrl-C must not type a `c` into a query. SHIFT is
+        // not a chord: crossterm reports an uppercase letter with it, so
+        // `Y` is the same gesture as `y`.
+        let chord = key
+            .modifiers
+            .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER);
         self.overlay = match (overlay, key.code) {
             (_, KeyCode::Esc) => Overlay::None,
-            (Overlay::Confirm { command }, KeyCode::Char('y' | 'Y')) => {
+            (Overlay::Confirm { command }, KeyCode::Char('y' | 'Y')) if !chord => {
                 self.transcript
-                    .push_user(&format!("!{}", command.join(" ")));
+                    .push_user(&format!("!{}", super::command::show(&command)));
                 self.run_confirmed(command);
                 Overlay::None
             }
@@ -258,11 +342,11 @@ impl App {
                 self.status = "command not run".into();
                 Overlay::None
             }
-            (Overlay::Search { mut query }, KeyCode::Char(c)) => {
+            (Overlay::Search { mut query }, KeyCode::Char(c)) if !chord => {
                 query.push(c);
                 Overlay::Search { query }
             }
-            (Overlay::Search { mut query }, KeyCode::Backspace) => {
+            (Overlay::Search { mut query }, KeyCode::Backspace) if !chord => {
                 query.pop();
                 Overlay::Search { query }
             }
@@ -272,6 +356,9 @@ impl App {
                 }
                 Overlay::None
             }
+            // A chord does nothing in the other overlays: it neither
+            // types into a query nor fires a bound action.
+            (other, _) if chord => other,
             (other, code) => self.overlay_nav(other, code),
         };
     }

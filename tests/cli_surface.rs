@@ -39,11 +39,24 @@ impl Drop for Scratch {
     }
 }
 
+/// An ambient variable a child must never inherit.
+///
+/// `ABBEY_INTERNAL_TUI_LOCAL_RECIPE` carries the TUI's complete live-context
+/// envelope to the TUI's own children. Inherited by an unrelated child it has
+/// two possible effects, and neither is the one the child asked for: a command
+/// the recipe cannot admit (`ask`, `print`) is *refused* outright
+/// ("local TUI recipe cannot admit this command"), and a finite slash child
+/// whose cwd and edition match has its state root — and therefore the
+/// directory its routing audit is written to — replaced with the TUI's. A test
+/// that pins the audit would then be reading a different session's evidence.
+const AMBIENT_RECIPE_ENV: &str = "ABBEY_INTERNAL_TUI_LOCAL_RECIPE";
+
 /// Run abbey with an isolated state dir; returns (exit code, stdout, stderr).
 fn run(scratch: &Scratch, args: &[&str]) -> (i32, String, String) {
     let out = Command::new(BIN)
         .args(args)
         .env(abbey::edition::ACTIVE.state_dir_env(), &scratch.0)
+        .env_remove(AMBIENT_RECIPE_ENV)
         .output()
         .expect("spawn abbey");
     (
@@ -259,6 +272,7 @@ fn run_stubbed(s: &Scratch, agent: &PathBuf, args: &[&str]) -> (i32, String, Str
         .env("ABBEY_AGENT", agent)
         .env("ABBEY_BACKEND", "cursor")
         .env_remove("CURSOR_AGENT_CHAT_ID")
+        .env_remove(AMBIENT_RECIPE_ENV)
         .output()
         .expect("spawn abbey");
     (
@@ -317,6 +331,57 @@ fn explicit_backend_cannot_receive_the_legacy_agent_executable() {
     assert!(String::from_utf8_lossy(&output.stdout).contains("abi-reply"));
 }
 
+/// What the scratch state dir holds, for a failure message.
+///
+/// A missing audit record is only diagnosable with the directory it should
+/// have landed in: the record may be absent, written somewhere else, or
+/// replaced by something the child created.
+fn state_listing(s: &Scratch) -> String {
+    let mut names: Vec<String> = std::fs::read_dir(&s.0)
+        .map(|entries| {
+            entries
+                .filter_map(|entry| entry.ok())
+                .map(|entry| entry.file_name().to_string_lossy().into_owned())
+                .collect()
+        })
+        .unwrap_or_default();
+    names.sort();
+    format!("{names:?}")
+}
+
+#[cfg(unix)]
+#[test]
+fn an_unwritable_route_log_fails_the_turn_instead_of_losing_the_record() {
+    // The routing audit is evidence. A record that cannot be written must not
+    // disappear silently: the audit would then under-report what actually
+    // ran, and the turn would report success for a session whose audit trail
+    // has a hole in it.
+    let s = Scratch::new("route-log-unwritable");
+    let agent = write_stub_agent(&s);
+    // A directory where the route log belongs cannot be opened for append.
+    std::fs::create_dir_all(s.0.join("route.jsonl")).expect("block the route log");
+
+    let (code, out, err) = run_stubbed(&s, &agent, &["ask", "hello"]);
+    assert_ne!(
+        code,
+        0,
+        "a lost audit record must not report success: {err}; state dir: {}",
+        state_listing(&s)
+    );
+    assert!(
+        err.contains("routing audit record not written"),
+        "the failure must name the audit record: {err}"
+    );
+    // The turn failed *before* the executor ran: the stub would have printed
+    // its reply. A non-zero exit alone would also be satisfied by a turn that
+    // ran the agent and then failed, and the audit record is written before
+    // the run precisely so that a failed write can stop the turn.
+    assert!(
+        !out.contains("stub-reply"),
+        "the turn must fail before the executor runs: {out}"
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn print_bypasses_the_route_log_where_ask_appends() {
@@ -334,7 +399,11 @@ fn print_bypasses_the_route_log_where_ask_appends() {
     let (code, _, err) = run_stubbed(&s, &agent, &["ask", "hello"]);
     assert_eq!(code, 0, "stubbed ask should succeed: {err}");
     let after_ask = route_rows();
-    assert!(after_ask >= 1, "ask must append a route record");
+    assert!(
+        after_ask >= 1,
+        "ask must append a route record: {err}; state dir: {}",
+        state_listing(&s)
+    );
 
     // `print` is a capture bypass: same prompt, no new route record.
     let (code, out, err) = run_stubbed(&s, &agent, &["print", "hello"]);

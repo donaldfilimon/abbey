@@ -3,15 +3,16 @@
 
 use super::completion::{Completion, FileIndex};
 use super::composer::{Composer, History};
+use super::keymap::EscWindow;
 use super::theme::{TerminalBrightness, Theme, ThemeId};
 use super::transcript::Transcript;
-use super::worker::{self, RunHandle, RunKind, SlashRoute};
+use super::worker::{self, JoinOutcome, RunHandle, RunKind, SlashRoute};
 use crate::agent::{AgentBackend, AgentConfig};
 use crate::models;
 use crate::state::AbbeyState;
 use anyhow::Result;
 use std::io::Read;
-use std::time::Instant;
+use std::time::Duration;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Panel {
@@ -78,6 +79,39 @@ pub(crate) enum Suspend {
     InteractiveSlash(String),
 }
 
+/// How long the TUI waits for an interrupted run before it gives up.
+///
+/// An interrupt asks the worker to stop; it does not promise that the
+/// worker stops. A worker that never reports would otherwise leave the
+/// activity row spinning for the rest of the session, so the wait is
+/// bounded and the app says that it is giving up.
+pub(crate) const INTERRUPT_GRACE: Duration = Duration::from_secs(3);
+
+/// How long a shutdown waits for a background worker before it gives up.
+///
+/// The worker is asked to stop exactly as the interrupt path asks it to
+/// stop, so it gets the same time to notice the cancellation and unwind:
+/// the interrupt path's own grace. A shorter bound here would report an
+/// abandonment for a worker that was about to finish; a longer one would
+/// keep the terminal in raw mode for a worker that never will. A worker
+/// that misses the bound is detached — it finishes on its own — and the
+/// app says that it gave up on it.
+pub(crate) const SHUTDOWN_JOIN_GRACE: Duration = Duration::from_secs(3);
+
+/// The status line keeps at most this many characters.
+///
+/// The status is one row of the terminal. An unbounded status pushes the
+/// outcome off the screen after a few appends.
+const STATUS_MAX_CHARS: usize = 200;
+
+/// How long a test waits for the background refresh before it gives up.
+///
+/// The refresh worker opens the memory backend and probes the executor,
+/// so it can take a moment. A worker that wedges must not hang a test,
+/// so the wait is bounded and the caller is told it timed out.
+#[cfg(test)]
+const REFRESH_JOIN_GRACE: Duration = Duration::from_secs(10);
+
 pub struct App {
     pub state: AbbeyState,
     pub cfg: AgentConfig,
@@ -102,7 +136,7 @@ pub struct App {
     pub status: String,
     pub should_quit: bool,
     pub ctrl_c_armed: bool,
-    pub last_esc: Option<Instant>,
+    pub last_esc: Option<EscWindow>,
     pub last_submitted: Option<String>,
     pub pending_suspend: Option<Suspend>,
     pub tick: u64,
@@ -193,7 +227,7 @@ impl App {
         let theme_id = ThemeId::resolve(&state.state_dir, brightness);
         let history_log = History::load(&state.state_dir);
         let files = FileIndex::load(&state.cwd);
-        let mut app = Self {
+        let app = Self {
             history: state.history(40),
             aliases: models::alias_table()
                 .iter()
@@ -234,13 +268,10 @@ impl App {
             memory_lines: Vec::new(),
             skill_lines: Vec::new(),
         };
-        app.refresh_doctor();
-        app.refresh_personas();
-        app.refresh_memory();
-        app.refresh_skills();
-        if !app.cfg.backend.supports_account_surface() {
-            app.refresh_models_live();
-        }
+        // The panels are filled by a background refresh that the event
+        // loop starts: the doctor panel's `--version` probe and the
+        // memory backend's open are slow, and they must not run on the
+        // thread that draws.
         Ok(app)
     }
 
@@ -248,11 +279,69 @@ impl App {
         self.run.is_some()
     }
 
+    /// Wait for the background refresh in flight to finish.
+    ///
+    /// The refresh worker writes into the state directory: the memory
+    /// backend's open creates the store there. A test that removes that
+    /// directory has to wait for the worker first, or it removes a
+    /// directory a worker is still writing into.
+    ///
+    /// The wait is bounded — a worker that wedges must not hang a test —
+    /// and the answer says whether the worker finished. The collected
+    /// data is dropped: the caller wants the worker done, not the
+    /// panels filled.
+    #[cfg(test)]
+    pub(crate) fn join_refresh(&mut self) -> bool {
+        let deadline = std::time::Instant::now() + REFRESH_JOIN_GRACE;
+        loop {
+            let poll = self.panel_view.refresh.as_ref().map(|w| w.poll());
+            match poll {
+                // Nothing is in flight.
+                None => return true,
+                Some(super::refresh::RefreshPoll::Pending) => {}
+                Some(
+                    super::refresh::RefreshPoll::Finished(_)
+                    | super::refresh::RefreshPoll::Failed(_),
+                ) => {
+                    // The worker is done with the state directory: it
+                    // either collected its data or it died. The data is
+                    // dropped with it.
+                    self.panel_view.refresh = None;
+                    return true;
+                }
+            }
+            if std::time::Instant::now() >= deadline {
+                return false;
+            }
+            std::thread::sleep(Duration::from_millis(2));
+        }
+    }
+
+    /// Move to the next palette, without choosing it.
+    ///
+    /// Cycling is a preview: it does not persist the palette. A persisted
+    /// palette wins over the terminal's own brightness for every later
+    /// session, so a stray cycle key must not quietly decide that for
+    /// the user. Choosing a palette in the palette overlay is the
+    /// deliberate choice, and that one is persisted.
     pub fn cycle_theme(&mut self) {
         self.theme_id = self.theme_id.cycle();
         self.theme = Theme::from_id(self.theme_id);
-        let _ = ThemeId::save(&self.state.state_dir, self.theme_id);
-        self.status = format!("theme → {}", self.theme_id.as_str());
+        self.status = format!("theme → {} (not saved)", self.theme_id.as_str());
+    }
+
+    /// Choose a palette and remember it.
+    ///
+    /// This is the explicit choice: the palette is written to the state
+    /// directory, so it survives the session and keeps winning over the
+    /// terminal's reported brightness.
+    pub fn select_theme(&mut self, id: ThemeId) {
+        self.theme_id = id;
+        self.theme = Theme::from_id(id);
+        match ThemeId::save(&self.state.state_dir, id) {
+            Ok(()) => self.status = format!("theme → {} (saved)", id.as_str()),
+            Err(error) => self.status = format!("theme → {} (not saved: {error})", id.as_str()),
+        }
     }
 
     /// Copy the last reply to the host's clipboard.
@@ -280,13 +369,21 @@ impl App {
     /// Collect a finished copy, if there is one.
     ///
     /// Called from the pump, so the status line learns the outcome without
-    /// the event loop ever waiting for the clipboard.
+    /// the event loop ever waiting for the clipboard. A worker that died
+    /// without an answer is a failure, not a copy that is still running:
+    /// the status must not stay on "copying…" for the rest of the session.
     pub fn poll_clipboard(&mut self) {
         let Some(pending) = &self.clipboard else {
             return;
         };
-        let Some(outcome) = pending.poll() else {
-            return;
+        let outcome = match pending.poll() {
+            super::clipboard::CopyPoll::Pending => return,
+            super::clipboard::CopyPoll::Finished(outcome) => outcome,
+            super::clipboard::CopyPoll::Failed(reason) => {
+                self.clipboard = None;
+                self.status = format!("the clipboard copy failed: {reason}");
+                return;
+            }
         };
         self.clipboard = None;
         self.status = match outcome {
@@ -295,16 +392,6 @@ impl App {
             }
             _ => outcome.describe(),
         };
-    }
-
-    pub fn refresh_models_live(&mut self) {
-        if let Ok(text) = self.cfg.list_models_text() {
-            self.live_models = text
-                .lines()
-                .map(|l| l.trim().to_string())
-                .filter(|l| !l.is_empty())
-                .collect();
-        }
     }
 
     /// Switch to the next executor backend whose binary actually resolves.
@@ -382,10 +469,9 @@ impl App {
         self.cfg.agent_path = path;
         self.cfg.transcript_dir = Some(self.state.state_dir.join(backend.transcript_subdir()));
         self.live_models.clear();
-        if !backend.supports_account_surface() {
-            self.refresh_models_live();
-        }
-        self.refresh_doctor();
+        // The panels are filled in the background: the doctor panel's
+        // `--version` probe must not run on the thread that draws.
+        self.request_refresh();
         self.status = if backend == AgentBackend::Fm {
             format!(
                 "provider → Apple Foundation Models · {} · readiness: /doctor",
@@ -396,13 +482,14 @@ impl App {
         };
     }
 
+    /// Refresh the panels without blocking the UI thread.
+    ///
+    /// The collection runs on a worker thread and the result is applied
+    /// on the UI thread when it lands, so a refresh never delays the
+    /// frame the user is reading.
     pub fn refresh_all(&mut self) {
-        self.refresh_doctor();
-        self.refresh_personas();
-        self.refresh_memory();
-        self.refresh_skills();
-        self.history = self.state.history(40);
-        self.status = "refreshed".into();
+        self.status = "refreshing…".into();
+        self.request_refresh();
     }
 
     /// Submit the composer: slash is routed, `!cmd` confirms, anything else is a turn.
@@ -428,7 +515,7 @@ impl App {
         self.last_submitted = Some(text.clone());
         self.scroll_from_bottom = 0;
         if let Some(cmd) = text.strip_prefix('!') {
-            let command: Vec<String> = cmd.split_whitespace().map(str::to_string).collect();
+            let command = super::command::split(cmd);
             if !command.is_empty() {
                 self.overlay = Overlay::Confirm { command };
             }
@@ -497,6 +584,26 @@ impl App {
         // Collect a finished clipboard copy before anything else, so the
         // status line is never a frame behind.
         self.poll_clipboard();
+        // Apply a background refresh that has landed. The collection ran
+        // on its own thread; only the write-back happens here. A worker
+        // that died is reported: "still refreshing" and "the worker is
+        // gone" are different facts, and the status line must not spin
+        // on the first one for the rest of the session.
+        let refreshed = self.panel_view.refresh.as_ref().map(|w| w.poll());
+        match refreshed {
+            Some(super::refresh::RefreshPoll::Finished(payload)) => {
+                self.panel_view.refresh = None;
+                self.apply_refresh(payload);
+                if self.status.starts_with("refreshing") {
+                    self.status = "refreshed".into();
+                }
+            }
+            Some(super::refresh::RefreshPoll::Failed(reason)) => {
+                self.panel_view.refresh = None;
+                self.status = format!("the panel refresh failed: {reason}");
+            }
+            Some(super::refresh::RefreshPoll::Pending) | None => {}
+        }
         let allowed = !self.is_running() && matches!(self.overlay, Overlay::None);
         match self.prediction.pump(
             &self.composer.text,
@@ -524,6 +631,22 @@ impl App {
         let Some(run) = &mut self.run else {
             return;
         };
+        // An interrupt asks the worker to stop; it does not promise that
+        // the worker stops. Give up on a worker that has not reported by
+        // the end of the grace, so the app cannot spin on it forever.
+        if run.completion.is_none()
+            && let Some(requested) = run.cancel_requested
+            && requested.elapsed() >= INTERRUPT_GRACE
+        {
+            run.abandon();
+            run.completion = Some((
+                130,
+                Some(format!(
+                    "the interrupt did not finish within {}s; the app gave up on it",
+                    INTERRUPT_GRACE.as_secs()
+                )),
+            ));
+        }
         if run.completion.is_none() {
             match run.done.try_recv() {
                 Ok(result) => run.completion = Some(result),
@@ -549,6 +672,13 @@ impl App {
         let completed_before_drain = run.completion.is_some();
         let mut drained = false;
         for _ in 0..128 {
+            // An abandoned worker still holds the event sender, so the
+            // queue can never report "drained". The run is over either
+            // way: stop waiting for events it will not send.
+            if run.abandoned {
+                drained = true;
+                break;
+            }
             match run.events.try_recv() {
                 Ok(StreamEvent::Done { .. }) => {}
                 Ok(ev) => {
@@ -626,10 +756,10 @@ impl App {
                 self.refresh_all();
                 self.status = format!("done · exit {code} · {}s", run.started.elapsed().as_secs());
             } else {
-                self.refresh_memory();
+                self.request_refresh();
             }
         } else {
-            self.refresh_memory();
+            self.request_refresh();
         }
         if code != 0 || self.should_quit {
             self.discard_queue();
@@ -645,27 +775,92 @@ impl App {
         if count > 0 {
             let notice = format!("discarded {count} queued prompt(s)");
             self.transcript.push_notice(&notice);
-            self.status.push_str(&format!(" · {notice}"));
+            self.status = append_status(&self.status, &notice);
         }
     }
 
     pub(crate) fn shutdown(&mut self) -> Result<()> {
-        let prediction = self.prediction.dismiss();
+        // The prediction workers are joined here, not on the UI thread:
+        // the app is leaving, so nothing is stale any more.
+        let prediction = self.prediction.shutdown();
         self.discard_queue();
         // Join a clipboard copy that is still running, so the worker is not
         // left writing to a clipboard command while the terminal is going
-        // away.
+        // away. The wait is bounded: a hung clipboard command must not
+        // keep the terminal in raw mode for ever.
         if let Some(pending) = self.clipboard.take() {
-            let _ = pending.join();
+            let _ = pending.join_within(super::clipboard::JOIN_GRACE);
         }
+        // The background refresh owns the doctor's `--version` probe. The
+        // app is leaving, so the probe must not outlive the terminal: the
+        // supervisor kills it on its own deadline, and this join waits for
+        // that. Without the join the app can exit while the probe is still
+        // running, and the process outlives the terminal it was started
+        // under.
+        if let Some(refresh) = self.panel_view.refresh.take()
+            && !refresh.join_within(super::refresh::REFRESH_JOIN_GRACE)
+        {
+            let message = format!(
+                "the refresh worker did not finish within {}s; the app gave up on it",
+                super::refresh::REFRESH_JOIN_GRACE.as_secs()
+            );
+            self.status = append_status(&self.status, &message);
+            self.transcript.push_error(message);
+        }
+        let mut run_result = Ok(());
         if let Some(mut run) = self.run.take() {
             run.cancel.cancel();
-            let run_result = run.join().map_err(anyhow::Error::msg);
-            prediction?;
-            run_result?;
-        } else {
-            prediction?;
+            match run.join_within(SHUTDOWN_JOIN_GRACE) {
+                JoinOutcome::Finished => {}
+                JoinOutcome::Panicked => {
+                    run_result = Err(anyhow::Error::msg("run worker panicked"));
+                }
+                JoinOutcome::Abandoned => {
+                    // The worker did not stop. The app gives up on it
+                    // rather than waiting for ever — the terminal is
+                    // still in raw mode — and says so: the status line
+                    // and the transcript carry the outcome, and the
+                    // shutdown reports it instead of a quiet success.
+                    let message = format!(
+                        "the run worker did not finish within {}s; the app gave up on it",
+                        SHUTDOWN_JOIN_GRACE.as_secs()
+                    );
+                    self.status = message.clone();
+                    self.transcript.push_error(message.clone());
+                    run_result = Err(anyhow::Error::msg(message));
+                }
+            }
         }
+        // A prediction worker that would not stop is reported the same
+        // way, but it does not fail the shutdown: the rerank is optional
+        // background work, and the user's turn is not what failed.
+        let abandoned = self.prediction.abandoned();
+        if abandoned > 0 {
+            let message = format!(
+                "{abandoned} prediction worker(s) did not finish within {}s; the app gave up on them",
+                SHUTDOWN_JOIN_GRACE.as_secs()
+            );
+            self.status = append_status(&self.status, &message);
+            self.transcript.push_error(message);
+        }
+        prediction?;
+        run_result?;
         Ok(())
     }
+}
+
+/// Append a segment to the status line, keeping the line bounded.
+///
+/// The status is one row of the terminal. An unbounded status pushes the
+/// outcome off the screen after a few appends, so the line is trimmed
+/// to its newest words: the tail is what just happened.
+fn append_status(status: &str, segment: &str) -> String {
+    let line = format!("{status} · {segment}");
+    let chars: Vec<char> = line.chars().collect();
+    if chars.len() <= STATUS_MAX_CHARS {
+        return line;
+    }
+    let mut bounded = String::from("…");
+    bounded.extend(&chars[chars.len() - (STATUS_MAX_CHARS - 1)..]);
+    bounded
 }

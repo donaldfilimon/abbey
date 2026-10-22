@@ -22,6 +22,17 @@
 
 use std::io::Write;
 use std::process::{Command, Stdio};
+use std::time::Duration;
+
+/// How long a shutdown waits for a clipboard worker before it gives up.
+///
+/// The worker exists so a hung clipboard command cannot freeze the
+/// event loop. A shutdown that waited for it forever would put that
+/// freeze back — with the terminal still in raw mode and the alternate
+/// screen still up, so the user has to kill the process. The wait is
+/// therefore bounded, and a worker that misses the bound is detached:
+/// it finishes on its own, and its answer is discarded.
+pub const JOIN_GRACE: Duration = Duration::from_millis(300);
 
 /// The outcome of a copy attempt.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -66,6 +77,22 @@ pub fn copy(text: &str) -> CopyOutcome {
     copy_with(&command, &args, text)
 }
 
+/// A poll for a finished copy.
+///
+/// "Not finished yet" and "the worker is gone" are different facts, and
+/// the TUI has to say so: a worker that died without an answer would
+/// otherwise leave the status line on "copying…" for the rest of the
+/// session.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CopyPoll {
+    /// The copy is still running.
+    Pending,
+    /// The copy finished with this outcome.
+    Finished(CopyOutcome),
+    /// The worker stopped without an answer.
+    Failed(String),
+}
+
 /// A copy running on its own thread.
 ///
 /// The TUI's event loop must not block: a clipboard command that hangs —
@@ -81,11 +108,19 @@ pub struct PendingCopy {
 impl PendingCopy {
     /// Start a copy of `text`.
     pub fn start(text: String) -> Self {
+        Self::start_with(move || copy(&text))
+    }
+
+    /// Start a copy whose worker the caller supplies.
+    ///
+    /// Split out so a test can drive a worker that never answers, which
+    /// is the exact failure the worker exists to survive.
+    pub fn start_with(work: impl FnOnce() -> CopyOutcome + Send + 'static) -> Self {
         let (tx, result) = std::sync::mpsc::channel();
         let thread = std::thread::Builder::new()
             .name("abbey-tui-clipboard".into())
             .spawn(move || {
-                let outcome = copy(&text);
+                let outcome = work();
                 // The receiver may be gone if the TUI quit first; that is
                 // not an error worth reporting anywhere.
                 let _ = tx.send(outcome);
@@ -96,20 +131,34 @@ impl PendingCopy {
 
     /// The outcome, if the copy has finished.
     ///
-    /// `None` means it is still running. The caller keeps its "copying…"
-    /// status and asks again on the next pump.
-    pub fn poll(&self) -> Option<CopyOutcome> {
-        self.result.try_recv().ok()
+    /// [`CopyPoll::Pending`] means it is still running: the caller keeps
+    /// its "copying…" status and asks again on the next pump.
+    pub fn poll(&self) -> CopyPoll {
+        match self.result.try_recv() {
+            Ok(outcome) => CopyPoll::Finished(outcome),
+            Err(std::sync::mpsc::TryRecvError::Empty) => CopyPoll::Pending,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                CopyPoll::Failed("the clipboard worker stopped without an answer".to_owned())
+            }
+        }
     }
 
-    /// Wait for the copy to finish and join the worker.
+    /// Wait up to `grace` for the copy, then give up.
     ///
     /// Used when the TUI is shutting down, so the worker is not left
-    /// running against a terminal that is going away.
-    pub fn join(self) -> Option<CopyOutcome> {
-        let outcome = self.result.recv().ok();
-        let _ = self.thread.join();
-        outcome
+    /// running against a terminal that is going away — and so a hung
+    /// clipboard command cannot hold the terminal in raw mode. A worker
+    /// that misses the bound is detached rather than joined.
+    pub fn join_within(self, grace: Duration) -> Option<CopyOutcome> {
+        match self.result.recv_timeout(grace) {
+            Ok(outcome) => {
+                let _ = self.thread.join();
+                Some(outcome)
+            }
+            // The worker is detached: it finishes on its own, and the
+            // receiver is gone, so its answer goes nowhere.
+            Err(_) => None,
+        }
     }
 }
 
@@ -177,12 +226,23 @@ fn first_available() -> Option<(std::path::PathBuf, Vec<&'static str>)> {
 mod tests {
     use super::*;
     use std::fs;
-    use std::os::unix::fs::PermissionsExt as _;
+
+    /// Make the stub runnable, where the platform has an executable bit.
+    #[cfg(unix)]
+    fn make_executable(path: &std::path::Path) {
+        use std::os::unix::fs::PermissionsExt as _;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o700)).unwrap();
+    }
+
+    /// Windows has no executable bit: a stub is run through the platform's
+    /// own file association, and there is no mode to set.
+    #[cfg(not(unix))]
+    fn make_executable(_path: &std::path::Path) {}
 
     fn stub(dir: &std::path::Path, name: &str, body: &str) -> std::path::PathBuf {
         let path = dir.join(name);
         fs::write(&path, body).unwrap();
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
+        make_executable(&path);
         path
     }
 
@@ -278,7 +338,7 @@ mod tests {
         // this is a bounded wait rather than an instant.
         let mut outcome = None;
         for _ in 0..200 {
-            if let Some(seen) = pending.poll() {
+            if let CopyPoll::Finished(seen) = pending.poll() {
                 outcome = Some(seen);
                 break;
             }
@@ -300,8 +360,46 @@ mod tests {
         // Shutdown joins the worker, so a copy in flight is not left running
         // against a terminal that is going away.
         let pending = PendingCopy::start("text".to_owned());
-        let outcome = pending.join();
+        let outcome = pending.join_within(Duration::from_secs(5));
         assert!(outcome.is_some(), "joining a copy must yield its outcome");
+    }
+
+    #[test]
+    fn a_worker_that_never_answers_does_not_block_the_join() {
+        // The clipboard worker exists so a hung clipboard command cannot
+        // freeze the TUI. A shutdown that waited for it forever would put
+        // that freeze back, with the terminal still in raw mode.
+        let pending = PendingCopy::start_with(|| {
+            std::thread::sleep(Duration::from_secs(30));
+            CopyOutcome::Copied
+        });
+        let started = std::time::Instant::now();
+        let outcome = pending.join_within(Duration::from_millis(100));
+        assert!(outcome.is_none(), "a silent worker has no outcome");
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "the join must give up at its bound"
+        );
+    }
+
+    #[test]
+    fn a_worker_that_dies_without_an_answer_is_reported() {
+        // A dead worker is not a copy that is still running: the status
+        // line must say the copy failed, not wait for an answer that can
+        // never arrive.
+        let pending = PendingCopy::start_with(|| panic!("the clipboard worker died"));
+        let mut poll = CopyPoll::Pending;
+        for _ in 0..200 {
+            poll = pending.poll();
+            if !matches!(poll, CopyPoll::Pending) {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(
+            matches!(poll, CopyPoll::Failed(_)),
+            "a dead worker must be reported, saw {poll:?}"
+        );
     }
 
     #[test]

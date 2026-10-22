@@ -166,6 +166,40 @@ fn timeout_and_precancelled_execution_teardown_the_group() {
 
 #[cfg(unix)]
 #[test]
+fn a_precancelled_execution_never_spawns_the_child() {
+    // The child would create a marker if it ran. A cancelled run must not
+    // start anything: it could consume resources, or perform provider-side
+    // work, before the supervision loop noticed the cancellation.
+    let scratch = ScratchDir::new("precancelled");
+    let marker = scratch.0.join("spawned");
+    let script = format!("touch {}; sleep 30", marker.display());
+    let cancellation = CancellationToken::default();
+    cancellation.cancel();
+    let outcome = run(&shell(script), &limits(64, 64), &cancellation).unwrap();
+    assert!(matches!(outcome, SupervisorOutcome::Cancelled));
+    assert!(
+        !marker.exists(),
+        "the child was spawned even though the run was already cancelled"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_child_that_exits_before_the_deadline_is_not_reported_as_a_timeout() {
+    // The child finishes well inside the timeout, but the poll that observes
+    // its exit can land after the deadline check. Observing the child first
+    // is what keeps a completion from being misreported as a timeout.
+    let mut short = limits(64, 64);
+    short.timeout = Duration::from_millis(120);
+    let outcome = run(&shell("exit 0"), &short, &CancellationToken::default()).unwrap();
+    assert!(
+        matches!(outcome, SupervisorOutcome::Exited { .. }),
+        "a completed child was not reported as exited: {outcome:?}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
 fn child_guard_reaps_a_dead_leader_before_post_kill_group_liveness() {
     use nix::sys::signal::{Signal, killpg};
     use std::io::Read as _;

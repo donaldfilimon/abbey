@@ -1,4 +1,11 @@
 // Unique compilation identity for Abbey builds.
+//
+// The Git-metadata resolution lives in `build_git_head.rs` so the same code
+// can be proven by an integration test: a build script cannot depend on the
+// crate it builds. It is included rather than a module so the file stays
+// usable by the integration test as well.
+include!("build_git_head.rs");
+
 fn main() {
     let target = std::env::var("TARGET").unwrap_or_else(|_| "unknown".into());
     let profile = std::env::var("PROFILE").unwrap_or_else(|_| "unknown".into());
@@ -25,6 +32,7 @@ fn main() {
     println!("cargo:rustc-env=ABBEY_BUILD_PROFILE={profile}");
     println!("cargo:rustc-env=ABBEY_BUILD_HOST={host}");
     println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=build_git_head.rs");
     println!("cargo:rerun-if-changed=Cargo.toml");
     watch_git_head();
 }
@@ -42,8 +50,17 @@ fn main() {
 /// leaves `.git/HEAD` untouched. A branch whose ref lives only in `packed-refs`
 /// has no loose file to watch; that path is covered once the first commit on it
 /// writes one.
+///
+/// The metadata directory is resolved, not assumed: in a linked worktree
+/// `.git` is a *file* that points at the real metadata directory, so
+/// `.git/HEAD` does not exist there and reading it directly would register no
+/// Git metadata at all — a commit switch would then reuse the previous
+/// stamp. The refs of a linked worktree live in the repository's common
+/// directory, so that is where the branch file is watched.
 fn watch_git_head() {
-    let git_dir = std::path::Path::new(".git");
+    let Some(git_dir) = git_metadata_dir() else {
+        return; // building from a tarball / vendored source
+    };
     let head = git_dir.join("HEAD");
     if !head.exists() {
         return; // building from a tarball / vendored source
@@ -54,12 +71,13 @@ fn watch_git_head() {
         return;
     };
     if let Some(reference) = contents.strip_prefix("ref:") {
-        let ref_path = git_dir.join(reference.trim());
+        let common_dir = git_common_dir(&git_dir);
+        let ref_path = common_dir.join(reference.trim());
         if ref_path.exists() {
             println!("cargo:rerun-if-changed={}", ref_path.display());
         } else {
             // Packed ref: watch the pack file so re-packing still re-stamps.
-            let packed = git_dir.join("packed-refs");
+            let packed = common_dir.join("packed-refs");
             if packed.exists() {
                 println!("cargo:rerun-if-changed={}", packed.display());
             }

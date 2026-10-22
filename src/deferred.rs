@@ -25,11 +25,12 @@ const TOPICS: &[Topic] = &[
         title: "LoRA / fine-tuning",
         current: &[
             "abbey learn review|stats|export  — train_candidate curation only",
+            "abbey train — consent-gated self-training orchestration: redacted deterministic split, external trainer delegation, offline evaluation, rollback, append-only ledger",
             "activity + corrections stay provenance substrate — not adapters",
         ],
         status: claims::Status::Proposed,
         unavailable: "fine-tuning / LoRA runners or any weight update inside Abbey",
-        instead: "abbey learn review · abbey learn-stats",
+        instead: "abbey train · abbey learn review · abbey learn-stats",
         refuse: "lora",
     },
     Topic {
@@ -231,7 +232,7 @@ pub fn dispatch_oos(args: &[String]) -> Result<i32> {
 
 pub fn status_lines() -> Vec<String> {
     vec![
-        "lora:       learn curation only — LoRA pipeline Proposed (`abbey lora`)".into(),
+        "lora:       abbey train orchestration (consented, external trainer) — LoRA pipeline Proposed (`abbey lora`)".into(),
         "weights:    Max/Gemma bindings · fm — local weights Proposed (`abbey weights`)".into(),
         "accel:      host detect + verified Metal kernels (--features accel) — compile/train/infer Proposed (`abbey accel`)".into(),
         "shell:      allowlist + --confirm — unrestricted OS OOS (`abbey shell`)".into(),

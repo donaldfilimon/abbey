@@ -100,6 +100,8 @@ fn queued_submit_clears_the_draft_and_its_cached_completion() {
         thread: None,
         completion: None,
         local: false,
+        cancel_requested: None,
+        abandoned: false,
     });
     app.files = super::super::completion::FileIndex::from_paths(vec!["apple.rs".into()]);
     type_str(&mut app, "look @app");

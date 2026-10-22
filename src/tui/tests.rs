@@ -5,6 +5,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifi
 
 mod keymap;
 mod model_selection;
+mod prompt_submit;
 
 pub(super) fn scratch_app(tag: &str, backend: AgentBackend) -> App {
     let dir = std::env::temp_dir().join(format!(
@@ -126,8 +127,13 @@ fn typing_while_running_queues_and_esc_cancels() {
         thread: None,
         completion: None,
         local: false,
+        cancel_requested: None,
+        abandoned: false,
     });
     drop(ev_tx);
+    // The draft that used to open a suggestion menu: it opens none now, so
+    // Enter queues the sentence the user typed instead of rewriting it.
+    // The menu case is covered by the prompt_submit suite.
     type_str(&mut app, "next thing");
     press(&mut app, KeyCode::Enter);
     assert_eq!(app.queued, vec!["next thing".to_string()]);
@@ -250,6 +256,8 @@ fn pump_applies_events_finishes_and_dequeues() {
         thread: None,
         completion: None,
         local: false,
+        cancel_requested: None,
+        abandoned: false,
     });
     ev_tx
         .send(crate::stream::StreamEvent::TextDelta("answer".into()))
@@ -282,6 +290,8 @@ fn fixture_run(
         thread: None,
         completion: None,
         local: false,
+        cancel_requested: None,
+        abandoned: false,
     });
     (tx, done_tx)
 }
@@ -689,3 +699,18 @@ mod completion_mutations;
 
 #[path = "tests/providers.rs"]
 mod providers;
+
+#[path = "tests/overlay_keys.rs"]
+mod overlay_keys;
+
+#[path = "tests/app_state.rs"]
+mod app_state;
+
+#[path = "tests/os_command.rs"]
+mod os_command;
+
+#[path = "tests/background.rs"]
+mod background;
+
+#[path = "tests/terminal_input.rs"]
+mod terminal_input;

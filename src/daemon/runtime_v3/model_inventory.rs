@@ -61,8 +61,12 @@ pub(crate) fn build(
 /// Presence is a regular file with the exact manifest size — deliberately not
 /// a digest check, which would read every artifact byte at daemon startup.
 fn artifact_present(storage: &StorageRoot, manifest: &ModelManifest, artifact: &Artifact) -> bool {
-    std::fs::metadata(storage.artifact_path(manifest, artifact))
-        .map(|metadata| metadata.is_file() && metadata.len() == artifact.size_bytes)
+    // `symlink_metadata`, not `metadata`: a symlink that points at a real
+    // file is not a present artifact, and following it would accept a link
+    // that reaches outside the storage root. The presence check must use
+    // the same rule as the rest of the model boundary.
+    std::fs::symlink_metadata(storage.artifact_path(manifest, artifact))
+        .map(|metadata| metadata.file_type().is_file() && metadata.len() == artifact.size_bytes)
         .unwrap_or(false)
 }
 

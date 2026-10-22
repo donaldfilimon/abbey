@@ -325,13 +325,45 @@ fn selecting_fake_fm_resets_vendor_or_cloud_model_without_querying_services() {
         );
         assert!(app.status.contains("Apple Foundation Models"));
     }
-    let before = std::fs::read_to_string(&calls).unwrap();
+    let before = wait_for_calls(&calls);
     app.overlay = Overlay::ModelPicker { idx: 0 };
     for _ in 0..5 {
         let _ = screen(&app, 120, 24);
         press(&mut app, KeyCode::Down);
         press(&mut app, KeyCode::Up);
     }
-    assert_eq!(std::fs::read_to_string(calls).unwrap(), before);
-    assert!(before.lines().all(|line| line == "--version"));
+    let after = wait_for_calls(&calls);
+    // The doctor panel's `--version` probe runs in the background, so the
+    // number of calls may still grow; what must not happen is the picker
+    // invoking the provider in any other way.
+    assert!(
+        before.lines().all(|line| line == "--version"),
+        "only the doctor refresh may probe the provider: {before:?}"
+    );
+    assert!(
+        after.lines().all(|line| line == "--version"),
+        "the model picker must not invoke the provider: {after:?}"
+    );
+}
+
+/// Read the fake provider's call log, waiting for the background probe.
+///
+/// The `--version` probe runs on the refresh thread, so the log appears a
+/// moment after the selection. Waiting for it is not a race: the probe is
+/// part of what the test observes.
+fn wait_for_calls(calls: &std::path::Path) -> String {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        if let Ok(text) = std::fs::read_to_string(calls)
+            && !text.is_empty()
+        {
+            return text;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the provider probe never called the fake binary: {}",
+            calls.display()
+        );
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
 }

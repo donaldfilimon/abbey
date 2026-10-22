@@ -257,12 +257,20 @@ fn status_schema() -> Value {
 }
 
 fn claims_schema() -> Value {
+    // The advertised enum is the canonical claim vocabulary, read from the
+    // registry's own status type. A status that exists but cannot be filtered
+    // on would force a caller to request the whole ledger to find it, so the
+    // schema has to carry every status — including the terminal lifecycle
+    // ones — and it must not be a second, hand-maintained copy of the list.
+    let statuses: Vec<&str> = crate::claims::Status::every()
+        .map(|status| status.key())
+        .collect();
     object_schema(
         json!({
             "status": {
                 "type": "string",
                 "description": "Restrict to one ledger status.",
-                "enum": ["current", "partial", "proposed", "blocked", "out_of_scope"]
+                "enum": statuses
             },
             "contains": {
                 "type": "string",
@@ -342,15 +350,23 @@ fn claims_handler(arguments: &Value) -> Result<Value, ToolError> {
 }
 
 fn parse_claim_status(raw: &str) -> Result<ClaimStatus, ToolError> {
-    match raw.trim().to_ascii_lowercase().as_str() {
-        "current" => Ok(ClaimStatus::Current),
-        "partial" => Ok(ClaimStatus::Partial),
-        "proposed" => Ok(ClaimStatus::Proposed),
-        "blocked" => Ok(ClaimStatus::Blocked),
-        "out_of_scope" | "oos" => Ok(ClaimStatus::OutOfScope),
-        other => Err(ToolError::new(format!(
-            "unknown claim status `{other}` — expected current|partial|proposed|blocked|out_of_scope"
-        ))),
+    // One table, owned by the claims registry: the same filter tokens the CLI
+    // accepts, so a status that the schema advertises is always parseable.
+    let token = raw.trim().to_ascii_lowercase();
+    let status = crate::claims::Status::every()
+        .find(|status| status.key() == token)
+        .or_else(|| crate::claims::Status::from_filter(&token));
+    match status {
+        Some(status) => Ok(ClaimStatus::from(status)),
+        None => {
+            let expected = crate::claims::Status::every()
+                .map(|status| status.key())
+                .collect::<Vec<_>>()
+                .join("|");
+            Err(ToolError::new(format!(
+                "unknown claim status `{token}` — expected {expected}"
+            )))
+        }
     }
 }
 

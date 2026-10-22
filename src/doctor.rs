@@ -645,6 +645,10 @@ pub fn cmd_doctor(state: &AbbeyState, cfg: &AgentConfig) -> Result<i32> {
         cfg,
         "learn:      review|stats|improve (+ aliases; TUI-owned; curation only — LoRA Proposed)",
     );
+    let _ = doctor_line(
+        cfg,
+        "train:      abbey train plan|prepare|run|evaluate|rollback — consented, external trainer",
+    );
     // Doctor integration for self-learn visibility (safe, read-only summary).
     if let Ok(s) = crate::learn::curation_summary(state) {
         let _ = doctor_line(cfg, format!("learn cur: {s}"));

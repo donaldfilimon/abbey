@@ -1,6 +1,7 @@
 //! Command palette, help, panels, and pickers over the chat transcript.
 
 use super::app::{App, Overlay, Panel};
+use super::theme::ThemeId;
 use super::widgets;
 use crate::slash::SLASH_CATALOG;
 use crossterm::event::KeyCode;
@@ -14,6 +15,13 @@ pub(crate) struct PanelView {
     pub filter: String,
     pub editing: bool,
     pub row: usize,
+    /// The background refresh that fills the panels.
+    ///
+    /// The refresh runs on its own thread: the doctor panel's `--version`
+    /// probe and the memory backend's open are slow, and the UI thread is
+    /// the thread the user reads the answer on. The worker lives here,
+    /// with the panel state it feeds.
+    pub refresh: Option<super::refresh::RefreshWorker>,
 }
 
 fn panel_rows(app: &App, panel: Panel) -> Vec<String> {
@@ -37,6 +45,7 @@ pub enum PaletteAction {
     ProviderPicker,
     Refresh,
     CycleTheme,
+    SelectTheme(ThemeId),
     OpenPanel(Panel),
     ModelPicker,
     ResumePicker,
@@ -73,8 +82,34 @@ const BUILTIN: &[PaletteItem] = &[
     PaletteItem {
         id: "theme",
         label: "Cycle theme",
-        detail: "ink → violet → mono",
+        // The real cycle, so the palette never describes a cycle that does
+        // not exist. The order is the theme module's own.
+        detail: "ink → violet → mono → daylight",
         action: PaletteAction::CycleTheme,
+    },
+    PaletteItem {
+        id: "theme-ink",
+        label: "Theme: ink",
+        detail: "Dark palette · saved as your choice",
+        action: PaletteAction::SelectTheme(ThemeId::Ink),
+    },
+    PaletteItem {
+        id: "theme-violet",
+        label: "Theme: violet",
+        detail: "Dark palette · saved as your choice",
+        action: PaletteAction::SelectTheme(ThemeId::Violet),
+    },
+    PaletteItem {
+        id: "theme-mono",
+        label: "Theme: mono",
+        detail: "Dark palette · saved as your choice",
+        action: PaletteAction::SelectTheme(ThemeId::Mono),
+    },
+    PaletteItem {
+        id: "theme-daylight",
+        label: "Theme: daylight",
+        detail: "Light palette · saved as your choice",
+        action: PaletteAction::SelectTheme(ThemeId::Daylight),
     },
     PaletteItem {
         id: "provider",
@@ -207,14 +242,20 @@ fn centered(area: Rect, width: u16, height: u16) -> Rect {
 }
 
 fn panel_lines(app: &App, p: Panel) -> Vec<String> {
-    match p {
+    let lines = match p {
         Panel::Memory => app.memory_lines.clone(),
         Panel::Routes => app.route_lines.clone(),
         Panel::Skills => app.skill_lines.clone(),
         Panel::Doctor => app.doctor_lines.clone(),
         Panel::Personas => app.persona_lines.clone(),
         Panel::Claims => app.claims_lines.clone(),
+    };
+    if lines.is_empty() {
+        // The panels are filled by a background refresh; say so rather
+        // than showing an empty panel.
+        return vec!["(refreshing…)".into()];
     }
+    lines
 }
 
 fn model_rows(app: &App) -> Vec<String> {
@@ -355,7 +396,12 @@ pub(crate) fn draw(f: &mut Frame, area: Rect, app: &App) {
             app,
             "Run OS command?",
             &[
-                format!("abbey os execute --confirm {}", command.join(" ")),
+                // The dialog shows the command the way it will be run, so
+                // the user reads the same thing the gate will execute.
+                format!(
+                    "abbey os execute --confirm {}",
+                    super::command::show(command)
+                ),
                 String::new(),
                 "Allowlist only. y = run · any other key = cancel".into(),
             ],
@@ -501,7 +547,11 @@ impl App {
     }
 
     pub(crate) fn open_panel(&mut self, p: Panel) -> Overlay {
-        self.panel_view = PanelView::default();
+        // The panel's own view state is reset; the background refresh is
+        // kept, because it is the refresh that fills this panel.
+        self.panel_view.filter.clear();
+        self.panel_view.editing = false;
+        self.panel_view.row = 0;
         if p == Panel::Claims && self.claims_lines.is_empty() {
             self.claims_lines = crate::claims::CLAIMS
                 .iter()
@@ -579,7 +629,15 @@ impl App {
                 Overlay::None
             }
             PaletteAction::CycleTheme => {
+                // Cycling previews a palette; it does not choose one.
                 self.cycle_theme();
+                Overlay::None
+            }
+            PaletteAction::SelectTheme(id) => {
+                // Choosing a palette is the deliberate act, and it is
+                // remembered: a saved palette wins over the terminal's
+                // own brightness for every later session.
+                self.select_theme(id);
                 Overlay::None
             }
             PaletteAction::OpenPanel(p) => self.open_panel(p),

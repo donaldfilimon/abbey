@@ -36,7 +36,12 @@ pub(crate) fn build_plan_for(
     }
 }
 
-fn record_swarm(state: &AbbeyState, correlation: &str, plans: &[LanePlan], results: &[LaneResult]) {
+fn record_swarm(
+    state: &AbbeyState,
+    correlation: &str,
+    plans: &[LanePlan],
+    results: &[LaneResult],
+) -> anyhow::Result<()> {
     let reason = format!(
         "subagents lanes={} results={}",
         plans
@@ -63,7 +68,16 @@ fn record_swarm(state: &AbbeyState, correlation: &str, plans: &[LanePlan], resul
     if plans.iter().any(|p| p.kind == LaneKind::Peer) {
         rec.tools.push("peer".into());
     }
-    let _ = route_log::append_route_record(&state.state_dir, &rec);
+    // The routing audit is evidence: a record that cannot be written must not
+    // disappear silently, or the audit under-reports what actually ran. This
+    // record carries the lanes' outcomes, so it is written after they run —
+    // unlike the single-turn record in `session::hybrid_run`, which describes
+    // a decision taken before the executor starts. A write that fails here
+    // fails the command: the lanes' work was already delivered, but the
+    // evidence for it is missing, and a missing record must be visible.
+    route_log::append_route_record(&state.state_dir, &rec)
+        .map_err(|error| anyhow::anyhow!("routing audit record not written: {error:#}"))?;
+    Ok(())
 }
 
 /// CLI entry for `abbey subagents ...` and enhanced `abbey parallel ...`.
@@ -170,7 +184,7 @@ pub fn run_with_options(
     }
 
     cfg.check_cancelled()?;
-    record_swarm(state, &correlation, &plans, &results);
+    record_swarm(state, &correlation, &plans, &results)?;
     let worst = results.iter().map(|r| r.exit).max().unwrap_or(1);
     Ok(worst)
 }

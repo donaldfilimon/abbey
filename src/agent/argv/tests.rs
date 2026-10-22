@@ -29,6 +29,7 @@ fn maximal_cursor_config() -> AgentConfig {
     AgentConfig {
         agent_path: PathBuf::from("/usr/bin/fm"),
         model: "claude-fable-5-thinking-high".into(),
+        model_selected: false,
         auto_review: true,
         trust: true,
         force: true,

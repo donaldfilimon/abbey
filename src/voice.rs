@@ -161,21 +161,28 @@ pub fn best_voice(locale_prefix: &str, preferred: Option<&str>) -> Result<VoiceI
         bail!("voice not found: {want} (try `abbey voice voices`)");
     }
     let pref = locale_prefix.to_ascii_lowercase();
-    let filtered: Vec<_> = voices
+    select_voice(&voices, &pref)
+        .or_else(|| voices.into_iter().find(|v| v.quality > 0))
+        .context("no usable voices found")
+}
+
+/// Choose the voice for a locale prefix out of an already-listed set.
+///
+/// Quality is the primary key: the contract is the *highest-quality* voice
+/// for the locale, so a Premium voice must not lose to a standard one because
+/// the standard one happens to sit in a more specific locale. The locale and
+/// the name only break ties between equally good voices.
+fn select_voice(voices: &[VoiceInfo], pref: &str) -> Option<VoiceInfo> {
+    voices
         .iter()
         .filter(|v| v.quality > 0)
         .filter(|v| {
             pref.is_empty()
-                || v.locale.to_ascii_lowercase().starts_with(&pref)
+                || v.locale.to_ascii_lowercase().starts_with(pref)
                 || (pref == "en" && v.locale.to_ascii_lowercase().starts_with("en"))
         })
         .cloned()
-        .collect();
-    filtered
-        .into_iter()
-        .max_by_key(|v| (locale_boost(&v.locale), v.quality, name_boost(&v.name)))
-        .or_else(|| voices.into_iter().find(|v| v.quality > 0))
-        .context("no usable voices found")
+        .max_by_key(|v| (v.quality, locale_boost(&v.locale), name_boost(&v.name)))
 }
 
 fn locale_boost(locale: &str) -> u8 {
@@ -303,6 +310,22 @@ fn stt_source() -> PathBuf {
     here
 }
 
+/// Deployment target for the STT helper.
+///
+/// The helper's own API floor is macOS 10.15 (`SFSpeechRecognizer` and
+/// `requiresOnDeviceRecognition`), and pinning the target says so: without it
+/// `swiftc` builds for the *build host's* macOS version, so a helper built on
+/// a newer machine refuses to start on an older one. It also keeps macOS 27's
+/// deprecation of `AVAudioNode.installTap` out of the build — the replacement
+/// is marked `NS_REFINED_FOR_SWIFT` and is not callable from Swift at all.
+fn stt_deployment_target() -> String {
+    let arch = match std::env::consts::ARCH {
+        "aarch64" => "arm64",
+        other => other,
+    };
+    format!("{arch}-apple-macosx10.15")
+}
+
 fn ensure_stt_binary(state: &AbbeyState) -> Result<PathBuf> {
     let bin_dir = state.state_dir.join("bin");
     std::fs::create_dir_all(&bin_dir)?;
@@ -321,19 +344,20 @@ fn ensure_stt_binary(state: &AbbeyState) -> Result<PathBuf> {
     };
     if needs_build {
         eprintln!("abbey: building on-device STT helper → {}", bin.display());
+        let target = stt_deployment_target();
         let st = Command::new("swiftc")
-            .args([
-                "-O",
-                "-o",
-                bin.to_str().unwrap_or("abbey-stt"),
-                src.to_str().unwrap_or("abbey-stt.swift"),
-                "-framework",
-                "Speech",
-                "-framework",
-                "AVFoundation",
-                "-framework",
-                "Foundation",
-            ])
+            .arg("-O")
+            .arg("-target")
+            .arg(&target)
+            .arg("-o")
+            .arg(bin.to_str().unwrap_or("abbey-stt"))
+            .arg(src.to_str().unwrap_or("abbey-stt.swift"))
+            .arg("-framework")
+            .arg("Speech")
+            .arg("-framework")
+            .arg("AVFoundation")
+            .arg("-framework")
+            .arg("Foundation")
             .status()
             .context("swiftc (Xcode CLT required for voice listen)")?;
         if !st.success() {
@@ -649,6 +673,30 @@ mod tests {
     use super::*;
 
     #[test]
+    fn the_macos_voice_path_never_falls_back_to_a_portable_adapter() {
+        // `speak` consults the portable adapters only when `!is_macos()`. On
+        // macOS the `say`/Speech.framework path is used, and if it fails the
+        // turn fails there: there is no portable fallback to hide a macOS
+        // failure behind. The empty input makes that observable without
+        // running a voice: on macOS the call is a usage error, while a
+        // non-macOS host with no portable backend would be refused with
+        // "has no backend on this host" and exit 2.
+        if !is_macos() {
+            return;
+        }
+        let error = speak("", None, None, None).expect_err("empty text is a usage error");
+        let message = error.to_string();
+        assert!(
+            message.contains("abbey voice speak"),
+            "unexpected error on the macOS path: {message}"
+        );
+        assert!(
+            !message.contains("has no backend on this host"),
+            "the macOS path fell through to a portable/platform refusal: {message}"
+        );
+    }
+
+    #[test]
     fn parse_standard_and_premium_lines() {
         let a =
             parse_voice_line("Daniel              en_GB    # Hello! My name is Daniel.").unwrap();
@@ -672,6 +720,51 @@ mod tests {
         assert_eq!(voice_quality("Ava (Premium)"), 3);
         assert_eq!(voice_quality("Sol"), 3);
         assert_eq!(voice_quality("Whisper"), 0);
+    }
+
+    #[test]
+    fn quality_outranks_the_locale_preference() {
+        // A Premium voice in en_GB must beat a standard en_US voice: the
+        // contract is the highest-quality voice for the locale, and the
+        // locale only breaks ties between equally good voices.
+        let voices = vec![
+            VoiceInfo {
+                name: "Daniel".into(),
+                locale: "en_GB".into(),
+                quality: 1,
+            },
+            VoiceInfo {
+                name: "Ava (Premium)".into(),
+                locale: "en_GB".into(),
+                quality: 3,
+            },
+            VoiceInfo {
+                name: "Samantha".into(),
+                locale: "en_US".into(),
+                quality: 1,
+            },
+        ];
+        let chosen = select_voice(&voices, "en").expect("a voice");
+        assert_eq!(chosen.quality, 3, "picked {chosen:?}");
+        assert!(chosen.name.contains("Premium"), "picked {chosen:?}");
+    }
+
+    #[test]
+    fn the_locale_preference_breaks_ties_between_equally_good_voices() {
+        let voices = vec![
+            VoiceInfo {
+                name: "Ava (Premium)".into(),
+                locale: "en_GB".into(),
+                quality: 3,
+            },
+            VoiceInfo {
+                name: "Zoe (Premium)".into(),
+                locale: "en_US".into(),
+                quality: 3,
+            },
+        ];
+        let chosen = select_voice(&voices, "en").expect("a voice");
+        assert_eq!(chosen.locale, "en_US", "picked {chosen:?}");
     }
 
     #[test]

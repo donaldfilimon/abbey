@@ -106,7 +106,12 @@ pub fn append_route_record(state_dir: &Path, rec: &RouteRecord) -> Result<()> {
     serde_json::to_writer(&mut f, rec)?;
     f.write_all(b"\n")?;
     f.flush()?;
-    let _ = f.sync_all();
+    // The record is evidence, so its durability is part of the write. A
+    // successful `write` only reaches the page cache: a sync failure means the
+    // record can be lost with no error at all, which is the hole this write
+    // is supposed to close.
+    f.sync_all()
+        .with_context(|| format!("sync {}", path.display()))?;
     Ok(())
 }
 

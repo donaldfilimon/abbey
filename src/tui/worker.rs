@@ -2,6 +2,7 @@
 //! path on a thread; local slash commands run as a captured `abbey` child so
 //! their stdout lands in the transcript instead of on the alternate screen.
 
+use super::app::SHUTDOWN_JOIN_GRACE;
 use crate::actions::{RunSpec, run_agent};
 use crate::agent::AgentConfig;
 use crate::runtime::CancellationToken;
@@ -10,9 +11,48 @@ use crate::state::AbbeyState;
 use crate::stream::{StreamEvent, StreamTap};
 use std::sync::mpsc::{self, Receiver};
 use std::thread::JoinHandle;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 const INTERACTIVE_SLASH: &[&str] = &["voice", "listen"];
+
+/// What came of waiting for a worker.
+///
+/// "Finished", "panicked", and "did not stop" are three different
+/// facts, and the app has to tell them apart: a worker that was
+/// abandoned is not a worker that succeeded, and it is not a worker
+/// that crashed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum JoinOutcome {
+    /// The worker finished inside the bound.
+    Finished,
+    /// The worker panicked.
+    Panicked,
+    /// The worker did not finish inside the bound and was abandoned.
+    Abandoned,
+}
+
+/// Wait up to `grace` for `thread`, then give up on it.
+///
+/// Returns `true` when the thread finished inside the bound. A thread
+/// that misses it is left alone: the caller drops the handle, the
+/// thread is detached, and it finishes on its own.
+///
+/// The wait is a poll because `JoinHandle` has no timed join. The only
+/// other option is to block for ever, which is the defect this bounds:
+/// a worker that never finishes would hold the UI thread — and, at
+/// shutdown, the terminal in raw mode — with no way out.
+pub(crate) fn join_within(thread: &JoinHandle<()>, grace: Duration) -> bool {
+    let deadline = Instant::now() + grace;
+    loop {
+        if thread.is_finished() {
+            return true;
+        }
+        if Instant::now() >= deadline {
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(2));
+    }
+}
 
 pub(crate) enum RunKind {
     Prompt { text: String, fresh: bool },
@@ -29,21 +69,74 @@ pub(crate) struct RunHandle {
     pub thread: Option<JoinHandle<()>>,
     pub completion: Option<(i32, Option<String>)>,
     pub local: bool,
+    /// When the interrupt was asked for, if it was.
+    ///
+    /// An interrupt asks the worker to stop; it does not promise that the
+    /// worker stops. The app needs to know that the interrupt was asked
+    /// for, and when, so it can say so and so it can stop waiting.
+    pub cancel_requested: Option<Instant>,
+    /// Whether the app gave up on this worker.
+    ///
+    /// An abandoned worker is detached rather than joined: joining it
+    /// would block the UI thread on the very worker that never finished.
+    pub abandoned: bool,
 }
 
 impl RunHandle {
-    pub fn join(&mut self) -> Result<(), &'static str> {
-        if let Some(thread) = self.thread.take() {
-            thread.join().map_err(|_| "run worker panicked")?;
+    /// Wait up to `grace` for the worker, then give up on it.
+    ///
+    /// The wait is bounded: a worker that never finishes must not hold
+    /// the UI thread — and, at shutdown, the terminal — for ever. A
+    /// worker that misses the bound is *detached*: it keeps running on
+    /// its own, and the app stops waiting for an answer that may never
+    /// come.
+    pub fn join_within(&mut self, grace: Duration) -> JoinOutcome {
+        let Some(thread) = self.thread.take() else {
+            // Nothing to wait for: the worker was joined already.
+            return JoinOutcome::Finished;
+        };
+        if !join_within(&thread, grace) {
+            // Dropping the handle detaches the thread: it finishes on
+            // its own, and its answer goes nowhere.
+            return JoinOutcome::Abandoned;
         }
-        Ok(())
+        match thread.join() {
+            Ok(()) => JoinOutcome::Finished,
+            Err(_) => JoinOutcome::Panicked,
+        }
+    }
+
+    /// Join the worker, waiting at most the shutdown grace.
+    ///
+    /// The message is for the paths that report an outcome as text: a
+    /// worker that panicked, and a worker that missed the bound.
+    pub fn join(&mut self) -> Result<(), &'static str> {
+        match self.join_within(SHUTDOWN_JOIN_GRACE) {
+            JoinOutcome::Finished => Ok(()),
+            JoinOutcome::Panicked => Err("run worker panicked"),
+            JoinOutcome::Abandoned => {
+                Err("the run worker did not finish within the shutdown grace")
+            }
+        }
+    }
+
+    /// Give up on the worker and stop waiting for it.
+    ///
+    /// The worker is detached: it keeps whatever it was doing, and the
+    /// app stops waiting for an answer that may never come.
+    pub fn abandon(&mut self) {
+        self.abandoned = true;
+        self.thread.take();
+        self.cancel.cancel();
     }
 }
 
 impl Drop for RunHandle {
     fn drop(&mut self) {
         self.cancel.cancel();
-        let _ = self.join();
+        // The wait is bounded: a worker that will not stop must not hold
+        // the drop — and the terminal — for ever.
+        let _ = self.join_within(SHUTDOWN_JOIN_GRACE);
     }
 }
 
@@ -120,6 +213,8 @@ pub(crate) fn spawn_run(
         thread: Some(thread),
         completion: None,
         local,
+        cancel_requested: None,
+        abandoned: false,
     })
 }
 

@@ -22,6 +22,9 @@ pub fn apply_global_flags(cli: &Cli, state: &AbbeyState, cfg: &mut AgentConfig) 
     // the state dir; Claude stores its transcript itself and Abbey keeps only
     // a local marker that distinguishes a new session id from one safe to resume.
     cfg.transcript_dir = Some(state.state_dir.join(cfg.backend.transcript_subdir()));
+    // An explicit `--model` is the user's instruction for this turn, so the
+    // role binding must not override it.
+    cfg.model_selected = cli.model.is_some();
     if cfg.backend == AgentBackend::Ollama {
         if let Some(level) = &cli.thinking {
             eprintln!(
@@ -166,7 +169,17 @@ fn maybe_inject_role_model(
     if matches!(cfg.backend, AgentBackend::Fm | AgentBackend::Abi) {
         return;
     }
-    if std::env::var("ABBEY_MODEL").is_err() && cfg.model == state.read_model() {
+    // The state's model is compared in the *backend's* namespace. Under
+    // Ollama the state's model is a local tag — "local" when nothing is
+    // configured — and `read_model()` resolves it into the cursor vocabulary,
+    // where an unset model is "auto". Comparing a tag with "auto" was never
+    // equal, so a configured role tag was never injected and every Ollama
+    // turn silently used the default model instead of the role's binding.
+    let configured = match cfg.backend {
+        AgentBackend::Ollama => ollama_normalize_model(&state.read_model_raw()),
+        _ => state.read_model(),
+    };
+    if std::env::var("ABBEY_MODEL").is_err() && !cfg.model_selected && cfg.model == configured {
         cfg.model = if cfg.backend == AgentBackend::Ollama {
             ollama_normalize_model(model_alias)
         } else {
@@ -186,6 +199,11 @@ fn record_activity(
     joined: &str,
     model: &str,
 ) {
+    // Best effort on purpose: the activity trace is a learning input, and the
+    // memory store can be legitimately busy (the WDBX lock is held by another
+    // process). Losing one activity row must not fail a turn that can answer.
+    // The routing audit next to it is a different matter — that one is
+    // evidence, so its loss is reported.
     if let Ok(mem) = open_memory(state) {
         let mut m = MemoryRecord::new_stm(
             format!("route {}/{}", persona.label(), role.label()),
@@ -261,7 +279,14 @@ pub fn hybrid_run(
     if cfg.extra_args.iter().any(|a| a == "--approve-mcps") {
         rec.tools.push("mcp".into());
     }
-    let _ = route_log::append_route_record(&state.state_dir, &rec);
+    // The routing audit is evidence, not decoration. A record that cannot be
+    // written must not disappear silently: the audit would then under-report
+    // what actually ran, and the turn would report success for a session
+    // whose evidence has a hole in it. The activity row below is a different
+    // file and a different kind of write — a learning input, best effort, and
+    // its loss must not fail a turn that can answer. The audit's loss must.
+    route_log::append_route_record(&state.state_dir, &rec)
+        .map_err(|error| anyhow::anyhow!("routing audit record not written: {error:#}"))?;
     record_activity(state, persona, role, &joined, &cfg.model);
 
     run_resilient(cfg, state, fresh, &[final_prompt])
@@ -417,6 +442,45 @@ mod tests {
 
     fn parse(args: &[&str]) -> Cli {
         Cli::parse_from(args)
+    }
+
+    #[test]
+    fn an_ollama_role_binding_is_injected_when_no_model_was_selected() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let _env = EnvGuard::clear_abbey_model();
+        let state = scratch_state("ollama-role");
+        // Nothing is configured: the state's raw model is the "local"
+        // sentinel, which normalizes to the default tag.
+        let mut cfg = AgentConfig {
+            backend: AgentBackend::Ollama,
+            ..AgentConfig::default()
+        };
+        apply_global_flags(&parse(&["abbey"]), &state, &mut cfg).unwrap();
+        assert_eq!(cfg.model, "gemma4:26b-mlx");
+
+        // The role's configured tag is what this turn should use.
+        maybe_inject_role_model(&mut cfg, &state, WorkerRole::Max, "gemma4:12b-mlx");
+        assert_eq!(cfg.model, "gemma4:12b-mlx");
+    }
+
+    #[test]
+    fn an_explicit_model_is_not_overridden_by_the_role_binding() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let _env = EnvGuard::clear_abbey_model();
+        let state = scratch_state("ollama-explicit");
+        let mut cfg = AgentConfig {
+            backend: AgentBackend::Ollama,
+            ..AgentConfig::default()
+        };
+        apply_global_flags(
+            &parse(&["abbey", "--model", "gemma4:26b-mlx"]),
+            &state,
+            &mut cfg,
+        )
+        .unwrap();
+        assert!(cfg.model_selected, "an explicit --model must be recorded");
+        maybe_inject_role_model(&mut cfg, &state, WorkerRole::Max, "gemma4:12b-mlx");
+        assert_eq!(cfg.model, "gemma4:26b-mlx");
     }
 
     #[test]

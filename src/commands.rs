@@ -342,6 +342,7 @@ pub fn run_cli(cli: Cli, state: AbbeyState, mut cfg: AgentConfig) -> Result<i32>
             learn::train_stats(&state, Some(&cfg))?;
             Ok(0)
         }
+        Some(Commands::Train { args }) => crate::train::run(&state, &args),
         Some(Commands::Parallel { prompt }) => {
             let ac = config::AbbeyConfig::load().unwrap_or_default();
             parallel::run_parallel_cli(&cfg, &state, &prompt, &ac.roles.max, &ac.roles.gemma)
@@ -431,7 +432,16 @@ pub fn run_cli(cli: Cli, state: AbbeyState, mut cfg: AgentConfig) -> Result<i32>
                 Shell::Pwsh => ClapShell::PowerShell,
                 Shell::Elvish => ClapShell::Elvish,
             };
-            generate(sh, &mut cmd, "abbey", &mut io::stdout());
+            // The completion must register the *edition's* command name: a
+            // personal edition installs `abbey-personal`, and a script that
+            // registered `abbey` would complete a command the installed
+            // binary does not provide.
+            generate(
+                sh,
+                &mut cmd,
+                crate::edition::ACTIVE.binary_name(),
+                &mut io::stdout(),
+            );
             Ok(0)
         }
         Some(Commands::External(args)) => {

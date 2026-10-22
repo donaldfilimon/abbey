@@ -127,3 +127,66 @@ fn a_binding_does_not_fire_while_an_overlay_is_open() {
         "a binding must not fire while an overlay is open"
     );
 }
+
+#[test]
+fn esc_esc_does_not_destroy_a_draft_the_user_typed_in_between() {
+    // Esc, then typing, then Esc is a user thinking — not a user asking
+    // for the last prompt back. Recalling there would silently throw
+    // away what they just typed.
+    let mut app = scratch("keymap-escesc-draft");
+    app.last_submitted = Some("previous".into());
+    app.handle_key(key(KeyCode::Esc, KeyModifiers::NONE));
+    // A draft that opens no completion menu: the Esc would close the
+    // menu instead of arming the recall window.
+    for c in "why".chars() {
+        app.handle_key(key(KeyCode::Char(c), KeyModifiers::NONE));
+    }
+    app.handle_key(key(KeyCode::Esc, KeyModifiers::NONE));
+    assert_eq!(
+        app.composer.text, "why",
+        "the draft the user typed must survive the second Esc"
+    );
+    // The window is armed again by that Esc, and the draft has not
+    // changed since: the next Esc recalls.
+    app.handle_key(key(KeyCode::Esc, KeyModifiers::NONE));
+    assert_eq!(app.composer.text, "previous");
+}
+
+#[test]
+fn esc_esc_still_recalls_when_the_draft_has_not_changed() {
+    let mut app = scratch("keymap-escesc-recall");
+    app.last_submitted = Some("previous".into());
+    app.handle_key(key(KeyCode::Esc, KeyModifiers::NONE));
+    app.handle_key(key(KeyCode::Esc, KeyModifiers::NONE));
+    assert_eq!(app.composer.text, "previous");
+}
+
+#[test]
+fn enter_accepts_the_open_completion_while_a_run_is_active() {
+    // Enter and Tab have to agree: the completion menu is shown and
+    // navigable during a run, so Enter must accept the highlighted item
+    // instead of queueing the half-typed token.
+    let mut app = scratch("keymap-enter-during-run");
+    app.files = super::super::completion::FileIndex::from_paths(vec!["apple.rs".into()]);
+    let (_events, _done) = fixture_run(&mut app);
+    for c in "look @app".chars() {
+        app.handle_key(key(KeyCode::Char(c), KeyModifiers::NONE));
+    }
+    assert!(
+        matches!(
+            &app.completion,
+            Some(super::super::completion::Completion::File { .. })
+        ),
+        "the completion menu must be open during a run"
+    );
+    app.handle_key(key(KeyCode::Enter, KeyModifiers::NONE));
+    assert!(
+        app.composer.text.contains("@apple.rs"),
+        "Enter must accept the completion, said {:?}",
+        app.composer.text
+    );
+    assert!(
+        app.queued.is_empty(),
+        "the accepted completion must not be queued"
+    );
+}

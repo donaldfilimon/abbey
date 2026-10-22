@@ -58,6 +58,7 @@ mod state;
 mod stream;
 mod subagents;
 mod surfaces;
+pub mod train;
 mod tui;
 mod voice;
 mod voice_portable;

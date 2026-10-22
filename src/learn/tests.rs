@@ -193,3 +193,124 @@ fn train_stats_counts_provenance_and_ready() {
     assert_eq!(cur.ready, 1); // capture_correction uses conf 0.95
     let _ = fs::remove_dir_all(&state.state_dir);
 }
+
+/// A distilled candidate: a real prompt/response pair at teacher confidence.
+fn distilled_candidate(state: &AbbeyState, id: &str, confidence: f32) -> String {
+    let mem = memory::open_backend(&state.state_dir, "sqlite").unwrap();
+    let mut record = MemoryRecord::new_stm(
+        "distilled pair",
+        serde_json::to_string(&crate::distill::DistillPair {
+            prompt: "what is the gate?".into(),
+            response: "./check.sh".into(),
+            teacher: "fm:system".into(),
+            on_device: true,
+        })
+        .unwrap(),
+    );
+    record.id = id.to_string();
+    record.retention = "train_candidate".into();
+    record.source_type = "distill".into();
+    record.provenance = "teacher fm:system @ 2026-10-22T00:00:00Z".into();
+    record.confidence = confidence;
+    mem.store(record).unwrap();
+    id.to_string()
+}
+
+#[test]
+fn promote_raises_a_distilled_candidate_to_the_ready_bar() {
+    unsafe { std::env::set_var("ABBEY_MEMORY_BACKEND", "sqlite") };
+    let state = temp_state("promote");
+    let id = distilled_candidate(&state, "pair-1", 0.6);
+
+    let mem = memory::open_backend(&state.state_dir, "sqlite").unwrap();
+    let before = mem.get(&id).unwrap().unwrap();
+    assert_eq!(before.confidence, 0.6);
+    assert_eq!(
+        collect_train_curation(mem.as_ref()).unwrap().ready,
+        0,
+        "a distilled pair is not curated until a human promotes it"
+    );
+
+    let message = promote_candidate(&state, &id).unwrap();
+    assert!(message.contains("promoted"), "{message}");
+
+    let mem = memory::open_backend(&state.state_dir, "sqlite").unwrap();
+    let after = mem.get(&id).unwrap().unwrap();
+    assert_eq!(after.confidence, READY_CONFIDENCE);
+    assert!(after.tags.iter().any(|t| t == "promoted"));
+    // The teacher provenance survives; the promotion is added to it.
+    assert!(
+        after.provenance.contains("teacher fm:system"),
+        "the teacher must still be named: {}",
+        after.provenance
+    );
+    assert!(after.provenance.contains("promoted"));
+    // The payload — the pair itself — is untouched.
+    assert_eq!(before.payload, after.payload);
+    assert_eq!(
+        collect_train_curation(mem.as_ref()).unwrap().ready,
+        1,
+        "a promoted pair is curated"
+    );
+    let _ = fs::remove_dir_all(&state.state_dir);
+}
+
+#[test]
+fn promote_refuses_what_it_may_not_change() {
+    unsafe { std::env::set_var("ABBEY_MEMORY_BACKEND", "sqlite") };
+    let state = temp_state("promote-refuse");
+    let mem = memory::open_backend(&state.state_dir, "sqlite").unwrap();
+
+    // Unknown id.
+    let error = promote_candidate(&state, "nope").unwrap_err().to_string();
+    assert!(error.contains("no train candidate"), "{error}");
+
+    // Not a candidate.
+    let mut ltm = MemoryRecord::new_stm("ltm", "body");
+    ltm.retention = "ltm".into();
+    ltm.provenance = "user correction @ .".into();
+    mem.store(ltm.clone()).unwrap();
+    let error = promote_candidate(&state, &ltm.id).unwrap_err().to_string();
+    assert!(error.contains("not a train candidate"), "{error}");
+
+    // No provenance: the store refuses to hold such a candidate at all, so
+    // the promotion path never sees one. The rule is enforced at the
+    // boundary, not only at the promotion.
+    let mut orphan = MemoryRecord::new_stm("orphan", "body");
+    orphan.retention = "train_candidate".into();
+    orphan.provenance = "   ".into();
+    let error = mem.store(orphan.clone()).unwrap_err().to_string();
+    assert!(error.contains("provenance"), "{error}");
+
+    // Obsolete.
+    let mut obsolete = MemoryRecord::new_stm("obsolete", "body");
+    obsolete.retention = "train_candidate".into();
+    obsolete.provenance = "teacher fm:system @ now".into();
+    obsolete.confidence = 0.6;
+    obsolete.obsolete = true;
+    mem.store(obsolete.clone()).unwrap();
+    let error = promote_candidate(&state, &obsolete.id)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("obsolete"), "{error}");
+
+    let _ = fs::remove_dir_all(&state.state_dir);
+}
+
+#[test]
+fn promote_is_a_no_op_for_an_already_curated_candidate() {
+    unsafe { std::env::set_var("ABBEY_MEMORY_BACKEND", "sqlite") };
+    let state = temp_state("promote-noop");
+    let id = distilled_candidate(&state, "pair-2", READY_CONFIDENCE);
+    let message = promote_candidate(&state, &id).unwrap();
+    assert!(message.contains("already curated"), "{message}");
+    let mem = memory::open_backend(&state.state_dir, "sqlite").unwrap();
+    let after = mem.get(&id).unwrap().unwrap();
+    assert_eq!(after.confidence, READY_CONFIDENCE);
+    assert!(
+        !after.provenance.contains("promoted"),
+        "a no-op must not rewrite the provenance: {}",
+        after.provenance
+    );
+    let _ = fs::remove_dir_all(&state.state_dir);
+}
