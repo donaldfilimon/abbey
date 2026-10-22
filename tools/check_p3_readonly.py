@@ -1,26 +1,35 @@
 #!/usr/bin/env python3
 """Fail closed if Program 3 acquires write, transport, store, or content code."""
 
-from pathlib import Path
 import re
 import sys
-
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SURFACES = (
     ROOT / "src/app_core/guild_intelligence.rs",
+    ROOT / "src/app_core/guild_intelligence/plan.rs",
     ROOT / "src/app_core/guild_intelligence/validation.rs",
 )
 RULES = (
     (r"\b(?:reqwest|ureq|hyper|serenity)::", "network client"),
     (r"\b(?:std|tokio)::net\b", "network client"),
     (r"\b(?:std|tokio)::process\b|\b(?:Command|Child)::", "process execution"),
-    (r"\bstd::fs\b|\b(?:File|OpenOptions)::", "filesystem access"),
+    # `std::fs` alone misses a brace import (`use std::{fs};`), where the
+    # effect is reached as `fs::write(...)`. The path segment is matched on
+    # its own so the bound does not depend on how the module was imported.
+    (r"\bstd::fs\b|\bfs::|\b(?:File|OpenOptions)::", "filesystem access"),
     (r"\b(?:abi_wdbx|rusqlite|RuntimeStore|GuildRegistry)\b", "durable store"),
     (r"\b(?:runtime_v3|ToolRoute|ToolDescriptor|register_tool)\b", "runtime tool"),
     (r"\b(?:Executor|Actuator|ApprovalRequest|Compensation)\b", "Program 5 type"),
-    (r"\bfn\s+(?:execute|apply|approve|compensate|create|edit|delete|send|write|persist)_", "effect operation"),
-    (r"\b(?:message_content|message_body|transcript|audio_bytes|credential|access_token)\b", "private content"),
+    (
+        r"\bfn\s+(?:execute|apply|approve|compensate|create|edit|delete|send|write|persist)_",
+        "effect operation",
+    ),
+    (
+        r"\b(?:message_content|message_body|transcript|audio_bytes|credential|access_token)\b",
+        "private content",
+    ),
 )
 
 

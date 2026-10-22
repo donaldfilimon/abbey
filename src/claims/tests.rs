@@ -8,15 +8,16 @@ fn every_classifying_status_is_unique_and_carries_work() {
     // cleanly and the assertion silently stops describing the registry.
     // Everything below stays true no matter how many claims exist, and
     // still fails for the cases the test name promises to catch.
+    //
+    // The vocabulary is checked, not the ledger's current contents: a
+    // positional bucket that nothing occupies any more is a fact about
+    // *this* registry, not a broken vocabulary, and a claim that has
+    // honestly been failed, revoked, or superseded must be expressible
+    // even when it empties the bucket it left.
     for (index, status) in Status::CLASSIFYING.iter().enumerate() {
         assert!(
             !Status::CLASSIFYING[..index].contains(status),
             "{} is listed twice in Status::CLASSIFYING",
-            status.label()
-        );
-        assert!(
-            by_status(*status).count() > 0,
-            "no claim carries status {}",
             status.label()
         );
     }
@@ -36,6 +37,33 @@ fn every_classifying_status_is_unique_and_carries_work() {
 
     // The registry must also be well-formed, not merely countable.
     validate_registry().expect("canonical registry must be internally valid");
+}
+
+#[test]
+fn the_doctor_summary_shows_an_occupied_lifecycle_bucket() {
+    // The canonical registry holds no failed, revoked, superseded, or expired
+    // claim, so the rule is exercised against a synthetic count source.
+    let summary = status_line_from(&|status| match status {
+        Status::Current => 42,
+        Status::Partial => 3,
+        Status::Proposed => 8,
+        Status::Blocked => 1,
+        Status::OutOfScope => 5,
+        Status::Failed => 1,
+        _ => 0,
+    });
+    assert!(summary.contains("1 Failed"), "{summary}");
+    // An empty lifecycle bucket is not advertised, and an empty positional
+    // bucket still is — the positional partition is always shown.
+    assert!(!summary.contains("Revoked"), "{summary}");
+    assert!(!summary.contains("Superseded"), "{summary}");
+    assert!(!summary.contains("Expired"), "{summary}");
+    assert!(summary.contains("1 Blocked"), "{summary}");
+
+    // The healthy registry's own line must not change shape.
+    let live = status_line();
+    assert!(live.starts_with("claims:    "), "{live}");
+    assert!(!live.contains("Failed"), "{live}");
 }
 
 #[test]
@@ -67,7 +95,7 @@ fn every_claim_has_exact_structured_evidence_coverage() {
             claim.evidence.external_required,
         )
         .unwrap();
-        if claim.status == Status::Proposed {
+        if claim.status.built_evidence_requirement() == Some(false) {
             assert!(
                 claim.evidence.implementation_refs.is_empty(),
                 "{}",
@@ -78,7 +106,7 @@ fn every_claim_has_exact_structured_evidence_coverage() {
                 "{}",
                 claim.id
             );
-        } else {
+        } else if claim.status.built_evidence_requirement() == Some(true) {
             assert!(
                 !claim.evidence.implementation_refs.is_empty(),
                 "{}",
@@ -431,7 +459,11 @@ fn program_1_host_claim_is_current_only_at_data_contract_level_c1() {
     for boundary in [
         "C1",
         "data-only",
-        "72e241e34967df318376bf68f4a0e2db13f5ebf17d1a219709731f1f470dbe8e",
+        // The corpus's aggregate digest, as the lock file, the manifest, and
+        // `src/abbey_contracts.rs::AGGREGATE_DIGEST` all state it. A claim
+        // that names a different digest describes a corpus Abbey does not
+        // hold.
+        "3ffd487bdc497b7ce54b8c29978a3686dcbffdb66a85957a0ee4f99ba576cdfd",
         "no production federation authority",
         "no participant-consented live Discord evidence",
     ] {
@@ -527,3 +559,34 @@ fn manifest_is_ordered_machine_readable_claims_source() {
 }
 
 include!("tests/lifecycle.rs");
+
+#[test]
+fn the_portable_host_claim_states_the_voice_dispatch_boundary() {
+    // The claim used to say "voice adapters on all primary hosts", which
+    // reads as if every host can reach every adapter. It cannot: `src/voice.rs`
+    // selects the portable adapters only when `!is_macos()`, so on macOS the
+    // `say`/Speech.framework and `abbey-stt` paths are used and a macOS
+    // failure has no portable fallback. A host with no portable backend is
+    // refused. The row has to say that, and a test has to hold it there.
+    let claim = CLAIMS
+        .iter()
+        .find(|claim| claim.id == "portable-primary-host-surfaces")
+        .expect("portable primary host claim");
+    assert_eq!(claim.status, Status::Current);
+    for boundary in [
+        "voice dispatch is per host",
+        "does not cross over",
+        "no portable fallback",
+        "dispatched only on non-macOS hosts",
+        "is refused",
+    ] {
+        assert!(
+            claim.note.contains(boundary),
+            "missing boundary `{boundary}`"
+        );
+    }
+    assert!(
+        !claim.note.contains("voice adapters on all primary hosts"),
+        "the claim still overstates macOS voice coverage"
+    );
+}

@@ -3,6 +3,13 @@
 .DS_Store
 Cargo.lock.bak
 /.claude/
+# Per-tool AI subagent definitions. The canonical rule set is AGENTS.md, and
+# a committed editor-side instruction surface must be a short pointer to it
+# (tools/check_instructions.py enforces that). These are a second rule set
+# that can drift, so they stay local.
+#/.codex/agents/
+#/.cursor/agents/
+#/.zed/agents/
 # Local Semgrep Guardian OAuth/session state. Never commit credentials or locks.
 /.semgrep/
 __pycache__/

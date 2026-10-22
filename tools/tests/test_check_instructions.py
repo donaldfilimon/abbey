@@ -43,6 +43,25 @@ class InstructionDriftTest(unittest.TestCase):
         self.edit("CLAUDE.md", "## Commands\n", "## Conventions\n\n- a rule\n\n## Commands\n")
         self.assertTrue(any("headings" in item for item in MODULE.check(self.root)))
 
+    def test_a_comment_inside_the_command_block_is_not_a_heading(self):
+        # The command table is a ```bash block. A `#` comment line in it is a
+        # comment, not a section: reading one as a heading would fail a
+        # perfectly good command table.
+        self.edit(
+            "CLAUDE.md",
+            "## Commands\n\n```bash\n",
+            "## Commands\n\n```bash\n# a comment about the toolchain\n",
+        )
+        self.assertEqual([], MODULE.check(self.root))
+
+    def test_a_heading_after_a_fenced_block_is_still_reported(self):
+        self.edit(
+            "CLAUDE.md",
+            "\n## Module map (`src/`)\n",
+            "\n## Conventions\n\n- a rule\n\n## Module map (`src/`)\n",
+        )
+        self.assertTrue(any("headings" in item for item in MODULE.check(self.root)))
+
     def test_extra_prose_in_claude_md_is_reported(self):
         self.edit("CLAUDE.md", "\n## Commands\n", "\nAlso: never do X.\n\n## Commands\n")
         self.assertTrue(any("pointer paragraph" in item for item in MODULE.check(self.root)))

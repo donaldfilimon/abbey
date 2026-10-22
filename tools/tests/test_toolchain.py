@@ -46,6 +46,9 @@ class ToolchainTests(unittest.TestCase):
         shutil.copy(ROOT / 'tools/cargo.sh', self.repo / 'tools/cargo.sh')
         shutil.copy(ROOT / 'tools/toolchain_policy.py', self.repo / 'tools/toolchain_policy.py')
         shutil.copy(ROOT / 'tools/toolchain-env.sh', self.repo / 'tools/toolchain-env.sh')
+        # The gate entrypoints source the gate lock from their own checkout,
+        # so the fixture needs it beside the other tools they source.
+        shutil.copy(ROOT / 'tools/gate_lock.sh', self.repo / 'tools/gate_lock.sh')
         shutil.copy(ROOT / 'rust-toolchain.toml', self.repo / 'rust-toolchain.toml')
         self.bin = self.root / 'selected/bin'
         self.bin.mkdir(parents=True)

@@ -62,9 +62,30 @@ def git_policy_block(text: str, name: str) -> tuple[str | None, list[str]]:
     return text[start:end], []
 
 
+def markdown_headings(text: str) -> tuple[str, ...]:
+    """The ATX headings of a markdown document.
+
+    Lines inside a fenced code block are not headings: the command table is a
+    ```bash block, and a `#` comment line in it is a comment, not a section.
+    Reading one as a heading would make a perfectly good command table fail
+    the shape check.
+    """
+    headings: list[str] = []
+    fenced = False
+    for line in text.splitlines():
+        if line.lstrip().startswith("```"):
+            fenced = not fenced
+            continue
+        if fenced:
+            continue
+        if line.startswith("#"):
+            headings.append(line)
+    return tuple(headings)
+
+
 def check_claude_shape(text: str, root: Path = ROOT) -> list[str]:
     findings: list[str] = []
-    headings = tuple(line for line in text.splitlines() if line.startswith("#"))
+    headings = markdown_headings(text)
     if headings != CLAUDE_HEADINGS:
         findings.append(
             f"CLAUDE.md headings must be exactly {list(CLAUDE_HEADINGS)}; found {list(headings)}"
@@ -123,8 +144,26 @@ def check_pointer_surfaces(root: Path = ROOT) -> list[str]:
     findings: list[str] = []
     paths = [root / name for name in POINTER_SURFACES]
     for directory in POINTER_SURFACE_DIRS:
-        if (root / directory).is_dir():
-            paths.extend(p for p in sorted((root / directory).rglob("*")) if p.is_file())
+        base = root / directory
+        if not base.is_dir():
+            continue
+        for path in sorted(base.rglob("*")):
+            if not path.is_file():
+                continue
+            # A per-tool `agents/` directory holds *subagent definitions* —
+            # a specialized reviewer or specialist, not a repository rule
+            # surface. The rule this check enforces is "one rule set": the
+            # repository's rules live in AGENTS.md, and a surface that
+            # restates them can drift. A subagent definition is scoped to
+            # its own job, so the length rule does not apply to it; the
+            # one-rule-set guarantee rests on the definitions that *do*
+            # talk about repository rules deferring to AGENTS.md. The same
+            # content is already accepted under `.cursor/agents/` and
+            # `.zed/agents/`, so scoping the rule by directory name would
+            # make the check depend on which tool happened to load it.
+            if "agents" in path.relative_to(base).parts[:-1]:
+                continue
+            paths.append(path)
     for path in paths:
         if not path.is_file():
             continue

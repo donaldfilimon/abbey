@@ -36,12 +36,6 @@ fn lifecycle_states_are_separate_from_the_positional_partition() {
             "{} must not be a positional state",
             status.label()
         );
-        assert_eq!(
-            by_status(status).count(),
-            0,
-            "{} should be empty in a healthy registry",
-            status.label()
-        );
     }
     // ...yet every one of them must still be reachable as a status.
     let every: Vec<_> = Status::every().collect();
@@ -49,6 +43,12 @@ fn lifecycle_states_are_separate_from_the_positional_partition() {
     for status in Status::LIFECYCLE {
         assert!(every.contains(&status));
     }
+    // A lifecycle bucket is *allowed* to be occupied — that is the whole
+    // point of the vocabulary — so the registry is not asserted to be empty
+    // here. What must hold is that an occupied bucket holds a valid claim:
+    // `validate_registry` applies the per-status rules to every claim, and
+    // the partition test proves an occupied bucket is still reachable.
+    validate_registry().expect("canonical registry must be internally valid");
 }
 
 #[test]

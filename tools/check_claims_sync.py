@@ -7,15 +7,14 @@ import argparse
 import hashlib
 import json
 import os
-from pathlib import Path
 import re
 import signal
 import stat
 import subprocess
 import sys
 import tempfile
+from pathlib import Path
 from typing import Any
-
 
 ROOT = Path(__file__).resolve().parent.parent
 GENERATED_LEDGER = ROOT / "docs/claims.md"
@@ -232,7 +231,12 @@ def desktop_inventory(
         raise ValueError("desktop TypeScript lacks SURFACES")
     surface_matches = tuple(
         re.finditer(
-            r'\{\s*id:\s*"([a-z0-9_]+)".*?\brequires:\s*(null|"([a-z0-9_]+)")',
+            # The id is captured permissively on purpose: a non-snake-case id
+            # must be *seen* so the validation below can reject it. A
+            # snake-case-only pattern would drop the entry from the
+            # inventory and the inventory would silently disagree with the
+            # TypeScript it claims to describe.
+            r'\{\s*id:\s*"([^"]*)".*?\brequires:\s*(null|"([^"]*)")',
             surfaces_block.group(1),
             re.DOTALL,
         )
@@ -296,13 +300,9 @@ def _check_desktop_readme(readme: str, commands: tuple[str, ...]) -> None:
     lost rows, including rows that predate the current cohort. Both are the
     same defect, so both are checked here.
     """
-    count = re.search(
-        r"(\d+)\s+commands are enumerated in `generate_handler!`", readme
-    )
+    count = re.search(r"(\d+)\s+commands are enumerated in `generate_handler!`", readme)
     if count is None:
-        raise ValueError(
-            "desktop README lacks the enumerated-command count prose"
-        )
+        raise ValueError("desktop README lacks the enumerated-command count prose")
     stated = int(count.group(1))
     if stated != len(commands):
         raise ValueError(
@@ -351,12 +351,10 @@ def render_desktop_summary(
             ),
             "",
             "- Invoke IDs: " + ", ".join(f"`{item}`" for item in commands),
-            "- Read capability IDs: "
-            + ", ".join(f"`{item}`" for item in capabilities),
+            "- Read capability IDs: " + ", ".join(f"`{item}`" for item in capabilities),
             "- Available view IDs: "
             + ", ".join(f"`{view}` → `{required}`" for view, required in available),
-            "- Unavailable view IDs: "
-            + ", ".join(f"`{item}`" for item in unavailable),
+            "- Unavailable view IDs: " + ", ".join(f"`{item}`" for item in unavailable),
             DESKTOP_END,
         ]
     )
@@ -548,13 +546,9 @@ def manifest_timeout_seconds() -> int:
     try:
         value = int(raw)
     except ValueError:
-        raise SystemExit(
-            f"{TIMEOUT_ENV} must be a positive integer number of seconds"
-        )
+        raise SystemExit(f"{TIMEOUT_ENV} must be a positive integer number of seconds")
     if value <= 0:
-        raise SystemExit(
-            f"{TIMEOUT_ENV} must be a positive integer number of seconds"
-        )
+        raise SystemExit(f"{TIMEOUT_ENV} must be a positive integer number of seconds")
     return value
 
 
@@ -779,39 +773,59 @@ def validate_claim_semantics(claims: list[dict[str, Any]], claim_ids: set[str]) 
         built = bool(implementation) and bool(tests)
         blocker = claim["blocker_owner"]
 
-        if status in {"current", "partial", "blocked", "failed", "expired", "out_of_scope"} and not built:
-            raise ValueError(f"{status} claim {claim_id} requires implementation and test evidence")
+        if (
+            status
+            in {"current", "partial", "blocked", "failed", "expired", "out_of_scope"}
+            and not built
+        ):
+            raise ValueError(
+                f"{status} claim {claim_id} requires implementation and test evidence"
+            )
         if status == "current" and "required" in {local_state, external_state}:
             raise ValueError(f"Current claim {claim_id} cannot carry required evidence")
         if status == "partial" and "required" not in {local_state, external_state}:
             raise ValueError(f"Partial claim {claim_id} must identify missing proof")
         if status == "proposed":
             if implementation or tests:
-                raise ValueError(f"Proposed claim {claim_id} cannot carry shipped evidence")
+                raise ValueError(
+                    f"Proposed claim {claim_id} cannot carry shipped evidence"
+                )
             if local_state != "required":
                 raise ValueError(f"Proposed claim {claim_id} must require local proof")
         if status == "blocked":
             if external_state != "required":
-                raise ValueError(f"Blocked claim {claim_id} must require external evidence")
+                raise ValueError(
+                    f"Blocked claim {claim_id} must require external evidence"
+                )
             if blocker is None:
-                raise ValueError(f"Blocked claim {claim_id} must identify a blocker owner")
+                raise ValueError(
+                    f"Blocked claim {claim_id} must identify a blocker owner"
+                )
         elif blocker is not None:
             raise ValueError(f"{status} claim {claim_id} cannot carry a blocker owner")
         if status == "failed" and local_state == "verified":
-            raise ValueError(f"Failed claim {claim_id} cannot retain verified local evidence")
+            raise ValueError(
+                f"Failed claim {claim_id} cannot retain verified local evidence"
+            )
         if status == "revoked" and "required" in {local_state, external_state}:
-            raise ValueError(f"Revoked claim {claim_id} cannot leave evidence outstanding")
+            raise ValueError(
+                f"Revoked claim {claim_id} cannot leave evidence outstanding"
+            )
         if status == "superseded":
             replacement = claim["instead"]
             if replacement not in claim_ids or replacement == claim_id:
-                raise ValueError(f"Superseded claim {claim_id} must name an existing replacement")
+                raise ValueError(
+                    f"Superseded claim {claim_id} must name an existing replacement"
+                )
         if status == "expired" and local_state != "required":
             raise ValueError(f"Expired claim {claim_id} must require fresh local proof")
         if status == "out_of_scope" and {
             local_state,
             external_state,
         } != {"not_required"}:
-            raise ValueError(f"Out-of-scope claim {claim_id} cannot carry evidence state")
+            raise ValueError(
+                f"Out-of-scope claim {claim_id} cannot carry evidence state"
+            )
 
 
 def markdown_cell(value: object) -> str:
@@ -921,7 +935,9 @@ def parse_goal_metadata(text: str) -> list[dict[str, str]]:
             metadata[key] = value
             index += 1
         if index >= len(lines):
-            raise ValueError(f"goals.md:{heading_line}: unclosed metadata for `{title}`")
+            raise ValueError(
+                f"goals.md:{heading_line}: unclosed metadata for `{title}`"
+            )
         index += 1
         required = GOAL_KEYS - {"blocker-owner"}
         missing = required - metadata.keys()
@@ -952,7 +968,9 @@ def workflow_summary(goals_text: str, todo_text: str) -> str:
     statuses = {status: 0 for status in status_order}
     for goal in goals:
         statuses[goal["status"]] += 1
-    checked = sum(1 for line in todo_text.splitlines() if line.lstrip().startswith("- [x]"))
+    checked = sum(
+        1 for line in todo_text.splitlines() if line.lstrip().startswith("- [x]")
+    )
     open_items = sum(
         1 for line in todo_text.splitlines() if line.lstrip().startswith("- [ ]")
     )
@@ -1059,10 +1077,14 @@ def replace_generated_region(text: str, mode: str, replacement: str) -> str:
     begin = f"<!-- BEGIN abbey-generated:claims-{mode} -->"
     end = f"<!-- END abbey-generated:claims-{mode} -->"
     generated_begins = [
-        line.strip() for line in text.splitlines() if line.strip().startswith(BEGIN_PREFIX)
+        line.strip()
+        for line in text.splitlines()
+        if line.strip().startswith(BEGIN_PREFIX)
     ]
     generated_ends = [
-        line.strip() for line in text.splitlines() if line.strip().startswith(END_PREFIX)
+        line.strip()
+        for line in text.splitlines()
+        if line.strip().startswith(END_PREFIX)
     ]
     unknown = [marker for marker in generated_begins if marker != begin]
     unknown.extend(marker for marker in generated_ends if marker != end)
@@ -1078,7 +1100,9 @@ def replace_generated_region(text: str, mode: str, replacement: str) -> str:
         return prefix + replacement + suffix
 
     lines = text.splitlines()
-    legacy = [index for index, line in enumerate(lines) if line.startswith(LEGACY_PREFIX)]
+    legacy = [
+        index for index, line in enumerate(lines) if line.startswith(LEGACY_PREFIX)
+    ]
     if len(legacy) > 1:
         raise ValueError("multiple legacy claims digest markers")
     if legacy:
@@ -1107,16 +1131,17 @@ def atomic_write(path: Path, text: str) -> None:
             os.unlink(temporary)
 
 
-def synchronized_documents(
-    manifest: dict[str, Any], digest: str
-) -> dict[Path, str]:
+def synchronized_documents(manifest: dict[str, Any], digest: str) -> dict[Path, str]:
     goals_text = (ROOT / "tasks/goals.md").read_text(encoding="utf-8")
     todo_text = (ROOT / "tasks/todo.md").read_text(encoding="utf-8")
     workflow = workflow_summary(goals_text, todo_text)
     rendered: dict[Path, str] = {}
     for path, mode in DOCUMENT_MODES.items():
         text = path.read_text(encoding="utf-8")
-        if path == ROOT / "AGENTS.md" and "\n| Claim | Status | Evidence boundary |" in text:
+        if (
+            path == ROOT / "AGENTS.md"
+            and "\n| Claim | Status | Evidence boundary |" in text
+        ):
             prefix, legacy = text.split("\n(source: `src/claims.rs`", 1)
             _, suffix = legacy.split("\n## Gotchas", 1)
             text = (
@@ -1127,7 +1152,9 @@ def synchronized_documents(
             )
         begin = f"<!-- BEGIN abbey-generated:claims-{mode} -->"
         if begin not in text:
-            raise ValueError(f"{path.relative_to(ROOT)} lacks its generated claims region")
+            raise ValueError(
+                f"{path.relative_to(ROOT)} lacks its generated claims region"
+            )
         region = render_region(mode, manifest, digest, path, workflow)
         rendered[path] = replace_generated_region(text, mode, region)
     rendered[GENERATED_LEDGER] = render_evidence_document(manifest, digest, workflow)

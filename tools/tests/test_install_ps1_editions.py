@@ -17,9 +17,9 @@ bare runner.
 
 from __future__ import annotations
 
-from pathlib import Path
 import re
 import unittest
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 INSTALL_PS1 = ROOT / "install.ps1"
@@ -47,7 +47,9 @@ def identity_table(text: str, const_name: str) -> dict[str, str]:
     )
     if match is None:
         raise AssertionError(f"src/edition.rs has no `{const_name}` identity table")
-    fields = dict(re.findall(r'^\s*(\w+):\s*"([^"]*)",\s*$', match.group(1), re.MULTILINE))
+    fields = dict(
+        re.findall(r'^\s*(\w+):\s*"([^"]*)",\s*$', match.group(1), re.MULTILINE)
+    )
     if not fields:
         raise AssertionError(f"`{const_name}` parsed to no fields — regex drifted")
     return fields
@@ -93,7 +95,9 @@ class InstallPs1Source(unittest.TestCase):
                 f"install.ps1 still hardcodes the safe edition's {literal}",
             )
 
-    def test_build_output_path_uses_the_cargo_bin_name_not_the_edition_name(self) -> None:
+    def test_build_output_path_uses_the_cargo_bin_name_not_the_edition_name(
+        self,
+    ) -> None:
         # Both editions compile the same `[[bin]] name = "abbey"` target, so the
         # release artifact path is edition-independent. Deriving it from the
         # edition would break the personal install with "missing release binary".
@@ -158,6 +162,28 @@ class InstallPs1Source(unittest.TestCase):
             r"cargo build --release --locked --features \$env:ABBEY_CARGO_FEATURES",
         )
         self.assertRegex(self.text, r"(?m)^\s*cargo build --release --locked\s*$")
+
+    def test_a_failed_build_stops_the_installation(self) -> None:
+        # PowerShell 5.1 does not turn a native command's nonzero exit into a
+        # terminating error, not even under `$ErrorActionPreference = "Stop"`.
+        # Without an explicit status check the install continues past a failed
+        # build and reports the missing artifact instead of the build failure.
+        builds = list(
+            re.finditer(
+                r"(?m)^\s*cargo build --release --locked"
+                r"(?: --features \$env:ABBEY_CARGO_FEATURES)?\s*$",
+                self.text,
+            )
+        )
+        self.assertTrue(builds, "install.ps1 no longer builds with cargo")
+        for build in builds:
+            following = self.text[build.end() : build.end() + 400]
+            self.assertRegex(
+                following,
+                r"if \(\$LASTEXITCODE -ne 0\) \{\s*\n\s*throw ",
+                "a cargo build without a throwing exit-code guard reports the "
+                "missing artifact instead of the build failure",
+            )
 
     def test_unix_daemon_smoke_is_edition_neutral(self) -> None:
         # The installed daemon has no --help parser. install.sh proves it loaded

@@ -1,137 +1,137 @@
 # Chat-first TUI reliability evidence
 
 Status: Current for the bounded macOS/Unix fixture reliability slice.
-The complete production gate passed on 2026-10-02 with nightly-2026-09-01.
+The complete production gate passed on 2026-10-02 with nightly-2026-09-01. The
+2026-10-22 reliability cohort is the behaviour described below; it is receipted
+in [verification/2026-10-22-tui-reliability-cohort.md](verification/2026-10-22-tui-reliability-cohort.md).
 
 ## Implemented behavior
 
 - Terminal modes are guarded across partial entry, errors, suspension, normal
   exit, and panic unwinding. Cleanup attempts every reset; the original loop
   error takes precedence over shutdown or terminal-cleanup errors.
+- The panel refresh — doctor, memory, skills, personas, routes, models, and
+  history — runs on a background worker, and its result is applied on the UI
+  thread when it lands (`src/tui/refresh.rs`). The doctor's `--version` probe,
+  the model list, and the memory backend's open no longer run in the frame the
+  user is reading the answer on. A refresh in flight is never joined; a newer
+  refresh replaces it and the stale result is discarded.
+- The clipboard copy runs on a worker and its poll is tri-state: Pending,
+  Finished(outcome), Failed(reason) (`src/tui/clipboard.rs`). A worker that
+  dies without an answer is reported rather than left as "copying…" for the
+  rest of the session, and the shutdown join is bounded, so a hung clipboard
+  command cannot hold the terminal in raw mode.
+- An interrupt is a request, not a promise. The app waits at most three
+  seconds and then gives up: the worker is abandoned and detached, exit 130 is
+  reported, and the transcript says the app gave up. The activity row says
+  "giving up in Ns" while it waits.
+- The turn-end repaint no longer asks the terminal where the cursor is
+  (`src/tui/run_loop.rs`). `Terminal::clear` issues `ESC[6n` and waits up to
+  two seconds, which stalled the frame and ended the event loop on a terminal
+  or multiplexer that never answers. The reset is a viewport resize now, and a
+  failed reset is reported in the status line instead of ending the loop.
+- Theme preview and theme choose are different acts. Ctrl-T cycles the palette
+  without persisting it; choosing a palette in the palette overlay writes it
+  to the state directory, so a chosen palette wins over the terminal's
+  reported brightness in every later session.
+- There is a light palette (`daylight`) for a light terminal profile, and every
+  palette is checked against the WCAG contrast ratio — 4.5:1 for body text,
+  3:1 for borders — so a palette that stops being legible fails the build
+  instead of shipping (`src/tui/theme.rs`).
+- Esc-Esc recalls the last prompt only when the draft has not changed since
+  the first Esc; a draft typed in between survives.
 - A run owns its worker handle and cancellation token. Local slash commands and
-  explicitly confirmed allowlisted OS commands execute on supervised workers.
-  Quit cancels and joins the worker after process-group teardown. A missing
+  explicitly confirmed allowlisted OS commands execute on supervised workers;
+  Quit cancels and joins the worker after process-group teardown; a missing
   completion or worker panic becomes a failed run. Unix executor-version
   probes have a 500 ms deadline and 4 KiB per-stream capture limits.
-- A failed or interrupted run discards queued prompts with a visible count.
-  Successful queue advancement preserves the unsent composer text and cursor.
+- A failed or interrupted run discards queued prompts with a visible count,
+  and a successful queue advancement preserves the unsent composer text and
+  cursor.
 - Unix streaming accepts at most 4 MiB raw stdout, 4 MiB decoded payload, and
-  65,536 decoded events per run, reserving two event slots for a bounded
-  failure notification and exactly one canonical run-completion event.
-  Exceeding a limit cancels or tears down the
-  executor and cannot commit a successful local transcript. The UI applies at
-  most 128 events per tick and drains accepted events before finalization.
+  65,536 decoded events per run; exceeding a limit cannot commit a successful
+  local transcript, and the UI applies at most 128 events per tick.
 - Transcript retention is 2,000 cells and 8 MiB payload, with a 4 MiB cell
-  ceiling and UTF-8-safe clipping. Old completed cells are removed first and
-  retention is visible. Active tool-cell exhaustion fails the run explicitly.
+  ceiling; active tool-cell exhaustion fails the run explicitly.
+
+## The startup appearance query, and its two residual costs
+
+The TUI asks the terminal for its default background (`OSC 11`) before the
+first frame, parses the reply, and follows the terminal's own appearance when
+no palette has been chosen (`src/tui/terminal_appearance.rs`). The query is
+read-only, bounded, and parsed, never executed. Two costs remain, and they are
+costs rather than guarantees:
+
+- A keystroke typed inside the query window is lost: the answer arrives on the
+  terminal's input queue, and that queue cannot be put back.
+- A terminal that answers after the grace has its reply read as ordinary key
+  events, so the reply bytes land in the composer. Once the bytes are in the
+  event queue the app cannot tell an `OSC` reply from typed text.
+
+## Keys, signals, and the completion menu
+
+- The TUI installs no SIGINT or SIGTERM handler. An external kill therefore
+  leaves the terminal un-restored — raw mode and the alternate screen stay up.
+  The in-process Ctrl-C path is a key event rather than a signal: raw mode
+  means the terminal generates no SIGINT, and Ctrl-C clears the composer
+  first and quits on the second press.
+- Enter accepts a completion the user asked for and nothing else: a path
+  typed after `@`, a command name being typed after `/`, or a suggestion the
+  user moved the menu selection onto. A menu the ranker opened on ordinary
+  prose is none of those, so Enter submits the draft instead of turning the
+  sentence into a slash command. Tab accepts whatever the menu holds, and
+  during a run Enter accepts an open completion rather than queueing the
+  half-typed token.
 
 ## Verification
 
 The deterministic tests live alongside the TUI, stream tap, streaming agent,
 and Unix supervisor. `tests/tui_pty.rs` executes
 `tools/tests/smoke_tui_pty.py` against the built Abbey binary, using isolated
-configuration, state, workspace, editor, and ABI fixture executors.
+configuration, state, workspace, editor, and ABI fixture executors; it checks
+rendered terminal cells rather than treating ANSI diff output as text.
 
-The real PTY harness passed these nine scenarios on macOS on 2026-10-02:
-multiline bracketed paste without submission, incremental output before the
-executor exits, resize, successful editor return, terminal-attribute and mode
-restoration, missing-editor recovery, interrupt with queued-prompt discard,
-descendant teardown, and quit while running with teardown before return.
+The 2026-10-22 cohort is proven by unit tests in `src/tui/`, run with
+`./tools/cargo.sh test --locked -p abbey --lib -- tui::`:
 
-The harness provides cursor-position responses required by crossterm and
-checks rendered terminal cells rather than treating ANSI diff output as text.
-It uses the standard Python library and does not call any model service.
-
-The final command was `CARGO_INCREMENTAL=0 rustup run nightly-2026-09-01 sh ./check.sh`
-and returned exit 0. Passed Rust test totals were 850 default, 864 WDBX,
-841 personal-edition, and 862 accelerator (overlapping feature suites).
-All four warning-denied clippy and private-item rustdoc checks passed, as did
-82 Python tests, claim projections, instruction consistency, desktop codegen
-drift, the Program 3 boundary, and isolated accelerator install/rollback checks.
-The claim registry exceeds the 800-line soft warning threshold (818 lines);
-the hard source-size guard passes. Linux and Windows cross targets were absent
-and skipped; this is not cross-platform runtime acceptance.
+| Behaviour | Test |
+| --- | --- |
+| The refresh does not block the UI thread | `tests::background::a_slow_refresh_does_not_block_the_ui_thread` |
+| An interrupt that never ends is given up on | `tests::background::an_interrupt_that_never_ends_is_given_up_on` |
+| A clipboard worker cannot hold the join or the shutdown; a dead one is reported | `clipboard::tests::a_worker_that_never_answers_does_not_block_the_join`, `clipboard::tests::a_worker_that_dies_without_an_answer_is_reported`, `run_loop::tests::a_clipboard_worker_that_never_answers_does_not_block_the_shutdown` |
+| The turn-end reset asks no cursor-position query, and a failed reset does not end the loop | `run_loop::tests::the_screen_is_reset_only_when_a_run_has_just_ended`, `run_loop::tests::a_failed_screen_reset_does_not_end_the_loop` |
+| Preview does not persist; choosing does | `tests::app_state::cycling_the_theme_previews_it_without_choosing_it`, `tests::app_state::choosing_a_palette_in_the_overlay_saves_it` |
+| Every palette is legible | `theme::tests::every_palette_is_legible`, `theme::tests::the_daylight_palette_is_readable_on_a_light_ground` |
+| Esc-Esc keeps a draft typed in between | `tests::keymap::esc_esc_does_not_destroy_a_draft_the_user_typed_in_between` |
+| Enter accepts an open completion during a run | `tests::keymap::enter_accepts_the_open_completion_while_a_run_is_active` |
+| The appearance reply is parsed, bounded, and never executed | `terminal_appearance::tests::` (25 tests) |
 
 ## Evidence boundary
 
 These are macOS/Unix fixture and automated proofs, not live vendor-service,
-model-quality, Windows runtime, desktop, daemon, or owned tool-host acceptance.
-Non-Unix local TUI capture explicitly refuses because bounded cancellation is
+model-quality, Windows runtime, desktop, daemon, or owned tool-host
+acceptance. Non-Unix local TUI capture refuses because bounded cancellation is
 unavailable there; non-Unix backend output is buffered, not live-streamed.
-The independent learn-distill working-tree changes remain separate.
 
 ## 2026-10-03 shared-source review correction
 
-The 2026-10-02 gate above remains historical evidence. The subsequent complete
-shared-diff review includes the separate learning/distillation edits. Confirmed
-repairs preserve selected backend and conversation state across local commands,
-join nested captures and metadata probes before cancellation completes, fence
-cumulative capture budgets before durable turn writes, and issue distillation
-IDs only after storage commits. Completion freshness, Unicode cursor boundaries,
-queued submission, bounded pickers/panels, and owned prediction also have
-attributable regression evidence. Capture warnings and generation advice now
-reach the original notice tap and survive redraw; ordinary CLI warnings retain
-their stderr behavior.
-
-The preliminary full gate passed, but final source attribution remains pending
-until independent complete-diff review, authoritative root and applicable desktop
-gates, and unchanged complete Abbey/ABI/WDBX manifests agree. Actual attempts and
-final source-only receipts live outside the checkout under
-`/Users/donaldfilimon/.codex/verification/abbey-bot-continuity-20261003/`.
-Automated PTY and owned scratch-daemon fixtures do not establish live vendor wire
-formats, model quality or training, installed artifact identity, a native GUI,
-managed services, Linux/Windows runtime, or human acceptance.
+The 2026-10-02 gate remains historical evidence. The subsequent shared-diff
+review included the separate learning/distillation edits: repairs preserve
+selected backend and conversation state, and fence capture budgets.
 
 ## 2026-10-20 retained Rust focused acceptance
 
-The earlier receipts remain historical evidence. **The bounded captured finishing cohort is complete:** full root and separate
-desktop gates passed against identical unchanged complete Abbey/ABI/WDBX
-source/index manifests. Later canonical producer changes remain separately
-unqualified, and the broader completion program stays in_progress.
-
-Selected-ABI `/learn review` and `/learn sft` PTY acceptance uses a synthetic
-candidate seeded before FM is removed. It requires fresh assistant output,
-successful child completion, exact seeded review/SFT strings surviving
-resize/redraw, unchanged provider-event count, and exact conversation-mirror
-bytes. The later content assertions address the earlier optional stronger-content
-suggestion. The private PTY configuration uses SQLite; WDBX acceptance remains
-separate process-level CLI coverage, now also checking raw train-candidate export
-absence after failed, empty and externally interrupted captures.
-
-Historical pinned focused checks passed: 105 TUI, 59 agent, 1 capture, and 15
-tests across six PTY/notice suites, followed by one selected-backend repeat.
-The isolated bounded snapshot passed pinned `check.sh` with 3,747 overlapping
-Rust executions and unchanged complete manifests. Those results qualify only
-that snapshot. Later canonical focused learning/slash checks passed 15 tests
-with ABI drift; the full desktop gate exited 0 with ABI/WDBX drift. Scoped later
-repairs synchronize desktop's local path lock edges, relocate an unchanged
-helper for clippy, and correct the strict schema fixture first from 7 to 8, then
-from 8 to 9 as the migration set advanced. Both focused fixture receipts exit 0
-with unchanged cohorts; the later schema-9 check passed one test. Root05 exited
-0 with final `check.sh: OK`: 949 default, 968 WDBX, 940 personal and 961
-accelerator passes (3,818 overlapping Rust executions), all four clippy/rustdoc
-modes, 82 Python tests, codegen and installer/rollback checks passed. All three
-full manifests changed, so it remains intermediate evidence. Doctor/registry/
-governed-test soft size warnings, absent Windows/Linux GNU targets and the
-existing release LLVM dylib warning remain recorded in the receipt.
-
+The bounded captured finishing cohort is complete: full root and separate
+desktop gates passed against identical unchanged Abbey/ABI/WDBX manifests.
 See the [receipt](verification/2026-10-20-rust-finishing.md) for commands,
-source stability, unsuccessful attempts and remaining paired-gate requirements.
-Root IPC codegen is insufficient desktop evidence. Receipt-only reconciliation
-requires separate scoped documentation checks without replacing frozen manifests.
-This adds no live-service, Windows runtime, packaged desktop, training,
-production-weight or owned-runtime acceptance. Exact pins and retained Zig
-evidence remain unchanged.
+source stability, and the remaining paired-gate requirements.
 
-The final captured current-cohort root gate passed 3,827 overlapping Rust
-executions (950 default, 974 WDBX, 941 personal, 962 accelerator), all four
-clippy/rustdoc modes, Python82, codegen5, and actual copied-layout installer
-verification/rollback. The separate desktop final result also exits 0 on the
-same unchanged three-repository manifests; exact identities are in the receipt.
-The capture includes current WDBX429318 plus dirty inputs and exact schema9
-producer source and passed independent audit. A socket-readiness fixture repair
-now uses one queued stream, a two-second read timeout and EOF/reset-only closure
-evidence; focused review and execution passed stably. The rejected repeated-
-connect approach and stopped -15 gate remain historical failed evidence.
-Nightly pins, size warnings, missing cross targets and release LLVM stripping
-warning remain; stable-candidate packaging is separately unqualified.
+## 2026-10-22 TUI reliability cohort
+
+The panel refresh moved off the UI thread, the clipboard poll became
+tri-state with a bounded shutdown join, an interrupt gained a bounded grace,
+the turn-end repaint stopped asking the terminal where the cursor is, theme
+preview and theme choose became separate acts, a light palette arrived with
+contrast checks, and Esc-Esc stopped destroying a draft typed in between. The
+residuals are recorded in the
+[receipt](verification/2026-10-22-tui-reliability-cohort.md).

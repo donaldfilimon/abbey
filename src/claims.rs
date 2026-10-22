@@ -82,7 +82,30 @@ impl Status {
         }
     }
 
-    fn key(self) -> &'static str {
+    /// Whether a claim in this status must carry built evidence — the
+    /// implementation and automated-test references.
+    ///
+    /// `Some(true)` requires them, `Some(false)` forbids them, and `None`
+    /// leaves the status undecided, so either is accepted. One table, so the
+    /// registry validation and the coverage test cannot disagree about what a
+    /// status owes.
+    ///
+    /// `Revoked` and `Superseded` are the two decided states: nobody is going
+    /// to build or prove anything for them, and a claim that was withdrawn
+    /// before it was built must still be expressible.
+    pub(crate) fn built_evidence_requirement(self) -> Option<bool> {
+        match self {
+            Self::Proposed => Some(false),
+            Self::Revoked | Self::Superseded => None,
+            _ => Some(true),
+        }
+    }
+
+    /// The canonical wire key for this status.
+    ///
+    /// Public so a consumer that has to advertise the vocabulary (the MCP
+    /// claims filter, for one) reads it from here instead of restating it.
+    pub(crate) fn key(self) -> &'static str {
         match self {
             Self::Current => "current",
             Self::Partial => "partial",
@@ -115,7 +138,11 @@ impl Status {
         }
     }
 
-    fn from_filter(token: &str) -> Option<Self> {
+    /// Resolve a filter token to this status.
+    ///
+    /// `pub(crate)` so every surface that filters by status — the CLI, the MCP
+    /// tool, the daemon projection — accepts exactly the same tokens.
+    pub(crate) fn from_filter(token: &str) -> Option<Self> {
         Self::every().find(|status| status.filter_aliases().contains(&token))
     }
 
@@ -208,9 +235,24 @@ fn validate_claims(claims: &[Claim]) -> Result<()> {
         )?;
         let implementation_is_empty = claim.evidence.implementation_refs.is_empty();
         let tests_are_empty = claim.evidence.automated_test_refs.is_empty();
+        // Built evidence is decided by the status alone, so it is decided in
+        // one table (`Status::built_evidence_requirement`) rather than restated
+        // in every arm below. `Proposed` must not present unbuilt work as
+        // shipped; the two decided states carry no build at all; every other
+        // status is something that was built, or would have nothing to fail.
+        match claim.status.built_evidence_requirement() {
+            Some(true) => require_built_evidence(claim, implementation_is_empty, tests_are_empty)?,
+            Some(false) if implementation_is_empty && tests_are_empty => {}
+            Some(false) => {
+                bail!(
+                    "Proposed claim `{}` cannot present implementation or tests as shipped evidence",
+                    claim.id
+                );
+            }
+            None => {}
+        }
         match claim.status {
             Status::Current => {
-                require_built_evidence(claim, implementation_is_empty, tests_are_empty)?;
                 if is_required(claim.evidence.local_live)
                     || is_required(claim.evidence.external_required)
                 {
@@ -222,7 +264,6 @@ fn validate_claims(claims: &[Claim]) -> Result<()> {
                 require_no_blocker_owner(claim)?;
             }
             Status::Partial => {
-                require_built_evidence(claim, implementation_is_empty, tests_are_empty)?;
                 if !is_required(claim.evidence.local_live)
                     && !is_required(claim.evidence.external_required)
                 {
@@ -234,12 +275,6 @@ fn validate_claims(claims: &[Claim]) -> Result<()> {
                 require_no_blocker_owner(claim)?;
             }
             Status::Proposed => {
-                if !implementation_is_empty || !tests_are_empty {
-                    bail!(
-                        "Proposed claim `{}` cannot present implementation or tests as shipped evidence",
-                        claim.id
-                    );
-                }
                 if !is_required(claim.evidence.local_live) {
                     bail!(
                         "Proposed claim `{}` must require future local implementation proof",
@@ -249,7 +284,6 @@ fn validate_claims(claims: &[Claim]) -> Result<()> {
                 require_no_blocker_owner(claim)?;
             }
             Status::Blocked => {
-                require_built_evidence(claim, implementation_is_empty, tests_are_empty)?;
                 if !is_required(claim.evidence.external_required) {
                     bail!(
                         "Blocked claim `{}` must identify required external evidence",
@@ -264,8 +298,8 @@ fn validate_claims(claims: &[Claim]) -> Result<()> {
                 }
             }
             Status::Failed => {
-                // Something was built, or there would be nothing to fail.
-                require_built_evidence(claim, implementation_is_empty, tests_are_empty)?;
+                // Something was built, or there would be nothing to fail:
+                // `built_evidence_requirement` required the references above.
                 // Decision 63: evidence never auto-promotes. A claim whose
                 // proof failed must not still present that proof as verified.
                 if matches!(claim.evidence.local_live, EvidenceState::Verified(_)) {
@@ -312,7 +346,6 @@ fn validate_claims(claims: &[Claim]) -> Result<()> {
                 // It held once (decision 62 binds evidence to an exact
                 // version and environment), so implementation and tests
                 // exist — but the binding lapsed and re-proof is owed.
-                require_built_evidence(claim, implementation_is_empty, tests_are_empty)?;
                 if !is_required(claim.evidence.local_live) {
                     bail!(
                         "Expired claim `{}` must require fresh local proof",
@@ -322,7 +355,6 @@ fn validate_claims(claims: &[Claim]) -> Result<()> {
                 require_no_blocker_owner(claim)?;
             }
             Status::OutOfScope => {
-                require_built_evidence(claim, implementation_is_empty, tests_are_empty)?;
                 if !matches!(claim.evidence.local_live, EvidenceState::NotRequired(_))
                     || !matches!(
                         claim.evidence.external_required,
@@ -582,7 +614,7 @@ pub fn refuse(verb: &str) -> Result<i32> {
         }
         "lora" | "finetune" | "fine-tune" | "fine_tune" | "train-weights" => (
             "lora",
-            "Fine-tuning / LoRA is Proposed but not implemented. train_candidate is curation only.",
+            "Fine-tuning / LoRA is Proposed but not implemented. Abbey owns no trainer, optimizer, loss, or adapter. Current: `abbey train` — a bounded, consent-gated orchestration that redacts and splits the curated corpus, delegates the weight update to an external trainer, evaluates the artifact offline, rolls back on regression, and records an append-only ledger. Adapter training of a production model is not claimed.",
         ),
         "multinode" | "multi-node" | "cluster" | "mesh" | "multi-gpu" | "distributed-mesh" => (
             "three-VM",
@@ -692,14 +724,32 @@ pub fn dispatch(args: &[String]) -> Result<i32> {
 }
 
 pub fn status_line() -> String {
-    let cur = by_status(Status::Current).count();
-    let partial = by_status(Status::Partial).count();
-    let prop = by_status(Status::Proposed).count();
-    let blocked = by_status(Status::Blocked).count();
-    let oos = by_status(Status::OutOfScope).count();
-    format!(
-        "claims:    {cur} Current · {partial} Partial · {prop} Proposed · {blocked} Blocked · {oos} Out of scope — `abbey claims`"
-    )
+    status_line_from(&|status| by_status(status).count())
+}
+
+/// The ledger summary, built from a per-status count source.
+///
+/// Split out from [`status_line`] so the occupied-lifecycle rule can be
+/// exercised against a synthetic source: the canonical registry holds no
+/// failed, revoked, superseded, or expired claim, so the rule would
+/// otherwise never run in a test.
+fn status_line_from(count: &dyn Fn(Status) -> usize) -> String {
+    // The positional buckets always show; a lifecycle bucket shows only when
+    // it is occupied. A claim that moved to `Failed` or `Revoked` must not
+    // vanish from the doctor's ledger total, and a healthy registry must not
+    // advertise four empty buckets. The generated ledger summary counts the
+    // same way, so the two agree.
+    let mut parts: Vec<String> = Status::CLASSIFYING
+        .iter()
+        .map(|status| format!("{} {}", count(*status), status.label()))
+        .collect();
+    for status in Status::LIFECYCLE {
+        let occupied = count(status);
+        if occupied > 0 {
+            parts.push(format!("{occupied} {}", status.label()));
+        }
+    }
+    format!("claims:    {} — `abbey claims`", parts.join(" · "))
 }
 
 #[cfg(test)]
