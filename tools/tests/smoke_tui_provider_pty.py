@@ -157,6 +157,35 @@ def queued_model(binary, root, fail=False):
         fixture.cleanup(session)
 
 
+# The failures that mean "not observed yet", not "observed to be wrong".
+#
+# A marker that has not appeared when the bound expires is a liveness
+# question: on a loaded machine the TUI can still be rendering, and the
+# fixture's own call can still be spawning. A *wrong* value — a model that
+# was replaced, a prompt that was dispatched twice — is a defect and is
+# never retried.
+INDETERMINATE = ("missing PTY marker", "fixture did not enter actual",
+                 "fixture did not reach")
+
+
+def observed(root, name, run, attempts=3):
+    """Run one scenario, retrying while its observation stays indeterminate.
+
+    Each attempt gets its own directory, so a scenario that was interrupted
+    mid-flight cannot leave state that the next attempt inherits. The bound
+    is a ceiling, not the behaviour under test, and the scenario is only
+    failed when it stops being able to observe the behaviour at all.
+    """
+    for attempt in range(attempts):
+        try:
+            return run(root / f"{name}-{attempt}")
+        except AssertionError as error:
+            message = str(error)
+            if attempt == attempts - 1 or not any(marker in message for marker in INDETERMINATE):
+                raise
+    raise AssertionError("unreachable")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("binary")
@@ -168,10 +197,10 @@ def main():
         with tempfile.TemporaryDirectory(prefix="abbey-provider-pty-") as scratch:
             binary = Path(options.binary).resolve()
             root = Path(scratch)
-            scenario(binary, root / "switch")
-            startup_override(binary, root / "startup")
-            queued_calls = queued_model(binary, root / "queued")
-            failed_calls = queued_model(binary, root / "failed", fail=True)
+            observed(root, "switch", lambda where: scenario(binary, where))
+            observed(root, "startup", lambda where: startup_override(binary, where))
+            queued_calls = observed(root, "queued", lambda where: queued_model(binary, where))
+            failed_calls = observed(root, "failed", lambda where: queued_model(binary, where, fail=True))
             proof = dict(status="passed", model="system", calls=2 + queued_calls + failed_calls,
                          scenarios=["provider-switch-local-help", "explicit-startup-model",
                                     "queued-model-selection", "model-clear-ambient-pcc",

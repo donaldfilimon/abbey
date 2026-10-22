@@ -12,11 +12,16 @@ cross_check() {
   target="$1"
   if rustup target list --installed 2>/dev/null | grep -qx "$target"; then
     echo "== cargo check --target ${target} (soft) =="
-    if ! cargo check --target "$target" --quiet; then
+    # Scoped to the CLI package on purpose. The desktop client is a workspace
+    # member now, and it carries a WebView dependency tree that no
+    # cross-compile target here has a sysroot for: including it would turn a
+    # meaningful CLI signal into a client-toolchain warning. The feature
+    # cohorts are per-package too, so `wdbx` belongs to `-p abbey`.
+    if ! cargo check --locked -p abbey --target "$target" --quiet; then
       echo "WARN: cross-check ${target} failed (linker/sysroot?) — not a hard gate"
       return 0
     fi
-    if ! cargo check --features wdbx --target "$target" --quiet; then
+    if ! cargo check --locked -p abbey --features wdbx --target "$target" --quiet; then
       echo "WARN: cross-check ${target} +wdbx failed — not a hard gate"
     fi
   else

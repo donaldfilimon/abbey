@@ -125,7 +125,10 @@ if [ "${ABBEY_FAIL_RELOCATION:-0}" -eq 1 ] && [ "$#" -eq 2 ] &&
   case "$1" in
     "$ABBEY_FAULT_DEST"/.abbey-install.*/abbeyd)
       # Prove all old files are already backed up and the replacement dylib
-      # is published before refusing the staged-daemon publication.
+      # is published before refusing the staged-daemon publication. The
+      # daemon's live path still holds the old bytes: publication is an
+      # atomic rename, so a refused publication never leaves an installed
+      # path missing.
       backup_dir=""
       for candidate in "$ABBEY_FAULT_DEST"/.abbey-backup.*; do
         test -d "$candidate"
@@ -135,8 +138,8 @@ if [ "${ABBEY_FAIL_RELOCATION:-0}" -eq 1 ] && [ "$#" -eq 2 ] &&
       cmp "$ABBEY_FAULT_SNAPSHOT/abbey" "$backup_dir/binary"
       cmp "$ABBEY_FAULT_SNAPSHOT/abbeyd" "$backup_dir/daemon"
       cmp "$ABBEY_FAULT_SNAPSHOT/libabi_metal_dot.dylib" "$backup_dir/dylib"
-      test ! -e "$ABBEY_FAULT_DEST/abbey"
-      test ! -e "$ABBEY_FAULT_DEST/abbeyd"
+      test -e "$ABBEY_FAULT_DEST/abbey"
+      cmp "$ABBEY_FAULT_SNAPSHOT/abbeyd" "$ABBEY_FAULT_DEST/abbeyd"
       test -f "$ABBEY_FAULT_DEST/libabi_metal_dot.dylib"
       if cmp -s "$ABBEY_FAULT_SNAPSHOT/libabi_metal_dot.dylib" \
         "$ABBEY_FAULT_DEST/libabi_metal_dot.dylib"; then

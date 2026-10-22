@@ -5,6 +5,13 @@ cd "$(dirname "$0")"
 if [ -z "${ABBEY_PYTHON:-}" ]; then ABBEY_PYTHON=$(command -v python3); fi
 export ABBEY_PYTHON
 
+# One gate at a time per checkout. The integration tests spawn the binaries
+# this gate builds, from a fixed path in the shared target directory, so a
+# second gate in the same checkout can replace them under a running test. See
+# tools/gate_lock.sh.
+. ./tools/gate_lock.sh
+abbey_gate_lock "$(pwd)"
+
 echo "== toolchain =="
 ./tools/cargo.sh --abbey-qualify-toolchain
 ABBEY_TOOLCHAIN_ROOT=$(pwd)
@@ -31,22 +38,30 @@ cargo test --locked
 
 # The wdbx backend is behind an off-by-default feature, so the default-feature
 # clippy/test runs above never compile it. Gate it explicitly or it can rot.
+#
+# The feature cohorts are scoped to the packages that *own* the feature. The
+# desktop client has no `wdbx` and no `accel` feature, and rebuilding the
+# Tauri dependency tree for a cohort that cannot use it costs minutes and
+# gigabytes of disk on every run. The default cohort above still builds and
+# tests the whole workspace, including the client.
 echo "== clippy (--features wdbx) =="
-cargo clippy --locked --features wdbx --all-targets -- -D warnings
+cargo clippy --locked -p abbey --features wdbx --all-targets -- -D warnings
 
 echo "== test (--features wdbx) =="
-cargo build --locked --bins --features wdbx
-cargo test --locked --features wdbx
+cargo build --locked -p abbey --features wdbx --bins
+cargo test --locked -p abbey --features wdbx
 
 # The personal edition is a compile-time cfg: its identity table, path
 # resolution, and isolation tests are invisible to the default-feature runs
-# above. Gate it explicitly or the separated edition rots unnoticed.
+# above. Gate it explicitly or the separated edition rots unnoticed. The
+# desktop client has a matching feature (it selects the edition's bundle
+# identity), so it is gated with it.
 echo "== clippy (--features personal-edition) =="
-cargo clippy --locked --features personal-edition --all-targets -- -D warnings
+cargo clippy --locked -p abbey -p abbey-desktop --features personal-edition --all-targets -- -D warnings
 
 echo "== test (--features personal-edition) =="
-cargo build --locked --bins --features personal-edition
-cargo test --locked --features personal-edition
+cargo build --locked -p abbey -p abbey-desktop --features personal-edition --bins
+cargo test --locked -p abbey -p abbey-desktop --features personal-edition
 
 # The accelerator bridge (src/accel/bridge.rs) sits behind an off-by-default
 # feature, so every run above compiles only its refusal path. Gate it here or
@@ -55,59 +70,52 @@ cargo test --locked --features personal-edition
 # nothing — so this is safe on non-Apple CI. It does need abi-gpu's build
 # script to succeed, which on macOS means an Xcode toolchain for `xcrun swiftc`.
 echo "== clippy (--features accel) =="
-cargo clippy --locked --features accel --all-targets -- -D warnings
+cargo clippy --locked -p abbey --features accel --all-targets -- -D warnings
 
 echo "== test (--features accel) =="
-cargo build --locked --bins --features accel
-cargo test --locked --features accel
+cargo build --locked -p abbey --features accel --bins
+cargo test --locked -p abbey --features accel
 
 # Private-item documentation is part of the source contract, and feature-gated
 # links can rot independently. Keep each supported product mode explicit so a
 # default-only documentation build cannot conceal a broken WDBX, personal, or
-# accelerator surface.
+# accelerator surface. The default build documents every workspace member.
 echo "== rustdoc (default, warning denied, private items) =="
 RUSTDOCFLAGS="-D warnings" cargo doc --locked --no-deps --document-private-items
 
 echo "== rustdoc (--features wdbx, warning denied, private items) =="
-RUSTDOCFLAGS="-D warnings" cargo doc --locked --no-deps --document-private-items --features wdbx
+RUSTDOCFLAGS="-D warnings" cargo doc --locked -p abbey --no-deps --document-private-items --features wdbx
 
 echo "== rustdoc (--features personal-edition, warning denied, private items) =="
-RUSTDOCFLAGS="-D warnings" cargo doc --locked --no-deps --document-private-items --features personal-edition
+RUSTDOCFLAGS="-D warnings" cargo doc --locked -p abbey -p abbey-desktop --no-deps --document-private-items --features personal-edition
 
 echo "== rustdoc (--features accel, warning denied, private items) =="
-RUSTDOCFLAGS="-D warnings" cargo doc --locked --no-deps --document-private-items --features accel
+RUSTDOCFLAGS="-D warnings" cargo doc --locked -p abbey --no-deps --document-private-items --features accel
 
 echo "== claims/docs synchronization =="
 "$ABBEY_PYTHON" -m unittest discover -s tools/tests -p 'test_*.py'
 "$ABBEY_PYTHON" tools/check_claims_sync.py
 "$ABBEY_PYTHON" tools/check_instructions.py
 
-# desktop/ is a separate cargo workspace whose TypeScript IPC types are
-# generated from src/app_core/ (and desktop/src-tauri/src/{ipc,v3_ipc}.rs) by
-# desktop/codegen. Changing those contracts without regenerating breaks the
-# desktop client silently, so the root gate runs the generator's `--check`
-# mode: it regenerates every output in memory and fails naming each stale file,
-# writing nothing. Only the codegen crate is built; the Tauri app, bun, and the
-# WebView toolchain are not needed here (the full client gate stays
-# desktop/check.sh). `--locked` is deliberate: this gate must never rewrite
-# desktop/Cargo.lock. If that lockfile is stale against ../abi or ../wdbx,
-# cargo refuses before the generator runs, and the drift check is reported as
-# UNMEASURED rather than passed; every other failure is a hard failure.
-echo "== desktop IPC codegen drift (--locked; does not build the Tauri app) =="
-if codegen_out=$(cargo run --manifest-path desktop/Cargo.toml -p abbey-desktop-codegen --locked --quiet -- --check 2>&1); then
+# The desktop client's TypeScript IPC types are generated from src/app_core/
+# (and desktop/src-tauri/src/{ipc,v3_ipc}.rs) by desktop/codegen. Changing
+# those contracts without regenerating breaks the desktop client silently, so
+# the root gate runs the generator's `--check` mode: it regenerates every
+# output in memory and fails naming each stale file, writing nothing.
+#
+# The codegen crate is a member of this workspace, so the generator is built
+# from the same lockfile as everything else. `--locked` is deliberate: this
+# gate must never rewrite Cargo.lock. If that lockfile is stale against
+# ../abi or ../wdbx, cargo refuses before the generator runs; every failure
+# here is a hard failure, because the rest of the gate already depends on the
+# same lockfile being current.
+echo "== desktop IPC codegen drift (--locked) =="
+if codegen_out=$(cargo run --locked --quiet -p abbey-desktop-codegen -- --check 2>&1); then
   printf '%s\n' "$codegen_out"
 else
-  case "$codegen_out" in
-    *"cannot update the lock file"*"because --locked was passed"*)
-      printf '%s\n' "$codegen_out" >&2
-      echo "WARN: desktop/Cargo.lock is stale relative to ../abi or ../wdbx; desktop IPC codegen drift is UNMEASURED, not passed (refresh: cargo update --manifest-path desktop/Cargo.toml --workspace)"
-      ;;
-    *)
-      printf '%s\n' "$codegen_out" >&2
-      echo "check.sh: desktop IPC codegen drift check failed (see above)" >&2
-      exit 1
-      ;;
-  esac
+  printf '%s\n' "$codegen_out" >&2
+  echo "check.sh: desktop IPC codegen drift check failed (see above)" >&2
+  exit 1
 fi
 
 echo "== Program 3 read-only boundary =="
