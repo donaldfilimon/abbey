@@ -41,6 +41,25 @@ export interface UnavailableSurface {
   ledgerFilter: string;
 }
 
+/**
+ * A capability a surface deliberately does not expose.
+ *
+ * A surface can be available for one thing and unavailable for another: the
+ * Runs surface reads a durable run's lifecycle metadata, but it cannot
+ * delegate a task. That refusal is stated in the same vocabulary — and
+ * through the same rendering — as a surface that is unavailable entirely,
+ * so this desktop never says "unavailable" in two different voices.
+ */
+export interface WithheldCapability {
+  /** The thing that is missing, in the reader's words. */
+  label: string;
+  reason: MissingReason;
+  /** Contract-level explanation. Describes app_core, never a claim status. */
+  detail: string;
+  /** Substring passed to `app_claims` so the ledger speaks for itself. */
+  ledgerFilter: string;
+}
+
 export interface Surface {
   id: SurfaceId;
   label: string;
@@ -48,6 +67,8 @@ export interface Surface {
   /** Capability a validated v1/v2, v3, or v4 session must report. */
   requires: AppCapability | V3Capability | V4Capability | null;
   unavailable?: UnavailableSurface;
+  /** Present on an available surface that withholds part of its work. */
+  withheld?: WithheldCapability;
 }
 
 export const SURFACES: readonly Surface[] = [
@@ -75,6 +96,19 @@ export const SURFACES: readonly Surface[] = [
     label: "Tasks",
     blurb: "Inspect daemon run status and lifecycle events. Task delegation is not available here yet.",
     requires: "read_run",
+    // The surface itself is live — it reads a durable run's lifecycle
+    // metadata. What it cannot do is delegate a task, and that refusal is
+    // stated through the shared unavailable mechanism rather than a badge
+    // invented here.
+    withheld: {
+      label: "Task delegation",
+      reason: "not_on_contract",
+      detail:
+        "Task delegation is not on the desktop invoke surface: no command creates, " +
+        "lists, or schedules a task, so there is nothing here to show. This page " +
+        "reads one durable run's lifecycle metadata instead.",
+      ledgerFilter: "task",
+    },
   },
   {
     id: "tools",

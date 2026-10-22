@@ -481,22 +481,23 @@ mod macos {
         // float on one continuous piece of native glass, which is what a
         // native macOS application looks like.
         let frame_rect = to_rect(frame_view.bounds());
-        let strip_rect = NSRect::new(
+        let material_rect = NSRect::new(
             NSPoint::new(frame_rect.x, frame_rect.y),
             NSSize::new(frame_rect.width, frame_rect.height),
         );
         let effect: Retained<NSView> = match material {
             NativeMaterial::LiquidGlass => {
-                let glass = NSGlassEffectView::initWithFrame(mtm.alloc(), strip_rect);
+                let glass = NSGlassEffectView::initWithFrame(mtm.alloc(), material_rect);
                 glass.setStyle(NSGlassEffectViewStyle::Regular);
-                // A flush bar, not a floating capsule: the strip is the
-                // window's own titlebar area.
+                // The material is a full-window surface, not a floating
+                // capsule: the window's own rounded corners are the
+                // window's, and the material fills the frame behind them.
                 glass.setCornerRadius(0.0);
                 glass.setAutoresizingMask(autoresizing_mask());
                 Retained::into_super(glass)
             }
             NativeMaterial::TitlebarVisualEffect => {
-                let effect = NSVisualEffectView::initWithFrame(mtm.alloc(), strip_rect);
+                let effect = NSVisualEffectView::initWithFrame(mtm.alloc(), material_rect);
                 effect.setMaterial(NSVisualEffectMaterial::Titlebar);
                 effect.setBlendingMode(NSVisualEffectBlendingMode::BehindWindow);
                 effect.setState(NSVisualEffectState::FollowsWindowActiveState);
@@ -509,19 +510,18 @@ mod macos {
         // exactly the content area. AppKit's material samples what is behind
         // the window, which needs the window to be non-opaque; this panel is
         // what keeps the window from ever becoming a see-through hole if the
-        // webview ever fails to paint. The content area is therefore opaque
-        // in every case, and only the frame's titlebar strip is a material
-        // surface.
+        // webview ever fails to paint.
         let content_rect = content.frame();
         let safety = NSBox::initWithFrame(mtm.alloc(), content_rect);
         safety.setBoxType(NSBoxType::Custom);
-        // The safety panel is what keeps the window from ever becoming a
-        // see-through hole. It is *translucent* rather than opaque so the
-        // material behind it still shows, but it is never absent: the
-        // window's own background is painted under it.
-        safety.setTransparent(true);
+        // The safety panel is the window's opaque floor. It sits *below* the
+        // material, so the material is what a reader sees, and the panel is
+        // what shows if the material ever fails to render — a visual effect
+        // that samples the desktop can legitimately render as nothing, and
+        // the window must never become a see-through hole.
+        safety.setTransparent(false);
         safety.setBorderWidth(0.0);
-        safety.setFillColor(&NSColor::clearColor());
+        safety.setFillColor(&NSColor::windowBackgroundColor());
         safety.setAutoresizingMask(
             NSAutoresizingMaskOptions::ViewWidthSizable
                 | NSAutoresizingMaskOptions::ViewHeightSizable,
@@ -534,32 +534,40 @@ mod macos {
 
         // The window itself becomes non-opaque with a clear background so
         // that AppKit's material has something to sample. Every pixel is
-        // still painted: the webview over the content area, the material over
-        // the titlebar strip, and the opaque safety panel under the webview.
+        // still painted: the webview over the content area, the material
+        // over the safety panel, and the opaque safety panel under both.
         let background = ns_window.backgroundColor();
         ns_window.setOpaque(false);
         let clear = NSColor::clearColor();
         ns_window.setBackgroundColor(Some(&clear));
 
-        // The material goes *below* the content view. The webview's own
-        // panels then float on it: a card is a translucent sheet over one
-        // continuous piece of native glass, which is what a native macOS
-        // application looks like. The content view itself is transparent, so
-        // the material shows through everywhere the webview does not paint.
+        // The material goes above the safety panel and below the content
+        // view. The webview's own panels then float on it: a card is a
+        // translucent sheet over one continuous piece of native glass, which
+        // is what a native macOS application looks like. The content view
+        // itself is transparent, so the material shows through everywhere the
+        // webview does not paint — and the opaque safety panel is directly
+        // underneath, so the window is never a see-through hole.
         frame_view.addSubview_positioned_relativeTo(
             &effect,
-            NSWindowOrderingMode::Below,
-            Some(content.as_ref()),
+            NSWindowOrderingMode::Above,
+            Some(safety.as_ref()),
         );
         // The titlebar must stop painting its own background, otherwise the
         // material behind it would never be seen.
         ns_window.setTitlebarAppearsTransparent(true);
 
         if effect.window().is_none() {
-            // The view did not make it into the window: undo the partial
-            // installation rather than leaving a half-built frame.
+            // The view did not make it into the window: undo the whole partial
+            // installation rather than leaving a half-built frame. The safety
+            // panel goes with it, and the window goes back to being opaque
+            // with the background it had — `remove` cannot do this, because
+            // nothing was ever installed.
             effect.removeFromSuperview();
+            safety.removeFromSuperview();
             ns_window.setTitlebarAppearsTransparent(false);
+            ns_window.setOpaque(true);
+            ns_window.setBackgroundColor(Some(&background));
             return Err(OpaqueReason::MaterialUnavailable);
         }
 
@@ -600,10 +608,16 @@ mod macos {
         });
     }
 
-    /// The material view tracks the window's width and keeps its top edge
-    /// pinned, so it still covers the strip after a resize.
+    /// The material view tracks the window in both directions.
+    ///
+    /// The material now covers the whole frame, so it has to grow with the
+    /// window in both directions. The old mask tracked the width and pinned
+    /// the top edge, which was right for a titlebar strip and wrong for a
+    /// full-frame surface: on a resize the material would have stopped
+    /// covering the window.
     fn autoresizing_mask() -> NSAutoresizingMaskOptions {
-        NSAutoresizingMaskOptions::ViewWidthSizable | NSAutoresizingMaskOptions::ViewMinYMargin
+        NSAutoresizingMaskOptions::ViewWidthSizable
+            | NSAutoresizingMaskOptions::ViewHeightSizable
     }
 
     /// Convert an AppKit rectangle into the plain rectangle the pure helpers

@@ -160,9 +160,10 @@ if [ "$BUILD_OK" != 0 ]; then
   exit 1
 fi
 
-# The bundler writes into the workspace-level target dir (desktop has a
-# top-level Cargo workspace with src-tauri as a member), not src-tauri/target.
-BUNDLE_DIR="target/release/bundle"
+# The bundler writes into the workspace-level target dir (the desktop client
+# is a member of the repository's cargo workspace, so that is the repository
+# root's target dir), not src-tauri/target and not desktop/target.
+BUNDLE_DIR="../target/release/bundle"
 APP="$BUNDLE_DIR/macos/$PRINT.app"
 require_file() { [ -e "$1" ] || { echo "release-macos: missing artifact: $1" >&2; exit 1; }; }
 require_file "$APP"
@@ -171,8 +172,8 @@ if [ "$SKIP_DMG" = 1 ]; then
 else
   DMG=$(find "$BUNDLE_DIR/dmg" -maxdepth 1 -name "${PRINT}_*.dmg" 2>/dev/null | head -1)
 fi
-echo "artifact app: ${APP#$DESKTOP/}"
-if [ -n "$DMG" ]; then echo "artifact dmg: ${DMG#\./}"; fi
+echo "artifact app: $APP"
+if [ -n "$DMG" ]; then echo "artifact dmg: $DMG"; fi
 
 if [ -n "$IDENTITY_HERE" ]; then
   echo "release-macos: Developer ID signing is bundler-managed (applied during the build)"
@@ -221,11 +222,11 @@ else
   exit 1
 fi
 
-OUT_DIR=$DESKTOP/$(dirname "$APP")
+OUT_DIR=$(dirname "$APP")
 echo "== sha256 =="
 {
   if [ -n "${DMG:-}" ]; then
-    printf '%s  %s\n' "$(shasum -a 256 "$DESKTOP/$DMG" | cut -d' ' -f1)" "$(basename "$DMG")"
+    printf '%s  %s\n' "$(shasum -a 256 "$DMG" | cut -d' ' -f1)" "$(basename "$DMG")"
   fi
   printf '%s  %s\n' "$(shasum -a 256 "$APP/Contents/MacOS/abbey-desktop" | cut -d' ' -f1)" "$(basename "$APP")/Contents/MacOS/abbey-desktop"
   printf '%s  %s\n' "$(shasum -a 256 "$UPDTAR" | cut -d' ' -f1)" "$(basename "$UPDTAR")"

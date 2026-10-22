@@ -24,7 +24,6 @@ demonstrated read surfaces (full assistant Proposed).
 ```
 desktop/
   package.json  tsconfig.json  vite.config.ts  index.html   bun + Vite + React 19
-  Cargo.toml                                                 separate workspace (see below)
   scripts/verify-bundle.mjs                                  artifact security checks
   scripts/release-macos.sh                                   package → sign → verify (both editions)
   scripts/assemble-update-feed.sh                             per-edition updater feed assembly
@@ -39,7 +38,7 @@ desktop/
   src/
     main.tsx  App.tsx  styles.css  surfaces.ts
     components/UpdateCheck.tsx       the single updater trigger surface
-    ipc/client.ts                  typed wrappers over the 28 enumerated commands
+    ipc/client.ts                  typed wrappers over the 37 enumerated commands
     ipc/generated.ts               @generated — IPC types
     ipc/generated.samples.ts       @generated — serde cross-check fixtures
     ipc/generated.editions.ts      @generated — edition identity
@@ -50,17 +49,20 @@ desktop/
     capabilities/default.json      core:default only
     icons/                         1024 master + regenerated macOS/Windows chain
     src/main.rs                    generate_handler! — the whole IPC surface
-    src/commands.rs                the 28 enumerated commands
+    src/commands.rs                the 37 enumerated commands
     src/backend/                   daemon-first v1/v2 reads + separate v3 read/model and v4 conversation sessions
     src/ipc.rs                     desktop-only transport types
     src/v3_ipc.rs                  codegen-only v3 memory/grant/model wire shapes
 ```
 
-`desktop/Cargo.toml` is a **separate workspace**. The root `abbey` manifest has
-no `[workspace]` table, so nothing here is absorbed into Abbey's build,
-lockfile, `cargo clippy --all-targets`, or `check.sh`'s `src/**/*.rs` file-size
-guard. The root gate runs the locked IPC codegen drift check; the remaining
-client checks belong to the separate desktop gate.
+`desktop/` is a **member of the repository's cargo workspace** (`abbey`,
+`abbey-desktop`, `abbey-desktop-codegen`), not a second one. The ordinary
+`cargo build`, `cargo test`, and `cargo clippy` at the repository root
+therefore build and test this client too, against one lockfile: a change to
+`src/app_core/` that breaks the client fails the root gate instead of waiting
+for someone to run the desktop gate. The root gate also runs the locked IPC
+codegen drift check; the frontend, bundle, and packaging checks belong to the
+desktop gate below, because they need bun and a WebView toolchain.
 
 ## Commands
 
@@ -79,11 +81,14 @@ bun run tauri dev      # requires the Rust toolchain and a WebView
 ```
 
 `desktop/check.sh` is deliberately **not** called by the repository root
-`./check.sh`, which must stay a pure Rust-crate gate needing neither bun nor a
-WebView toolchain. The root gate checks generated IPC types using the desktop codegen crate with
-`--locked`; a stale desktop lockfile makes that check explicitly UNMEASURED.
-Frontend type checking, the bundle scan, desktop tests and native linking run
-only in `desktop/check.sh`.
+`./check.sh`, which needs neither bun nor a macOS desktop. The root gate
+compiles this client, so it needs the Tauri system dependencies: on Linux the
+`webkit2gtk-4.1` and `libsoup3` development packages, on macOS the Xcode
+WebView framework the toolchain already provides. The root gate checks
+generated IPC types using the desktop codegen crate with `--locked`; a stale
+desktop lockfile makes that check explicitly UNMEASURED. Frontend type
+checking, the bundle scan, desktop tests and native linking run only in
+`desktop/check.sh`.
 
 Two verification notes:
 
@@ -92,7 +97,7 @@ Two verification notes:
   the platform WebView frameworks.
 - `backend::tests::connection_detail_never_contains_bearer_material` and
   `a_configured_daemon_never_falls_back_to_the_in_process_core` are
-  *conditional* on a bearer being exported, and no-op in the default run. Run
+  _conditional_ on a bearer being exported, and no-op in the default run. Run
   the suite a second time to exercise them
   (`ABBEYD_BEARER_TOKEN=$(python3 -c "print('a'*48)") cargo test -p abbey-desktop`);
   setting the variable from inside a test is not possible because
@@ -142,6 +147,16 @@ ignored directory; raw AX snapshots and runtime logs are not retained. A failed
 attempt replaces any previous success receipt. Running this script does not
 update claims, todos, or release status.
 
+The **packaged** prover (`scripts/prove-packaged-macos.sh`) drives the binary
+inside a real `.app` bundle. It selects that bundle by the bundle's own
+identifier, never by its name or by its position in a directory listing: both
+editions stage into `target/release/bundle/macos`, and "the last `.app` found"
+is not a proof of which edition was proved. `--expect-edition` states which
+edition must be proved — `safe` by default, `personal` only when that bundle
+was actually staged — and the run fails loudly (`bundle_edition_mismatch`,
+`no_staged_bundle_for_expected_edition`) rather than proving some other
+edition's app. The receipt records the identifier and edition it proved.
+
 ## Generated IPC types
 
 `src/ipc/generated*.ts` are produced by `desktop/codegen` and carry an
@@ -170,19 +185,31 @@ Verified negatively: changing `CapabilitySet` to `Array<AppCapability>` and the
 `approval_requested` tag to `approvalRequested` in `generated.ts` produced five
 `tsc` errors (three of them inside `generated.samples.ts`) and a `codegen
 --check` failure. `CapabilitySet` is the live canary — its only field is
-*private*, and the serde wire shape is an object, not a bare array.
+_private_, and the serde wire shape is an object, not a bare array.
 
-
-**Task17 verification note:** the generated inventory below is the last retained snapshot. The current source has 28 commands and adds `read_conversations` to Chat; regeneration and Rust/scratch acceptance are blocked by concurrent app-core v4 contract replacement. Frontend typecheck/build/security and controller tests pass against the retained generated types. No current bridge-Rust or native-rendered acceptance is claimed.
+**Task17 verification note:** the generated inventory below is current, not a
+retained snapshot. `generate_handler!` enumerates 37 commands and
+`src/ipc/client.ts` carries the 37 matching `invoke<…>("app_…")` wrappers, and
+the codegen drift check is clean (`codegen: 5 generated file(s) up to date`).
+Native acceptance is recorded for the canonical seven Routes scenarios against
+the **packaged** bundle (`scripts/prove-packaged-macos.sh`), and for the
+packaged menu bar, icon chain, and per-edition window title
+(`scripts/prove-menu-icon-macos.sh`, 10 checks per edition) — see
+[2026-10-20-desktop-macos-staging.md](../docs/verification/2026-10-20-desktop-macos-staging.md).
+That is acceptance of the Routes, menu, and icon surfaces on macOS ARM64
+against an ad-hoc signed bundle: other views, the personal-edition GUI, and
+other platforms remain unproven, and the bundle is not notarized.
 
 <!-- BEGIN abbey-generated:desktop-capability-summary -->
 <!-- Generated by tools/check_claims_sync.py; do not edit. -->
+
 Desktop source inventory: **37 enumerated commands · 10 read capabilities · 8 available views · 3 unavailable views**.
 
 - Invoke IDs: `app_status`, `app_effective_model`, `app_claims`, `app_routes`, `app_run_status`, `app_run_events`, `app_v3_grants`, `app_memory_search`, `app_memory_metadata`, `app_models_list`, `app_model_grants`, `app_model_details`, `app_model_download`, `app_model_load`, `app_model_unload`, `app_model_download_status`, `app_model_lifecycle_status`, `app_claim_by_id`, `app_connection`, `app_bundle_identity`, `app_conversation_grants`, `app_conversations_list`, `app_conversations_search`, `app_conversation_read`, `app_conversation_create`, `app_conversation_rename`, `app_conversation_archive`, `app_conversation_delete`, `app_conversation_messages`, `app_conversation_content`, `app_conversation_routes`, `app_conversation_submit_turn`, `app_conversation_cancel_turn`, `app_conversation_lookup_turn`, `app_conversation_update`, `app_tools_list`, `app_system_integration`
 - Read capability IDs: `read_status`, `read_claims`, `read_routes`, `read_run`, `read_run_events`, `read_memory`, `read_models`, `read_claims_by_id`, `list_tools`, `read_conversations`
 - Available view IDs: `doctor` → `read_status`, `claims` → `read_claims`, `chat` → `read_conversations`, `runs` → `read_run`, `tools` → `read_status`, `memory` → `read_memory`, `models` → `read_models`, `routes` → `read_routes`
 - Unavailable view IDs: `automations`, `training`, `cluster`
+
 <!-- END abbey-generated:desktop-capability-summary -->
 
 ## The complete Tauri command surface
@@ -194,45 +221,45 @@ unchanged; the separate conversation session requests exactly `ReadConversations
 and `WriteConversations`. No conversation operation falls back to an in-process
 store.
 
-| Command | Returns | Backed by |
-| --- | --- | --- |
-| `app_status` | `RuntimeStatus` | `AppCommand::Status` (`ReadStatus`) |
-| `app_claims(query: ClaimsQuery)` | `ClaimsSnapshot` | `AppCommand::Claims` (`ReadClaims`) |
-| `app_routes(query: RouteAuditQuery)` | `RouteAuditPage` | `AppCommand::ReadRoutes` (`ReadRoutes`) |
-| `app_run_status(query: RunQuery)` | `RunSnapshot` | `AppCommand::GetRun` (`ReadRun`) |
-| `app_run_events(query: RunEventsQuery)` | `RunEventPage` | `AppCommand::RunEvents` (`ReadRunEvents`) |
-| `app_v3_grants` | `V3CapabilitySet` | negotiate `ReadMemory` + `ReadModels` + `ReadClaimsById` |
-| `app_memory_search(request: V3SearchRequest)` | `V3EntityPage` | v3 `SearchMemory` |
-| `app_memory_metadata(query: V3ResourceQuery)` | `V3EntityRecord` | v3 `ReadMemoryMetadata` |
-| `app_models_list(query: V3PageQuery)` | `V3EntityPage` | v3 `ListModels` (`ReadModels`) |
-| `app_model_grants` | `V3CapabilitySet` | separate model-session negotiation |
-| `app_model_details(query: V3ResourceQuery)` | `V3ModelDetails` | v3 exact `ModelDetails` (`ReadModels`) |
-| `app_model_download(action: V3ModelAction)` | `V3OperationStatus` | v3 `DownloadModel` (`DownloadModels`) |
-| `app_model_load(action: V3ModelAction)` | `V3OperationStatus` | v3 `LoadModel` (`ManageModels`) |
-| `app_model_unload(action: V3ModelAction)` | `V3OperationStatus` | v3 `UnloadModel` (`ManageModels`) |
-| `app_model_download_status(query: V3ResourceQuery)` | `V3OperationStatus` | v3 exact-operation `ModelDownloadStatus` (`ReadModels`) |
-| `app_model_lifecycle_status(query: V3ResourceQuery)` | `V3OperationStatus` | v3 exact-operation status (`ReadModels`); no inference command |
-| `app_claim_by_id(query: V3ResourceQuery)` | `V3StableClaim` | v3 `ClaimById` (`ReadClaimsById`) |
-| `app_connection` | `ConnectionInfo` | local; describes the route, reads no Abbey state |
-| `app_bundle_identity` | `BundleIdentity` | `abbey::edition` + the running Tauri config |
-| `app_conversation_grants` | `V4CapabilitySet` | separate v4 read/write conversation negotiation |
-| `app_conversations_list(query: V4PageQuery)` | `V4ConversationPage` | v4 fixed-watermark history summaries |
-| `app_conversations_search(query: V4SearchQuery)` | `V4ConversationPage` | v4 title-only search |
-| `app_conversation_read(query: V4ResourceQuery)` | `V4Conversation` | v4 exact metadata read |
-| `app_conversation_create(query: V4ConversationCreate)` | `V4Conversation` | v4 create metadata once |
-| `app_conversation_rename(query: V4ConversationRename)` | `V4Conversation` | v4 rename once |
-| `app_conversation_archive(query: V4ResourceQuery)` | `V4Conversation` | v4 archive once |
-| `app_conversation_delete(query: V4ResourceQuery)` | `()` | v4 delete once, after destructive UI confirmation |
-| `app_conversation_messages(query: V4MessageQuery)` | `V4MessagePage` | v4 bounded authorized text bodies |
-| `app_conversation_content(query: V4ContentQuery)` | `V4ContentPage` | v4 bounded authorized content continuation |
-| `app_conversation_routes` | `Vec<V4Route>` | v4 `ListRoutes` (`ReadRoutes`) over the conversation session |
-| `app_conversation_submit_turn(request: V4SubmitTurn)` | `V4TurnSubmission` | v4 `SubmitTurn` (`SubmitTurns`) on the selected route |
-| `app_conversation_lookup_turn(conversationId, runId)` | `Option<V4TurnSubmission>` | v4 exact admitted-turn read (`ReadTurns`) |
-| `app_conversation_update(query: V4ConversationPatch)` | `V4Conversation` | v4 conversation patch, once |
-| `app_conversation_cancel_turn(conversationId, runId)` | `RunState` | exact durable v4 pair; one cancellation request, then history/content reads |
-| `app_tools_list(query: V3PageQuery)` | `V3ToolPage` | separate tool-session negotiation (`ListTools` only — enumeration, never invocation) |
-| `app_effective_model(routeId, backend, model)` | `EffectiveModel` | the model a turn would use right now, resolved with Abbey's shared spawn-path rules from the runtime's own published route (`ReadRoutes`) |
-| `app_system_integration` | `SystemIntegration` | local; the compiled-in capability manifest and the edition table |
+| Command                                                | Returns                    | Backed by                                                                                                                                 |
+| ------------------------------------------------------ | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `app_status`                                           | `RuntimeStatus`            | `AppCommand::Status` (`ReadStatus`)                                                                                                       |
+| `app_claims(query: ClaimsQuery)`                       | `ClaimsSnapshot`           | `AppCommand::Claims` (`ReadClaims`)                                                                                                       |
+| `app_routes(query: RouteAuditQuery)`                   | `RouteAuditPage`           | `AppCommand::ReadRoutes` (`ReadRoutes`)                                                                                                   |
+| `app_run_status(query: RunQuery)`                      | `RunSnapshot`              | `AppCommand::GetRun` (`ReadRun`)                                                                                                          |
+| `app_run_events(query: RunEventsQuery)`                | `RunEventPage`             | `AppCommand::RunEvents` (`ReadRunEvents`)                                                                                                 |
+| `app_v3_grants`                                        | `V3CapabilitySet`          | negotiate `ReadMemory` + `ReadModels` + `ReadClaimsById`                                                                                  |
+| `app_memory_search(request: V3SearchRequest)`          | `V3EntityPage`             | v3 `SearchMemory`                                                                                                                         |
+| `app_memory_metadata(query: V3ResourceQuery)`          | `V3EntityRecord`           | v3 `ReadMemoryMetadata`                                                                                                                   |
+| `app_models_list(query: V3PageQuery)`                  | `V3EntityPage`             | v3 `ListModels` (`ReadModels`)                                                                                                            |
+| `app_model_grants`                                     | `V3CapabilitySet`          | separate model-session negotiation                                                                                                        |
+| `app_model_details(query: V3ResourceQuery)`            | `V3ModelDetails`           | v3 exact `ModelDetails` (`ReadModels`)                                                                                                    |
+| `app_model_download(action: V3ModelAction)`            | `V3OperationStatus`        | v3 `DownloadModel` (`DownloadModels`)                                                                                                     |
+| `app_model_load(action: V3ModelAction)`                | `V3OperationStatus`        | v3 `LoadModel` (`ManageModels`)                                                                                                           |
+| `app_model_unload(action: V3ModelAction)`              | `V3OperationStatus`        | v3 `UnloadModel` (`ManageModels`)                                                                                                         |
+| `app_model_download_status(query: V3ResourceQuery)`    | `V3OperationStatus`        | v3 exact-operation `ModelDownloadStatus` (`ReadModels`)                                                                                   |
+| `app_model_lifecycle_status(query: V3ResourceQuery)`   | `V3OperationStatus`        | v3 exact-operation status (`ReadModels`); no inference command                                                                            |
+| `app_claim_by_id(query: V3ResourceQuery)`              | `V3StableClaim`            | v3 `ClaimById` (`ReadClaimsById`)                                                                                                         |
+| `app_connection`                                       | `ConnectionInfo`           | local; describes the route, reads no Abbey state                                                                                          |
+| `app_bundle_identity`                                  | `BundleIdentity`           | `abbey::edition` + the running Tauri config                                                                                               |
+| `app_conversation_grants`                              | `V4CapabilitySet`          | separate v4 read/write conversation negotiation                                                                                           |
+| `app_conversations_list(query: V4PageQuery)`           | `V4ConversationPage`       | v4 fixed-watermark history summaries                                                                                                      |
+| `app_conversations_search(query: V4SearchQuery)`       | `V4ConversationPage`       | v4 title-only search                                                                                                                      |
+| `app_conversation_read(query: V4ResourceQuery)`        | `V4Conversation`           | v4 exact metadata read                                                                                                                    |
+| `app_conversation_create(query: V4ConversationCreate)` | `V4Conversation`           | v4 create metadata once                                                                                                                   |
+| `app_conversation_rename(query: V4ConversationRename)` | `V4Conversation`           | v4 rename once                                                                                                                            |
+| `app_conversation_archive(query: V4ResourceQuery)`     | `V4Conversation`           | v4 archive once                                                                                                                           |
+| `app_conversation_delete(query: V4ResourceQuery)`      | `()`                       | v4 delete once, after destructive UI confirmation                                                                                         |
+| `app_conversation_messages(query: V4MessageQuery)`     | `V4MessagePage`            | v4 bounded authorized text bodies                                                                                                         |
+| `app_conversation_content(query: V4ContentQuery)`      | `V4ContentPage`            | v4 bounded authorized content continuation                                                                                                |
+| `app_conversation_routes`                              | `Vec<V4Route>`             | v4 `ListRoutes` (`ReadRoutes`) over the conversation session                                                                              |
+| `app_conversation_submit_turn(request: V4SubmitTurn)`  | `V4TurnSubmission`         | v4 `SubmitTurn` (`SubmitTurns`) on the selected route                                                                                     |
+| `app_conversation_lookup_turn(conversationId, runId)`  | `Option<V4TurnSubmission>` | v4 exact admitted-turn read (`ReadTurns`)                                                                                                 |
+| `app_conversation_update(query: V4ConversationPatch)`  | `V4Conversation`           | v4 conversation patch, once                                                                                                               |
+| `app_conversation_cancel_turn(conversationId, runId)`  | `RunState`                 | exact durable v4 pair; one cancellation request, then history/content reads                                                               |
+| `app_tools_list(query: V3PageQuery)`                   | `V3ToolPage`               | separate tool-session negotiation (`ListTools` only — enumeration, never invocation)                                                      |
+| `app_effective_model(routeId, backend, model)`         | `EffectiveModel`           | the model a turn would use right now, resolved with Abbey's shared spawn-path rules from the runtime's own published route (`ReadRoutes`) |
+| `app_system_integration`                               | `SystemIntegration`        | local; the compiled-in capability manifest and the edition table                                                                          |
 
 There is no `exec`, no generic run submit/cancel, no tool invoke, no obsolete, no
 command-name parameter that resolves to a subprocess, and no plugin that
@@ -251,7 +278,7 @@ The Tools view renders what the daemon actually advertises: the safe edition's
 `abbeyd` lists the three canonical read-only tools plus the one mutating
 `abbey_memory_mark_obsolete`, and the personal edition's `abbeyd` lists only the
 three read-only tools. Each row shows the daemon's own description and effect
-class. The mutating tool is shown as *approval required* — the daemon requires an
+class. The mutating tool is shown as _approval required_ — the daemon requires an
 exact-call approval before it runs — and there is no control on that page that
 could supply one. When the daemon is unreachable, refuses the grant, or has not
 negotiated `ListTools`, the view says which of those happened; it never shows an
@@ -272,23 +299,23 @@ manifest and sources.
 
 **Routing.** If a daemon bearer is configured for the active edition, every app-core read
 goes over `abbeyd`'s authenticated owner-only Unix socket and a failure is
-*reported*. It is never retried in-process: `AGENTS.md` requires that client
+_reported_. It is never retried in-process: `AGENTS.md` requires that client
 failures never fall back to in-process claims. In-process is used only when no
 bearer is configured at all, and `app_connection().source` always says which
 answered.
 
 ## Security properties, and how each is checked
 
-| Property | Where | Checked by |
-| --- | --- | --- |
-| Strict CSP | `tauri.conf.json` `app.security.csp` | `main.rs::tests::the_declared_csp_is_strict`, `verify-bundle.mjs` |
-| No remote JS | Vite emits only local assets | `verify-bundle.mjs` scans `dist/` for remote `src`/`href` and remote dynamic `import()` |
-| No `eval` | — | `verify-bundle.mjs` scans `dist/` for `eval(` and `new Function(` |
-| No execute-shell invoke | no shell/fs/http/process/opener/dialog plugin in `Cargo.toml` | `main.rs::tests::no_execution_capable_plugin_is_declared`, `verify-bundle.mjs` |
-| Narrow enumerated commands | `generate_handler!` | `verify-bundle.mjs` rejects any `invoke` outside `src/ipc/client.ts` and any command name off the list |
-| Least-privilege capability | `capabilities/default.json` → `core:default` | asserted in `main.rs` tests |
-| Secrets never echoed | `ipc.rs` has no field that can hold a bearer | `backend.rs::tests::connection_detail_never_contains_bearer_material` |
-| Updater artifacts verify against the pinned key | `plugins.updater.pubkey` + `tests/updater_signature.rs` | `cargo test -p abbey-desktop --test updater_signature` — the same `minisign-verify` path the plugin uses; the release workflow re-runs it against each built artifact before publishing |
+| Property                                        | Where                                                         | Checked by                                                                                                                                                                              |
+| ----------------------------------------------- | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Strict CSP                                      | `tauri.conf.json` `app.security.csp`                          | `main.rs::tests::the_declared_csp_is_strict`, `verify-bundle.mjs`                                                                                                                       |
+| No remote JS                                    | Vite emits only local assets                                  | `verify-bundle.mjs` scans `dist/` for remote `src`/`href` and remote dynamic `import()`                                                                                                 |
+| No `eval`                                       | —                                                             | `verify-bundle.mjs` scans `dist/` for `eval(` and `new Function(`                                                                                                                       |
+| No execute-shell invoke                         | no shell/fs/http/process/opener/dialog plugin in `Cargo.toml` | `main.rs::tests::no_execution_capable_plugin_is_declared`, `verify-bundle.mjs`                                                                                                          |
+| Narrow enumerated commands                      | `generate_handler!`                                           | `verify-bundle.mjs` rejects any `invoke` outside `src/ipc/client.ts` and any command name off the list                                                                                  |
+| Least-privilege capability                      | `capabilities/default.json` → `core:default`                  | asserted in `main.rs` tests                                                                                                                                                             |
+| Secrets never echoed                            | `ipc.rs` has no field that can hold a bearer                  | `backend.rs::tests::connection_detail_never_contains_bearer_material`                                                                                                                   |
+| Updater artifacts verify against the pinned key | `plugins.updater.pubkey` + `tests/updater_signature.rs`       | `cargo test -p abbey-desktop --test updater_signature` — the same `minisign-verify` path the plugin uses; the release workflow re-runs it against each built artifact before publishing |
 
 The shipped CSP is:
 
@@ -304,8 +331,8 @@ It is a dev-server-only value and never ships; `verify-bundle.mjs` checks the
 shipped `csp` and deliberately ignores `devCsp`.
 
 Secret hygiene is a type-level property: no field on any type in `ipc.rs` can
-hold a bearer token. The daemon bearer is reported as a boolean plus a *source
-kind* (`inline_env` / `token_file` / `conflicting`) — never a value, never the
+hold a bearer token. The daemon bearer is reported as a boolean plus a _source
+kind_ (`inline_env` / `token_file` / `conflicting`) — never a value, never the
 token file's contents, and `DaemonConfig` is never formatted into an IPC type.
 
 ## Native menu, icon, and the update trigger
@@ -391,7 +418,10 @@ bun run tauri build --config src-tauri/tauri.personal.conf.json
 - **Runs & trace** — one durable run snapshot and a fixed-watermark lifecycle
   page (`ReadRun` / `ReadRunEvents`). In-process `CapabilitySet::standard()`
   does not grant those; a protocol-v2 daemon does. Submit and cancel stay off
-  the invoke surface.
+  the invoke surface. Task _delegation_ is not on this invoke surface either:
+  the page says so through the same mechanism the unavailable pages use — the
+  contract-level reason, plus the live ledger rows for it — so the refusal has
+  one voice everywhere in this client.
 - **Memory** — sanitized `memory-v1-summary` search and metadata (`ReadMemory`
   v3 grant). No payload, provenance, path, or raw record id. Obsolete is not
   registered. In-process never opens the store.
@@ -400,8 +430,11 @@ bun run tauri build --config src-tauri/tauri.personal.conf.json
 
 **Unavailable execution surfaces** — governed tasks, Tools & approvals, Automations, Training, Cluster, browser/files/computer control.
 These views render no fabricated operational data. Each states the contract-level
-reason and then shows the *live* ledger rows for a filter, so the UI never
-asserts a status it invented.
+reason and then shows the _live_ ledger rows for a filter, so the UI never
+asserts a status it invented. A surface that is available for one thing but
+withholds another (the Runs surface, which reads a run's lifecycle but cannot
+delegate a task) states that withheld part in the same vocabulary and through
+the same rendering, so the client never has two voices for "unavailable".
 
 The distinction matters and is preserved: the local mesh proof and the role
 bindings are **Current** in Abbey — they are simply not on this desktop

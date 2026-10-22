@@ -1,9 +1,12 @@
 // Protocol-v2 run status and fixed-watermark lifecycle events. Serves as
 // the "Tasks" surface (id: runs) for minimal Task 6.
 //
-// Basic UI list for tasks wired here (stub data + v4-grant note). Uses
-// existing Runs lookup as the trace stub. Full v4 tasks list, detail, and
-// governed loop per plan remain out of scope for this slice. No execution.
+// The surface is live: it reads one durable run's snapshot and its
+// fixed-watermark lifecycle page. What it cannot do is delegate a task —
+// that refusal is not invented here. It is declared once in the surface
+// catalogue (`surfaces.ts`) and rendered through the same mechanism the
+// unavailable pages use, so the desktop states it in one voice and cites
+// the live ledger beside it. No execution.
 
 import { useMemo, useState } from "react";
 import { appRunEvents, appRunStatus, toIpcError } from "../ipc/client";
@@ -13,7 +16,9 @@ import type {
   RunLifecycleEvent,
   RunSnapshot,
 } from "../ipc/generated";
+import { surfaceById } from "../surfaces";
 import { ErrorCard } from "./ErrorCard";
+import { LedgerEvidence, UnavailableNotice } from "./UnavailableView";
 
 /** Mirrors `MAX_RUN_EVENT_PAGE` in `src/app_core/run.rs`. */
 const LIMITS = [4, 8, 16] as const;
@@ -80,6 +85,8 @@ export function RunsView() {
   const [page, setPage] = useState<RunEventPage | null>(null);
   const [error, setError] = useState<IpcError | null>(null);
   const [loading, setLoading] = useState(false);
+  // The one withheld capability of this surface, declared in the catalogue.
+  const withheld = surfaceById("runs").withheld;
 
   const canonical = useMemo(() => {
     const trimmed = draft.trim();
@@ -130,15 +137,13 @@ export function RunsView() {
         cancel are not on the desktop invoke surface.
       </p>
 
-      <div className="card">
-        <div className="claim-head">
-          <span className="claim-name">Tasks</span>
-          <span className="badge">Unavailable</span>
-        </div>
-        <p className="claim-note">
-          Task management is not connected to this desktop yet. No task records or actions are available here.
-        </p>
-      </div>
+      {withheld && (
+        <UnavailableNotice
+          label={withheld.label}
+          reason={withheld.reason}
+          detail={withheld.detail}
+        />
+      )}
 
       <div className="filters">
         <label>
@@ -255,6 +260,8 @@ export function RunsView() {
           </span>
         </div>
       )}
+
+      {withheld && <LedgerEvidence ledgerFilter={withheld.ledgerFilter} />}
     </>
   );
 }

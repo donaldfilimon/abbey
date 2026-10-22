@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { EventRow, eventLabel } from "../src/views/RunsView";
+import { EventRow, RunsView, eventLabel } from "../src/views/RunsView";
+import { UnavailableView } from "../src/views/UnavailableView";
+import { surfaceById } from "../src/surfaces";
 import type { RunLifecycleEvent } from "../src/ipc/generated";
 
 /**
@@ -95,4 +97,63 @@ test("every lifecycle event renders without an empty or undefined label", () => 
     expect(html).not.toContain("null");
     expect(html).toContain("#1");
   }
+});
+
+/**
+ * The whole Runs page.
+ *
+ * The surface is live — it reads a durable run and its lifecycle events —
+ * but it cannot delegate a task. That refusal used to be a hard-coded
+ * badge on this page, in a voice no other surface used. It is now declared
+ * once in the surface catalogue and rendered through the shared
+ * unavailable mechanism, with the live ledger beside it.
+ */
+
+test("the whole view explains that task delegation is unavailable", () => {
+  const html = renderToStaticMarkup(<RunsView />);
+  // The refusal, in the shared voice: the same headline and the same
+  // "why" affordance the unavailable pages use.
+  expect(html).toContain("Not available");
+  expect(html).toContain("Unavailable");
+  expect(html).toContain("Why this isn’t available yet");
+  // And the specific contract-level reason.
+  expect(html).toContain("Task delegation is not on the desktop invoke surface");
+  // It names the thing that is missing rather than a bare badge.
+  expect(html).toContain("Task delegation");
+});
+
+test("the whole view cites the live ledger for the withheld capability", () => {
+  const html = renderToStaticMarkup(<RunsView />);
+  // The filter is the one the catalogue declares, so the ledger rows below
+  // are the evidence for the refusal.
+  const withheld = surfaceById("runs").withheld;
+  expect(withheld).toBeDefined();
+  expect(withheld?.ledgerFilter).toBe("task");
+  expect(html).toContain("task");
+  expect(html).toContain("What the ledger says");
+});
+
+test("the whole view still offers the live run lookup it actually has", () => {
+  const html = renderToStaticMarkup(<RunsView />);
+  // The unavailable part is the task delegation, not the run trace: the
+  // page must not lose its real surface because it refuses a different one.
+  expect(html).toContain("Runs &amp; trace");
+  expect(html).toContain("app_run_status");
+  expect(html).toContain("app_run_events");
+  expect(html).toContain("Look up");
+});
+
+test("the runs view and the unavailable pages share one unavailable mechanism", () => {
+  const runs = renderToStaticMarkup(<RunsView />);
+  const automations = renderToStaticMarkup(
+    <UnavailableView surface={surfaceById("automations")} />,
+  );
+  for (const html of [runs, automations]) {
+    expect(html).toContain("Not available");
+    expect(html).toContain("Why this isn’t available yet");
+    expect(html).toContain("can’t start or change work");
+  }
+  // The bespoke card this page used to carry is gone: its copy was in a
+  // voice the rest of the desktop does not use.
+  expect(runs).not.toContain("No task records or actions are available here");
 });

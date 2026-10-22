@@ -10,7 +10,10 @@ export const conversations = createConversations({
   routes:appConversationRoutes, submit:appConversationSubmitTurn, cancel:appConversationCancelTurn, lookupTurn:appConversationLookupTurn, update:appConversationUpdate,
 });
 export function useConversations() {
-  const state = useSyncExternalStore(conversations.subscribe, conversations.snapshot);
+  // The server snapshot is the same store: this window's conversation state
+  // lives in memory, so a server render sees exactly what the client would
+  // render first.
+  const state = useSyncExternalStore(conversations.subscribe, conversations.snapshot, conversations.snapshot);
   useEffect(() => { void conversations.connect(); }, []);
   return {state, conversations};
 }

@@ -13,12 +13,26 @@ prover verifies that signature is present and internally consistent; it does
 NOT measure notarized first-launch behavior (Gatekeeper, quarantine, `open`),
 which needs the owner's Developer ID credentials.
 
+Bundle selection: the bundle's own identifier decides which edition is
+proved, never its name and never its position in a directory listing. Both
+editions stage into the same directory, so the old pick
+(`sorted(glob("*.app"))[-1]`) proved whatever happened to be there: with
+only the personal bundle staged it proved the *personal* app while the gate
+believed it proved the shipped one, and with both staged it happened to
+land on the safe one — an intermittent, silent wrong-edition proof. The
+expectation is now explicit: `--expect-edition` says which edition must be
+proved, and the run fails loudly when the bundle on disk is not that
+edition.
+
 Usage:
-    ./scripts/prove-packaged-macos.sh [--app PATH] [--skip-build]
+    ./scripts/prove-packaged-macos.sh [--expect-edition safe|personal]
+    ./scripts/prove-packaged-macos.sh --app PATH [--expect-edition safe|personal]
+    ./scripts/prove-packaged-macos.sh [--skip-build]
 """
 from datetime import datetime, timezone
 from pathlib import Path
 import platform
+import plistlib
 import shutil
 import signal
 import sys
@@ -32,6 +46,65 @@ HARNESS_FILES = (
     "routes-ax.swift", "release-macos.sh", "prove-packaged-macos.sh",
     "prove_packaged_macos.py",
 )
+
+# The bundle identity decides the edition. The path never does: both
+# editions' bundles are staged into the same directory, and a directory
+# listing is not a proof.
+EDITIONS_BY_IDENTIFIER = {
+    "com.donaldfilimon.abbey": "safe",
+    "com.donaldfilimon.abbey-personal": "personal",
+}
+
+# The shipped default. The personal bundle is proved only when it was
+# actually staged *and* explicitly asked for.
+DEFAULT_EDITION = "safe"
+
+# Where `release-macos.sh` stages both editions' bundles.
+STAGED_BUNDLE_DIR = "target/release/bundle/macos"
+
+
+def bundle_identifier(app_path):
+    """The bundle's own identifier, or "" when the plist cannot be read."""
+    plist_path = Path(app_path) / "Contents" / "Info.plist"
+    try:
+        with plist_path.open("rb") as handle:
+            plist = plistlib.load(handle)
+    except (OSError, ValueError, plistlib.InvalidFileException):
+        return ""
+    identifier = plist.get("CFBundleIdentifier", "")
+    return identifier if isinstance(identifier, str) else ""
+
+
+def staged_bundles(directory):
+    """Every staged `.app`, with the edition its own identifier declares.
+
+    A bundle whose identifier is unknown is reported with `edition: None`:
+    it is never silently treated as the expected edition.
+    """
+    bundles = []
+    for candidate in sorted(Path(directory).glob("*.app")):
+        identifier = bundle_identifier(candidate)
+        bundles.append({
+            "path": candidate,
+            "identifier": identifier,
+            "edition": EDITIONS_BY_IDENTIFIER.get(identifier),
+        })
+    return bundles
+
+
+def select_bundle(directory, expect_edition):
+    """The one staged bundle that *is* the expected edition.
+
+    Fails loudly rather than falling back to some other bundle: proving the
+    wrong edition's app is worse than proving nothing.
+    """
+    require(expect_edition in set(EDITIONS_BY_IDENTIFIER.values()),
+            "unknown_expected_edition")
+    matches = [bundle for bundle in staged_bundles(directory)
+               if bundle["edition"] == expect_edition]
+    require(bool(matches), "no_staged_bundle_for_expected_edition")
+    require(len(matches) == 1, "ambiguous_staged_bundle_for_expected_edition")
+    return matches[0]
 
 
 class PackagedSmoke(base.Smoke):
@@ -69,22 +142,48 @@ def main():
     try:
         require(platform.system() == "Darwin", "macos_required")
         app_path = None
+        expect_edition = DEFAULT_EDITION
         skip_build = False
         argv = sys.argv[1:]
         i = 0
         while i < len(argv):
             if argv[i] == "--app":
-                app_path = Path(argv[i + 1]).resolve()
+                require(i + 1 < len(argv), "app_path_required")
+                app_path = Path(argv[i + 1]).expanduser().resolve()
+                i += 1
+            elif argv[i] == "--expect-edition":
+                require(i + 1 < len(argv), "expect_edition_required")
+                expect_edition = argv[i + 1]
                 i += 1
             elif argv[i] == "--skip-build":
                 skip_build = True
             else:
                 raise ProofFailure("unknown_argument")
             i += 1
+        require(expect_edition in set(EDITIONS_BY_IDENTIFIER.values()),
+                "unknown_expected_edition")
         if app_path is None:
-            candidates = sorted((base.DESKTOP / "target/release/bundle/macos").glob("*.app"))
-            require(bool(candidates), "no_staged_app_built_yet")
-            app_path = candidates[-1]
+            # No explicit path: pick the staged bundle *by the edition its
+            # identifier declares*. The directory-order pick this replaced
+            # proved whatever happened to be staged, which is not an
+            # expectation.
+            bundle = select_bundle(base.ROOT / STAGED_BUNDLE_DIR, expect_edition)
+            app_path = bundle["path"]
+            identifier = bundle["identifier"]
+            edition = bundle["edition"]
+        else:
+            identifier = bundle_identifier(app_path)
+            require(identifier in EDITIONS_BY_IDENTIFIER, "bundle_identifier_unknown")
+            edition = EDITIONS_BY_IDENTIFIER[identifier]
+            require(edition == expect_edition, "bundle_edition_mismatch")
+        print(f"bundle:  {app_path}")
+        print(f"edition: {edition} ({identifier}) — expected {expect_edition}")
+        receipt["bundle"] = {
+            "path": str(app_path),
+            "identifier": identifier,
+            "edition": edition,
+            "expected_edition": expect_edition,
+        }
         app_binary = app_path / "Contents/MacOS/abbey-desktop"
         require(app_binary.is_file(), "packaged_binary_missing")
         # The staged app must be at least ad-hoc signed: staging verifies the
@@ -146,7 +245,7 @@ def main():
                 receipt["scratch_diagnostics"] = str(scratch_path)
         receipt["finished_at"] = datetime.now(timezone.utc).isoformat()
         (base.OUT / "packaged-receipt.json").write_text(base.json.dumps(receipt, indent=2) + "\n")
-        print("Receipt: desktop/target/routes-acceptance/packaged-receipt.json", flush=True)
+        print("Receipt: target/routes-acceptance/packaged-receipt.json", flush=True)
     return 0 if receipt["status"] == "passed" else 1
 
 

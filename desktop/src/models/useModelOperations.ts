@@ -16,7 +16,10 @@ export function startModelOperation(kind: ModelEffect, details: V3ModelDetails) 
 }
 export const recoverModelOperation = runner.recover;
 export function useModelOperations() {
-  const attempts = useSyncExternalStore(modelOperations.subscribe, modelOperations.snapshot);
+  // The server snapshot is the same store: this window's operations live in
+  // memory, so a server render of the view sees exactly what the client
+  // would render first (nothing, until an operation starts).
+  const attempts = useSyncExternalStore(modelOperations.subscribe, modelOperations.snapshot, modelOperations.snapshot);
   useEffect(() => startModelPolling(modelOperations, recoverModelOperation), []);
   return attempts;
 }

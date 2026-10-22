@@ -25,8 +25,9 @@
 //      The release workflow sets it, so a release can never publish an artifact
 //      the shipped client would reject. The path is read relative to the
 //      crate root (desktop/src-tauri), so a bundle produced by
-//      `release-macos.sh` is reached as
-//      `../target/release/bundle/macos/<Product>.app.tar.gz`.
+//      `release-macos.sh` — which writes into the workspace's shared target
+//      dir — is reached as
+//      `../../target/release/bundle/macos/<Product>.app.tar.gz`.
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
@@ -144,7 +145,7 @@ fn a_built_artifact_verifies_against_the_shipped_pin() {
         eprintln!(
             "{ARTIFACT_ENV} is not set — the built-artifact verification is opt-in \
              (the release workflow sets it; locally, point it at \
-             target/release/bundle/macos/<Product>.app.tar.gz)"
+             ../../target/release/bundle/macos/<Product>.app.tar.gz)"
         );
         return;
     };

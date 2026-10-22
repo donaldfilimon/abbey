@@ -26,7 +26,7 @@ icon and bundle checks still deliver. The exit code is 0 only when every
 check passed, 1 when a check failed, and 2 when a check stayed unproven.
 
 Usage:
-    ./scripts/prove-menu-icon-macos.sh --app target/release/bundle/macos/Abbey.app
+    ./scripts/prove-menu-icon-macos.sh --app ../target/release/bundle/macos/Abbey.app
     ./scripts/prove-menu-icon-macos.sh --app ".../Abbey Personal.app" --expect-edition personal
 """
 from datetime import datetime, timezone

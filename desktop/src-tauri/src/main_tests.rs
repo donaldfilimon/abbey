@@ -332,18 +332,30 @@ fn the_native_appearance_is_wired_and_never_makes_the_window_transparent() {
         "the appearance module must keep a safety panel behind the webview"
     );
     assert!(
-        APPEARANCE.contains("setTransparent(true)"),
-        "the safety panel must let the material show through it"
+        APPEARANCE.contains("setTransparent(false)"),
+        "the safety panel must stay opaque: it is the window's floor"
     );
     assert!(
         APPEARANCE.contains("setOpaque(true)"),
         "removing the material must restore the opaque window"
     );
-    // The material is installed *below* the content, so the webview's own
-    // panels float on it rather than covering it.
+    // The material sits above the safety panel and below the content, so the
+    // webview's own panels float on it and the opaque floor is still
+    // underneath.
+    assert!(
+        APPEARANCE.contains("NSWindowOrderingMode::Above"),
+        "the material must sit above the safety panel and below the webview"
+    );
     assert!(
         APPEARANCE.contains("NSWindowOrderingMode::Below"),
-        "the material must sit below the webview"
+        "the safety panel must sit below the webview"
+    );
+    // The material covers the whole frame, so it has to resize in both
+    // directions; a mask that pinned one edge would leave it short of the
+    // window after a resize.
+    assert!(
+        APPEARANCE.contains("ViewHeightSizable"),
+        "the material must track the window's height as well as its width"
     );
     // The degrade path is part of the contract, not an afterthought.
     assert!(APPEARANCE.contains("reduce_transparency"));

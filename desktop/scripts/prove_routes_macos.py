@@ -20,7 +20,9 @@ from routes_assertions import WORKSPACES, ProofFailure, empty, inspect, populate
 
 DESKTOP = Path(__file__).resolve().parents[1]
 ROOT = DESKTOP.parent
-OUT = DESKTOP / "target" / "routes-acceptance"
+# The client is a member of the repository's cargo workspace, so the
+# shared target dir is the repository root's, not a client-local one.
+OUT = ROOT / "target" / "routes-acceptance"
 
 
 def sha(path):
@@ -132,7 +134,7 @@ class Smoke:
         return proc, socket
 
     def desktop(self, socket, bearer):
-        return self.launch(DESKTOP / "target/debug/abbey-desktop", self.env("desktop", socket, bearer), "desktop")
+        return self.launch(ROOT / "target/debug/abbey-desktop", self.env("desktop", socket, bearer), "desktop")
 
     def ax(self, proc, action="snapshot", *args):
         if proc.poll() is not None:
@@ -274,7 +276,7 @@ def main():
         receipt["artifacts"]["abbeyd"] = sha(ROOT / "target/debug/abbeyd")
         run_build(["bun", "run", "build"], DESKTOP, env, OUT / "frontend-build.log")
         run_build(["bun", "run", "tauri", "build", "--debug", "--no-bundle"], DESKTOP, env, OUT / "desktop-build.log")
-        receipt["artifacts"]["desktop"] = sha(DESKTOP / "target/debug/abbey-desktop")
+        receipt["artifacts"]["desktop"] = sha(ROOT / "target/debug/abbey-desktop")
         receipt["frontend"] = {str(path.relative_to(DESKTOP / "dist")): sha(path) for path in sorted((DESKTOP / "dist").rglob("*")) if path.is_file()}
         temporary = tempfile.mkdtemp(prefix="abbey-routes-", dir="/tmp")
         scratch_path = Path(temporary)
@@ -304,7 +306,7 @@ def main():
                 receipt["scratch_diagnostics"] = str(scratch_path)
         receipt["finished_at"] = datetime.now(timezone.utc).isoformat()
         (OUT / "receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
-        print("Receipt: desktop/target/routes-acceptance/receipt.json", flush=True)
+        print("Receipt: target/routes-acceptance/receipt.json", flush=True)
     return 0 if receipt["status"] == "passed" else 1
 
 

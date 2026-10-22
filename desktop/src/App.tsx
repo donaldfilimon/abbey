@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { V3Capability, RuntimeStatus } from "./ipc/generated";
+import type { IpcError, V3Capability, RuntimeStatus } from "./ipc/generated";
 import {
   ALL_APP_CAPABILITIES,
   DESKTOP_READ_CAPABILITIES,
@@ -68,6 +68,110 @@ export function available(
   );
 }
 
+/**
+ * Whether the window may show the surface it is on.
+ *
+ * The Chat surface is the one exception, and it is a real one: its
+ * authority comes from the separate v4 conversation session, not from the
+ * protocol-v1 status capability set, so `available()` — which only knows
+ * about the v1/v2/v3 grants — can never answer it. The Chat surface is
+ * therefore answered by that session's own read authority.
+ */
+export function grantedFor(
+  active: SurfaceId,
+  surface: Surface,
+  status: RuntimeStatus | null,
+  v3Grants: V3Capability[],
+  chatCanRead: boolean,
+): boolean {
+  if (active === "chat") return chatCanRead;
+  return available(surface, status, v3Grants);
+}
+
+/**
+ * The connection banner.
+ *
+ * The window says whether it is still connecting or whether the runtime
+ * could not be reached, and offers the one action that can change that.
+ */
+export function ConnectionBanner({
+  loading,
+  error,
+  onRetry,
+}: {
+  loading: boolean;
+  error: IpcError | null;
+  onRetry: () => void;
+}) {
+  return (
+    <div
+      className={`connection-banner ${error ? "connection-error" : ""}`}
+      role="status"
+    >
+      <span className="status-dot" />
+      <span>
+        {loading
+          ? "Connecting to your Abbey runtime…"
+          : "The runtime couldn’t be reached. Check that Abbey is running, then retry."}
+      </span>
+      {error && (
+        <>
+          <ErrorCard error={error} />
+          <button onClick={onRetry}>
+            <Icon name="refresh" />
+            Retry connection
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The empty state for a surface the connected runtime has not unlocked.
+ *
+ * It names the grant that is missing instead of showing an empty page, so
+ * a reader can tell "not granted" from "nothing to show".
+ */
+export function EmptyState({
+  surface,
+  loading,
+  connected,
+  onRetry,
+}: {
+  surface: Surface;
+  loading: boolean;
+  connected: boolean;
+  onRetry: () => void;
+}) {
+  return (
+    <div className="empty-state">
+      <div className="empty-icon">
+        <Icon name={surface.id} />
+      </div>
+      <h1>{surface.label}</h1>
+      <p>
+        {loading
+          ? "Checking what’s available in your runtime…"
+          : connected
+            ? "This view needs a capability your connected runtime hasn’t granted."
+            : "Connect to your Abbey runtime to explore this view."}
+      </p>
+      <button onClick={onRetry} disabled={loading}>
+        {loading ? "Checking connection…" : "Retry connection"}
+      </button>
+      {connected && (
+        <details>
+          <summary>Capability details</summary>
+          <p>
+            Required runtime grant: <code>{surface.requires}</code>
+          </p>
+        </details>
+      )}
+    </div>
+  );
+}
+
 export function App() {
   const [active, setActive] = useState<SurfaceId>("chat");
   const {state: history, conversations} = useConversations();
@@ -92,10 +196,12 @@ export function App() {
     return () => window.removeEventListener("keydown", handler);
   }, [toggleSidebar]);
   const surface = surfaceById(active);
-  const granted = active === "chat" ? history.canRead : available(
+  const granted = grantedFor(
+    active,
     surface,
     boot?.status ?? null,
     boot?.v3Grants ?? [],
+    history.canRead,
   );
   const connectionLabel = loading
     ? "Connecting"
@@ -190,26 +296,7 @@ export function App() {
           id="main-content"
         >
           {(loading || error !== null) && (
-            <div
-              className={`connection-banner ${error ? "connection-error" : ""}`}
-              role="status"
-            >
-              <span className="status-dot" />
-              <span>
-                {loading
-                  ? "Connecting to your Abbey runtime…"
-                  : "The runtime couldn’t be reached. Check that Abbey is running, then retry."}
-              </span>
-              {error && (
-                <>
-                  <ErrorCard error={error} />
-                  <button onClick={retry}>
-                    <Icon name="refresh" />
-                    Retry connection
-                  </button>
-                </>
-              )}
-            </div>
+            <ConnectionBanner loading={loading} error={error} onRetry={retry} />
           )}
           {active === "chat" ? (
             <ConversationWorkspace controller={conversations} state={history} navigate={setActive} />
@@ -290,30 +377,12 @@ export function App() {
               {active === "tools" && <ToolsView />}
             </div>
           ) : (
-            <div className="empty-state">
-              <div className="empty-icon">
-                <Icon name={active} />
-              </div>
-              <h1>{surface.label}</h1>
-              <p>
-                {loading
-                  ? "Checking what’s available in your runtime…"
-                  : boot
-                    ? "This view needs a capability your connected runtime hasn’t granted."
-                    : "Connect to your Abbey runtime to explore this view."}
-              </p>
-              <button onClick={retry} disabled={loading}>
-                {loading ? "Checking connection…" : "Retry connection"}
-              </button>
-              {boot && (
-                <details>
-                  <summary>Capability details</summary>
-                  <p>
-                    Required runtime grant: <code>{surface.requires}</code>
-                  </p>
-                </details>
-              )}
-            </div>
+            <EmptyState
+              surface={surface}
+              loading={loading}
+              connected={boot !== null}
+              onRetry={retry}
+            />
           )}
         </main>
         <footer className="workspace-footer">

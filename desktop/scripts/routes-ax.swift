@@ -210,6 +210,28 @@ do {
         try press([waitForControl(app, role: "AXButton", title: "Cluster", snapshots: &snapshots)])
     case "automations":
         try press([waitForControl(app, role: "AXButton", title: "Automations", snapshots: &snapshots)])
+    // Interactive controls, not just navigation. These are the buttons a
+    // person presses *within* a surface.
+    case "appearance-light":
+        try press([waitForControl(app, role: "AXButton", title: "Settings", snapshots: &snapshots)])
+        Thread.sleep(forTimeInterval: 0.4)
+        try press([waitForControl(app, role: "AXButton", title: "Light", snapshots: &snapshots)])
+    case "appearance-dark":
+        try press([waitForControl(app, role: "AXButton", title: "Settings", snapshots: &snapshots)])
+        Thread.sleep(forTimeInterval: 0.4)
+        try press([waitForControl(app, role: "AXButton", title: "Dark", snapshots: &snapshots)])
+    case "appearance-system":
+        try press([waitForControl(app, role: "AXButton", title: "Settings", snapshots: &snapshots)])
+        Thread.sleep(forTimeInterval: 0.4)
+        try press([waitForControl(app, role: "AXButton", title: "System", snapshots: &snapshots)])
+    case "collapse-sidebar":
+        try press([waitForControl(app, role: "AXButton", title: "Collapse sidebar", snapshots: &snapshots)])
+    case "expand-sidebar":
+        try press([waitForControl(app, role: "AXButton", title: "Expand sidebar", snapshots: &snapshots)])
+    case "palette":
+        try press([waitForControl(app, role: "AXButton", title: "Search pages and commands", snapshots: &snapshots)])
+    case "new-draft":
+        try press([waitForControl(app, role: "AXButton", title: "New conversation draft", snapshots: &snapshots)])
     case "limit":
         guard CommandLine.arguments.count == 4,
               ["10", "25", "50"].contains(CommandLine.arguments[3]) else { try fail("invalid_limit") }
