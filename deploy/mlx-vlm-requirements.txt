@@ -762,7 +762,7 @@ jinja2==3.1.6 \
     --hash=sha256:0137fb05990d35f1275a587e9aee6d56da821fc83491a0fb838183be43f66d6d \
     --hash=sha256:85ece4451f492d0c13c5dd7c13a64681a86afae63a5f347908daf103ce6d2f67
     # via
-    #   -r mlx-vlm-requirements.in
+    #   -r deploy/mlx-vlm-requirements.in
     #   mlx-vlm
 llguidance==1.8.0 \
     --hash=sha256:020b4ec2254a20555e69095c7d488907f17d7e65ab5a840b267530f2cb369f70 \
@@ -988,10 +988,17 @@ mlx-audio==0.5.6 \
     --hash=sha256:6f6fb5107bf4647dd3ed079c48ee9f0db90a443803c75bcfd2a396b392d33fdd \
     --hash=sha256:7cf7b49135f6f681988a9e0b9d2fbfdd2e9be783b0a3204d0c4028e0cf2d8b4c
     # via mlx-vlm
+mlx-metal==0.32.4 \
+    --hash=sha256:514df92d41a286895d2564b4b18f4da45096bd7a4a0c47e1042f345ad5a7f936 \
+    --hash=sha256:8019b2db622599267d66cc168b2f0dbf5af929790a6c3b3913e00eabc42a7947 \
+    --hash=sha256:9f0a3cc26d89724434d9684932fc6f3e4e83669d2a895d858ed2c8a55eb84e8b
+    # via
+    #   -r deploy/mlx-vlm-requirements.in
+    #   mlx
 mlx-vlm==0.7.8 \
     --hash=sha256:22a100477c932f3fd7fc667bc1e966fbc71dfb25a17b09f5f3506d63d8c3d288 \
     --hash=sha256:b731a2220c6f572a9948369ebec5daa834cb8306004af861ebeabc1ba2c1100a
-    # via -r mlx-vlm-requirements.in
+    # via -r deploy/mlx-vlm-requirements.in
 multidict==7.1.0 \
     --hash=sha256:0179698c3c913eb64f32397083747fad20ed0f0a2b7469a08cd1a8a95d14d90e \
     --hash=sha256:034b0dc1b7fb8279599c5d8563f86abb4d2454735b06544ecab23c54572ad2bd \

@@ -1,5 +1,9 @@
 # Resolved with hashes into mlx-vlm-requirements.txt for Apple Silicon macOS.
+# Resolve with MACOSX_DEPLOYMENT_TARGET=14.0; uv's Darwin default is 13.0,
+# which cannot admit the required mlx-metal wheels.
 mlx-vlm==0.7.8
+# Preserve MLX's required Darwin runtime companion when resolving the lock.
+mlx-metal==0.32.4
 # Gemma 4's Transformers chat template is Jinja-based, but mlx-vlm does not
 # declare this runtime dependency. The real text smoke fails closed without it.
 jinja2==3.1.6
