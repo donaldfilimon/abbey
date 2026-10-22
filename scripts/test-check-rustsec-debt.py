@@ -24,68 +24,9 @@ if SPEC is None or SPEC.loader is None:  # pragma: no cover - import machinery g
 CHECKER = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(CHECKER)
 
-EXPECTED_IDS = {
-    "RUSTSEC-2026-0049": ["CVE-2026-93602", "GHSA-pwjx-qhcg-rvj4"],
-    "RUSTSEC-2026-0098": ["CVE-2026-93600", "GHSA-965h-392x-2mh5"],
-    "RUSTSEC-2026-0099": ["CVE-2026-93601", "GHSA-xgp8-3hg3-c2mh"],
-    "RUSTSEC-2026-0104": ["CVE-2026-93599", "GHSA-82j2-j2ch-gfr8"],
-}
 RINGBUF_ID = "RUSTSEC-2026-0293"
 RINGBUF_CHECKSUM = "fe47b720588c8702e34b5979cb3271a8b1842c7cb6f57408efa70c779363488c"
-EXPECTED_RANGES_AND_CATEGORIES = {
-    "RUSTSEC-2026-0049": {
-        "patched": [">=0.103.10"],
-        "unaffected": ["<0.102.0-alpha.0"],
-        "categories": ["privilege-escalation"],
-    },
-    "RUSTSEC-2026-0098": {
-        "patched": [">=0.103.12, <0.104.0-alpha.1", ">=0.104.0-alpha.6"],
-        "unaffected": [],
-        "categories": [],
-    },
-    "RUSTSEC-2026-0099": {
-        "patched": [">=0.103.12, <0.104.0-alpha.1", ">=0.104.0-alpha.6"],
-        "unaffected": [],
-        "categories": [],
-    },
-    "RUSTSEC-2026-0104": {
-        "patched": [">=0.103.13, <0.104.0-alpha.1", ">=0.104.0-alpha.7"],
-        "unaffected": [],
-        "categories": ["denial-of-service"],
-    },
-}
-PACKAGE_CHECKSUM = "64ca1bc8749bd4cf37b5ce386cc146580777b4e8572c7b97baf22c83f444bee9"
 REGISTRY_SOURCE = "registry+https://github.com/rust-lang/crates.io-index"
-EXPECTED_AUDIT_DEPENDENCIES = [
-    {"name": "ring", "version": "0.17.14", "source": REGISTRY_SOURCE},
-    {
-        "name": "rustls-pki-types",
-        "version": "1.15.1",
-        "source": REGISTRY_SOURCE,
-    },
-    {"name": "untrusted", "version": "0.9.0", "source": REGISTRY_SOURCE},
-]
-EXPECTED_DEPENDENCY_PATH = (
-    (
-        "serenity",
-        "0.12.5",
-        "9bde37f42765dfdc34e2a039e0c84afbf79a3101c1941763b0beb816c2f17541",
-        "tokio_tungstenite",
-    ),
-    (
-        "tokio-tungstenite",
-        "0.21.0",
-        "c83b561d025642014097b66e6c1bb422783339e0909e4429cde4749d1990bc38",
-        "rustls",
-    ),
-    (
-        "rustls",
-        "0.22.4",
-        "bf4ef73721ac7bcd79b2b315da7779d8fc09718c6b3d2d1b2d94850eb8c18432",
-        "webpki",
-    ),
-    ("rustls-webpki", "0.102.8", PACKAGE_CHECKSUM, None),
-)
 EXPECTED_RINGBUF_PATH = (
     (
         "songbird",
@@ -95,7 +36,7 @@ EXPECTED_RINGBUF_PATH = (
     ),
     ("ringbuf", "0.4.8", RINGBUF_CHECKSUM, None),
 )
-EXPECTED_PATHS = (EXPECTED_DEPENDENCY_PATH, EXPECTED_RINGBUF_PATH)
+EXPECTED_PATHS = (EXPECTED_RINGBUF_PATH,)
 
 
 def accepted_policy() -> dict[str, object]:
@@ -310,47 +251,17 @@ class RustsecDebtCheckTests(unittest.TestCase):
         self.assertIn(fragment, stderr)
         self.assertLessEqual(len(stderr), 1024)
 
-    def test_policy_pins_the_exact_five_vulnerabilities(self) -> None:
+    def test_policy_pins_only_the_remaining_ringbuf_vulnerability(self) -> None:
         policy = accepted_policy()
 
         self.assertEqual(policy["schema_version"], 3)
         self.assertEqual(policy["cargo_audit_version"], "0.22.2")
         self.assertEqual(policy["audit_state"], "not-clean")
-        self.assertEqual(policy["accepted_vulnerability_count"], 5)
+        self.assertEqual(policy["accepted_vulnerability_count"], 1)
         records = {
             record["id"]: record for record in policy["accepted_vulnerabilities"]
         }
-        self.assertEqual(set(records), {*EXPECTED_IDS, RINGBUF_ID})
-        for advisory_id, aliases in EXPECTED_IDS.items():
-            with self.subTest(advisory_id=advisory_id):
-                record = records[advisory_id]
-                self.assertEqual(record["advisory"]["aliases"], aliases)
-                self.assertEqual(record["advisory"]["source"], None)
-                self.assertEqual(
-                    record["advisory"]["categories"],
-                    EXPECTED_RANGES_AND_CATEGORIES[advisory_id]["categories"],
-                )
-                self.assertEqual(record["advisory"]["cvss"], None)
-                self.assertEqual(record["advisory"]["informational"], None)
-                self.assertEqual(record["advisory"]["withdrawn"], None)
-                self.assertEqual(
-                    record["versions"]["patched"],
-                    EXPECTED_RANGES_AND_CATEGORIES[advisory_id]["patched"],
-                )
-                self.assertEqual(
-                    record["versions"]["unaffected"],
-                    EXPECTED_RANGES_AND_CATEGORIES[advisory_id]["unaffected"],
-                )
-                self.assertEqual(record["affected"], None)
-                self.assertEqual(record["package"]["name"], "rustls-webpki")
-                self.assertEqual(record["package"]["version"], "0.102.8")
-                self.assertEqual(record["package"]["source"], REGISTRY_SOURCE)
-                self.assertEqual(record["package"]["checksum"], PACKAGE_CHECKSUM)
-                self.assertEqual(
-                    record["package"]["dependencies"],
-                    EXPECTED_AUDIT_DEPENDENCIES,
-                )
-                self.assertEqual(record["package"]["replace"], None)
+        self.assertEqual(set(records), {RINGBUF_ID})
 
         ringbuf = records[RINGBUF_ID]
         self.assertEqual(ringbuf["advisory"]["package"], "ringbuf")
@@ -370,7 +281,7 @@ class RustsecDebtCheckTests(unittest.TestCase):
         dependency_paths = policy["locked_dependency_paths"]
         self.assertEqual(
             [set(item["advisory_ids"]) for item in dependency_paths],
-            [set(EXPECTED_IDS), {RINGBUF_ID}],
+            [{RINGBUF_ID}],
         )
         for dependency_path, expected_path in zip(
             dependency_paths, EXPECTED_PATHS, strict=True
@@ -419,9 +330,7 @@ class RustsecDebtCheckTests(unittest.TestCase):
 
     def test_advisory_bound_to_the_wrong_path_is_rejected(self) -> None:
         policy = accepted_policy()
-        first, second = policy["locked_dependency_paths"]
-        first["advisory_ids"].append(RINGBUF_ID)
-        second["advisory_ids"].remove(RINGBUF_ID)
+        policy["locked_dependency_paths"][0]["advisory_ids"] = ["RUSTSEC-2026-0049"]
 
         with self.assertRaisesRegex(
             CHECKER.DebtCheckError,
@@ -431,7 +340,7 @@ class RustsecDebtCheckTests(unittest.TestCase):
 
     def test_advisory_listed_twice_in_a_path_is_rejected(self) -> None:
         policy = accepted_policy()
-        policy["locked_dependency_paths"][1]["advisory_ids"].append(RINGBUF_ID)
+        policy["locked_dependency_paths"][0]["advisory_ids"].append(RINGBUF_ID)
 
         with self.assertRaisesRegex(
             CHECKER.DebtCheckError,
@@ -443,7 +352,7 @@ class RustsecDebtCheckTests(unittest.TestCase):
         policy = accepted_policy()
         for record in policy["accepted_vulnerabilities"]:
             if record["id"] == RINGBUF_ID:
-                record["package"]["checksum"] = PACKAGE_CHECKSUM
+                record["package"]["checksum"] = "0" * 64
 
         with self.assertRaisesRegex(
             CHECKER.DebtCheckError,
@@ -474,7 +383,7 @@ class RustsecDebtCheckTests(unittest.TestCase):
         ):
             with self.subTest(field=field):
                 policy = accepted_policy()
-                policy["locked_dependency_paths"][1][field] = (
+                policy["locked_dependency_paths"][0][field] = (
                     "" if field == "rationale" else []
                 )
 
@@ -546,7 +455,7 @@ class RustsecDebtCheckTests(unittest.TestCase):
 
     def test_every_metadata_path_edge_fingerprint_is_bound(self) -> None:
         cases = ("name", "kind", "target")
-        self.assertEqual(len(self.edge_node_indexes()), 4)
+        self.assertEqual(len(self.edge_node_indexes()), 1)
         for edge_index in self.edge_node_indexes():
             for field in cases:
                 with self.subTest(edge=edge_index, field=field):
@@ -581,7 +490,6 @@ class RustsecDebtCheckTests(unittest.TestCase):
             (None, "cfg(windows)"),
         )
         terminals = (
-            ("rustls-webpki", "alternate route bypassing serenity 0.12.5"),
             ("ringbuf", "alternate route bypassing songbird 0.6.0"),
         )
         for terminal, fragment in terminals:
@@ -613,7 +521,7 @@ class RustsecDebtCheckTests(unittest.TestCase):
         self.assertEqual(
             stdout,
             "rustsec-debt-check: accepted temporary debt matches: "
-            "5 vulnerabilities remain; audit is NOT clean\n"
+            "1 vulnerabilities remain; audit is NOT clean\n"
             "rustsec-debt-check: informational warnings "
             "(not accepted vulnerability debt): 3 (unmaintained=3)\n",
         )
@@ -645,7 +553,7 @@ class RustsecDebtCheckTests(unittest.TestCase):
 
         self.assertEqual(status, 0)
         self.assertEqual(stderr, "")
-        self.assertIn("5 vulnerabilities remain; audit is NOT clean", stdout)
+        self.assertIn("1 vulnerabilities remain; audit is NOT clean", stdout)
 
     def test_advisory_database_metadata_is_not_part_of_the_fingerprint(self) -> None:
         report = exact_report()
@@ -749,7 +657,7 @@ class RustsecDebtCheckTests(unittest.TestCase):
             "5 (unmaintained=3, unsound=2)",
             stdout,
         )
-        self.assertIn("5 vulnerabilities remain", stdout)
+        self.assertIn("1 vulnerabilities remain", stdout)
 
     def test_missing_advisory_is_rejected(self) -> None:
         report = exact_report()
@@ -759,6 +667,28 @@ class RustsecDebtCheckTests(unittest.TestCase):
         result = self.run_check(report)
 
         self.assert_failure(result, f"missing {removed['advisory']['id']}")
+
+    def test_retired_tls_advisories_cannot_return_as_accepted_debt(self) -> None:
+        for advisory_id in (
+            "RUSTSEC-2026-0049", "RUSTSEC-2026-0098",
+            "RUSTSEC-2026-0099", "RUSTSEC-2026-0104",
+            "RUSTSEC-2026-0346", "RUSTSEC-2026-0349",
+        ):
+            with self.subTest(advisory=advisory_id):
+                report = exact_report()
+                extra = copy.deepcopy(report["vulnerabilities"]["list"][0])
+                extra["advisory"]["id"] = advisory_id
+                report["vulnerabilities"]["list"].append(extra)
+                synchronize_count(report)
+                self.assert_failure(self.run_check(report), f"unexpected {advisory_id}")
+
+    def test_duplicate_advisory_is_rejected_even_if_its_fingerprint_matches(self) -> None:
+        report = exact_report()
+        report["vulnerabilities"]["list"].append(
+            copy.deepcopy(report["vulnerabilities"]["list"][0])
+        )
+        synchronize_count(report)
+        self.assert_failure(self.run_check(report), "report contains a duplicate advisory")
 
     def test_extra_advisory_is_rejected(self) -> None:
         report = exact_report()
@@ -847,7 +777,7 @@ class RustsecDebtCheckTests(unittest.TestCase):
 
         self.assertEqual(status, 0)
         self.assertEqual(stderr, "")
-        self.assertIn("5 vulnerabilities remain; audit is NOT clean", stdout)
+        self.assertIn("1 vulnerabilities remain; audit is NOT clean", stdout)
 
     def test_duplicate_cargo_audit_dependency_is_rejected(self) -> None:
         report = exact_report()
@@ -894,8 +824,8 @@ class RustsecDebtCheckTests(unittest.TestCase):
     def test_changed_package_identity_is_rejected(self) -> None:
         report = exact_report()
         record = report["vulnerabilities"]["list"][0]
-        record["advisory"]["package"] = "rustls-webpki-changed"
-        record["package"]["name"] = "rustls-webpki-changed"
+        record["advisory"]["package"] = "ringbuf-changed"
+        record["package"]["name"] = "ringbuf-changed"
 
         result = self.run_check(report)
 
@@ -917,7 +847,7 @@ class RustsecDebtCheckTests(unittest.TestCase):
 
         self.assert_failure(
             result,
-            "vulnerability count mismatch (declared 6, observed 5)",
+            "vulnerability count mismatch (declared 6, observed 1)",
         )
 
     def test_found_state_must_match_the_count(self) -> None:

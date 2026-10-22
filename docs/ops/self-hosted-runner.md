@@ -9,7 +9,9 @@ The `Gate (macOS)` check (job `gate-macos` in `.github/workflows/rust.yml`) runs
 | Labels | `self-hosted`, `macOS`, `ARM64`, `abbey-bot` |
 | Register at | [Settings → Actions → Runners → New self-hosted runner](https://github.com/donaldfilimon/abbey-bot/settings/actions/runners/new?arch=arm64) (macOS, ARM64) |
 
-A runner is registered to one repository. If the same Mac already runs a runner for another repository (for example `abi`), install a second runner in its own directory, such as `~/actions-runner-abbey-bot`: run `./config.sh` with this repository's URL and token, add the custom label `abbey-bot` when asked, then `./svc.sh install && ./svc.sh start`.
+A runner is registered to one repository. This Mac's installation is `~/dev/ci/runners/abbey-bot`, separate from the other installations under `~/dev/ci/runners/`. For a new registration, run `./config.sh` with this repository's URL and token and add the custom label `abbey-bot`. Install the service with `GITHUB_ACTIONS_RUNNER_SERVICE_TEMPLATE="$HOME/dev/ci/launchd-runner.plist.template" ./svc.sh install`, then `./svc.sh start`.
+
+Use `python3 ~/dev/ci/fleet.py health --runner abbey-bot` for current identity/service checks and `python3 ~/dev/ci/fleet.py restart --runner abbey-bot` for guarded maintenance. It refuses queued/active workflows, workers and open workspace handles. These commands manage the CI runner, not the production bot's launchd services.
 
 Until a runner with these labels is online, same-repository `Gate (macOS)` jobs wait in the queue.
 

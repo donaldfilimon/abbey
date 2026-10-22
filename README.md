@@ -69,7 +69,7 @@ registration alone does not establish DM availability.
 
 Earlier modernization evidence, including the 1,183-test strict gate at
 `ff5d594`, remains historical evidence and does not validate later edits. The
-RustSec policy retains four accepted vulnerabilities and three unmaintained
+RustSec policy retains one previously accepted vulnerability and three unmaintained
 warnings; it is not a clean audit. Dated live observations remain in
 [the live acceptance record](docs/MLAI-LIVE-ACCEPTANCE.md).
 
@@ -1258,16 +1258,11 @@ audible wake/reply, and interruption acceptance require their own current
 record and remain unclaimed by source evidence. OpenAI Realtime was removed; historical notes may still mention it, but no cloud voice path is selectable. `tasks/goals.md` retains the dated dependency-audit history.
 The Linux graph is now Rustls/WebPKI-only: the gate rejects `native-tls`,
 `openssl`, and `openssl-sys`, so the package-free Docker runtime uses compiled
-roots. Serenity 0.12.5's Rustls WebSocket edge still pins `rustls-webpki`
-0.102.8. Exactly five vulnerability records are accepted temporarily, on two
-locked dependency paths. Four ride serenity 0.12.5 to `rustls-webpki` 0.102.8:
-
-- `RUSTSEC-2026-0049` / `GHSA-pwjx-qhcg-rvj4`
-- `RUSTSEC-2026-0098` / `GHSA-965h-392x-2mh5`
-- `RUSTSEC-2026-0099` / `GHSA-xgp8-3hg3-c2mh`
-- `RUSTSEC-2026-0104` / `GHSA-82j2-j2ch-gfr8` — malformed-CRL reachable panic
-
-The fifth, accepted on 2026-09-22, rides songbird 0.6.0 to `ringbuf` 0.4.8:
+roots. The provenance-checked Serenity 0.12.5 transport patch selects
+`tokio-tungstenite` 0.30 and the locked Rustls 0.23.46 line, removing the
+retired Rustls 0.22 / WebPKI 0.102 dependency path and its accepted debt.
+No additional vulnerabilities are accepted. The sole remaining accepted record,
+reviewed on 2026-09-22, rides songbird 0.6.0 to `ringbuf` 0.4.8:
 
 - `RUSTSEC-2026-0293` (no alias) — double free in `Consumer::skip`/`clear` when
   an element's `Drop` panics. songbird pins `ringbuf = "0.4"`, so the fixed
@@ -1278,13 +1273,11 @@ The deterministic checker binds each record to the exact package, version,
 source, checksum, aliases, patched/unaffected ranges, categories, CVSS and
 informational state, withdrawal state, and dependency identity. Each advisory is bound to exactly one path whose
 terminal package it names. Any missing, additional, or changed vulnerability
-fails closed. Its successful result says that five vulnerabilities remain and the audit is **not clean**. The
-`cargo-audit` 0.22.2 pin stabilizes report parsing; it is tooling, not a fifth
+fails closed. Its successful result says that one vulnerability remains and the audit is **not clean**. The
+`cargo-audit` 0.22.2 pin stabilizes report parsing; it is tooling, not an
 accepted finding. The records carry the CVE aliases the advisory
-database added on 2026-09-19. Informational warnings are reported separately. The fixed
-0.103 line is not compatible with Serenity's current `tokio-tungstenite` 0.21
-edge, so re-review is required when that upstream route or support policy
-changes. Abbey also carries the provenance-checked `openmls_rust_crypto` 0.5.1
+database added on 2026-09-19. Informational warnings are reported separately. The transport patch includes loopback JSON and close-frame tests, and the gate
+rejects any reappearance of the retired TLS advisories. Abbey also carries the provenance-checked `openmls_rust_crypto` 0.5.1
 compatibility patch.
 
 The checkout-local `launch.sh` and `run_bot.sh` are owner-private mode-0700

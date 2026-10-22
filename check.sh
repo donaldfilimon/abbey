@@ -99,6 +99,11 @@ fi
 echo "== offline macOS audio tap =="
 sh scripts/check-audio-tap.sh
 
+echo "== patched Serenity transport regression tests =="
+cargo test --manifest-path patches/serenity-0.12.5/Cargo.toml --locked --lib \
+  --no-default-features --features default_no_backend,rustls_backend,collector \
+  gateway::ws::transport_security_tests
+
 echo "== clippy =="
 cargo clippy --all-targets --locked -- -D warnings
 
