@@ -179,11 +179,11 @@ jobs:
           # Both editions write one shared SHA256SUMS.txt into the same
           # bundle directory, so snapshot each edition's checksums under a
           # distinct name before the next build overwrites the shared file.
-          cp target/release/bundle/macos/SHA256SUMS.txt \
-            target/release/bundle/SHA256SUMS-abbey.txt
+          cp ../target/release/bundle/macos/SHA256SUMS.txt \
+            ../target/release/bundle/SHA256SUMS-abbey.txt
           ./scripts/release-macos.sh --personal --updater-key "${UPDATER_KEY_FILE}"
-          cp target/release/bundle/macos/SHA256SUMS.txt \
-            target/release/bundle/SHA256SUMS-abbey-personal.txt
+          cp ../target/release/bundle/macos/SHA256SUMS.txt \
+            ../target/release/bundle/SHA256SUMS-abbey-personal.txt
 
       - name: Verify both updater artifacts against the pinned public key
         working-directory: abbey/desktop
@@ -194,7 +194,7 @@ jobs:
           # would leave every client unable to update, so this aborts first.
           # The path is relative to the crate root (desktop/src-tauri).
           for print in Abbey "Abbey Personal"; do
-            ABBEY_DESKTOP_UPDATE_ARTIFACT="../target/release/bundle/macos/${print}.app.tar.gz" \
+            ABBEY_DESKTOP_UPDATE_ARTIFACT="../../target/release/bundle/macos/${print}.app.tar.gz" \
               cargo test --quiet --locked -p abbey-desktop --test updater_signature -- --nocapture
           done
 
@@ -208,7 +208,7 @@ jobs:
           # match the built bundle: a wrong tag aborts before any feed
           # points at a wrong asset.
           version="${GITHUB_REF_NAME#abbey-desktop-v}"
-          bundle="target/release/bundle/macos"
+          bundle="../target/release/bundle/macos"
           for print in Abbey "Abbey Personal"; do
             built="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
               "$bundle/$print.app/Contents/Info.plist")"
@@ -253,14 +253,14 @@ jobs:
           # The draft is the review gate: assets land, but nothing is public
           # until the draft is explicitly published from the Releases page.
           assets=(
-            "target/release/bundle/dmg/Abbey_${version}_aarch64.dmg"
-            "target/release/bundle/dmg/Abbey Personal_${version}_aarch64.dmg"
-            "target/release/bundle/macos/Abbey.app.tar.gz"
-            "target/release/bundle/macos/Abbey.app.tar.gz.sig"
-            "target/release/bundle/macos/Abbey Personal.app.tar.gz"
-            "target/release/bundle/macos/Abbey Personal.app.tar.gz.sig"
-            "target/release/bundle/SHA256SUMS-abbey.txt"
-            "target/release/bundle/SHA256SUMS-abbey-personal.txt"
+            "../target/release/bundle/dmg/Abbey_${version}_aarch64.dmg"
+            "../target/release/bundle/dmg/Abbey Personal_${version}_aarch64.dmg"
+            "../target/release/bundle/macos/Abbey.app.tar.gz"
+            "../target/release/bundle/macos/Abbey.app.tar.gz.sig"
+            "../target/release/bundle/macos/Abbey Personal.app.tar.gz"
+            "../target/release/bundle/macos/Abbey Personal.app.tar.gz.sig"
+            "../target/release/bundle/SHA256SUMS-abbey.txt"
+            "../target/release/bundle/SHA256SUMS-abbey-personal.txt"
             "${RUNNER_TEMP}/abbey-release/latest.json"
             "${RUNNER_TEMP}/abbey-release/latest-personal.json"
           )

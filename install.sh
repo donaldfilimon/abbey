@@ -95,6 +95,12 @@ smoke_accel_binary() {
     # Exit 1 is the honest CPU-fallback/no-native-device report. A loader
     # abort, malformed invocation, or other process failure is not acceptable.
     [ "$accel_status" -eq 1 ] || return 1
+    # Exit 1 is *only* that report when the CPU oracle served every kernel.
+    # A partially native run (`mixed`) and a native result that disagreed
+    # with the oracle exit 1 as well, and neither may be published: the
+    # verification is the thing that says the package is correct.
+    printf '%s\n' "$accel_output" |
+      grep -Eq '"backend_used"[[:space:]]*:[[:space:]]*"cpu"' || return 1
   fi
   printf '%s\n' "$accel_output" | grep -Fq '"kernels_linked": true'
 }
@@ -186,7 +192,15 @@ cleanup_staged() {
     rmdir "$DEST_DIR" 2>/dev/null || true
   fi
 }
-trap cleanup_staged EXIT HUP INT TERM
+# `EXIT` keeps the cleanup-only behaviour. A termination signal must also
+# *stop* the script: with one trap for both, a POSIX shell resumes the
+# interrupted script after the handler returns, so an interrupted install
+# would carry on, mark the transaction committed, and report a successful
+# installation even though the handler had just rolled the update back.
+trap cleanup_staged EXIT
+trap 'cleanup_staged; exit 129' HUP
+trap 'cleanup_staged; exit 130' INT
+trap 'cleanup_staged; exit 143' TERM
 
 cp "$BIN" "$STAGED_BIN"
 chmod 755 "$STAGED_BIN"
@@ -231,16 +245,21 @@ fi
 
 BACKUP_DIR=$(mktemp -d "$DEST_DIR/.abbey-backup.XXXXXX")
 PUBLISH_IN_PROGRESS=1
+# The backup is a *copy*, so the live path stays usable for the whole
+# publication window: a command invocation or a daemon restart during the
+# upgrade must not see ENOENT. The staged artifact is then renamed over the
+# destination, which is atomic because the staging directory lives inside the
+# destination directory.
 if [ -e "$DEST_BIN" ] || [ -L "$DEST_BIN" ]; then
-  mv "$DEST_BIN" "$BACKUP_DIR/binary"
+  cp -a "$DEST_BIN" "$BACKUP_DIR/binary"
   HAD_BIN=1
 fi
 if [ -n "$STAGED_DAEMON" ] && { [ -e "$DEST_DAEMON" ] || [ -L "$DEST_DAEMON" ]; }; then
-  mv "$DEST_DAEMON" "$BACKUP_DIR/daemon"
+  cp -a "$DEST_DAEMON" "$BACKUP_DIR/daemon"
   HAD_DAEMON=1
 fi
 if [ "$ACCEL_REQUESTED" -eq 1 ] && { [ -e "$DEST_DYLIB" ] || [ -L "$DEST_DYLIB" ]; }; then
-  mv "$DEST_DYLIB" "$BACKUP_DIR/dylib"
+  cp -a "$DEST_DYLIB" "$BACKUP_DIR/dylib"
   HAD_DYLIB=1
 fi
 
