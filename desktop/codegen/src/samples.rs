@@ -28,6 +28,10 @@ use abbey::app_core::{
 use anyhow::{Context, Result};
 use std::fmt::Write as _;
 
+#[allow(dead_code)]
+#[path = "../../src-tauri/src/ipc.rs"]
+mod desktop_ipc;
+
 const FIXED_RUN_ID: &str = "0f6a6f1e-4b2e-4a29-9a6c-2f4d5c0a7b31";
 
 pub fn render() -> Result<String> {
@@ -44,6 +48,7 @@ import type {
   AppCommand,
   AppEvent,
   CapabilitySet,
+  ConnectionInfo,
   ClaimRecord,
   V3CapabilitySet,
   V3EntityPage,
@@ -52,6 +57,21 @@ import type {
 } from \"./generated\";
 ",
     );
+
+    emit(
+        &mut out,
+        "installedServiceConnectionFixture",
+        "ConnectionInfo",
+        &desktop_ipc::ConnectionInfo {
+            source: desktop_ipc::ConnectionSource::Daemon,
+            socket_path: Some("/fixture/.local/state/abbey/daemon/abbeyd.sock".to_owned()),
+            bearer_configured: true,
+            bearer_source: Some(desktop_ipc::BearerSource::InstalledService),
+            detail:
+                "Local service configuration discovered; installation and readiness unverified."
+                    .to_owned(),
+        },
+    )?;
 
     let status_v1 = RuntimeStatus {
         protocol_version: APP_PROTOCOL_V1,

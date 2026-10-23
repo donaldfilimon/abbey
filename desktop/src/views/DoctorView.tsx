@@ -32,6 +32,7 @@ const CONNECTION_LABEL = {
 } as const;
 
 const BEARER_LABEL = {
+  installed_service: "Local service configuration discovered",
   inline_env: "inline environment variable",
   token_file: "owner-only token file",
   conflicting: "both sources set — fail-closed",

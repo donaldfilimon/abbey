@@ -784,7 +784,8 @@ export type ConnectionSource =
 export type BearerSource =
   | "inline_env"
   | "token_file"
-  | "conflicting";
+  | "conflicting"
+  | "installed_service";
 
 /**
  * Non-secret description of how this desktop process reaches Abbey.

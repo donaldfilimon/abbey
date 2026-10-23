@@ -39,6 +39,8 @@ pub enum BearerSource {
     TokenFile,
     /// Both were set — a fail-closed configuration error, not a preference.
     Conflicting,
+    /// Fixed Linux bootstrap configuration; installation/readiness is not implied.
+    InstalledService,
 }
 
 /// Non-secret description of how this desktop process reaches Abbey.

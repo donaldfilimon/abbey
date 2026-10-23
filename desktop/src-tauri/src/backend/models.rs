@@ -1,5 +1,5 @@
 //! Exact signed-model lifecycle authority, separate from the read-only session.
-use super::{Route, bearer_source, from_client_error, route};
+use super::{Route, from_client_error, route};
 use crate::ipc::{IpcError, IpcErrorKind};
 use abbey::app_core::{
     V3Capability, V3CapabilitySet, V3ModelAction, V3ModelDetails, V3OperationStatus,
@@ -13,13 +13,10 @@ const MODEL_GRANTS: &[V3Capability] = &[
     V3Capability::ManageModels,
 ];
 fn model_session() -> Result<V3DaemonSession, IpcError> {
-    if bearer_source().is_none() {
-        return Err(IpcError::new(
-            IpcErrorKind::Rejected,
-            "model authority requires a configured abbeyd",
-        ));
-    }
-    match route()? {
+    model_session_for(route()?)
+}
+fn model_session_for(route: Route) -> Result<V3DaemonSession, IpcError> {
+    match route {
         Route::InProcess(_) => Err(IpcError::new(
             IpcErrorKind::Rejected,
             "model authority is daemon-only",
@@ -33,10 +30,11 @@ fn model_session() -> Result<V3DaemonSession, IpcError> {
     }
 }
 pub fn model_grants() -> Result<V3CapabilitySet, IpcError> {
-    if bearer_source().is_none() {
+    let route = route()?;
+    if matches!(route, Route::InProcess(_)) {
         return Ok(V3CapabilitySet::deny_all());
     }
-    Ok(model_session()?.negotiation().granted.clone())
+    Ok(model_session_for(route)?.negotiation().granted.clone())
 }
 pub fn model_details(query: V3ResourceQuery) -> Result<V3ModelDetails, IpcError> {
     model_session()?
@@ -196,7 +194,7 @@ mod tests {
     }
     #[test]
     fn missing_daemon_never_opens_model_authority() {
-        if bearer_source().is_some() {
+        if super::super::bearer_source().is_some() {
             return;
         }
         assert!(model_grants().unwrap().as_slice().is_empty());

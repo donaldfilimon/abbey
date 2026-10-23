@@ -2,7 +2,7 @@
 
 `tools/linux_user_service.py` manages an opt-in systemd user service using
 already installed, matching edition binaries. It does not install binaries,
-enable login startup, configure models, discover credentials for the desktop,
+enable login startup or configure models,
 or run automatically from `install.sh`. Native Ubuntu ARM64 acceptance remains
 pending; fixture tests on macOS do not establish systemd behavior.
 
@@ -69,7 +69,29 @@ and reloads the user manager. It retains credentials, service configuration
 directory, runtime state, memory, chats, audit and backups. It does not touch
 another edition. No automatic replay, enablement, credential rotation, native
 package distribution, service hardening beyond the private environment/umask,
-or desktop startup/discovery is implemented.
+or desktop startup is implemented.
+
+The desktop has separate Linux-only, read-only discovery of this controller's
+retained service configuration. With no explicit daemon credential or socket
+environment settings, it resolves the effective user's native account home and
+inspects the fixed edition paths above. XDG and Abbey state overrides do not
+redirect discovery. Explicit bearer settings take precedence, including invalid
+settings; a socket override without credentials preserves the existing
+in-process route and skips discovery. macOS and Windows retain environment-only
+selection.
+
+Valid retained credentials select the daemon even when its socket is absent.
+Invalid recognized configuration returns a configuration error; an unavailable
+daemon returns a transport error. Neither falls back to in-process data.
+Discovery never installs, starts, enables, repairs permissions or creates
+credentials. Before using a discovered client, the desktop authenticates a
+bounded read-only status request and checks the active edition. Connection
+metadata inspection itself does not connect. Uninstall intentionally retains
+the configuration, so discovery continues selecting it afterward; credential
+presence is not evidence of an installed, enabled or ready service.
+
+This discovery implementation has scratch Unix fixture coverage on macOS;
+native Ubuntu ARM64 desktop acceptance remains pending.
 
 Verification uses only temporary trees, fixture CLI binaries and fake
 systemctl commands:

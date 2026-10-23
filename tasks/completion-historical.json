@@ -6,9 +6,10 @@
     "docs/superpowers/plans/2026-09-29-tui-chat-parity.md",
     "docs/superpowers/plans/2026-10-20-active-work-consolidation.md",
     "docs/superpowers/plans/2026-10-20-desktop-assistant.md",
-    "docs/superpowers/plans/2026-10-20-production-completion.md"
+    "docs/superpowers/plans/2026-10-20-production-completion.md",
+    "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md"
   ],
-  "open_occurrences": 266,
+  "open_occurrences": 346,
   "entries": [
     {
       "id": "76d15c1c949bad7f842d",
@@ -3832,6 +3833,1151 @@
       "blocker_owner": "Abbey runtime maintainer",
       "acceptance": [
         "Canonical compiled types, append-only migrations, real task/automation/profile/action stores and dispatch pass grant/recovery/contract fixtures"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "954c9f190400bb6454c3",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 52,
+      "section": "Task 1: Freeze and reconcile the integration baseline",
+      "text": "Capture current owner modules, exact inputs and a focused task design; verify dependency tasks and external prerequisites.",
+      "requirement": "baseline-record",
+      "milestone": "baseline",
+      "blocker_owner": "Abbey maintainer",
+      "acceptance": [
+        "Record exact revisions, clean/dirty manifests, locks, compiler, root/desktop exit status and limitations"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "63b223aaa1edbe8c3304",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 53,
+      "section": "Task 1: Freeze and reconcile the integration baseline",
+      "text": "Add or select discriminating regressions for the acceptance above; record the expected failure, or passing pre-refactor characterization.",
+      "requirement": "baseline-record",
+      "milestone": "baseline",
+      "blocker_owner": "Abbey maintainer",
+      "acceptance": [
+        "Record exact revisions, clean/dirty manifests, locks, compiler, root/desktop exit status and limitations"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "dd4b2de0a0c99800cf74",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 54,
+      "section": "Task 1: Freeze and reconcile the integration baseline",
+      "text": "Implement the bounded slice described above without changing unrelated authority or user state.",
+      "requirement": "baseline-record",
+      "milestone": "baseline",
+      "blocker_owner": "Abbey maintainer",
+      "acceptance": [
+        "Record exact revisions, clean/dirty manifests, locks, compiler, root/desktop exit status and limitations"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "14af51f58496d1c8c111",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 55,
+      "section": "Task 1: Freeze and reconcile the integration baseline",
+      "text": "Run `python3 tools/check_completion.py` and the task-specific regression selection; require exit 0 and the asserted behavior, then run serial milestone gates when the slice is ready.",
+      "requirement": "baseline-record",
+      "milestone": "baseline",
+      "blocker_owner": "Abbey maintainer",
+      "acceptance": [
+        "Record exact revisions, clean/dirty manifests, locks, compiler, root/desktop exit status and limitations"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "76d71e0f3f2e67cd8500",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 56,
+      "section": "Task 1: Freeze and reconcile the integration baseline",
+      "text": "Review the diff, record source/test/native channels separately, reconcile ledgers and historical checkbox bindings; commit only if requested.",
+      "requirement": "baseline-record",
+      "milestone": "baseline",
+      "blocker_owner": "Abbey maintainer",
+      "acceptance": [
+        "Record exact revisions, clean/dirty manifests, locks, compiler, root/desktop exit status and limitations"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "ba133d78d55f1b325551",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 70,
+      "section": "Task 2: Recover reproducible gates and dependency qualification",
+      "text": "Capture current owner modules, exact inputs and a focused task design; verify dependency tasks and external prerequisites.",
+      "requirement": "dependency-security-remediation",
+      "milestone": "qualification",
+      "blocker_owner": "Dependency maintainers, Windows update acceptance owner and release reviewer",
+      "acceptance": [
+        "Repair Tokio and Tauri updater ZIP dependency advisories using an exact reviewed candidate and qualify the full generated dependency graph; retain existing pins until candidate promotion is justified",
+        "Resolve or explicitly review GLib VariantStrIter unsoundness and proc-macro-error maintenance findings without silently broadening the existing advisory exceptions",
+        "Require strict dependency/license/secret evidence plus root/desktop gates and native updater/install acceptance for all supported editions/hosts before release qualification"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "6287663a771cb6b9587c",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 71,
+      "section": "Task 2: Recover reproducible gates and dependency qualification",
+      "text": "Add or select discriminating regressions for the acceptance above; record the expected failure, or passing pre-refactor characterization.",
+      "requirement": "dependency-security-remediation",
+      "milestone": "qualification",
+      "blocker_owner": "Dependency maintainers, Windows update acceptance owner and release reviewer",
+      "acceptance": [
+        "Repair Tokio and Tauri updater ZIP dependency advisories using an exact reviewed candidate and qualify the full generated dependency graph; retain existing pins until candidate promotion is justified",
+        "Resolve or explicitly review GLib VariantStrIter unsoundness and proc-macro-error maintenance findings without silently broadening the existing advisory exceptions",
+        "Require strict dependency/license/secret evidence plus root/desktop gates and native updater/install acceptance for all supported editions/hosts before release qualification"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "e7380313347b06677838",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 72,
+      "section": "Task 2: Recover reproducible gates and dependency qualification",
+      "text": "Implement the bounded slice described above without changing unrelated authority or user state.",
+      "requirement": "dependency-security-remediation",
+      "milestone": "qualification",
+      "blocker_owner": "Dependency maintainers, Windows update acceptance owner and release reviewer",
+      "acceptance": [
+        "Repair Tokio and Tauri updater ZIP dependency advisories using an exact reviewed candidate and qualify the full generated dependency graph; retain existing pins until candidate promotion is justified",
+        "Resolve or explicitly review GLib VariantStrIter unsoundness and proc-macro-error maintenance findings without silently broadening the existing advisory exceptions",
+        "Require strict dependency/license/secret evidence plus root/desktop gates and native updater/install acceptance for all supported editions/hosts before release qualification"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "7859fde56d109369887e",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 73,
+      "section": "Task 2: Recover reproducible gates and dependency qualification",
+      "text": "Run `./check.sh` and the task-specific regression selection; require exit 0 and the asserted behavior, then run serial milestone gates when the slice is ready.",
+      "requirement": "dependency-security-remediation",
+      "milestone": "qualification",
+      "blocker_owner": "Dependency maintainers, Windows update acceptance owner and release reviewer",
+      "acceptance": [
+        "Repair Tokio and Tauri updater ZIP dependency advisories using an exact reviewed candidate and qualify the full generated dependency graph; retain existing pins until candidate promotion is justified",
+        "Resolve or explicitly review GLib VariantStrIter unsoundness and proc-macro-error maintenance findings without silently broadening the existing advisory exceptions",
+        "Require strict dependency/license/secret evidence plus root/desktop gates and native updater/install acceptance for all supported editions/hosts before release qualification"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "5b8304b36e374e54cf0a",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 74,
+      "section": "Task 2: Recover reproducible gates and dependency qualification",
+      "text": "Review the diff, record source/test/native channels separately, reconcile ledgers and historical checkbox bindings; commit only if requested.",
+      "requirement": "dependency-security-remediation",
+      "milestone": "qualification",
+      "blocker_owner": "Dependency maintainers, Windows update acceptance owner and release reviewer",
+      "acceptance": [
+        "Repair Tokio and Tauri updater ZIP dependency advisories using an exact reviewed candidate and qualify the full generated dependency graph; retain existing pins until candidate promotion is justified",
+        "Resolve or explicitly review GLib VariantStrIter unsoundness and proc-macro-error maintenance findings without silently broadening the existing advisory exceptions",
+        "Require strict dependency/license/secret evidence plus root/desktop gates and native updater/install acceptance for all supported editions/hosts before release qualification"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "64fe40bb2f0694fd2087",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 88,
+      "section": "Task 3: Refactor contract ownership without changing wire behavior",
+      "text": "Capture current owner modules, exact inputs and a focused task design; verify dependency tasks and external prerequisites.",
+      "requirement": "runtime-contracts",
+      "milestone": "authority",
+      "blocker_owner": "Abbey runtime maintainer",
+      "acceptance": [
+        "Canonical compiled types, append-only migrations, real task/automation/profile/action stores and dispatch pass grant/recovery/contract fixtures"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "e3c8493f4ab89aa282f7",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 89,
+      "section": "Task 3: Refactor contract ownership without changing wire behavior",
+      "text": "Add or select discriminating regressions for the acceptance above; record the expected failure, or passing pre-refactor characterization.",
+      "requirement": "runtime-contracts",
+      "milestone": "authority",
+      "blocker_owner": "Abbey runtime maintainer",
+      "acceptance": [
+        "Canonical compiled types, append-only migrations, real task/automation/profile/action stores and dispatch pass grant/recovery/contract fixtures"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "f89df7b78e4bf2529d33",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 90,
+      "section": "Task 3: Refactor contract ownership without changing wire behavior",
+      "text": "Implement the bounded slice described above without changing unrelated authority or user state.",
+      "requirement": "runtime-contracts",
+      "milestone": "authority",
+      "blocker_owner": "Abbey runtime maintainer",
+      "acceptance": [
+        "Canonical compiled types, append-only migrations, real task/automation/profile/action stores and dispatch pass grant/recovery/contract fixtures"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "9269201b825e2ceea0ab",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 91,
+      "section": "Task 3: Refactor contract ownership without changing wire behavior",
+      "text": "Run `./tools/cargo.sh test --locked --test app_core_contract` and the task-specific regression selection; require exit 0 and the asserted behavior, then run serial milestone gates when the slice is ready.",
+      "requirement": "runtime-contracts",
+      "milestone": "authority",
+      "blocker_owner": "Abbey runtime maintainer",
+      "acceptance": [
+        "Canonical compiled types, append-only migrations, real task/automation/profile/action stores and dispatch pass grant/recovery/contract fixtures"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "432dab637f2eec546a69",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 92,
+      "section": "Task 3: Refactor contract ownership without changing wire behavior",
+      "text": "Review the diff, record source/test/native channels separately, reconcile ledgers and historical checkbox bindings; commit only if requested.",
+      "requirement": "runtime-contracts",
+      "milestone": "authority",
+      "blocker_owner": "Abbey runtime maintainer",
+      "acceptance": [
+        "Canonical compiled types, append-only migrations, real task/automation/profile/action stores and dispatch pass grant/recovery/contract fixtures"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "d8649ca6fee87171e684",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 106,
+      "section": "Task 4: Close existing correctness and corpus obligations",
+      "text": "Capture current owner modules, exact inputs and a focused task design; verify dependency tasks and external prerequisites.",
+      "requirement": "wire-vocabularies",
+      "milestone": "correctness",
+      "blocker_owner": "Abbey protocol maintainer",
+      "acceptance": [
+        "Bump affected v1/v3 schemas, reject old clients before changed claim/model vocabularies, update canonical claim boundaries and generated wire samples"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "7bb2bd522616d5bf8c3f",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 107,
+      "section": "Task 4: Close existing correctness and corpus obligations",
+      "text": "Add or select discriminating regressions for the acceptance above; record the expected failure, or passing pre-refactor characterization.",
+      "requirement": "wire-vocabularies",
+      "milestone": "correctness",
+      "blocker_owner": "Abbey protocol maintainer",
+      "acceptance": [
+        "Bump affected v1/v3 schemas, reject old clients before changed claim/model vocabularies, update canonical claim boundaries and generated wire samples"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "c21a1f19a88d73191eb1",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 108,
+      "section": "Task 4: Close existing correctness and corpus obligations",
+      "text": "Implement the bounded slice described above without changing unrelated authority or user state.",
+      "requirement": "wire-vocabularies",
+      "milestone": "correctness",
+      "blocker_owner": "Abbey protocol maintainer",
+      "acceptance": [
+        "Bump affected v1/v3 schemas, reject old clients before changed claim/model vocabularies, update canonical claim boundaries and generated wire samples"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "cce1ba94a3052d5524d3",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 109,
+      "section": "Task 4: Close existing correctness and corpus obligations",
+      "text": "Run `./tools/cargo.sh test --locked --test abbey_contracts` and the task-specific regression selection; require exit 0 and the asserted behavior, then run serial milestone gates when the slice is ready.",
+      "requirement": "wire-vocabularies",
+      "milestone": "correctness",
+      "blocker_owner": "Abbey protocol maintainer",
+      "acceptance": [
+        "Bump affected v1/v3 schemas, reject old clients before changed claim/model vocabularies, update canonical claim boundaries and generated wire samples"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "6a1f2bbd4e5c25d96f31",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 110,
+      "section": "Task 4: Close existing correctness and corpus obligations",
+      "text": "Review the diff, record source/test/native channels separately, reconcile ledgers and historical checkbox bindings; commit only if requested.",
+      "requirement": "wire-vocabularies",
+      "milestone": "correctness",
+      "blocker_owner": "Abbey protocol maintainer",
+      "acceptance": [
+        "Bump affected v1/v3 schemas, reject old clients before changed claim/model vocabularies, update canonical claim boundaries and generated wire samples"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "5bb11b6e1485fa538ca5",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 124,
+      "section": "Task 5: Finish native transports, supervision and installed services",
+      "text": "Capture current owner modules, exact inputs and a focused task design; verify dependency tasks and external prerequisites.",
+      "requirement": "windows-foundation",
+      "milestone": "platforms",
+      "blocker_owner": "Windows maintainer and runner administrator",
+      "acceptance": [
+        "Implement native named pipes, owner ACLs, peer restriction, bounded framing/deadlines, Job Object teardown and native Windows ARM CI/install proofs"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "8189d26ca6416a452ed2",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 125,
+      "section": "Task 5: Finish native transports, supervision and installed services",
+      "text": "Add or select discriminating regressions for the acceptance above; record the expected failure, or passing pre-refactor characterization.",
+      "requirement": "windows-foundation",
+      "milestone": "platforms",
+      "blocker_owner": "Windows maintainer and runner administrator",
+      "acceptance": [
+        "Implement native named pipes, owner ACLs, peer restriction, bounded framing/deadlines, Job Object teardown and native Windows ARM CI/install proofs"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "81317aaa8729d9906535",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 126,
+      "section": "Task 5: Finish native transports, supervision and installed services",
+      "text": "Implement the bounded slice described above without changing unrelated authority or user state.",
+      "requirement": "windows-foundation",
+      "milestone": "platforms",
+      "blocker_owner": "Windows maintainer and runner administrator",
+      "acceptance": [
+        "Implement native named pipes, owner ACLs, peer restriction, bounded framing/deadlines, Job Object teardown and native Windows ARM CI/install proofs"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "6fcc22a83874db7afbb3",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 127,
+      "section": "Task 5: Finish native transports, supervision and installed services",
+      "text": "Run `python3 -m unittest discover -s tools/tests -p \"test_*.py\"` and the task-specific regression selection; require exit 0 and the asserted behavior, then run serial milestone gates when the slice is ready.",
+      "requirement": "windows-foundation",
+      "milestone": "platforms",
+      "blocker_owner": "Windows maintainer and runner administrator",
+      "acceptance": [
+        "Implement native named pipes, owner ACLs, peer restriction, bounded framing/deadlines, Job Object teardown and native Windows ARM CI/install proofs"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "81f4e21e7ba8cfeaf614",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 128,
+      "section": "Task 5: Finish native transports, supervision and installed services",
+      "text": "Review the diff, record source/test/native channels separately, reconcile ledgers and historical checkbox bindings; commit only if requested.",
+      "requirement": "windows-foundation",
+      "milestone": "platforms",
+      "blocker_owner": "Windows maintainer and runner administrator",
+      "acceptance": [
+        "Implement native named pipes, owner ACLs, peer restriction, bounded framing/deadlines, Job Object teardown and native Windows ARM CI/install proofs"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "a42440673b7b2a2a74c2",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 142,
+      "section": "Task 6: Implement durable tasks and immutable attempts",
+      "text": "Capture current owner modules, exact inputs and a focused task design; verify dependency tasks and external prerequisites.",
+      "requirement": "runtime-contracts",
+      "milestone": "authority",
+      "blocker_owner": "Abbey runtime maintainer",
+      "acceptance": [
+        "Canonical compiled types, append-only migrations, real task/automation/profile/action stores and dispatch pass grant/recovery/contract fixtures"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "3783e8cd56d49961b57e",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 143,
+      "section": "Task 6: Implement durable tasks and immutable attempts",
+      "text": "Add or select discriminating regressions for the acceptance above; record the expected failure, or passing pre-refactor characterization.",
+      "requirement": "runtime-contracts",
+      "milestone": "authority",
+      "blocker_owner": "Abbey runtime maintainer",
+      "acceptance": [
+        "Canonical compiled types, append-only migrations, real task/automation/profile/action stores and dispatch pass grant/recovery/contract fixtures"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "7e356e217b37bc3e9383",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 144,
+      "section": "Task 6: Implement durable tasks and immutable attempts",
+      "text": "Implement the bounded slice described above without changing unrelated authority or user state.",
+      "requirement": "runtime-contracts",
+      "milestone": "authority",
+      "blocker_owner": "Abbey runtime maintainer",
+      "acceptance": [
+        "Canonical compiled types, append-only migrations, real task/automation/profile/action stores and dispatch pass grant/recovery/contract fixtures"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "2ac6220d7cf32af81172",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 145,
+      "section": "Task 6: Implement durable tasks and immutable attempts",
+      "text": "Run `./tools/cargo.sh test --locked --test daemon_runtime` and the task-specific regression selection; require exit 0 and the asserted behavior, then run serial milestone gates when the slice is ready.",
+      "requirement": "runtime-contracts",
+      "milestone": "authority",
+      "blocker_owner": "Abbey runtime maintainer",
+      "acceptance": [
+        "Canonical compiled types, append-only migrations, real task/automation/profile/action stores and dispatch pass grant/recovery/contract fixtures"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "068c711b44909b76035b",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 146,
+      "section": "Task 6: Implement durable tasks and immutable attempts",
+      "text": "Review the diff, record source/test/native channels separately, reconcile ledgers and historical checkbox bindings; commit only if requested.",
+      "requirement": "runtime-contracts",
+      "milestone": "authority",
+      "blocker_owner": "Abbey runtime maintainer",
+      "acceptance": [
+        "Canonical compiled types, append-only migrations, real task/automation/profile/action stores and dispatch pass grant/recovery/contract fixtures"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "2f1598a397f657b97900",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 160,
+      "section": "Task 7: Connect schedules, profiles and durable automation occurrences",
+      "text": "Capture current owner modules, exact inputs and a focused task design; verify dependency tasks and external prerequisites.",
+      "requirement": "runtime-contracts",
+      "milestone": "authority",
+      "blocker_owner": "Abbey runtime maintainer",
+      "acceptance": [
+        "Canonical compiled types, append-only migrations, real task/automation/profile/action stores and dispatch pass grant/recovery/contract fixtures"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "d47c88faf2d7718aab4b",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 161,
+      "section": "Task 7: Connect schedules, profiles and durable automation occurrences",
+      "text": "Add or select discriminating regressions for the acceptance above; record the expected failure, or passing pre-refactor characterization.",
+      "requirement": "runtime-contracts",
+      "milestone": "authority",
+      "blocker_owner": "Abbey runtime maintainer",
+      "acceptance": [
+        "Canonical compiled types, append-only migrations, real task/automation/profile/action stores and dispatch pass grant/recovery/contract fixtures"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "4201abdcad897ea676ef",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 162,
+      "section": "Task 7: Connect schedules, profiles and durable automation occurrences",
+      "text": "Implement the bounded slice described above without changing unrelated authority or user state.",
+      "requirement": "runtime-contracts",
+      "milestone": "authority",
+      "blocker_owner": "Abbey runtime maintainer",
+      "acceptance": [
+        "Canonical compiled types, append-only migrations, real task/automation/profile/action stores and dispatch pass grant/recovery/contract fixtures"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "88385891f74bef5ae0ea",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 163,
+      "section": "Task 7: Connect schedules, profiles and durable automation occurrences",
+      "text": "Run `./tools/cargo.sh test --locked automation_schedule` and the task-specific regression selection; require exit 0 and the asserted behavior, then run serial milestone gates when the slice is ready.",
+      "requirement": "runtime-contracts",
+      "milestone": "authority",
+      "blocker_owner": "Abbey runtime maintainer",
+      "acceptance": [
+        "Canonical compiled types, append-only migrations, real task/automation/profile/action stores and dispatch pass grant/recovery/contract fixtures"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "73cb44239f55193a87d5",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 164,
+      "section": "Task 7: Connect schedules, profiles and durable automation occurrences",
+      "text": "Review the diff, record source/test/native channels separately, reconcile ledgers and historical checkbox bindings; commit only if requested.",
+      "requirement": "runtime-contracts",
+      "milestone": "authority",
+      "blocker_owner": "Abbey runtime maintainer",
+      "acceptance": [
+        "Canonical compiled types, append-only migrations, real task/automation/profile/action stores and dispatch pass grant/recovery/contract fixtures"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "1b77db07a167b66e3c37",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 178,
+      "section": "Task 8: Build the owned structured tool loop and separate edition policies",
+      "text": "Capture current owner modules, exact inputs and a focused task design; verify dependency tasks and external prerequisites.",
+      "requirement": "owned-tool-host",
+      "milestone": "tools-editions",
+      "blocker_owner": "Abbey and ABI maintainers",
+      "acceptance": [
+        "Real model-produced structured multi-tool loop and external MCP/ACP sessions pass policy, schema, timeout, correlation, hostile-output and mutation non-replay tests; served MCP remains separately scoped"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "a5d6d17dc2ee856adf84",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 179,
+      "section": "Task 8: Build the owned structured tool loop and separate edition policies",
+      "text": "Add or select discriminating regressions for the acceptance above; record the expected failure, or passing pre-refactor characterization.",
+      "requirement": "owned-tool-host",
+      "milestone": "tools-editions",
+      "blocker_owner": "Abbey and ABI maintainers",
+      "acceptance": [
+        "Real model-produced structured multi-tool loop and external MCP/ACP sessions pass policy, schema, timeout, correlation, hostile-output and mutation non-replay tests; served MCP remains separately scoped"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "20d53880f5ce826b9122",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 180,
+      "section": "Task 8: Build the owned structured tool loop and separate edition policies",
+      "text": "Implement the bounded slice described above without changing unrelated authority or user state.",
+      "requirement": "owned-tool-host",
+      "milestone": "tools-editions",
+      "blocker_owner": "Abbey and ABI maintainers",
+      "acceptance": [
+        "Real model-produced structured multi-tool loop and external MCP/ACP sessions pass policy, schema, timeout, correlation, hostile-output and mutation non-replay tests; served MCP remains separately scoped"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "af541463b418900fd090",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 181,
+      "section": "Task 8: Build the owned structured tool loop and separate edition policies",
+      "text": "Run `./tools/cargo.sh test --locked --test daemon_tool_execution` and the task-specific regression selection; require exit 0 and the asserted behavior, then run serial milestone gates when the slice is ready.",
+      "requirement": "owned-tool-host",
+      "milestone": "tools-editions",
+      "blocker_owner": "Abbey and ABI maintainers",
+      "acceptance": [
+        "Real model-produced structured multi-tool loop and external MCP/ACP sessions pass policy, schema, timeout, correlation, hostile-output and mutation non-replay tests; served MCP remains separately scoped"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "f98d169d3cb4834a68a9",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 182,
+      "section": "Task 8: Build the owned structured tool loop and separate edition policies",
+      "text": "Review the diff, record source/test/native channels separately, reconcile ledgers and historical checkbox bindings; commit only if requested.",
+      "requirement": "owned-tool-host",
+      "milestone": "tools-editions",
+      "blocker_owner": "Abbey and ABI maintainers",
+      "acceptance": [
+        "Real model-produced structured multi-tool loop and external MCP/ACP sessions pass policy, schema, timeout, correlation, hostile-output and mutation non-replay tests; served MCP remains separately scoped"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "26d85286fe6a9c604c6b",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 196,
+      "section": "Task 9: Complete external protocol clients and served read-only MCP",
+      "text": "Capture current owner modules, exact inputs and a focused task design; verify dependency tasks and external prerequisites.",
+      "requirement": "owned-tool-host",
+      "milestone": "tools-editions",
+      "blocker_owner": "Abbey and ABI maintainers",
+      "acceptance": [
+        "Real model-produced structured multi-tool loop and external MCP/ACP sessions pass policy, schema, timeout, correlation, hostile-output and mutation non-replay tests; served MCP remains separately scoped"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "567ccd6c96c2a752a032",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 197,
+      "section": "Task 9: Complete external protocol clients and served read-only MCP",
+      "text": "Add or select discriminating regressions for the acceptance above; record the expected failure, or passing pre-refactor characterization.",
+      "requirement": "owned-tool-host",
+      "milestone": "tools-editions",
+      "blocker_owner": "Abbey and ABI maintainers",
+      "acceptance": [
+        "Real model-produced structured multi-tool loop and external MCP/ACP sessions pass policy, schema, timeout, correlation, hostile-output and mutation non-replay tests; served MCP remains separately scoped"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "24804e1a0d18e4387bda",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 198,
+      "section": "Task 9: Complete external protocol clients and served read-only MCP",
+      "text": "Implement the bounded slice described above without changing unrelated authority or user state.",
+      "requirement": "owned-tool-host",
+      "milestone": "tools-editions",
+      "blocker_owner": "Abbey and ABI maintainers",
+      "acceptance": [
+        "Real model-produced structured multi-tool loop and external MCP/ACP sessions pass policy, schema, timeout, correlation, hostile-output and mutation non-replay tests; served MCP remains separately scoped"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "b90a0518d5797623fda6",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 199,
+      "section": "Task 9: Complete external protocol clients and served read-only MCP",
+      "text": "Run `./tools/cargo.sh test --locked --test mcp_server --test mcp_http` and the task-specific regression selection; require exit 0 and the asserted behavior, then run serial milestone gates when the slice is ready.",
+      "requirement": "owned-tool-host",
+      "milestone": "tools-editions",
+      "blocker_owner": "Abbey and ABI maintainers",
+      "acceptance": [
+        "Real model-produced structured multi-tool loop and external MCP/ACP sessions pass policy, schema, timeout, correlation, hostile-output and mutation non-replay tests; served MCP remains separately scoped"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "94b58801d6db102d59ef",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 200,
+      "section": "Task 9: Complete external protocol clients and served read-only MCP",
+      "text": "Review the diff, record source/test/native channels separately, reconcile ledgers and historical checkbox bindings; commit only if requested.",
+      "requirement": "owned-tool-host",
+      "milestone": "tools-editions",
+      "blocker_owner": "Abbey and ABI maintainers",
+      "acceptance": [
+        "Real model-produced structured multi-tool loop and external MCP/ACP sessions pass policy, schema, timeout, correlation, hostile-output and mutation non-replay tests; served MCP remains separately scoped"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "c52f30c8637f0bb3ba85",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 214,
+      "section": "Task 10: Finish desktop product flows on shared authority",
+      "text": "Capture current owner modules, exact inputs and a focused task design; verify dependency tasks and external prerequisites.",
+      "requirement": "desktop-product",
+      "milestone": "desktop",
+      "blocker_owner": "Desktop maintainer and release owner",
+      "acceptance": [
+        "All product and management flows use actual grants/daemon data and pass packaged native acceptance for both editions"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "73c7cb09519296edc560",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 215,
+      "section": "Task 10: Finish desktop product flows on shared authority",
+      "text": "Add or select discriminating regressions for the acceptance above; record the expected failure, or passing pre-refactor characterization.",
+      "requirement": "desktop-product",
+      "milestone": "desktop",
+      "blocker_owner": "Desktop maintainer and release owner",
+      "acceptance": [
+        "All product and management flows use actual grants/daemon data and pass packaged native acceptance for both editions"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "2df16277d91aae7c0414",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 216,
+      "section": "Task 10: Finish desktop product flows on shared authority",
+      "text": "Implement the bounded slice described above without changing unrelated authority or user state.",
+      "requirement": "desktop-product",
+      "milestone": "desktop",
+      "blocker_owner": "Desktop maintainer and release owner",
+      "acceptance": [
+        "All product and management flows use actual grants/daemon data and pass packaged native acceptance for both editions"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "a47a56dea4b2d6a7e0d2",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 217,
+      "section": "Task 10: Finish desktop product flows on shared authority",
+      "text": "Run `./desktop/check.sh` and the task-specific regression selection; require exit 0 and the asserted behavior, then run serial milestone gates when the slice is ready.",
+      "requirement": "desktop-product",
+      "milestone": "desktop",
+      "blocker_owner": "Desktop maintainer and release owner",
+      "acceptance": [
+        "All product and management flows use actual grants/daemon data and pass packaged native acceptance for both editions"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "68a885eb221948b4b605",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 218,
+      "section": "Task 10: Finish desktop product flows on shared authority",
+      "text": "Review the diff, record source/test/native channels separately, reconcile ledgers and historical checkbox bindings; commit only if requested.",
+      "requirement": "desktop-product",
+      "milestone": "desktop",
+      "blocker_owner": "Desktop maintainer and release owner",
+      "acceptance": [
+        "All product and management flows use actual grants/daemon data and pass packaged native acceptance for both editions"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "1383650020c3d8b264e3",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 232,
+      "section": "Task 11: Ship edition-isolated native packaging and recovery",
+      "text": "Capture current owner modules, exact inputs and a focused task design; verify dependency tasks and external prerequisites.",
+      "requirement": "portable-package-services",
+      "milestone": "desktop",
+      "blocker_owner": "macOS/Linux/Windows platform maintainers and release owners",
+      "acceptance": [
+        "Build edition-isolated macOS app/DMG, Windows installers and Linux native packages with correct dependencies, runtime resources, service, updater and retained-state uninstall behavior",
+        "Exercise real PowerShell coexistence, native WebView chat/tasks/tools/automations, service restart and clean-user package journeys on Windows 11 ARM and Ubuntu ARM64",
+        "Detect X11/Wayland and portal capabilities explicitly; unavailable capture/control remains unavailable"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "a890a665e6f1ac8f0766",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 233,
+      "section": "Task 11: Ship edition-isolated native packaging and recovery",
+      "text": "Add or select discriminating regressions for the acceptance above; record the expected failure, or passing pre-refactor characterization.",
+      "requirement": "portable-package-services",
+      "milestone": "desktop",
+      "blocker_owner": "macOS/Linux/Windows platform maintainers and release owners",
+      "acceptance": [
+        "Build edition-isolated macOS app/DMG, Windows installers and Linux native packages with correct dependencies, runtime resources, service, updater and retained-state uninstall behavior",
+        "Exercise real PowerShell coexistence, native WebView chat/tasks/tools/automations, service restart and clean-user package journeys on Windows 11 ARM and Ubuntu ARM64",
+        "Detect X11/Wayland and portal capabilities explicitly; unavailable capture/control remains unavailable"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "dc4cf472b2a9c8973f2c",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 234,
+      "section": "Task 11: Ship edition-isolated native packaging and recovery",
+      "text": "Implement the bounded slice described above without changing unrelated authority or user state.",
+      "requirement": "portable-package-services",
+      "milestone": "desktop",
+      "blocker_owner": "macOS/Linux/Windows platform maintainers and release owners",
+      "acceptance": [
+        "Build edition-isolated macOS app/DMG, Windows installers and Linux native packages with correct dependencies, runtime resources, service, updater and retained-state uninstall behavior",
+        "Exercise real PowerShell coexistence, native WebView chat/tasks/tools/automations, service restart and clean-user package journeys on Windows 11 ARM and Ubuntu ARM64",
+        "Detect X11/Wayland and portal capabilities explicitly; unavailable capture/control remains unavailable"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "0d0b04c8b08771f81f06",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 235,
+      "section": "Task 11: Ship edition-isolated native packaging and recovery",
+      "text": "Run `python3 -m unittest discover -s tools/tests -p \"test_*release*.py\"` and the task-specific regression selection; require exit 0 and the asserted behavior, then run serial milestone gates when the slice is ready.",
+      "requirement": "portable-package-services",
+      "milestone": "desktop",
+      "blocker_owner": "macOS/Linux/Windows platform maintainers and release owners",
+      "acceptance": [
+        "Build edition-isolated macOS app/DMG, Windows installers and Linux native packages with correct dependencies, runtime resources, service, updater and retained-state uninstall behavior",
+        "Exercise real PowerShell coexistence, native WebView chat/tasks/tools/automations, service restart and clean-user package journeys on Windows 11 ARM and Ubuntu ARM64",
+        "Detect X11/Wayland and portal capabilities explicitly; unavailable capture/control remains unavailable"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "e5c777d820e765a4911f",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 236,
+      "section": "Task 11: Ship edition-isolated native packaging and recovery",
+      "text": "Review the diff, record source/test/native channels separately, reconcile ledgers and historical checkbox bindings; commit only if requested.",
+      "requirement": "portable-package-services",
+      "milestone": "desktop",
+      "blocker_owner": "macOS/Linux/Windows platform maintainers and release owners",
+      "acceptance": [
+        "Build edition-isolated macOS app/DMG, Windows installers and Linux native packages with correct dependencies, runtime resources, service, updater and retained-state uninstall behavior",
+        "Exercise real PowerShell coexistence, native WebView chat/tasks/tools/automations, service restart and clean-user package journeys on Windows 11 ARM and Ubuntu ARM64",
+        "Detect X11/Wayland and portal capabilities explicitly; unavailable capture/control remains unavailable"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "7c75ae904261d0154d00",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 250,
+      "section": "Task 12: Qualify the exact production model and accelerator runtime",
+      "text": "Capture current owner modules, exact inputs and a focused task design; verify dependency tasks and external prerequisites.",
+      "requirement": "production-model",
+      "milestone": "models-media",
+      "blocker_owner": "ABI model maintainer and license holder",
+      "acceptance": [
+        "Qualify exact Gemma 12B artifacts/tokenizer/architecture/license and actual inference against the model milestone budgets"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "8176b0ead9c551aa5a70",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 251,
+      "section": "Task 12: Qualify the exact production model and accelerator runtime",
+      "text": "Add or select discriminating regressions for the acceptance above; record the expected failure, or passing pre-refactor characterization.",
+      "requirement": "production-model",
+      "milestone": "models-media",
+      "blocker_owner": "ABI model maintainer and license holder",
+      "acceptance": [
+        "Qualify exact Gemma 12B artifacts/tokenizer/architecture/license and actual inference against the model milestone budgets"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "137671c37ce24f441fe1",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 252,
+      "section": "Task 12: Qualify the exact production model and accelerator runtime",
+      "text": "Implement the bounded slice described above without changing unrelated authority or user state.",
+      "requirement": "production-model",
+      "milestone": "models-media",
+      "blocker_owner": "ABI model maintainer and license holder",
+      "acceptance": [
+        "Qualify exact Gemma 12B artifacts/tokenizer/architecture/license and actual inference against the model milestone budgets"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "c07d2459145ae3525d4d",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 253,
+      "section": "Task 12: Qualify the exact production model and accelerator runtime",
+      "text": "Run `./tools/cargo.sh test --locked --test daemon_model_lifecycle` and the task-specific regression selection; require exit 0 and the asserted behavior, then run serial milestone gates when the slice is ready.",
+      "requirement": "production-model",
+      "milestone": "models-media",
+      "blocker_owner": "ABI model maintainer and license holder",
+      "acceptance": [
+        "Qualify exact Gemma 12B artifacts/tokenizer/architecture/license and actual inference against the model milestone budgets"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "8932f91ef22f82eb1933",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 254,
+      "section": "Task 12: Qualify the exact production model and accelerator runtime",
+      "text": "Review the diff, record source/test/native channels separately, reconcile ledgers and historical checkbox bindings; commit only if requested.",
+      "requirement": "production-model",
+      "milestone": "models-media",
+      "blocker_owner": "ABI model maintainer and license holder",
+      "acceptance": [
+        "Qualify exact Gemma 12B artifacts/tokenizer/architecture/license and actual inference against the model milestone budgets"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "36e92eeb99214cccbf27",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 268,
+      "section": "Task 13: Deliver real adapters and offline neural media",
+      "text": "Capture current owner modules, exact inputs and a focused task design; verify dependency tasks and external prerequisites.",
+      "requirement": "production-adapters",
+      "milestone": "models-media",
+      "blocker_owner": "ABI training maintainer and dataset consent owner",
+      "acceptance": [
+        "Actual E4B adapter weight update, held-out quality bars, provenance, compatibility and deterministic rollback pass; demo training fidelity is insufficient"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "927af047237ce2ab6510",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 269,
+      "section": "Task 13: Deliver real adapters and offline neural media",
+      "text": "Add or select discriminating regressions for the acceptance above; record the expected failure, or passing pre-refactor characterization.",
+      "requirement": "production-adapters",
+      "milestone": "models-media",
+      "blocker_owner": "ABI training maintainer and dataset consent owner",
+      "acceptance": [
+        "Actual E4B adapter weight update, held-out quality bars, provenance, compatibility and deterministic rollback pass; demo training fidelity is insufficient"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "8447a0e903915f30c86c",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 270,
+      "section": "Task 13: Deliver real adapters and offline neural media",
+      "text": "Implement the bounded slice described above without changing unrelated authority or user state.",
+      "requirement": "production-adapters",
+      "milestone": "models-media",
+      "blocker_owner": "ABI training maintainer and dataset consent owner",
+      "acceptance": [
+        "Actual E4B adapter weight update, held-out quality bars, provenance, compatibility and deterministic rollback pass; demo training fidelity is insufficient"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "a41a19701c2e00804ae8",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 271,
+      "section": "Task 13: Deliver real adapters and offline neural media",
+      "text": "Run `./tools/cargo.sh test --locked --test learn_distill` and the task-specific regression selection; require exit 0 and the asserted behavior, then run serial milestone gates when the slice is ready.",
+      "requirement": "production-adapters",
+      "milestone": "models-media",
+      "blocker_owner": "ABI training maintainer and dataset consent owner",
+      "acceptance": [
+        "Actual E4B adapter weight update, held-out quality bars, provenance, compatibility and deterministic rollback pass; demo training fidelity is insufficient"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "e2b8c645dd54132e36f3",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 272,
+      "section": "Task 13: Deliver real adapters and offline neural media",
+      "text": "Review the diff, record source/test/native channels separately, reconcile ledgers and historical checkbox bindings; commit only if requested.",
+      "requirement": "production-adapters",
+      "milestone": "models-media",
+      "blocker_owner": "ABI training maintainer and dataset consent owner",
+      "acceptance": [
+        "Actual E4B adapter weight update, held-out quality bars, provenance, compatibility and deterministic rollback pass; demo training fidelity is insufficient"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "3d25f95455a7833f4cd7",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 286,
+      "section": "Task 14: Implement federated authorization and worker execution",
+      "text": "Capture current owner modules, exact inputs and a focused task design; verify dependency tasks and external prerequisites.",
+      "requirement": "worker-runtime",
+      "milestone": "federation-compute",
+      "blocker_owner": "ABI worker maintainer and VM operator",
+      "acceptance": [
+        "Actual workers have truthful negotiated inventory, lifecycle, local IPC/mTLS jobs, quotas, leases, cancellation and recovery"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "2169a4920c94d66ba0f4",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 287,
+      "section": "Task 14: Implement federated authorization and worker execution",
+      "text": "Add or select discriminating regressions for the acceptance above; record the expected failure, or passing pre-refactor characterization.",
+      "requirement": "worker-runtime",
+      "milestone": "federation-compute",
+      "blocker_owner": "ABI worker maintainer and VM operator",
+      "acceptance": [
+        "Actual workers have truthful negotiated inventory, lifecycle, local IPC/mTLS jobs, quotas, leases, cancellation and recovery"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "6dda7cc61e5c9a6d70fc",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 288,
+      "section": "Task 14: Implement federated authorization and worker execution",
+      "text": "Implement the bounded slice described above without changing unrelated authority or user state.",
+      "requirement": "worker-runtime",
+      "milestone": "federation-compute",
+      "blocker_owner": "ABI worker maintainer and VM operator",
+      "acceptance": [
+        "Actual workers have truthful negotiated inventory, lifecycle, local IPC/mTLS jobs, quotas, leases, cancellation and recovery"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "815e2a50f447fc202117",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 289,
+      "section": "Task 14: Implement federated authorization and worker execution",
+      "text": "Run `./tools/cargo.sh test --locked --test abbey_contracts` and the task-specific regression selection; require exit 0 and the asserted behavior, then run serial milestone gates when the slice is ready.",
+      "requirement": "worker-runtime",
+      "milestone": "federation-compute",
+      "blocker_owner": "ABI worker maintainer and VM operator",
+      "acceptance": [
+        "Actual workers have truthful negotiated inventory, lifecycle, local IPC/mTLS jobs, quotas, leases, cancellation and recovery"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "606c1787c93831f56ece",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 290,
+      "section": "Task 14: Implement federated authorization and worker execution",
+      "text": "Review the diff, record source/test/native channels separately, reconcile ledgers and historical checkbox bindings; commit only if requested.",
+      "requirement": "worker-runtime",
+      "milestone": "federation-compute",
+      "blocker_owner": "ABI worker maintainer and VM operator",
+      "acceptance": [
+        "Actual workers have truthful negotiated inventory, lifecycle, local IPC/mTLS jobs, quotas, leases, cancellation and recovery"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "ce5d811464d14a3b4688",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 304,
+      "section": "Task 15: Qualify consented guild observations and separately approved effects",
+      "text": "Capture current owner modules, exact inputs and a focused task design; verify dependency tasks and external prerequisites.",
+      "requirement": "consented-capture",
+      "milestone": "federation-compute",
+      "blocker_owner": "Recording consent owners",
+      "acceptance": [
+        "Reviewed retention/recording contract plus explicit participant consent precede any non-synthetic capture"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "2b05add3e4c945e87823",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 305,
+      "section": "Task 15: Qualify consented guild observations and separately approved effects",
+      "text": "Add or select discriminating regressions for the acceptance above; record the expected failure, or passing pre-refactor characterization.",
+      "requirement": "consented-capture",
+      "milestone": "federation-compute",
+      "blocker_owner": "Recording consent owners",
+      "acceptance": [
+        "Reviewed retention/recording contract plus explicit participant consent precede any non-synthetic capture"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "048652627b701a5e0ded",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 306,
+      "section": "Task 15: Qualify consented guild observations and separately approved effects",
+      "text": "Implement the bounded slice described above without changing unrelated authority or user state.",
+      "requirement": "consented-capture",
+      "milestone": "federation-compute",
+      "blocker_owner": "Recording consent owners",
+      "acceptance": [
+        "Reviewed retention/recording contract plus explicit participant consent precede any non-synthetic capture"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "f1ee438212c1f4dddaab",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 307,
+      "section": "Task 15: Qualify consented guild observations and separately approved effects",
+      "text": "Run `./tools/cargo.sh test --locked --test guild_intelligence_replay --test guild_intelligence_permissions` and the task-specific regression selection; require exit 0 and the asserted behavior, then run serial milestone gates when the slice is ready.",
+      "requirement": "consented-capture",
+      "milestone": "federation-compute",
+      "blocker_owner": "Recording consent owners",
+      "acceptance": [
+        "Reviewed retention/recording contract plus explicit participant consent precede any non-synthetic capture"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "fd76b92ce9a5cc6cc2bd",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 308,
+      "section": "Task 15: Qualify consented guild observations and separately approved effects",
+      "text": "Review the diff, record source/test/native channels separately, reconcile ledgers and historical checkbox bindings; commit only if requested.",
+      "requirement": "consented-capture",
+      "milestone": "federation-compute",
+      "blocker_owner": "Recording consent owners",
+      "acceptance": [
+        "Reviewed retention/recording contract plus explicit participant consent precede any non-synthetic capture"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "0bff30c8ecc488b89c3c",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 322,
+      "section": "Task 16: Freeze, review and close the full product",
+      "text": "Capture current owner modules, exact inputs and a focused task design; verify dependency tasks and external prerequisites.",
+      "requirement": "final-closure",
+      "milestone": "qualification",
+      "blocker_owner": "Release owner and independent reviewers",
+      "acceptance": [
+        "Every included requirement and platform evidence is complete before ledger closure; canceled Zig and deliberate OOS remain excluded",
+        "Run coordinated ABI/WDBX gates, dependency/license/secret and external security reviews, native installed journeys and sustained-resource acceptance against exact frozen inputs; regenerate claims only from their independently reported evidence"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "3332e506f1e871d3cad2",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 323,
+      "section": "Task 16: Freeze, review and close the full product",
+      "text": "Add or select discriminating regressions for the acceptance above; record the expected failure, or passing pre-refactor characterization.",
+      "requirement": "final-closure",
+      "milestone": "qualification",
+      "blocker_owner": "Release owner and independent reviewers",
+      "acceptance": [
+        "Every included requirement and platform evidence is complete before ledger closure; canceled Zig and deliberate OOS remain excluded",
+        "Run coordinated ABI/WDBX gates, dependency/license/secret and external security reviews, native installed journeys and sustained-resource acceptance against exact frozen inputs; regenerate claims only from their independently reported evidence"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "6c5af9492192f00506e5",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 324,
+      "section": "Task 16: Freeze, review and close the full product",
+      "text": "Implement the bounded slice described above without changing unrelated authority or user state.",
+      "requirement": "final-closure",
+      "milestone": "qualification",
+      "blocker_owner": "Release owner and independent reviewers",
+      "acceptance": [
+        "Every included requirement and platform evidence is complete before ledger closure; canceled Zig and deliberate OOS remain excluded",
+        "Run coordinated ABI/WDBX gates, dependency/license/secret and external security reviews, native installed journeys and sustained-resource acceptance against exact frozen inputs; regenerate claims only from their independently reported evidence"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "21b2884337c5a5435ffa",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 325,
+      "section": "Task 16: Freeze, review and close the full product",
+      "text": "Run `./check.sh` and the task-specific regression selection; require exit 0 and the asserted behavior, then run serial milestone gates when the slice is ready.",
+      "requirement": "final-closure",
+      "milestone": "qualification",
+      "blocker_owner": "Release owner and independent reviewers",
+      "acceptance": [
+        "Every included requirement and platform evidence is complete before ledger closure; canceled Zig and deliberate OOS remain excluded",
+        "Run coordinated ABI/WDBX gates, dependency/license/secret and external security reviews, native installed journeys and sustained-resource acceptance against exact frozen inputs; regenerate claims only from their independently reported evidence"
+      ],
+      "disposition": "revalidate_against_current_source_and_evidence"
+    },
+    {
+      "id": "158c2f4240e786025edb",
+      "source": "docs/superpowers/plans/2026-10-23-abbey-refactor-and-finish.md",
+      "line": 326,
+      "section": "Task 16: Freeze, review and close the full product",
+      "text": "Review the diff, record source/test/native channels separately, reconcile ledgers and historical checkbox bindings; commit only if requested.",
+      "requirement": "final-closure",
+      "milestone": "qualification",
+      "blocker_owner": "Release owner and independent reviewers",
+      "acceptance": [
+        "Every included requirement and platform evidence is complete before ledger closure; canceled Zig and deliberate OOS remain excluded",
+        "Run coordinated ABI/WDBX gates, dependency/license/secret and external security reviews, native installed journeys and sustained-resource acceptance against exact frozen inputs; regenerate claims only from their independently reported evidence"
       ],
       "disposition": "revalidate_against_current_source_and_evidence"
     }

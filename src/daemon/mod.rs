@@ -24,6 +24,7 @@
 mod client;
 mod config;
 mod federation;
+mod installed_service;
 mod protocol;
 mod runtime_config;
 mod runtime_handler;

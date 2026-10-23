@@ -91,7 +91,7 @@ fn partial_read_failure_is_not_accepted_as_a_token() {
 
 #[test]
 fn filesystem_types_and_parent_symlink_compatibility() {
-    use std::os::unix::fs::{symlink, PermissionsExt};
+    use std::os::unix::fs::{PermissionsExt, symlink};
     let root = std::env::temp_dir().join(format!("abbey-bearer-types-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir(&root).unwrap();
     let file = root.join("token");

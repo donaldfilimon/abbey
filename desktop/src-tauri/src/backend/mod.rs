@@ -46,75 +46,138 @@ pub(crate) enum Route {
     InProcess(Box<AppService>),
 }
 
+/// Rust-only configuration; never serialized or sent to the WebView.
+enum ResolvedConnection {
+    InProcess,
+    Daemon {
+        config: DaemonConfig,
+        source: BearerSource,
+    },
+}
+
+fn configuration_error() -> IpcError {
+    IpcError::new(IpcErrorKind::Configuration,
+        "The active edition's local daemon configuration is invalid or cannot be inspected.")
+        .with_remedy("Check the active edition's explicit bearer settings or retained Linux service configuration; keep managed paths private.")
+}
+
+/// Presence policy is pure and testable without mutating process environment.
+fn resolve_with(
+    inline: bool,
+    file: bool,
+    socket: bool,
+    explicit: impl FnOnce() -> Result<DaemonConfig, IpcError>,
+    discovered: impl FnOnce() -> Result<Option<DaemonConfig>, IpcError>,
+) -> Result<ResolvedConnection, IpcError> {
+    if inline || file {
+        let source = match (inline, file) {
+            (true, true) => BearerSource::Conflicting,
+            (true, false) => BearerSource::InlineEnv,
+            _ => BearerSource::TokenFile,
+        };
+        return Ok(ResolvedConnection::Daemon {
+            config: explicit()?,
+            source,
+        });
+    }
+    // Preserve the legacy socket-only route; never mix an explicit endpoint
+    // with an implicitly discovered credential.
+    if socket {
+        return Ok(ResolvedConnection::InProcess);
+    }
+    Ok(match discovered()? {
+        Some(config) => ResolvedConnection::Daemon {
+            config,
+            source: BearerSource::InstalledService,
+        },
+        None => ResolvedConnection::InProcess,
+    })
+}
+
+fn resolve_connection() -> Result<ResolvedConnection, IpcError> {
+    resolve_with(
+        std::env::var_os(ACTIVE.daemon_bearer_env()).is_some(),
+        std::env::var_os(ACTIVE.daemon_bearer_file_env()).is_some(),
+        std::env::var_os(ACTIVE.daemon_socket_env()).is_some(),
+        || DaemonConfig::from_env().map_err(|_| configuration_error()),
+        || DaemonConfig::discover_installed_service().map_err(|_| configuration_error()),
+    )
+}
+
+#[cfg(test)]
 pub(crate) fn bearer_source() -> Option<BearerSource> {
-    let inline = std::env::var_os(ACTIVE.daemon_bearer_env()).is_some();
-    let file = std::env::var_os(ACTIVE.daemon_bearer_file_env()).is_some();
-    match (inline, file) {
-        (true, true) => Some(BearerSource::Conflicting),
-        (true, false) => Some(BearerSource::InlineEnv),
-        (false, true) => Some(BearerSource::TokenFile),
-        (false, false) => None,
+    match resolve_connection() {
+        Ok(ResolvedConnection::InProcess) => None,
+        Ok(ResolvedConnection::Daemon { source, .. }) => Some(source),
+        Err(_) => Some(BearerSource::Conflicting),
     }
 }
 
 pub(crate) fn route() -> Result<Route, IpcError> {
-    if bearer_source().is_none() {
-        return Ok(Route::InProcess(Box::default()));
-    }
-    match DaemonConfig::from_env() {
-        Ok(config) => Ok(Route::Daemon(Box::new(DaemonClient::new(config)))),
-        Err(error) => Err(
-            IpcError::new(IpcErrorKind::Configuration, error.to_string()).with_remedy(format!(
-                "set exactly one of {} or {}, and keep any token file owner-only",
-                ACTIVE.daemon_bearer_env(),
-                ACTIVE.daemon_bearer_file_env()
-            )),
-        ),
+    resolve_connection()?.into_route()
+}
+
+impl ResolvedConnection {
+    fn into_route(self) -> Result<Route, IpcError> {
+        match self {
+            Self::InProcess => Ok(Route::InProcess(Box::default())),
+            Self::Daemon { config, source } => {
+                let client = DaemonClient::new(config);
+                if source == BearerSource::InstalledService {
+                    // Discovery proves configuration, not peer identity. Bind
+                    // the authenticated read-only status before any authority
+                    // negotiation. This is send-once; failures never fall back.
+                    let AppEvent::Status(status) = client
+                        .request(AppCommand::Status)
+                        .map_err(from_client_error)?
+                    else {
+                        return Err(IpcError::new(
+                            IpcErrorKind::Protocol,
+                            "daemon identity response was invalid",
+                        ));
+                    };
+                    validate_peer_edition(status.edition)?;
+                }
+                Ok(Route::Daemon(Box::new(client)))
+            }
+        }
     }
 }
 
-/// Describe the current route without performing a read.
-pub fn connection() -> ConnectionInfo {
-    let bearer = bearer_source();
-    match bearer {
-        None => ConnectionInfo {
-            source: ConnectionSource::InProcess,
-            socket_path: None,
-            bearer_configured: false,
-            bearer_source: None,
-            detail: format!(
-                "No {} or {} is set, so no abbeyd is configured for the {} edition. \
-                 Status, claims, and the routing audit are read from the application core \
-                 linked into this app. Protocol-v2 run reads stay daemon-only.",
-                ACTIVE.daemon_bearer_env(),
-                ACTIVE.daemon_bearer_file_env(),
-                ACTIVE.slug()
-            ),
+fn validate_peer_edition(edition: abbey::app_core::Edition) -> Result<(), IpcError> {
+    let expected = match ACTIVE {
+        abbey::edition::Edition::Safe => abbey::app_core::Edition::Standard,
+        abbey::edition::Edition::Personal => abbey::app_core::Edition::Personal,
+    };
+    if edition != expected {
+        return Err(IpcError::new(
+            IpcErrorKind::Protocol,
+            "the authenticated daemon belongs to a different edition",
+        ));
+    }
+    Ok(())
+}
+
+/// Filesystem inspection only: no connection, service operation, or autostart.
+pub fn connection() -> Result<ConnectionInfo, IpcError> {
+    Ok(connection_metadata(resolve_connection()?))
+}
+
+fn connection_metadata(resolved: ResolvedConnection) -> ConnectionInfo {
+    match resolved {
+        ResolvedConnection::InProcess => ConnectionInfo {
+            source: ConnectionSource::InProcess, socket_path: None,
+            bearer_configured: false, bearer_source: None,
+            detail: "No local daemon configuration is selected. Reads use the linked application core; daemon-only surfaces remain unavailable.".to_owned(),
         },
-        Some(source) => {
-            // Only the socket *path* is read here — `DaemonConfig` is never
-            // formatted into this struct, and the bearer is never touched.
-            let socket_path = DaemonConfig::from_env()
-                .ok()
-                .map(|config| config.socket_path.display().to_string());
-            ConnectionInfo {
-                source: ConnectionSource::Daemon,
-                socket_path,
-                bearer_configured: true,
-                bearer_source: Some(source),
-                detail: match source {
-                    BearerSource::Conflicting => format!(
-                        "{} and {} are both set. Abbey's daemon config is fail-closed: \
-                         set exactly one.",
-                        ACTIVE.daemon_bearer_env(),
-                        ACTIVE.daemon_bearer_file_env()
-                    ),
-                    _ => "Reads go to abbeyd over its authenticated owner-only Unix socket. \
-                          A failure is reported, never answered from this process."
-                        .to_owned(),
-                },
-            }
-        }
+        ResolvedConnection::Daemon { config, source } => ConnectionInfo {
+            source: ConnectionSource::Daemon,
+            socket_path: Some(config.socket_path.display().to_string()),
+            bearer_configured: true, bearer_source: Some(source),
+            detail: if source == BearerSource::InstalledService {
+                "Local service configuration discovered. This does not establish that a unit is installed or running. Daemon failures are reported without fallback."
+            } else { "Reads use the authenticated daemon. Failures are reported without fallback." }.to_owned(),
+        },
     }
 }
 
@@ -247,7 +310,7 @@ mod tests {
         if bearer_source().is_some() {
             return; // developer machine has a daemon configured; not a failure
         }
-        let info = connection();
+        let info = connection().expect("connection metadata");
         assert_eq!(info.source, ConnectionSource::InProcess);
         assert!(!info.bearer_configured);
         assert!(info.socket_path.is_none());
@@ -305,7 +368,9 @@ mod tests {
         let Some(source) = bearer_source() else {
             return; // covered by the bearer-set run
         };
-        assert_eq!(connection().source, ConnectionSource::Daemon);
+        if let Ok(info) = connection() {
+            assert_eq!(info.source, ConnectionSource::Daemon);
+        }
         let error = status().expect_err(
             "a configured daemon with no listener must fail, never answer from this process",
         );
@@ -380,7 +445,7 @@ mod tests {
             bearer_source().is_some(),
             "live daemon proof requires a configured bearer"
         );
-        let info = connection();
+        let info = connection().expect("connection metadata");
         assert_eq!(info.source, ConnectionSource::Daemon);
         assert!(info.bearer_configured);
         assert!(info.socket_path.is_some(), "{info:?}");
@@ -480,7 +545,7 @@ mod tests {
 
     #[test]
     fn connection_detail_never_contains_bearer_material() {
-        let info = connection();
+        let info = connection().expect("connection metadata");
         let rendered = serde_json::to_string(&info).expect("serialize connection info");
         // The *names* of the variables may appear; a value must not. Any real
         // bearer is at least 32 bytes, so assert the serialized form carries no
@@ -495,3 +560,6 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod connection_tests;

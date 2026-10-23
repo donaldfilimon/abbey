@@ -14,19 +14,13 @@
 use abbey::app_core::{V3Capability, V3CapabilitySet, V3PageQuery, V3ToolPage};
 use abbey::daemon::V3DaemonSession;
 
-use super::{Route, bearer_source, from_client_error, route};
+use super::{Route, from_client_error, route};
 use crate::ipc::{IpcError, IpcErrorKind};
 
 /// The exact grant set this session negotiates. Read-only by construction.
 const TOOL_GRANTS: &[V3Capability] = &[V3Capability::ListTools];
 
 fn tool_session() -> Result<V3DaemonSession, IpcError> {
-    if bearer_source().is_none() {
-        return Err(IpcError::new(
-            IpcErrorKind::Rejected,
-            "the tool inventory requires a configured abbeyd",
-        ));
-    }
     match route()? {
         Route::InProcess(_) => Err(IpcError::new(
             IpcErrorKind::Rejected,

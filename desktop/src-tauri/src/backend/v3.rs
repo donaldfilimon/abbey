@@ -24,7 +24,7 @@ use abbey::app_core::{
 };
 use abbey::daemon::V3DaemonSession;
 
-use super::{Route, bearer_source, from_client_error, route};
+use super::{Route, from_client_error, route};
 use crate::ipc::{IpcError, IpcErrorKind};
 
 /// The exact, sorted set of v3 grants this read session requests. Shared by
@@ -38,13 +38,10 @@ const REQUESTED_V3_GRANTS: &[V3Capability] = &[
 ];
 
 fn v3_read_session() -> Result<V3DaemonSession, IpcError> {
-    if bearer_source().is_none() {
-        return Err(IpcError::new(
-            IpcErrorKind::Rejected,
-            "protocol-v3 reads require a configured abbeyd",
-        ));
-    }
-    match route()? {
+    v3_read_session_for(route()?)
+}
+fn v3_read_session_for(route: Route) -> Result<V3DaemonSession, IpcError> {
+    match route {
         Route::InProcess(_) => Err(IpcError::new(
             IpcErrorKind::Rejected,
             "protocol-v3 reads are daemon-only and never open the in-process store",
@@ -63,10 +60,11 @@ fn v3_read_session() -> Result<V3DaemonSession, IpcError> {
 /// grants only `ReadMemory` correctly leaves the Models surface unavailable
 /// rather than showing a view whose every read would be refused.
 pub fn v3_grants() -> Result<V3CapabilitySet, IpcError> {
-    if bearer_source().is_none() {
+    let route = route()?;
+    if matches!(route, Route::InProcess(_)) {
         return Ok(V3CapabilitySet::deny_all());
     }
-    Ok(v3_read_session()?.negotiation().granted.clone())
+    Ok(v3_read_session_for(route)?.negotiation().granted.clone())
 }
 
 pub fn memory_search(request: V3SearchRequest) -> Result<V3EntityPage, IpcError> {

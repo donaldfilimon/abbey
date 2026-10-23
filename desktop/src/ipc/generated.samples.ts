@@ -9,12 +9,21 @@ import type {
   AppCommand,
   AppEvent,
   CapabilitySet,
+  ConnectionInfo,
   ClaimRecord,
   V3CapabilitySet,
   V3EntityPage,
   V3SearchRequest,
   V3ToolPage,
 } from "./generated";
+
+export const installedServiceConnectionFixture = {
+  "source": "daemon",
+  "socket_path": "/fixture/.local/state/abbey/daemon/abbeyd.sock",
+  "bearer_configured": true,
+  "bearer_source": "installed_service",
+  "detail": "Local service configuration discovered; installation and readiness unverified."
+} as const satisfies ConnectionInfo;
 
 export const statusCommandFixture = {
   "type": "status"

@@ -87,12 +87,6 @@ fn effective_model(
 /// does not publish, or one it publishes as unavailable, is refused rather
 /// than silently replaced with a different route.
 fn runtime_effective_model(route_id: Option<&str>) -> Result<EffectiveModel, IpcError> {
-    if backend::bearer_source().is_none() {
-        return Err(IpcError::new(
-            IpcErrorKind::Rejected,
-            "no runtime route is published: this client executes no turns without a daemon",
-        ));
-    }
     let routes = backend::published_routes()?;
     let route = match route_id {
         Some(route_id) => routes
@@ -342,7 +336,7 @@ async fn tools_task<T: Send + 'static>(
 /// How this client reaches Abbey. No secret material; see `ipc::ConnectionInfo`.
 #[tauri::command]
 pub async fn app_connection() -> Result<ConnectionInfo, IpcError> {
-    read_task(|| Ok(backend::connection())).await
+    read_task(backend::connection).await
 }
 
 /// Packaged identity of the running build, derived from `abbey::edition`.

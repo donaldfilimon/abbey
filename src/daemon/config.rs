@@ -171,6 +171,8 @@ impl DaemonConfig {
 
 #[derive(Debug, Error)]
 pub enum ConfigError {
+    #[error("local service configuration is invalid or cannot be inspected")]
+    InstalledServiceConfiguration,
     #[error(
         "set exactly one of {} or {}",
         crate::edition::ACTIVE.daemon_bearer_env(),
@@ -271,7 +273,10 @@ fn load_bearer_file(path: &Path) -> Result<BearerSecret, ConfigError> {
 }
 
 #[cfg(unix)]
-fn read_bearer(reader: impl std::io::Read, path: &Path) -> Result<BearerSecret, ConfigError> {
+pub(super) fn read_bearer(
+    reader: impl std::io::Read,
+    path: &Path,
+) -> Result<BearerSecret, ConfigError> {
     use std::io::Read as _;
 
     // One byte beyond the largest valid token plus CRLF detects oversize

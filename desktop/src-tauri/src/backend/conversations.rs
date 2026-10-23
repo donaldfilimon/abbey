@@ -1,17 +1,14 @@
 //! Daemon-only conversation authority. Turns execute in abbeyd, never in this process.
-use super::{Route, bearer_source, route};
+use super::{Route, route};
 use crate::ipc::{IpcError, IpcErrorKind};
 use abbey::app_core::*;
 use abbey::daemon::{V4ClientError, V4DaemonSession};
 
 fn session() -> Result<V4DaemonSession, IpcError> {
-    if bearer_source().is_none() {
-        return Err(IpcError::new(
-            IpcErrorKind::Rejected,
-            "conversations require a configured daemon",
-        ));
-    }
-    match route()? {
+    session_for(route()?)
+}
+fn session_for(route: Route) -> Result<V4DaemonSession, IpcError> {
+    match route {
         Route::Daemon(client) => client.negotiate_v4(requested()).map_err(error),
         Route::InProcess(_) => Err(IpcError::new(
             IpcErrorKind::Rejected,
@@ -41,12 +38,6 @@ fn requested() -> V4CapabilitySet {
 /// capability. This session asks for exactly `ReadRoutes`, so a read is
 /// refused only when the route authority itself was withheld.
 fn routes_session() -> Result<V4DaemonSession, IpcError> {
-    if bearer_source().is_none() {
-        return Err(IpcError::new(
-            IpcErrorKind::Rejected,
-            "the published routes require a configured daemon",
-        ));
-    }
     match route()? {
         Route::Daemon(client) => client
             .negotiate_v4(
@@ -56,7 +47,7 @@ fn routes_session() -> Result<V4DaemonSession, IpcError> {
             .map_err(error),
         Route::InProcess(_) => Err(IpcError::new(
             IpcErrorKind::Rejected,
-            "the published routes are daemon-only",
+            "no runtime route is published: this client executes no turns without a daemon",
         )),
     }
 }
@@ -80,10 +71,11 @@ fn error(value: V4ClientError) -> IpcError {
     IpcError::new(kind, value.to_string())
 }
 pub fn conversation_grants() -> Result<V4CapabilitySet, IpcError> {
-    if bearer_source().is_none() {
+    let route = route()?;
+    if matches!(route, Route::InProcess(_)) {
         return Ok(V4CapabilitySet::deny_all());
     }
-    Ok(session()?.grants().clone())
+    Ok(session_for(route)?.grants().clone())
 }
 pub fn conversations_list(query: V4ConversationQuery) -> Result<V4ConversationPage, IpcError> {
     session()?.list_conversations(query).map_err(error)
@@ -214,7 +206,7 @@ mod tests {
     }
     #[test]
     fn missing_daemon_never_opens_conversation_storage() {
-        if bearer_source().is_some() {
+        if super::super::bearer_source().is_some() {
             return;
         }
         assert!(conversation_grants().unwrap().as_slice().is_empty());
