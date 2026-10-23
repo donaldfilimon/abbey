@@ -1,0 +1,12 @@
+[
+  {
+    "path": "target/debug/deps-retained-20261022/libfutures_macro-af18606ee846ad6d.dylib",
+    "timed_out_seconds": 3
+  },
+  {
+    "path": "target/debug/deps/libfutures_macro-af18606ee846ad6d.dylib",
+    "exit": 0,
+    "seconds": 0.06359033301123418,
+    "stderr": "Executable=/Users/donald/sources/repos/abbey/target/debug/deps/libfutures_macro-af18606ee846ad6d.dylib\n"
+  }
+]

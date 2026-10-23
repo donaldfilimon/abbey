@@ -1,0 +1,32 @@
+{
+  "root": {
+    "command": [
+      "./check.sh"
+    ],
+    "CARGO_BUILD_JOBS": "1",
+    "timeout_seconds": 180,
+    "exit": 124,
+    "outcome": "timeout; not qualification evidence",
+    "elapsed_seconds": 180.031,
+    "unchanged_from_before": {
+      "abbey": true,
+      "abi": true,
+      "wdbx": false
+    }
+  },
+  "desktop": {
+    "command": [
+      "./desktop/check.sh"
+    ],
+    "CARGO_BUILD_JOBS": "1",
+    "timeout_seconds": 120,
+    "exit": 124,
+    "outcome": "timeout; not qualification evidence",
+    "elapsed_seconds": 120.018,
+    "unchanged_from_before": {
+      "abbey": false,
+      "abi": false,
+      "wdbx": false
+    }
+  }
+}

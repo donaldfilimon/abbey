@@ -1,0 +1,384 @@
+compiler: /Users/donald/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/rustc
+rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: aarch64-apple-darwin
+release: 1.99.1
+LLVM version: 23.1.1
+cargo 1.99.1 (5f94df478 2026-08-27)
+== native Routes acceptance assertion tests ==
+....................................................................................................
+----------------------------------------------------------------------
+Ran 100 tests in 5.028s
+
+OK
+== codegen drift ==
+warning: unused import: `simulator::AdmissionSimulator`
+  --> /Users/donald/.codex/verification/abbey-completion-20261022/frozen-2/wdbx/crates/abi-wdbx/src/v3/complete_episode/crypto/admission/mod.rs:11:16
+   |
+11 | pub(super) use simulator::AdmissionSimulator;
+   |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+codegen: 5 generated file(s) up to date
+== shell script syntax ==
+== typecheck ==
+== model operation state and recovery ==
+bun test v1.4.4-canary.1 (ea6a2c7b7)
+
+tests/presentation-preferences.test.ts:
+(pass) missing, malformed, and non-object storage falls back without throwing [3.97ms]
+(pass) unknown or missing versions do not adopt stored preferences [0.31ms]
+(pass) legacy v1 preserves appearance and collapsed with new field defaults [0.03ms]
+(pass) invalid enums and non-boolean collapsed are defaulted independently [0.13ms]
+(pass) all preference combinations round-trip through version 1 JSON [0.06ms]
+(pass) unknown fields are not retained, including prototype-shaped keys [0.27ms]
+(pass) parser results are fresh objects and cannot change future defaults
+(pass) material resolution covers every platform and accessibility combination [0.03ms]
+
+tests/doctor-effective-model.test.tsx:
+(pass) the doctor panel shows the effective model the runtime published [4.54ms]
+(pass) an unset live model is shown as unset, not as an empty cell [0.56ms]
+(pass) an unreadable effective model states why instead of guessing one [0.45ms]
+(pass) the doctor names the selected route as the authority for the answer [0.29ms]
+(pass) the doctor shows no route when none is selected [0.35ms]
+(pass) the doctor says the default route is the authority when none is selected [0.44ms]
+
+tests/conversation-metadata.test.ts:
+(pass) pin/unpin and unarchive use exact target patch and preserve draft [1.42ms]
+(pass) unknown patch reconciles immutable target by reads without replay after navigation [0.49ms]
+(pass) archive filter resets cursor and discards stale active results [0.30ms]
+(pass) missing update API refuses metadata mutations [0.05ms]
+(pass) pending metadata action is single flight and late acknowledgement preserves navigation [0.07ms]
+(pass) pin/unarchive controls and active/archived filter render without a title dialog [2.64ms]
+
+tests/runs-surface.test.tsx:
+(pass) a failed run shows the failure code and the daemon's own message [0.20ms]
+(pass) a cancelled run shows why it was cancelled [0.03ms]
+(pass) an interrupted run shows why it was interrupted
+(pass) an ordinary lifecycle event shows its kind and nothing more [0.15ms]
+(pass) a cancel request is not the same as a cancellation
+(pass) every lifecycle event renders without an empty or undefined label [0.16ms]
+(pass) the whole view explains that task delegation is unavailable [0.47ms]
+(pass) the whole view cites the live ledger for the withheld capability [0.11ms]
+(pass) the whole view still offers the live run lookup it actually has [0.07ms]
+(pass) the runs view and the unavailable pages share one unavailable mechanism [0.13ms]
+
+tests/model-operations.test.ts:
+(pass) window-session exact model attempts > ambiguous submission retains exact identity and blocks a fresh effect [0.31ms]
+(pass) window-session exact model attempts > navigation subscriptions do not erase operations; terminal recovery permits a fresh ID [0.03ms]
+(pass) window-session exact model attempts > wrong correlation, impossible states and progress stay unresolved [0.02ms]
+(pass) window-session exact model attempts > late reads cannot regress running or terminal evidence [0.01ms]
+(pass) window-session exact model attempts > bounded store refuses new models without discarding unresolved identity [0.01ms]
+
+tests/tools-surface.test.tsx:
+(pass) the safe-edition inventory lists every advertised tool with its effect class [0.22ms]
+(pass) the tools surface offers no way to run, approve, or cancel a tool [0.09ms]
+(pass) an unreadable inventory states why instead of showing an empty list [0.11ms]
+(pass) the unavailable states are distinguished, not collapsed into one message
+(pass) the effect classes are labelled from the daemon's own vocabulary
+
+tests/surface-grants.test.ts:
+(pass) a surface with no capability is never available [0.20ms]
+(pass) a protocol-v1 surface needs the status grant [0.01ms]
+(pass) a surface is not available before the runtime has answered
+(pass) a v3-gated surface needs the v3 grant, not the status grant
+(pass) a v3-gated surface stays shut when only the status is present [0.02ms]
+(pass) a granted surface does not open on a different grant
+(pass) every available surface is gated by a capability that is declared [0.01ms]
+(pass) every available surface opens when its own grant is held [0.01ms]
+(pass) every surface has an icon [0.01ms]
+
+tests/conversation-stop.test.ts:
+(pass) double Stop sends exact pair once synchronously and preserves draft/transcript while stopping [0.30ms]
+(pass) ambiguous Stop reconciles only through reads, including navigation away and back [0.48ms]
+(pass) late Stop acknowledgement cannot select or alter another conversation's draft/transcript/action [0.08ms]
+(pass) active queued and complete running previews permit Stop; terminal replies and missing grant refuse it [0.23ms]
+(pass) completion racing Stop is reported as succeeded and removes active Stop immediately [0.05ms]
+(pass) a stale rendered Stop action cannot cancel a newly selected conversation or replacement run [0.05ms]
+(pass) terminal content settles an ambiguous Stop without another mutation or discarding the next draft [0.24ms]
+(pass) a captured Stop run cannot be retargeted to a later turn in the same conversation [0.06ms]
+
+tests/app-shell.test.tsx:
+(pass) the whole shell renders the navigation, the banner, and the footer [2.61ms]
+(pass) the connecting banner offers nothing but the wait [0.03ms]
+(pass) an unreachable runtime is reported, with the one action that can help [0.06ms]
+(pass) the empty state asks for a connection when there is none [0.06ms]
+(pass) the empty state names the grant a connected runtime withheld [0.07ms]
+(pass) the empty state says what it is still checking [0.10ms]
+(pass) the chat surface is answered by the conversation session, not the status [0.02ms]
+(pass) every other surface keeps the ordinary grant rule [0.03ms]
+
+tests/unavailable-surface.test.tsx:
+(pass) an unavailable surface says the contract is not exposed, and why [0.10ms]
+(pass) a capability that is not implemented anywhere says exactly that [0.10ms]
+(pass) an unavailable surface offers no way to start or change work [0.05ms]
+(pass) an unavailable surface distinguishes the desktop's limit from Abbey's [0.06ms]
+(pass) every surface marked unavailable renders without a bridge and says why [0.10ms]
+(pass) an available surface is not renderable as an unavailable one [0.17ms]
+
+tests/model-polling.test.ts:
+(pass) multi-model polls stay serial despite first model store updates and stop when terminal [0.22ms]
+(pass) unmount stops pending timer and refuses in-flight results or later reads [0.06ms]
+
+tests/update-check.test.tsx:
+(pass) the surface names the pinned source and the explicit-action policy [0.06ms]
+(pass) nothing is checked until the reader asks [0.13ms]
+(pass) the idle surface has exactly one control [0.04ms]
+(pass) a current installation says so [0.03ms]
+(pass) an available update offers exactly one install control [0.03ms]
+(pass) a failed check reports the failure instead of claiming an update [0.03ms]
+(pass) a check in flight cannot be started again [0.04ms]
+(pass) a download in progress reports the bytes it has verified [0.04ms]
+(pass) an installed update says to quit and reopen [0.03ms]
+
+tests/models-view.test.tsx:
+(pass) the whole view renders the inventory it was given [0.25ms]
+(pass) the whole view states that inventory presence is not inference [0.09ms]
+(pass) an inventory-only runtime offers no lifecycle control [0.10ms]
+(pass) the button matrix needs the grant, the licence, and an unloaded model [0.15ms]
+(pass) an unresolved operation blocks every new action [0.02ms]
+(pass) the confirmation gate names the exact action it would send [0.10ms]
+(pass) the confirmation gate is closed while an operation is unresolved [0.03ms]
+(pass) the gate offers a cancel that never sends the action [0.03ms]
+(pass) an unknown outcome is stated as unknown, and recovery only reads status [0.06ms]
+(pass) the recovery control is disabled while a status check is in flight [0.01ms]
+(pass) a terminal operation shows the runtime's own state, not a recovery [0.03ms]
+
+tests/system-integration.test.tsx:
+(pass) the system integration section states all four host facts [0.27ms]
+(pass) the shipped capability manifest is exactly the two reviewed permissions [0.55ms]
+(pass) every declared permission is explained, and no permission is unexplained [0.05ms]
+(pass) the shipped client cannot register a login item, install a service, or spawn a process [0.51ms]
+
+tests/message-content.test.tsx:
+(pass) parses Unicode paragraphs, lists, headings and exact fenced code [0.38ms]
+(pass) renders markup safely, no remote assets, active HTML, dangerous URL or dead link [0.13ms]
+(pass) code renders selectable preformatted text and unavailable clipboard is explicit [0.24ms]
+(pass) copy reports success, missing permission and unavailable clipboard without throwing [0.06ms]
+(pass) fences retain exact final newline, support tilde delimiters and do not swallow shorter closers [0.02ms]
+(pass) 4MiB newline or inline-heavy text falls back losslessly to bounded plain text [2.62ms]
+
+tests/memory-surface.test.tsx:
+(pass) the memory view reads exactly one summary space [0.15ms]
+(pass) the memory view offers a bounded set of page sizes [0.01ms]
+(pass) the memory view offers no mutation control [0.07ms]
+(pass) the memory view says the mutation is not on this surface [0.04ms]
+(pass) the memory view says the payload never crosses the contract [0.04ms]
+(pass) a record carries an opaque id, a bounded label, and a state [0.01ms]
+
+tests/ledger-surfaces.test.tsx:
+(pass) a claim row shows its name, status, and note [0.08ms]
+(pass) a claim row names what to use instead when the ledger says so [0.03ms]
+(pass) a claim row with no alternative does not invent one [0.02ms]
+(pass) every claim status has a readable label [0.08ms]
+(pass) the error card names the kind and shows the message [0.02ms]
+(pass) the error card shows a remedy when the daemon offered one [0.02ms]
+(pass) the error card omits the remedy line when there is no remedy [0.01ms]
+(pass) every error kind has a readable headline [0.06ms]
+
+tests/routes-surface.test.tsx:
+(pass) a route row shows the decision the application core published [0.07ms]
+(pass) a route row shows the workspace as the opaque digest it was given [0.03ms]
+(pass) a route row never renders a filesystem path [0.02ms]
+(pass) an entry with no workspace says so instead of rendering a blank [0.03ms]
+(pass) a route row names the alternative and its fallback when the router considered one [0.03ms]
+(pass) a route row with no alternative does not claim one was considered [0.04ms]
+(pass) a route row shows the stage and run correlation when the router recorded them [0.04ms]
+(pass) a route row lists the tool markers the router attached [0.04ms]
+(pass) a route row with no tools does not render an empty tools line [0.02ms]
+
+tests/model-runner.test.ts:
+(pass) interrupted effect is sent once; recovery only reads the retained operation [0.12ms]
+(pass) unmounted or obsolete read cannot update retained state [0.04ms]
+(pass) double submit is prevented synchronously before an effect completes [0.04ms]
+
+tests/conversation-retry.test.ts:
+(pass) retry uses exact original input and fresh key once, preserving draft and recording honest relationship [0.93ms]
+(pass) retry refuses active/successful, incomplete input, unavailable routes, metadata effects and stale actions [0.14ms]
+(pass) late retry acknowledgement preserves navigation and unknown response never allows replay [0.12ms]
+(pass) retry refuses unavailable route, unresolved send/effect, another active run and truncated input [0.19ms]
+(pass) uncorrelated retry response stays unknown and blocks ordinary sends without consuming draft [0.20ms]
+(pass) workspace renders explicit retry action and honest window-only lineage [0.64ms]
+(pass) user-only terminal attempts render exactly one retry action [0.17ms]
+(pass) unknown retry blocks only affected conversation and exact-key lookup reconciles without replay [0.31ms]
+(pass) lookup rejects wrong exact key and conversation, null/error never clears unknown [0.16ms]
+(pass) normal send ambiguity survives independent sends and plaintext cannot prove acceptance [0.17ms]
+(pass) late exact lookup cannot clobber another conversation or a newly edited draft [1.35ms]
+
+tests/conversation-windows.test.ts:
+(pass) 10k sparse short pages browse both directions with bounded windows including evicted cursors [46.62ms]
+(pass) historical browse stays fixed across poll intervals and latest retains only one window [302.59ms]
+(pass) latest scan is cancelled by navigation and failed later read preserves window/draft [0.52ms]
+(pass) late following poll cannot replace an earlier window [303.79ms]
+(pass) workspace renders one bounded window and usable navigation controls [3.83ms]
+(pass) terminal assistant split from its original input remains retryable after latest scan [1.11ms]
+(pass) paired retry evidence survives earlier/later but never crosses conversation identity [0.49ms]
+
+tests/conversations.test.ts:
+(pass) drafts belong to each conversation and new draft; survive reads, navigation and failure with bounded input [0.84ms]
+(pass) slow search and selection cannot replace newer results or message bodies [0.43ms]
+(pass) conversation and message pages retain watermark; stale load-more is discarded on query or selection change [0.48ms]
+(pass) double mutation sends once, transport ambiguity locks effects, read reconciliation never replays [0.46ms]
+(pass) unknown create stays unknown after read-only refresh; unknown delete resolves only exact not-found [0.32ms]
+(pass) failed reconnect preserves authorized selection/content/draft and removes write authority [0.20ms]
+(pass) read-only and missing grants cannot mutate; no hidden local fallback [0.16ms]
+(pass) draft inventory refuses to evict existing drafts at the bounded limit [0.59ms]
+(pass) late message pagination is ignored after selecting another conversation [0.23ms]
+(pass) no-daemon is distinct from a missing live grant and never negotiates authority [0.10ms]
+(pass) successful rename metadata survives an older selection while its messages still finish [0.26ms]
+(pass) successful archive metadata survives an older selection while its messages still finish [0.14ms]
+(pass) read-reconciled rename metadata survives an older selection [0.27ms]
+(pass) read-reconciled archive metadata survives an older selection [0.13ms]
+(pass) a failed replacement search cannot page the previous query or mix its rows [0.44ms]
+(pass) a failed first-page refresh disables the retained cursor until a replacement snapshot succeeds [0.30ms]
+(pass) poll refreshes tail of selected conversation without clobbering draft or selection on transient error [303.17ms]
+(pass) active assistant content is read by exact run cursor and replaces the bounded preview [326.29ms]
+(pass) route read failure stays distinct from an empty inventory and retry selects only an available route [0.80ms]
+(pass) successfully empty route inventory is not misreported as a route read failure [0.13ms]
+(pass) new-conversation draft follows creation when turn submission is rejected [0.21ms]
+(pass) failed conversation creation is reported separately and retains the unsent draft [0.14ms]
+(pass) ambiguous turn submission locks that conversation against duplicate sends [0.14ms]
+(pass) exact-key lookup resolves an ambiguous send without replay [0.24ms]
+(pass) repeated daemon poll failures move chat offline and remove write authority [1852.20ms]
+(pass) manual loading continues paging an older truncated reply until its terminal event [342.95ms]
+(pass) later conversation-scoped run accepts its first nonzero event sequence without replay [302.63ms]
+(pass) historical browse explicitly drains content pages without resuming history polling [302.71ms]
+(pass) historical content action has bounded continuation and preserves advertised bytes [1.48ms]
+(pass) explicit content load is single flight and late pages cannot alter a navigated conversation [0.57ms]
+(pass) nonadvancing historical content remains incomplete with continuation available [0.23ms]
+
+ 178 pass
+ 0 fail
+ 2079 expect() calls
+Ran 178 tests across 22 files. [4.19s]
+== frontend build ==
+vite v8.2.2 building client environment for production...
+transforming...
+✓ 58 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                   0.45 kB │ gzip:  0.29 kB
+dist/assets/index-aQD30N6b.css   23.33 kB │ gzip:  5.48 kB
+dist/assets/index-DTBnlNwG.js   298.21 kB │ gzip: 90.40 kB
+
+✓ built in 66ms
+== bundle security ==
+verify-bundle: OK (4 built file(s) checked)
+== clippy (warning denied, both desktop packages) ==
+warning: unused import: `simulator::AdmissionSimulator`
+  --> /Users/donald/.codex/verification/abbey-completion-20261022/frozen-2/wdbx/crates/abi-wdbx/src/v3/complete_episode/crypto/admission/mod.rs:11:16
+   |
+11 | pub(super) use simulator::AdmissionSimulator;
+   |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+== cargo test (default edition) ==
+warning: unused import: `simulator::AdmissionSimulator`
+  --> /Users/donald/.codex/verification/abbey-completion-20261022/frozen-2/wdbx/crates/abi-wdbx/src/v3/complete_episode/crypto/admission/mod.rs:11:16
+   |
+11 | pub(super) use simulator::AdmissionSimulator;
+   |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+
+running 66 tests
+..................................................................
+test result: ok. 66 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 3 tests
+...
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+== cargo test (--features personal-edition) ==
+warning: unused import: `simulator::AdmissionSimulator`
+  --> /Users/donald/.codex/verification/abbey-completion-20261022/frozen-2/wdbx/crates/abi-wdbx/src/v3/complete_episode/crypto/admission/mod.rs:11:16
+   |
+11 | pub(super) use simulator::AdmissionSimulator;
+   |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+
+running 66 tests
+..................................................................
+test result: ok. 66 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 3 tests
+...
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+== cargo test (live scratch abbeyd — desktop reads, no in-process fallback) ==
+GUI limit: no WebView is opened; process-level desktop backend reads against a real abbeyd are the accepted bar.
+== build abbeyd and abbey ==
+== start scratch abbeyd ==
+abbeyd ready pid=28760 socket=/tmp/abbey-desktop-live.vLIeCK/abbeyd.sock
+== seed synthetic authorized conversation history ==
+seed-conversation-fixture: deterministic v4 submit produced a complete assistant reply
+== seed sanitized memory summary ==
+== cargo test live_daemon_desktop_reads ==
+warning: unused import: `simulator::AdmissionSimulator`
+  --> /Users/donald/.codex/verification/abbey-completion-20261022/frozen-2/wdbx/crates/abi-wdbx/src/v3/complete_episode/crypto/admission/mod.rs:11:16
+   |
+11 | pub(super) use simulator::AdmissionSimulator;
+   |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `abi-wdbx` (lib) generated 1 warning (run `cargo fix --lib -p abi-wdbx` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.20s
+     Running unittests src/main.rs (/Users/donald/sources/repos/abbey/target/debug/deps/abbey_desktop-d889c8ff91ffcc88)
+
+running 6 tests
+test backend::tools::tests::live_daemon_desktop_lists_the_tool_inventory ... ok
+test commands::tests::live_daemon_desktop_effective_model_comes_from_the_runtime_route ... ok
+test commands::tests::live_daemon_desktop_the_selected_route_answers_the_effective_model ... ok
+test backend::v3::tests::live_daemon_desktop_v3_reads ... ok
+test backend::tests::live_daemon_desktop_reads_status_and_run_lifecycle ... ok
+test backend::conversations::tests::live_daemon_desktop_conversation_crud_and_history ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 60 filtered out; finished in 0.83s
+
+     Running tests/updater_signature.rs (/Users/donald/sources/repos/abbey/target/debug/deps/updater_signature-f1e6e602005603e3)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+live daemon desktop tests ran: 6
+prove-daemon-read: OK
+== cargo test (bearer configured — proves no silent fallback) ==
+warning: unused import: `simulator::AdmissionSimulator`
+  --> /Users/donald/.codex/verification/abbey-completion-20261022/frozen-2/wdbx/crates/abi-wdbx/src/v3/complete_episode/crypto/admission/mod.rs:11:16
+   |
+11 | pub(super) use simulator::AdmissionSimulator;
+   |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+
+running 1 test
+.
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 65 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+== cargo build (links a real binary) ==
+warning: unused import: `simulator::AdmissionSimulator`
+  --> /Users/donald/.codex/verification/abbey-completion-20261022/frozen-2/wdbx/crates/abi-wdbx/src/v3/complete_episode/crypto/admission/mod.rs:11:16
+   |
+11 | pub(super) use simulator::AdmissionSimulator;
+   |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+desktop/check.sh: OK

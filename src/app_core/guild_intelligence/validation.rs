@@ -2,11 +2,11 @@ use super::{
     GuildIntelligenceError, GuildRecording, MAX_OBJECTS, MAX_REF_LEN, OperatorAuthority,
     OverwriteTarget, invalid,
 };
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 impl GuildRecording {
     pub(super) fn validate(&self) -> Result<(), GuildIntelligenceError> {
-        if self.schema_version != super::SCHEMA_VERSION {
+        if self.schema_version != super::RECORDING_SCHEMA_VERSION {
             return invalid("unsupported schema version");
         }
         if matches!(self.operator_authority, OperatorAuthority::Owner)
@@ -76,6 +76,26 @@ impl GuildRecording {
             .iter()
             .map(|channel| channel.ref_id.as_str())
             .collect();
+        let parents: BTreeMap<_, _> = self
+            .channels
+            .iter()
+            .map(|channel| (channel.ref_id.as_str(), channel.parent_ref.as_deref()))
+            .collect();
+        let mut resolved = BTreeSet::new();
+        for start in parents.keys() {
+            let mut path = BTreeSet::new();
+            let mut cursor = Some(*start);
+            while let Some(reference) = cursor {
+                if resolved.contains(reference) {
+                    break;
+                }
+                if !path.insert(reference) {
+                    return invalid("cyclic channel parent relationship");
+                }
+                cursor = parents.get(reference).copied().flatten();
+            }
+            resolved.extend(path);
+        }
         for channel in &self.channels {
             if channel
                 .parent_ref

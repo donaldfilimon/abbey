@@ -1,5 +1,7 @@
 # Abbey Completion Plan — repo + Tauri desktop
 
+> Historical execution checklist. The active [2026-10-22 Completion Program](superpowers/plans/2026-10-22-abbey-completion.md) supersedes execution order and target-policy choices. These unchecked items are preserved, not asserted complete; distinct obligations are tracked by `retained-plan-reconciliation` in `tasks/completion.json`. Canonical workflow-ledger coverage does not claim to validate every historical plan checkbox.
+
 > **This is a PLAN, not evidence.** It changes no capability claim and grants no
 > capability: every target, bar, gate, and acceptance test below is *proposed work*,
 > not a shipped fact. The authoritative sources for what Abbey can actually do are

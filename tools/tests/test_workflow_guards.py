@@ -226,8 +226,15 @@ class WorkflowGuards(unittest.TestCase):
     def test_workflow_declares_jobs(self) -> None:
         self.assertTrue(self.jobs, "no jobs parsed out of rust.yml")
 
+    def test_linux_primary_is_authored_but_requires_explicit_runner_enablement(self) -> None:
+        self.assertIn("gate-linux", self.jobs)
+        body = self.jobs["gate-linux"]
+        self.assertEqual(job_field(body, "runs-on"), "[self-hosted, Linux, ARM64, abbey]")
+        self.assertIn("vars.ABBEY_LINUX_ARM64_RUNNER == 'enabled'", job_field(body, "if"))
+        self.assertIn("name: gate (Linux ARM64)", body)
+
     def test_trusted_jobs_run_only_on_self_hosted_runners(self) -> None:
-        for name in ("gate-macos",):
+        for name in ("gate-macos", "gate-linux"):
             body = self.jobs[name]
             self.assertIn(
                 "self-hosted",
@@ -236,7 +243,7 @@ class WorkflowGuards(unittest.TestCase):
             )
 
     def test_every_self_hosted_job_requires_same_repository(self) -> None:
-        for name in ("gate-macos",):
+        for name in ("gate-macos", "gate-linux"):
             body = self.jobs[name]
             self.assertIn(
                 "github.repository == 'donaldfilimon/abbey'",
@@ -249,13 +256,11 @@ class WorkflowGuards(unittest.TestCase):
         # scheduled. Each such job must be skippable via a repository variable
         # so the workflow degrades to "skipped", never to an unschedulable job.
         #
-        # Linux ARM64 (primary for ci-self-hosted-linux-proof) and Windows
-        # evidence jobs are absent until runners are provisioned (removed
-        # 2026-09-28). When re-added they must carry identical guard form.
-        # macOS adjunct is the only current self-hosted job.
+        # Both authored Unix jobs require their exact availability guard.
+        # Windows runtime evidence remains a separately tracked prerequisite.
         expected = {
             "gate-macos": "vars.ABBEY_MACOS_ARM64_RUNNER == 'enabled'",
-            # Prepared (not present): "gate-linux": "vars.ABBEY_LINUX_ARM64_RUNNER == 'enabled'",
+            "gate-linux": "vars.ABBEY_LINUX_ARM64_RUNNER == 'enabled'",
         }
         self.assertEqual(set(self.jobs), set(expected))
         for name, guard in expected.items():
@@ -269,13 +274,14 @@ class WorkflowGuards(unittest.TestCase):
     def test_every_job_contains_required_release_inventory_and_cleanup_steps(self) -> None:
         required = {
             "Gate both Abbey feature sets",
+            "Complete desktop gate",
             "RustSec dependency scan",
             "Warning-denied API docs and release binary",
             "Release install and provider inventory smoke",
             "ABI-backed local mesh proof",
             "Clean runner workspace",
         }
-        for name in ("gate-macos",):
+        for name in ("gate-macos", "gate-linux"):
             body = self.jobs[name]
             steps = set(re.findall(r"^ {6}- name: (.+)$", body, re.MULTILINE))
             self.assertFalse(required - steps, f"job {name!r} is missing required steps")
@@ -318,7 +324,7 @@ class ForkSafety(unittest.TestCase):
         )
 
     def test_pull_request_jobs_require_a_same_repo_head(self) -> None:
-        for name in ("gate-macos",):
+        for name in ("gate-macos", "gate-linux"):
             body = self.jobs[name]
             condition = job_field(body, "if")
             if "pull_request" not in condition:
@@ -359,9 +365,9 @@ class ForkSafety(unittest.TestCase):
             self.assertRegex(value, r"^[0-9a-f]{40}$")
 
     def test_actions_and_toolchains_are_exactly_pinned(self) -> None:
-        self.assertEqual(self.text.count(f"uses: {CHECKOUT_ACTION}"), 1)
-        self.assertEqual(self.text.count("persist-credentials: false"), 1)
-        self.assertEqual(self.text.count(f"uses: {TOOLCHAIN_ACTION}"), 2)
+        self.assertEqual(self.text.count(f"uses: {CHECKOUT_ACTION}"), len(self.jobs))
+        self.assertEqual(self.text.count("persist-credentials: false"), len(self.jobs))
+        self.assertEqual(self.text.count(f"uses: {TOOLCHAIN_ACTION}"), 2 * len(self.jobs))
         self.assertIn("ABBEY_TOOLCHAIN: 1.99.1", self.text)
         self.assertIn("ABI_TOOLCHAIN: 1.99.1", self.text)
         self.assertIn("ABI_REVISION: 7b9519b6cfb25cc9bc9db2982e0a901318ba039b", self.text)
@@ -522,9 +528,9 @@ class DesktopWorkflowGuards(unittest.TestCase):
             )
 
     def test_actions_are_exactly_pinned(self) -> None:
-        self.assertEqual(self.text.count(f"uses: {CHECKOUT_ACTION}"), 1)
+        self.assertEqual(self.text.count(f"uses: {CHECKOUT_ACTION}"), len(self.jobs))
         self.assertEqual(self.text.count(f"uses: {TOOLCHAIN_ACTION}"), 1)
-        self.assertEqual(self.text.count("persist-credentials: false"), 1)
+        self.assertEqual(self.text.count("persist-credentials: false"), len(self.jobs))
 
     def test_checkouts_each_required_sibling_exactly_once(self) -> None:
         expected = {
@@ -652,9 +658,9 @@ class DesktopReleaseWorkflowGuards(unittest.TestCase):
             )
 
     def test_actions_are_exactly_pinned(self) -> None:
-        self.assertEqual(self.text.count(f"uses: {CHECKOUT_ACTION}"), 1)
+        self.assertEqual(self.text.count(f"uses: {CHECKOUT_ACTION}"), len(self.jobs))
         self.assertEqual(self.text.count(f"uses: {TOOLCHAIN_ACTION}"), 1)
-        self.assertEqual(self.text.count("persist-credentials: false"), 1)
+        self.assertEqual(self.text.count("persist-credentials: false"), len(self.jobs))
 
     def test_checkouts_each_required_sibling_exactly_once(self) -> None:
         expected = {

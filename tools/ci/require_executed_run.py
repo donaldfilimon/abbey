@@ -9,12 +9,12 @@ evidence only); none is silently promoted to cross-platform or full Linux
 proof. A zero-job `startup_failure` is infrastructure evidence, never
 source-test evidence.
 
-Current (2026-10): workflow defines only the macOS ARM64 self-hosted adjunct
-(Linux ARM64 gate removed 2026-09-28 as unprovisioned; GitHub-hosted fork gate
-also removed due to billing lock on hosted Actions). macOS successes are
-recorded as narrow adjunct evidence. Full Phase 2 / working-ci closure still
-requires a non-zero successful Linux ARM64 job + separate Windows runtime
-evidence.
+Current (2026-10-22): the workflow authors guarded macOS ARM64 adjunct and
+Linux ARM64 primary jobs. Linux was restored in source, but no successful Linux
+execution is claimed; the baseline runner inventory has only an offline macOS
+runner. Windows native evidence remains separately required. Guard variables
+must be enabled by the runner owner after provisioning, and source authoring or
+skipped jobs never close this proof.
 """
 
 from __future__ import annotations
@@ -33,6 +33,7 @@ REQUIRED_PRIMARY_STEPS = {
     "Install pinned Abbey toolchain",
     "Build the real ABI binary",
     "Gate both Abbey feature sets",
+    "Complete desktop gate",
     "Install cargo-audit if absent",
     "RustSec dependency scan",
     "Warning-denied API docs and release binary",

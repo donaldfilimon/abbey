@@ -97,6 +97,9 @@ echo "== claims/docs synchronization =="
 "$ABBEY_PYTHON" tools/check_claims_sync.py
 "$ABBEY_PYTHON" tools/check_instructions.py
 
+echo "== completion requirement coverage (not capability qualification) =="
+"$ABBEY_PYTHON" tools/check_completion.py
+
 # The desktop client's TypeScript IPC types are generated from src/app_core/
 # (and desktop/src-tauri/src/{ipc,v3_ipc}.rs) by desktop/codegen. Changing
 # those contracts without regenerating breaks the desktop client silently, so

@@ -1,0 +1,132 @@
+compiler: /Users/donald/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/rustc
+rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: aarch64-apple-darwin
+release: 1.99.1
+LLVM version: 23.1.1
+cargo 1.99.1 (5f94df478 2026-08-27)
+== native Routes acceptance assertion tests ==
+................................................................................fatal: not a git repository (or any of the parent directories): .git
+Efatal: not a git repository (or any of the parent directories): .git
+Efatal: not a git repository (or any of the parent directories): .git
+Efatal: not a git repository (or any of the parent directories): .git
+Efatal: not a git repository (or any of the parent directories): .git
+E...............
+======================================================================
+ERROR: test_an_explicit_bundle_of_the_expected_edition_is_accepted (test_prove_packaged.RunnerArguments.test_an_explicit_bundle_of_the_expected_edition_is_accepted)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/donald/.codex/verification/abbey-completion-20261022/frozen-2/abbey/desktop/scripts/tests/test_prove_packaged.py", line 196, in test_an_explicit_bundle_of_the_expected_edition_is_accepted
+    code, receipt = self.run_main(["--app", str(safe)])
+                    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/donald/.codex/verification/abbey-completion-20261022/frozen-2/abbey/desktop/scripts/tests/test_prove_packaged.py", line 180, in run_main
+    code = prover.main()
+  File "/Users/donald/.codex/verification/abbey-completion-20261022/frozen-2/abbey/desktop/scripts/prove_packaged_macos.py", line 137, in main
+    receipt["revision"] = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=base.ROOT, text=True).strip()
+                          ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.15/3.15.0/Frameworks/Python.framework/Versions/3.15/lib/python3.15/subprocess.py", line 587, in check_output
+    return run(*popenargs, stdout=PIPE, timeout=timeout, check=True,
+           ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+               **kwargs).stdout
+               ^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.15/3.15.0/Frameworks/Python.framework/Versions/3.15/lib/python3.15/subprocess.py", line 692, in run
+    raise CalledProcessError(retcode, process.args,
+                             output=stdout, stderr=stderr)
+subprocess.CalledProcessError: Command '['git', 'rev-parse', 'HEAD']' returned non-zero exit status 128.
+
+======================================================================
+ERROR: test_an_explicit_bundle_of_the_wrong_edition_is_refused (test_prove_packaged.RunnerArguments.test_an_explicit_bundle_of_the_wrong_edition_is_refused)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/donald/.codex/verification/abbey-completion-20261022/frozen-2/abbey/desktop/scripts/tests/test_prove_packaged.py", line 189, in test_an_explicit_bundle_of_the_wrong_edition_is_refused
+    code, receipt = self.run_main(["--app", str(personal)])
+                    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/donald/.codex/verification/abbey-completion-20261022/frozen-2/abbey/desktop/scripts/tests/test_prove_packaged.py", line 180, in run_main
+    code = prover.main()
+  File "/Users/donald/.codex/verification/abbey-completion-20261022/frozen-2/abbey/desktop/scripts/prove_packaged_macos.py", line 137, in main
+    receipt["revision"] = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=base.ROOT, text=True).strip()
+                          ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.15/3.15.0/Frameworks/Python.framework/Versions/3.15/lib/python3.15/subprocess.py", line 587, in check_output
+    return run(*popenargs, stdout=PIPE, timeout=timeout, check=True,
+           ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+               **kwargs).stdout
+               ^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.15/3.15.0/Frameworks/Python.framework/Versions/3.15/lib/python3.15/subprocess.py", line 692, in run
+    raise CalledProcessError(retcode, process.args,
+                             output=stdout, stderr=stderr)
+subprocess.CalledProcessError: Command '['git', 'rev-parse', 'HEAD']' returned non-zero exit status 128.
+
+======================================================================
+ERROR: test_an_unknown_argument_is_refused (test_prove_packaged.RunnerArguments.test_an_unknown_argument_is_refused)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/donald/.codex/verification/abbey-completion-20261022/frozen-2/abbey/desktop/scripts/tests/test_prove_packaged.py", line 214, in test_an_unknown_argument_is_refused
+    code, receipt = self.run_main(["--not-an-argument"])
+                    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/donald/.codex/verification/abbey-completion-20261022/frozen-2/abbey/desktop/scripts/tests/test_prove_packaged.py", line 180, in run_main
+    code = prover.main()
+  File "/Users/donald/.codex/verification/abbey-completion-20261022/frozen-2/abbey/desktop/scripts/prove_packaged_macos.py", line 137, in main
+    receipt["revision"] = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=base.ROOT, text=True).strip()
+                          ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.15/3.15.0/Frameworks/Python.framework/Versions/3.15/lib/python3.15/subprocess.py", line 587, in check_output
+    return run(*popenargs, stdout=PIPE, timeout=timeout, check=True,
+           ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+               **kwargs).stdout
+               ^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.15/3.15.0/Frameworks/Python.framework/Versions/3.15/lib/python3.15/subprocess.py", line 692, in run
+    raise CalledProcessError(retcode, process.args,
+                             output=stdout, stderr=stderr)
+subprocess.CalledProcessError: Command '['git', 'rev-parse', 'HEAD']' returned non-zero exit status 128.
+
+======================================================================
+ERROR: test_an_unknown_expected_edition_is_refused (test_prove_packaged.RunnerArguments.test_an_unknown_expected_edition_is_refused)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/donald/.codex/verification/abbey-completion-20261022/frozen-2/abbey/desktop/scripts/tests/test_prove_packaged.py", line 219, in test_an_unknown_expected_edition_is_refused
+    code, receipt = self.run_main(["--expect-edition", "enterprise"])
+                    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/donald/.codex/verification/abbey-completion-20261022/frozen-2/abbey/desktop/scripts/tests/test_prove_packaged.py", line 180, in run_main
+    code = prover.main()
+  File "/Users/donald/.codex/verification/abbey-completion-20261022/frozen-2/abbey/desktop/scripts/prove_packaged_macos.py", line 137, in main
+    receipt["revision"] = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=base.ROOT, text=True).strip()
+                          ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.15/3.15.0/Frameworks/Python.framework/Versions/3.15/lib/python3.15/subprocess.py", line 587, in check_output
+    return run(*popenargs, stdout=PIPE, timeout=timeout, check=True,
+           ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+               **kwargs).stdout
+               ^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.15/3.15.0/Frameworks/Python.framework/Versions/3.15/lib/python3.15/subprocess.py", line 692, in run
+    raise CalledProcessError(retcode, process.args,
+                             output=stdout, stderr=stderr)
+subprocess.CalledProcessError: Command '['git', 'rev-parse', 'HEAD']' returned non-zero exit status 128.
+
+======================================================================
+ERROR: test_the_receipt_records_the_edition_that_was_proved (test_prove_packaged.RunnerArguments.test_the_receipt_records_the_edition_that_was_proved)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/donald/.codex/verification/abbey-completion-20261022/frozen-2/abbey/desktop/scripts/tests/test_prove_packaged.py", line 208, in test_the_receipt_records_the_edition_that_was_proved
+    _, receipt = self.run_main(["--app", str(safe),
+                 ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+                                "--expect-edition", "safe"])
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/donald/.codex/verification/abbey-completion-20261022/frozen-2/abbey/desktop/scripts/tests/test_prove_packaged.py", line 180, in run_main
+    code = prover.main()
+  File "/Users/donald/.codex/verification/abbey-completion-20261022/frozen-2/abbey/desktop/scripts/prove_packaged_macos.py", line 137, in main
+    receipt["revision"] = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=base.ROOT, text=True).strip()
+                          ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.15/3.15.0/Frameworks/Python.framework/Versions/3.15/lib/python3.15/subprocess.py", line 587, in check_output
+    return run(*popenargs, stdout=PIPE, timeout=timeout, check=True,
+           ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+               **kwargs).stdout
+               ^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.15/3.15.0/Frameworks/Python.framework/Versions/3.15/lib/python3.15/subprocess.py", line 692, in run
+    raise CalledProcessError(retcode, process.args,
+                             output=stdout, stderr=stderr)
+subprocess.CalledProcessError: Command '['git', 'rev-parse', 'HEAD']' returned non-zero exit status 128.
+
+----------------------------------------------------------------------
+Ran 100 tests in 5.008s
+
+FAILED (errors=5)

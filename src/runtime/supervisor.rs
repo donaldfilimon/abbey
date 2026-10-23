@@ -2,6 +2,9 @@
 //! This Abbey adapter primitive is neither a public command runner nor a shell.
 
 use super::CancellationToken;
+use crate::argv_budget::{
+    MAX_PROCESS_ARG_BYTES as MAX_ARG_BYTES, MAX_PROCESS_TOTAL_ARG_BYTES as MAX_TOTAL_ARG_BYTES,
+};
 use std::ffi::{OsStr, OsString};
 use std::fmt;
 use std::path::PathBuf;
@@ -9,8 +12,6 @@ use std::process::ExitStatus;
 use std::time::Duration;
 
 const MAX_ARGS: usize = 128;
-const MAX_ARG_BYTES: usize = 32 * 1024;
-const MAX_TOTAL_ARG_BYTES: usize = 64 * 1024;
 const MAX_ENVIRONMENT: usize = 128;
 const MAX_ENV_BYTES: usize = 64 * 1024;
 const MAX_STREAM_BYTES: usize = 4 * 1024 * 1024;

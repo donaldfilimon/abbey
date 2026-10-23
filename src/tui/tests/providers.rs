@@ -278,6 +278,42 @@ fn same_provider_selection_preserves_the_explicit_model() {
 }
 
 #[test]
+fn every_cross_provider_transition_resets_the_model_and_explicit_selection() {
+    let mut app = isolated_app();
+    let missing_cli = app.state.state_dir.join("missing-fixture-cli");
+    for from in PROVIDERS {
+        for to in PROVIDERS.into_iter().filter(|to| *to != from) {
+            app.cfg.backend = from;
+            app.cfg.model = "old-provider-only:model".into();
+            app.cfg.model_selected = true;
+            app.state.save_model_literal(&app.cfg.model).unwrap();
+            app.select_provider(to, missing_cli.clone());
+            let expected = if to == AgentBackend::Fm {
+                "system"
+            } else {
+                "auto"
+            };
+            assert_eq!(app.cfg.backend, to);
+            assert_eq!(app.cfg.model, expected, "{from:?} -> {to:?}");
+            assert!(
+                !app.cfg.model_selected,
+                "old explicit model must not survive {from:?} -> {to:?}"
+            );
+            assert_eq!(
+                std::fs::read_to_string(&app.state.model_file)
+                    .unwrap()
+                    .trim(),
+                expected
+            );
+            assert_eq!(
+                app.cfg.transcript_dir,
+                Some(app.state.state_dir.join(to.transcript_subdir()))
+            );
+        }
+    }
+}
+
+#[test]
 fn failed_transition_model_save_keeps_provider_model_and_identity_unchanged() {
     let mut app = isolated_app();
     // A directory at the model-file destination makes replacement fail without
@@ -286,6 +322,8 @@ fn failed_transition_model_save_keeps_provider_model_and_identity_unchanged() {
     for (from, model, to) in [
         (AgentBackend::Fm, "pcc", AgentBackend::Ollama),
         (AgentBackend::Claude, "sonnet", AgentBackend::Fm),
+        (AgentBackend::Ollama, "custom:tag", AgentBackend::Cursor),
+        (AgentBackend::Cursor, "claude-fable-5", AgentBackend::Grok),
     ] {
         app.cfg.backend = from;
         app.cfg.model = model.into();

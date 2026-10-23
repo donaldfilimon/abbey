@@ -1,0 +1,9 @@
+    Updating git repository `https://github.com/tauri-apps/plugins-workspace`
+    Updating crates.io index
+    Removing arbitrary v1.5.0
+    Removing derive_arbitrary v1.5.0
+    Removing tauri-plugin-updater v2.14.0
+      Adding tauri-plugin-updater v2.14.0 (https://github.com/tauri-apps/plugins-workspace?rev=ba98bfadc4c868c9a7e1a226c83af528e1f11b89#ba98bfad)
+    Updating tokio v1.54.0 -> v1.54.1
+    Removing zip v4.6.1
+note: pass `--verbose` to see 30 unchanged dependencies behind latest

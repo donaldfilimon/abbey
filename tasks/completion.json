@@ -1,0 +1,1208 @@
+{
+  "schema_version": 1,
+  "milestones": [
+    {
+      "id": "baseline",
+      "title": "Reconciled baseline and executable requirement coverage",
+      "depends_on": [],
+      "status": "in_progress",
+      "owner": "Abbey maintainer",
+      "acceptance": [
+        "Exact Abbey/ABI/WDBX manifests and qualified toolchains recorded",
+        "Root and desktop gate outcomes recorded separately",
+        "Every unfinished goal and open checkbox has one requirement owner"
+      ],
+      "evidence": {},
+      "required_evidence": [
+        "source",
+        "automated",
+        "macos_arm64",
+        "ubuntu_arm64",
+        "windows11_arm"
+      ]
+    },
+    {
+      "id": "platforms",
+      "title": "Three-platform transport, supervision, installation and CI",
+      "depends_on": [
+        "baseline"
+      ],
+      "status": "open",
+      "owner": "Platform maintainers and runner administrator",
+      "acceptance": [
+        "Owner-restricted Unix/named-pipe requests, malformed frames, authentication, deadlines and cancellation pass natively",
+        "Windows Job Objects and Unix process groups reap descendants",
+        "Both editions install together without sharing model, service, credential, updater or accelerator state",
+        "Executed trusted CI and installed-artifact acceptance pass on all three hosts"
+      ],
+      "evidence": {},
+      "required_evidence": [
+        "source",
+        "automated",
+        "macos_arm64",
+        "ubuntu_arm64",
+        "windows11_arm",
+        "ci"
+      ]
+    },
+    {
+      "id": "correctness",
+      "title": "Existing contract and correctness findings",
+      "depends_on": [
+        "baseline"
+      ],
+      "status": "open",
+      "owner": "Abbey and ABI maintainers",
+      "acceptance": [
+        "Every mapped review finding has a discriminating regression",
+        "Schema incompatibility is refused before serving changed vocabulary",
+        "Pinned sibling gates qualify upstream contract repairs before pins change"
+      ],
+      "evidence": {},
+      "required_evidence": [
+        "source",
+        "automated",
+        "macos_arm64",
+        "ubuntu_arm64",
+        "windows11_arm"
+      ]
+    },
+    {
+      "id": "authority",
+      "title": "Durable shared runtime authority",
+      "depends_on": [
+        "platforms",
+        "correctness"
+      ],
+      "status": "open",
+      "owner": "Abbey runtime maintainer",
+      "acceptance": [
+        "Canonical compiled v4 task/action/automation contracts generate TypeScript wire samples",
+        "Tasks, profiles, attempts, automations, training, workers and paged events have real durable dispatch",
+        "Crash points before/after effects recover as interrupted without replay",
+        "DST, occurrence reservation, no overlap, catch-up and revocation pass"
+      ],
+      "evidence": {},
+      "required_evidence": [
+        "source",
+        "automated",
+        "macos_arm64",
+        "ubuntu_arm64",
+        "windows11_arm"
+      ]
+    },
+    {
+      "id": "tools-editions",
+      "title": "Owned tools and isolated execution policies",
+      "depends_on": [
+        "authority"
+      ],
+      "status": "open",
+      "owner": "Abbey and ABI runtime maintainers",
+      "acceptance": [
+        "Structured tool calls pass schema, policy, durable intent, cancellation and audit",
+        "Scoped files, registered commands, dedicated browser, native desktop and external MCP/ACP sessions execute fixture journeys",
+        "Safe edition retains allowlist and approval; personal structured shell has no command allowlist or per-command confirmation",
+        "OS authorization and signed privileged helpers remain required; personal authority cannot reach remote MCP or workers"
+      ],
+      "evidence": {},
+      "required_evidence": [
+        "source",
+        "automated",
+        "macos_arm64",
+        "ubuntu_arm64",
+        "windows11_arm"
+      ]
+    },
+    {
+      "id": "desktop",
+      "title": "Complete installed desktop product",
+      "depends_on": [
+        "authority",
+        "tools-editions"
+      ],
+      "status": "open",
+      "owner": "Desktop and release maintainers",
+      "acceptance": [
+        "Both editions complete onboarding/chat/tasks/approvals/automations/memory/models/training/cluster journeys against real daemon authority",
+        "Keyboard, screen reader, 200 percent zoom, reduced motion, offline and long-history flows pass",
+        "Native packages, signatures, updates, rollback, service lifecycle and uninstall retention pass",
+        "Cold start <=5s, warm interaction p95 <=2s, navigation <=100ms, idle CPU <=2 percent of one core, bounded 24-hour soak"
+      ],
+      "evidence": {},
+      "required_evidence": [
+        "source",
+        "automated",
+        "macos_arm64",
+        "ubuntu_arm64",
+        "windows11_arm",
+        "signing",
+        "updates"
+      ]
+    },
+    {
+      "id": "models-media",
+      "title": "Production model, accelerator, adapter and neural-media qualification",
+      "depends_on": [
+        "authority",
+        "tools-editions"
+      ],
+      "status": "open",
+      "owner": "ABI model maintainer, license holder and hardware operator",
+      "acceptance": [
+        "Roadmap Gemma 12B architecture, tokenizer, accepted license and immutable artifacts are qualified without substitution",
+        "4K context plus 64-token smoke, RSS <=20 GB on named 24 GB Mac, no sustained swap thrash and documented numerical oracle pass",
+        "Requested/executed accelerator evidence covers real model and training work without fallback",
+        "Separate E4B adapters use consented redacted deduplicated 80/10/10 splits; valid held-out tool-call JSON >=95 percent, NLL regression <=2 percent, safe refusal fixtures 100 percent",
+        "Offline Whisper/Parler then SDXL/LTX generation has license, resource, cancellation, quality and artifact evidence"
+      ],
+      "evidence": {},
+      "required_evidence": [
+        "source",
+        "automated",
+        "macos_arm64",
+        "ubuntu_arm64",
+        "windows11_arm",
+        "licenses",
+        "hardware",
+        "held_out_quality"
+      ]
+    },
+    {
+      "id": "federation-compute",
+      "title": "Federation and authenticated shared compute",
+      "depends_on": [
+        "authority",
+        "tools-editions",
+        "models-media"
+      ],
+      "status": "open",
+      "owner": "ABI federation maintainer, VM operator and consent owners",
+      "acceptance": [
+        "Authorization then consent/cognition/episodes/manifests/changes each have durable adapters before enablement",
+        "Three Ubuntu ARM64 VMs have distinct addresses, independent state, mTLS identities, signed jobs, leases, quotas and result hashes",
+        "Partition, leader/worker death, stale leadership, duplicate delivery, conflicts/read repair, restore, upgrades, cancellation and teardown pass",
+        "Live recording/effects remain separately consent-gated; same-host VMs never imply physical multi-host evidence"
+      ],
+      "evidence": {},
+      "required_evidence": [
+        "source",
+        "automated",
+        "macos_arm64",
+        "ubuntu_arm64",
+        "windows11_arm",
+        "three_vm"
+      ]
+    },
+    {
+      "id": "qualification",
+      "title": "Final release and evidence-led closure",
+      "depends_on": [
+        "desktop",
+        "models-media",
+        "federation-compute"
+      ],
+      "status": "open",
+      "owner": "Release owner and independent reviewers",
+      "acceptance": [
+        "Final unchanged-source Abbey/ABI/WDBX gates, supported feature combinations, all native editions and installed artifacts pass",
+        "Independent review, dependency/license/SBOM/secret checks, signed provenance, backup/restore and support runbooks are complete",
+        "No locally actionable checkbox remains open; missing external proofs remain blocked and full program stays open"
+      ],
+      "evidence": {},
+      "required_evidence": [
+        "source",
+        "automated",
+        "macos_arm64",
+        "ubuntu_arm64",
+        "windows11_arm",
+        "ci",
+        "signing",
+        "independent_review"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "baseline-record",
+      "milestone": "baseline",
+      "owner": "Abbey maintainer",
+      "status": "open",
+      "acceptance": [
+        "Record exact revisions, clean/dirty manifests, locks, compiler, root/desktop exit status and limitations"
+      ],
+      "todos": [],
+      "evidence": {
+        "frozen_macos_gates": {
+          "status": "passed",
+          "refs": [
+            "docs/verification/2026-10-22-completion-recovery/frozen-2-root.log",
+            "docs/verification/2026-10-22-completion-recovery/frozen-2-desktop-retry.log",
+            "docs/verification/2026-10-22-completion-recovery/frozen-2-source-manifest.json"
+          ]
+        }
+      },
+      "required_evidence": [
+        "source",
+        "automated"
+      ]
+    },
+    {
+      "id": "requirement-coverage",
+      "milestone": "baseline",
+      "owner": "Abbey maintainer",
+      "status": "implemented",
+      "acceptance": [
+        "Coverage checker rejects new unmapped work, conflicting owners, stale bindings and unsupported completion claims"
+      ],
+      "todos": [],
+      "evidence": {
+        "source": {
+          "status": "passed",
+          "refs": [
+            "docs/verification/2026-10-22-completion-wave-1.md"
+          ]
+        },
+        "automated": {
+          "status": "passed",
+          "refs": [
+            "docs/verification/2026-10-22-completion-wave-1.md"
+          ]
+        }
+      },
+      "required_evidence": [
+        "source",
+        "automated"
+      ]
+    },
+    {
+      "id": "retained-plan-reconciliation",
+      "milestone": "baseline",
+      "owner": "Abbey maintainer",
+      "status": "open",
+      "acceptance": [
+        "Audit retained completion/consolidation/desktop plans for obligations absent from the canonical workflow ledger; record each inclusion or explicit supersession without deleting historical checkboxes",
+        "Capture source file modes and exact command environment in addition to byte hashes; verify isolated sibling-directory candidate equivalence before treating prior consolidation work as qualified",
+        "Retain deliberate stale-but-usable executable negative controls proving feature-matched gate artifact selection",
+        "Preserve fixed-snapshot title search and cross-run cursor refusal, serialized response ceilings, 4 MiB/65,536-event/16 KiB preview bounds and replies completed between polls"
+      ],
+      "todos": [],
+      "evidence": {
+        "historical_mapping": {
+          "status": "passed",
+          "refs": [
+            "tasks/completion-historical.json",
+            "docs/verification/2026-10-22-completion-recovery.md"
+          ]
+        }
+      },
+      "required_evidence": [
+        "source",
+        "automated"
+      ]
+    },
+    {
+      "id": "native-controls-proof",
+      "milestone": "desktop",
+      "owner": "Desktop maintainer",
+      "status": "open",
+      "acceptance": [
+        "Native Accessibility/control driver assertion and fixture journeys run on real packaged hosts; source parsing alone does not close"
+      ],
+      "todos": [
+        "**Not proven by the gate:** the Accessibility control driver"
+      ],
+      "evidence": {},
+      "required_evidence": [
+        "source",
+        "automated"
+      ]
+    },
+    {
+      "id": "macos-ci",
+      "milestone": "platforms",
+      "owner": "Runner administrator",
+      "status": "open",
+      "acceptance": [
+        "Bring the registered macOS ARM64 runner online and retain an exact-head successful executed job"
+      ],
+      "todos": [
+        "**Blocked external proof (soft macOS adjunct only):** macOS ARM64 self-hosted",
+        "**No CI job can run at all since 2026-10-19 (the runner is offline).** The"
+      ],
+      "evidence": {},
+      "required_evidence": [
+        "source",
+        "automated",
+        "native_ci"
+      ]
+    },
+    {
+      "id": "linux-ci",
+      "milestone": "platforms",
+      "owner": "Runner administrator",
+      "status": "implemented",
+      "acceptance": [
+        "Register Ubuntu ARM64 runner, enable guarded job and satisfy require_executed_run.py against an actual successful Linux run"
+      ],
+      "todos": [
+        "**Blocked on runner provisioning:** provision/register Linux ARM64 with labels",
+        "**Phase 2 \u2014 Self-hosted runners replace the broken hosted-CI assumption:**"
+      ],
+      "evidence": {
+        "source": {
+          "status": "passed",
+          "refs": [
+            "docs/verification/2026-10-22-completion-wave-1.md"
+          ]
+        },
+        "automated": {
+          "status": "passed",
+          "refs": [
+            "docs/verification/2026-10-22-completion-wave-1.md"
+          ]
+        },
+        "native_ci": {
+          "status": "blocked",
+          "refs": [
+            "docs/verification/2026-10-22-completion-baseline.md"
+          ]
+        }
+      },
+      "required_evidence": [
+        "source",
+        "automated",
+        "native_ci"
+      ]
+    },
+    {
+      "id": "windows-foundation",
+      "milestone": "platforms",
+      "owner": "Windows maintainer and runner administrator",
+      "status": "open",
+      "acceptance": [
+        "Implement native named pipes, owner ACLs, peer restriction, bounded framing/deadlines, Job Object teardown and native Windows ARM CI/install proofs"
+      ],
+      "todos": [],
+      "evidence": {},
+      "required_evidence": [
+        "source",
+        "automated",
+        "native_ci"
+      ]
+    },
+    {
+      "id": "runtime-contracts",
+      "milestone": "authority",
+      "owner": "Abbey runtime maintainer",
+      "status": "open",
+      "acceptance": [
+        "Canonical compiled types, append-only migrations, real task/automation/profile/action stores and dispatch pass grant/recovery/contract fixtures"
+      ],
+      "todos": [
+        "**1. Runtime contracts:** define provider-neutral executor, tool-call, permission,",
+        "**Phase 4 \u2014 Shared Abbey application core + durable `abbeyd` daemon:**"
+      ],
+      "evidence": {},
+      "required_evidence": [
+        "source",
+        "automated"
+      ]
+    },
+    {
+      "id": "owned-tool-host",
+      "milestone": "tools-editions",
+      "owner": "Abbey and ABI maintainers",
+      "status": "open",
+      "acceptance": [
+        "Real model-produced structured multi-tool loop and external MCP/ACP sessions pass policy, schema, timeout, correlation, hostile-output and mutation non-replay tests; served MCP remains separately scoped"
+      ],
+      "todos": [
+        "**2. Owned tool host:** implement capability-scoped tool registry plus MCP/ACP host",
+        "**Phase 5 \u2014 Model and tool runtime ownership in ABI:**",
+        "**Phase 9 \u2014 MCP hosting without exposing the personal shell:**"
+      ],
+      "evidence": {},
+      "required_evidence": [
+        "source",
+        "automated"
+      ]
+    },
+    {
+      "id": "desktop-product",
+      "milestone": "desktop",
+      "owner": "Desktop maintainer and release owner",
+      "status": "open",
+      "acceptance": [
+        "All product and management flows use actual grants/daemon data and pass packaged native acceptance for both editions"
+      ],
+      "todos": [
+        "**3. Desktop GUI:** add a Tauri 2 + React/TypeScript frontend over shared",
+        "**Phase 7 \u2014 Tauri 2 React/TypeScript desktop product:**"
+      ],
+      "evidence": {},
+      "required_evidence": [
+        "source",
+        "automated"
+      ]
+    },
+    {
+      "id": "production-model",
+      "milestone": "models-media",
+      "owner": "ABI model maintainer and license holder",
+      "status": "open",
+      "acceptance": [
+        "Qualify exact Gemma 12B artifacts/tokenizer/architecture/license and actual inference against the model milestone budgets"
+      ],
+      "todos": [
+        "**4. Local model runtime:** integrate production-capable local weights through an",
+        "Gemma 4 architecture + compressed-tensor loader in ABI or a pinned reviewed Candle"
+      ],
+      "evidence": {
+        "target_metadata": {
+          "status": "passed",
+          "refs": [
+            "docs/verification/2026-10-22-gemma12b-feasibility.json",
+            "docs/verification/2026-10-22-completion-recovery.md"
+          ]
+        }
+      },
+      "required_evidence": [
+        "source",
+        "automated",
+        "license",
+        "native_quality"
+      ]
+    },
+    {
+      "id": "accelerator-runtime",
+      "milestone": "models-media",
+      "owner": "ABI accelerator maintainer and hardware operator",
+      "status": "open",
+      "acceptance": [
+        "Real complete model/training workloads pass CPU oracle, no-fallback, requested/executed-device and allocation/cancel tests on each claimed device"
+      ],
+      "todos": [
+        "**5. Accelerator runtime:** add GPU/NPU/TPU capability negotiation and execution"
+      ],
+      "evidence": {},
+      "required_evidence": [
+        "source",
+        "automated",
+        "native_hardware"
+      ]
+    },
+    {
+      "id": "production-adapters",
+      "milestone": "models-media",
+      "owner": "ABI training maintainer and dataset consent owner",
+      "status": "open",
+      "acceptance": [
+        "Actual E4B adapter weight update, held-out quality bars, provenance, compatibility and deterministic rollback pass; demo training fidelity is insufficient"
+      ],
+      "todos": [
+        "**6. LoRA/fine-tuning:** promote curated `train_candidate` data through explicit"
+      ],
+      "evidence": {},
+      "required_evidence": [
+        "source",
+        "automated",
+        "consent",
+        "license",
+        "held_out_quality"
+      ]
+    },
+    {
+      "id": "neural-media",
+      "milestone": "models-media",
+      "owner": "Media maintainer and artifact license holder",
+      "status": "open",
+      "acceptance": [
+        "Offline licensed speech/image/video providers pass quality, resource, corruption, cancellation and artifact-provenance fixtures"
+      ],
+      "todos": [
+        "**7. Local neural media:** implement speech first, then image/video through the"
+      ],
+      "evidence": {},
+      "required_evidence": [
+        "source",
+        "automated",
+        "license",
+        "native_quality"
+      ]
+    },
+    {
+      "id": "compute-editions",
+      "milestone": "federation-compute",
+      "owner": "ABI/Abbey maintainers and VM operator",
+      "status": "open",
+      "acceptance": [
+        "Shared compute and the independently isolated personal edition each meet their own evidence bars"
+      ],
+      "todos": [
+        "**8. Shared compute + separate edition:** first prove authenticated shared compute"
+      ],
+      "evidence": {},
+      "required_evidence": [
+        "source",
+        "automated"
+      ]
+    },
+    {
+      "id": "consented-capture",
+      "milestone": "federation-compute",
+      "owner": "Recording consent owners",
+      "status": "open",
+      "acceptance": [
+        "Reviewed retention/recording contract plus explicit participant consent precede any non-synthetic capture"
+      ],
+      "todos": [
+        "**Authorized non-synthetic recording capture:** define a separately reviewed"
+      ],
+      "evidence": {},
+      "required_evidence": [
+        "source",
+        "automated",
+        "authorization",
+        "consent"
+      ]
+    },
+    {
+      "id": "live-guild-validation",
+      "milestone": "federation-compute",
+      "owner": "Live service authorization and participant consent owners",
+      "status": "open",
+      "acceptance": [
+        "Separate authorized owner/admin read-only recordings have deterministic findings and revocation evidence"
+      ],
+      "todos": [
+        "**Live read-only validation:** after capture authority exists, record separate"
+      ],
+      "evidence": {},
+      "required_evidence": [
+        "source",
+        "automated",
+        "authorization",
+        "consent"
+      ]
+    },
+    {
+      "id": "guild-effects",
+      "milestone": "federation-compute",
+      "owner": "Live service authorization and participant consent owners",
+      "status": "open",
+      "acceptance": [
+        "Separately approved effects bind observed preconditions, exact plan, rollback, durable intent and outcome; no deployment follows from fixture success"
+      ],
+      "todos": [
+        "**Desired-state execution:** remains a separate effect program requiring approvals,"
+      ],
+      "evidence": {},
+      "required_evidence": [
+        "source",
+        "automated",
+        "authorization",
+        "consent"
+      ]
+    },
+    {
+      "id": "identity-recovery-flake",
+      "milestone": "correctness",
+      "owner": "Abbey runtime maintainer",
+      "status": "open",
+      "acceptance": [
+        "Reproduce or retain the exact historical recovery failure; serial/parallel and load fixtures discriminate journal ownership without attributing an unobserved cause"
+      ],
+      "todos": [
+        "**Flaky test observed 2026-08-09 in Phase 4B.5's own suite \u2014 not yet diagnosed:**"
+      ],
+      "evidence": {},
+      "required_evidence": [
+        "source",
+        "automated"
+      ]
+    },
+    {
+      "id": "worker-runtime",
+      "milestone": "federation-compute",
+      "owner": "ABI worker maintainer and VM operator",
+      "status": "open",
+      "acceptance": [
+        "Actual workers have truthful negotiated inventory, lifecycle, local IPC/mTLS jobs, quotas, leases, cancellation and recovery"
+      ],
+      "todos": [
+        "Deploy the authenticated worker protocol: local IPC same-machine; mTLS gRPC for VM workers;"
+      ],
+      "evidence": {},
+      "required_evidence": [
+        "source",
+        "automated"
+      ]
+    },
+    {
+      "id": "personal-edition",
+      "milestone": "tools-editions",
+      "owner": "Abbey runtime maintainer and platform signing owners",
+      "status": "open",
+      "acceptance": [
+        "Revise conflicting invariants explicitly, keep safe os_control behavior, implement local personal structured shell without per-command confirmation and verify isolation, bounds, audit and OS authorization"
+      ],
+      "todos": [
+        "**Phase 6 \u2014 Two deliberately separate runtime editions:**"
+      ],
+      "evidence": {},
+      "required_evidence": [
+        "source",
+        "automated"
+      ]
+    },
+    {
+      "id": "model-media-roadmap",
+      "milestone": "models-media",
+      "owner": "ABI model/media/training maintainers",
+      "status": "open",
+      "acceptance": [
+        "Every inference, accelerator, training and media acceptance in milestone models-media passes independently"
+      ],
+      "todos": [
+        "**Phase 8 \u2014 Local model and media roadmap:**"
+      ],
+      "evidence": {},
+      "required_evidence": [
+        "source",
+        "automated"
+      ]
+    },
+    {
+      "id": "three-vm-proof",
+      "milestone": "federation-compute",
+      "owner": "VM infrastructure operator",
+      "status": "open",
+      "acceptance": [
+        "Three independent Ubuntu ARM64 VM identities/state/IPs pass authenticated fault/recovery and upgrade scenarios with an independent membership control store"
+      ],
+      "todos": [
+        "**Phase 10 \u2014 Authenticated three-VM shared-compute proof:**"
+      ],
+      "evidence": {},
+      "required_evidence": [
+        "source",
+        "automated",
+        "three_vm"
+      ]
+    },
+    {
+      "id": "final-closure",
+      "milestone": "qualification",
+      "owner": "Release owner and independent reviewers",
+      "status": "open",
+      "acceptance": [
+        "Every included requirement and platform evidence is complete before ledger closure; canceled Zig and deliberate OOS remain excluded",
+        "Run coordinated ABI/WDBX gates, dependency/license/secret and external security reviews, native installed journeys and sustained-resource acceptance against exact frozen inputs; regenerate claims only from their independently reported evidence"
+      ],
+      "todos": [
+        "**Phase 11 \u2014 Verification and final ledger closure:**"
+      ],
+      "evidence": {},
+      "required_evidence": [
+        "source",
+        "automated"
+      ]
+    },
+    {
+      "id": "wire-vocabularies",
+      "milestone": "correctness",
+      "owner": "Abbey protocol maintainer",
+      "status": "open",
+      "acceptance": [
+        "Bump affected v1/v3 schemas, reject old clients before changed claim/model vocabularies, update canonical claim boundaries and generated wire samples"
+      ],
+      "todos": [
+        "**The protocol v1 and v3 schemas do not cover the claim lifecycle",
+        "**The wire schemas do not cover every vocabulary they now carry** (#94"
+      ],
+      "evidence": {},
+      "required_evidence": [
+        "source",
+        "automated"
+      ]
+    },
+    {
+      "id": "evidence-channels",
+      "milestone": "correctness",
+      "owner": "Abbey claims maintainer",
+      "status": "open",
+      "acceptance": [
+        "Channel-specific failed/expired evidence preserves independently verified local channels; registry schema and sync tests pin the representation"
+      ],
+      "todos": [
+        "**The ledger cannot name which evidence channel lapsed or failed** (#94"
+      ],
+      "evidence": {},
+      "required_evidence": [
+        "source",
+        "automated"
+      ]
+    },
+    {
+      "id": "provider-model-switch",
+      "milestone": "correctness",
+      "owner": "Abbey TUI maintainer",
+      "status": "implemented",
+      "acceptance": [
+        "Every cross-provider transition selects/persists a valid default, same-provider selection preserves explicit model, and failed persistence leaves identity unchanged"
+      ],
+      "todos": [
+        "**The TUI provider switch does not recompute the model** (#99 \"Recompute"
+      ],
+      "evidence": {
+        "source": {
+          "status": "passed",
+          "refs": [
+            "docs/verification/2026-10-22-completion-wave-1.md"
+          ]
+        },
+        "automated": {
+          "status": "passed",
+          "refs": [
+            "docs/verification/2026-10-22-completion-recovery.md",
+            "docs/verification/2026-10-22-completion-recovery/frozen-2-root.log",
+            "docs/verification/2026-10-22-completion-recovery/frozen-2-desktop-retry.log"
+          ]
+        }
+      },
+      "required_evidence": [
+        "source",
+        "automated"
+      ]
+    },
+    {
+      "id": "prompt-budget",
+      "milestone": "correctness",
+      "owner": "Abbey process maintainer",
+      "status": "implemented",
+      "acceptance": [
+        "Prompt/Doctor ceiling matches 32 KiB argument and 64 KiB aggregate bounds including fixed arguments; Unicode and multi-argument fixtures cross real process validation"
+      ],
+      "todos": [
+        "**The captured-prompt clamp and the supervisor's argument budget"
+      ],
+      "evidence": {
+        "source": {
+          "status": "passed",
+          "refs": [
+            "docs/verification/2026-10-22-completion-wave-1.md"
+          ]
+        },
+        "automated": {
+          "status": "passed",
+          "refs": [
+            "docs/verification/2026-10-22-completion-recovery.md",
+            "docs/verification/2026-10-22-completion-recovery/frozen-2-root.log",
+            "docs/verification/2026-10-22-completion-recovery/frozen-2-desktop-retry.log"
+          ]
+        },
+        "pure_component": {
+          "status": "passed",
+          "refs": [
+            "src/argv_budget.rs",
+            "docs/verification/2026-10-22-completion-wave-1.md"
+          ]
+        }
+      },
+      "required_evidence": [
+        "source",
+        "automated"
+      ]
+    },
+    {
+      "id": "portable-ollama-probe",
+      "milestone": "correctness",
+      "owner": "Abbey process maintainer and Windows acceptance owner",
+      "status": "open",
+      "acceptance": [
+        "Readiness uses bounded portable capture off Unix and passes native success/missing tag/timeout/overflow fixtures on Windows"
+      ],
+      "todos": [
+        "**The Ollama readiness probe is unavailable off Unix** (#99 \"Probe Ollama"
+      ],
+      "evidence": {},
+      "required_evidence": [
+        "source",
+        "automated"
+      ]
+    },
+    {
+      "id": "deferred-readiness",
+      "milestone": "correctness",
+      "owner": "Abbey provider maintainer",
+      "status": "implemented",
+      "acceptance": [
+        "Local-only commands never spawn a readiness probe; generation auto-selection probes the effective requested tag and never downloads"
+      ],
+      "todos": [
+        "**The readiness probe runs for local-only verbs** (#99 \"Avoid probing"
+      ],
+      "evidence": {
+        "source": {
+          "status": "passed",
+          "refs": [
+            "docs/verification/2026-10-22-completion-recovery.md"
+          ]
+        },
+        "focused_tests": {
+          "status": "passed",
+          "refs": [
+            "docs/verification/2026-10-22-completion-recovery/ollama-green.log"
+          ]
+        },
+        "automated": {
+          "status": "passed",
+          "refs": [
+            "docs/verification/2026-10-22-completion-recovery.md",
+            "docs/verification/2026-10-22-completion-recovery/frozen-2-root.log",
+            "docs/verification/2026-10-22-completion-recovery/frozen-2-desktop-retry.log"
+          ]
+        }
+      },
+      "required_evidence": [
+        "source",
+        "automated"
+      ]
+    },
+    {
+      "id": "voice-claim-boundary",
+      "milestone": "correctness",
+      "owner": "Abbey claims maintainer",
+      "status": "open",
+      "acceptance": [
+        "Revalidate corrected registry and generated docs against dispatch: portable adapters are non-macOS only; macOS failure has no portable fallback"
+      ],
+      "todos": [
+        "**The `portable-primary-host-surfaces` claim overstates macOS voice"
+      ],
+      "evidence": {},
+      "required_evidence": [
+        "source",
+        "automated"
+      ]
+    },
+    {
+      "id": "corpus-patterns",
+      "milestone": "correctness",
+      "owner": "ABI corpus maintainer",
+      "status": "open",
+      "acceptance": [
+        "Anchor upstream identifier/digest schemas, re-vendor exact qualified bytes and digest; junk prefixes/suffixes fail fixtures"
+      ],
+      "todos": [
+        "**The corpus schemas' identifier and digest patterns are unanchored**"
+      ],
+      "evidence": {},
+      "required_evidence": [
+        "source",
+        "automated"
+      ]
+    },
+    {
+      "id": "corpus-command",
+      "milestone": "correctness",
+      "owner": "ABI corpus maintainer",
+      "status": "open",
+      "acceptance": [
+        "Upstream digest-covered README names an executable verified command, then qualified corpus is re-vendored"
+      ],
+      "todos": [
+        "**The corpus README documents a verification command that does not"
+      ],
+      "evidence": {},
+      "required_evidence": [
+        "source",
+        "automated"
+      ]
+    },
+    {
+      "id": "corpus-golden-vectors",
+      "milestone": "correctness",
+      "owner": "Abbey and ABI corpus maintainers",
+      "status": "open",
+      "acceptance": [
+        "Compute and independently compare canonical bytes and expected corpus digests; altered expected values cannot return Valid"
+      ],
+      "todos": [
+        "**The corpus golden vectors are never computed** (#89 \"Exercise golden"
+      ],
+      "evidence": {},
+      "required_evidence": [
+        "source",
+        "automated"
+      ]
+    },
+    {
+      "id": "synthetic-guild-correctness",
+      "milestone": "correctness",
+      "owner": "Abbey synthetic-engine maintainer",
+      "status": "implemented",
+      "acceptance": [
+        "No empty advertised alternatives, overwrite absence preserved in rollback, visibility digest binds bot authority, JSON is bounded before allocation, cyclic parent graphs refused"
+      ],
+      "todos": [
+        "**The Program 3 engine advertises alternatives that produce empty"
+      ],
+      "evidence": {
+        "source": {
+          "status": "passed",
+          "refs": [
+            "docs/verification/2026-10-22-completion-recovery.md"
+          ]
+        },
+        "focused_tests": {
+          "status": "passed",
+          "refs": [
+            "docs/verification/2026-10-22-completion-recovery/guild-green.log"
+          ]
+        },
+        "automated": {
+          "status": "passed",
+          "refs": [
+            "docs/verification/2026-10-22-completion-recovery.md",
+            "docs/verification/2026-10-22-completion-recovery/frozen-2-root.log",
+            "docs/verification/2026-10-22-completion-recovery/frozen-2-desktop-retry.log"
+          ]
+        }
+      },
+      "required_evidence": [
+        "source",
+        "automated"
+      ]
+    },
+    {
+      "id": "accelerator-install-isolation",
+      "milestone": "platforms",
+      "owner": "Abbey installer maintainer",
+      "status": "open",
+      "acceptance": [
+        "Safe/personal installed accelerator layouts cannot replace each other; staged/published verification and rollback fixtures preserve prior bytes"
+      ],
+      "todos": [
+        "**The accelerator dylib is shared between the editions** (#45 \"Keep the"
+      ],
+      "evidence": {},
+      "required_evidence": [
+        "source",
+        "automated"
+      ]
+    },
+    {
+      "id": "model-request-validation",
+      "milestone": "correctness",
+      "owner": "Abbey and ABI model-runtime maintainers",
+      "status": "open",
+      "acceptance": [
+        "Serialized frame bounds and ordinary multiline whitespace are tested; budget exhaustion stays typed and elapsed-duration handling is repaired upstream before a qualified pin change"
+      ],
+      "todos": [
+        "**The v3 model request bounds and validation are narrower than the"
+      ],
+      "evidence": {},
+      "required_evidence": [
+        "source",
+        "automated"
+      ]
+    },
+    {
+      "id": "model-store-isolation",
+      "milestone": "platforms",
+      "owner": "Abbey and ABI model-store maintainers",
+      "status": "open",
+      "acceptance": [
+        "Edition-qualified model storage selection refuses shared/cross-edition overrides and passes real artifact-store isolation fixtures"
+      ],
+      "todos": [
+        "**The model artifact storage root is not edition-scoped** (#80 \"Keep the"
+      ],
+      "evidence": {},
+      "required_evidence": [
+        "source",
+        "automated"
+      ]
+    },
+    {
+      "id": "mcp-server-conformance",
+      "milestone": "tools-editions",
+      "owner": "Abbey MCP protocol maintainer",
+      "status": "open",
+      "acceptance": [
+        "Pin and validate the official served protocol revision; implement version-appropriate lifecycle, cooperative cancellation and bounded streaming/resumability with classic-client compatibility fixtures",
+        "Advertise resources/prompts/tasks only for exact registered read-only handlers; test frame/depth limits, stale/cross-client sessions, slow consumers, cancellation and secret redaction",
+        "Keep non-loopback unavailable unless separately reviewed TLS/resource-server authentication, PKCE/resource indicators/audience binding, revocation and redirect/Host/Origin protection pass; personal execution never enters served MCP"
+      ],
+      "todos": [],
+      "evidence": {},
+      "required_evidence": [
+        "source",
+        "automated",
+        "protocol_conformance"
+      ]
+    },
+    {
+      "id": "portable-package-services",
+      "milestone": "desktop",
+      "owner": "macOS/Linux/Windows platform maintainers and release owners",
+      "status": "open",
+      "acceptance": [
+        "Build edition-isolated macOS app/DMG, Windows installers and Linux native packages with correct dependencies, runtime resources, service, updater and retained-state uninstall behavior",
+        "Exercise real PowerShell coexistence, native WebView chat/tasks/tools/automations, service restart and clean-user package journeys on Windows 11 ARM and Ubuntu ARM64",
+        "Detect X11/Wayland and portal capabilities explicitly; unavailable capture/control remains unavailable"
+      ],
+      "todos": [],
+      "evidence": {},
+      "required_evidence": [
+        "source",
+        "automated",
+        "macos_arm64",
+        "ubuntu_arm64",
+        "windows11_arm",
+        "signing"
+      ]
+    },
+    {
+      "id": "three-platform-artifact-ci",
+      "milestone": "qualification",
+      "owner": "Runner administrators and release owners",
+      "status": "open",
+      "acceptance": [
+        "Run nonzero trusted jobs on macOS ARM64, Ubuntu ARM64 and Windows 11 ARM with exact immutable Abbey/ABI/WDBX inputs and minimal permissions",
+        "Require root/desktop gates, release package builds, installed journeys, security scans and artifact signature/provenance verification per host and edition",
+        "Verify failure propagation, cancellation, stale-ref rejection, exact run/ref/artifact correlation and cleanup; zero-job or skipped workflows never satisfy proof"
+      ],
+      "todos": [],
+      "evidence": {},
+      "required_evidence": [
+        "source",
+        "automated",
+        "macos_arm64",
+        "ubuntu_arm64",
+        "windows11_arm",
+        "native_ci",
+        "signing",
+        "artifact_provenance"
+      ]
+    },
+    {
+      "id": "physical-federation-proof",
+      "milestone": "federation-compute",
+      "owner": "Physical-host infrastructure and deployment operators",
+      "status": "open",
+      "acceptance": [
+        "Separately qualify authenticated physical multi-host and geographic-HA/multi-device operation using real distinct identities, devices, addresses and persisted state",
+        "Exercise physical-host loss, network partitions, stale leaders, certificate rotation, recovery, rolling upgrades and teardown; same-host processes and three VMs cannot substitute"
+      ],
+      "todos": [],
+      "evidence": {},
+      "required_evidence": [
+        "source",
+        "automated",
+        "physical_hosts",
+        "geographic_deployment",
+        "hardware"
+      ]
+    },
+    {
+      "id": "linux-service-foundation",
+      "milestone": "platforms",
+      "owner": "Linux platform maintainer and Ubuntu ARM64 runner operator",
+      "status": "open",
+      "acceptance": [
+        "Provide edition-isolated Linux daemon/service and desktop discovery/startup integration with owner-only credentials and exact Unix framing/correlation/cancellation parity",
+        "Run native minimal install/start/status/cancel/restart/uninstall-retention fixtures on Ubuntu ARM64 before foundation closure; completed Tasks/Tools/Automations journeys are tracked separately under portable-package-services"
+      ],
+      "todos": [],
+      "evidence": {},
+      "required_evidence": [
+        "source",
+        "automated",
+        "ubuntu_arm64",
+        "native_ci"
+      ]
+    },
+    {
+      "id": "dependency-security-remediation",
+      "milestone": "qualification",
+      "owner": "Dependency maintainers, Windows update acceptance owner and release reviewer",
+      "status": "in_progress",
+      "acceptance": [
+        "Repair Tokio and Tauri updater ZIP dependency advisories using an exact reviewed candidate and qualify the full generated dependency graph; retain existing pins until candidate promotion is justified",
+        "Resolve or explicitly review GLib VariantStrIter unsoundness and proc-macro-error maintenance findings without silently broadening the existing advisory exceptions",
+        "Require strict dependency/license/secret evidence plus root/desktop gates and native updater/install acceptance for all supported editions/hosts before release qualification"
+      ],
+      "todos": [],
+      "evidence": {
+        "dependency_audit": {
+          "status": "failed",
+          "refs": [
+            "docs/verification/2026-10-22-completion-recovery/frozen-2-dependency-scan.log"
+          ]
+        },
+        "candidate_source": {
+          "status": "passed",
+          "refs": [
+            "docs/verification/2026-10-22-completion-recovery/security-candidate.patch",
+            "docs/verification/2026-10-22-completion-recovery.md"
+          ]
+        },
+        "candidate_dependency_audit": {
+          "status": "failed",
+          "refs": [
+            "docs/verification/2026-10-22-completion-recovery/security-candidate-dependency-scan.log"
+          ]
+        },
+        "license_inventory": {
+          "status": "passed",
+          "refs": [
+            "docs/verification/2026-10-22-completion-recovery/security-candidate-license-inventory.json"
+          ]
+        },
+        "secret_directory_triage": {
+          "status": "passed",
+          "refs": [
+            "docs/verification/2026-10-22-completion-recovery/frozen-2-secret-triage.json"
+          ]
+        }
+      },
+      "required_evidence": [
+        "source",
+        "automated",
+        "dependency_audit",
+        "license_review",
+        "secret_scan",
+        "macos_arm64",
+        "ubuntu_arm64",
+        "windows11_arm"
+      ]
+    }
+  ],
+  "goals": {
+    "working-ci": [
+      "platforms"
+    ],
+    "approved-capability-expansion": [
+      "authority",
+      "tools-editions",
+      "desktop",
+      "models-media",
+      "federation-compute"
+    ],
+    "abbey-completion-program": [
+      "baseline",
+      "platforms",
+      "correctness",
+      "authority",
+      "tools-editions",
+      "desktop",
+      "models-media",
+      "federation-compute",
+      "qualification"
+    ]
+  }
+}

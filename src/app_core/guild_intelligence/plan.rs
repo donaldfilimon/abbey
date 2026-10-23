@@ -4,12 +4,22 @@ use serde::Serialize;
 
 use super::{Alternative, GuildIntelligenceError, GuildRecording, SEND_MESSAGES, digest};
 
+pub(super) fn overwrite_needs_change(channel: &super::ChannelRecord, everyone: &str) -> bool {
+    !channel.overwrites.iter().any(|overwrite| {
+        overwrite.target.is_everyone(everyone)
+            && overwrite.allow & SEND_MESSAGES == 0
+            && overwrite.deny & SEND_MESSAGES != 0
+    })
+}
+
 /// An exact observed or expected permission state bound to one observation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct PermissionCondition {
     pub source_observation_digest: String,
     pub scope_ref: String,
     pub subject_ref: String,
+    /// False means the overwrite is absent, rather than present with zero bits.
+    pub present: bool,
     pub allow: u64,
     pub deny: u64,
 }
@@ -28,6 +38,8 @@ pub struct DesiredPermissionState {
 pub struct RollbackPermissionState {
     pub scope_ref: String,
     pub subject_ref: String,
+    /// False previews removing the newly introduced overwrite.
+    pub present: bool,
     pub allow: u64,
     pub deny: u64,
 }
@@ -67,6 +79,7 @@ pub(super) fn make_plan(
                     source_observation_digest: observation_digest.into(),
                     scope_ref: recording.guild_ref.clone(),
                     subject_ref: role.ref_id.clone(),
+                    present: true,
                     allow: role.permissions,
                     deny: 0,
                 }],
@@ -80,12 +93,14 @@ pub(super) fn make_plan(
                     source_observation_digest: observation_digest.into(),
                     scope_ref: recording.guild_ref.clone(),
                     subject_ref: role.ref_id.clone(),
+                    present: true,
                     allow: desired_allow,
                     deny: 0,
                 }],
                 vec![RollbackPermissionState {
                     scope_ref: recording.guild_ref.clone(),
                     subject_ref: role.ref_id.clone(),
+                    present: true,
                     allow: role.permissions,
                     deny: 0,
                 }],
@@ -97,6 +112,9 @@ pub(super) fn make_plan(
             let mut postconditions = Vec::with_capacity(recording.channels.len());
             let mut rollback_preview = Vec::with_capacity(recording.channels.len());
             for channel in &recording.channels {
+                if !overwrite_needs_change(channel, &role.ref_id) {
+                    continue;
+                }
                 let prior = channel
                     .overwrites
                     .iter()
@@ -109,6 +127,7 @@ pub(super) fn make_plan(
                     source_observation_digest: observation_digest.into(),
                     scope_ref: channel.ref_id.clone(),
                     subject_ref: role.ref_id.clone(),
+                    present: prior.is_some(),
                     allow: observed_allow,
                     deny: observed_deny,
                 });
@@ -122,12 +141,14 @@ pub(super) fn make_plan(
                     source_observation_digest: observation_digest.into(),
                     scope_ref: channel.ref_id.clone(),
                     subject_ref: role.ref_id.clone(),
+                    present: true,
                     allow: desired_allow,
                     deny: desired_deny,
                 });
                 rollback_preview.push(RollbackPermissionState {
                     scope_ref: channel.ref_id.clone(),
                     subject_ref: role.ref_id.clone(),
+                    present: prior.is_some(),
                     allow: observed_allow,
                     deny: observed_deny,
                 });
@@ -139,7 +160,6 @@ pub(super) fn make_plan(
                 rollback_preview,
             )
         }
-        "least-privilege" | "focused-overwrite" => (Vec::new(), Vec::new(), Vec::new(), Vec::new()),
         _ => return Err(GuildIntelligenceError::UnknownSelection),
     };
     let plan_digest = digest(&(

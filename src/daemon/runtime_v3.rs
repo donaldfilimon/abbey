@@ -120,7 +120,6 @@ impl V3RuntimeAuthority {
             available.push(V3Capability::DownloadModels);
             available.push(V3Capability::ManageModels);
         }
-        available.push(V3Capability::ReadWorkers);
         available.push(V3Capability::ReadClaimsById);
         if model_lifecycle.is_some() {
             available.push(V3Capability::InferModels);
@@ -215,40 +214,6 @@ impl V3RuntimeAuthority {
             V3Command::InferenceStatus(query) => self.model_authority()?.inference_status(query),
             V3Command::InferModel(request) => self.model_authority()?.infer(request),
             V3Command::CancelModel(action) => self.model_authority()?.cancel(action),
-            V3Command::ListClusters(page) => {
-                // Low-risk stub dispatch for worker protocol family (clusters share ReadWorkers).
-                // Always-empty until abi-worker listener/scheduler is integrated.
-                let snapshot = 0u64;
-                let through = page.through.unwrap_or(snapshot);
-                if through > snapshot || page.after > through {
-                    return Err(invalid_command_failure());
-                }
-                Ok(V3Event::Clusters(V3EntityPage {
-                    after: page.after,
-                    through,
-                    records: vec![],
-                }))
-            }
-            V3Command::ListWorkers(page) => {
-                // Low-risk stub dispatch for worker protocol family.
-                // Always-empty until abi-worker listener/scheduler is integrated.
-                let snapshot = 0u64;
-                let through = page.through.unwrap_or(snapshot);
-                if through > snapshot || page.after > through {
-                    return Err(invalid_command_failure());
-                }
-                Ok(V3Event::Workers(V3EntityPage {
-                    after: page.after,
-                    through,
-                    records: vec![],
-                }))
-            }
-            V3Command::WorkerHealth(query) | V3Command::JobStatus(query) => {
-                // Low-risk: specific worker/job not present; fail closed with not-found.
-                // Real health and job status will come from abi-worker JobControlStore.
-                query.validate().map_err(|_| invalid_command_failure())?;
-                Err(not_found_failure())
-            }
             V3Command::ClaimById(query) => {
                 let claim = crate::claims::CLAIMS
                     .iter()

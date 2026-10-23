@@ -7,12 +7,12 @@ use std::path::{Path, PathBuf};
 
 /// Soft ceiling for a single prompt argv string (platform-aware).
 ///
-/// - Unix: macOS/Linux `ARG_MAX` is typically hundreds of KiB; 96 KiB leaves room
-///   for env + other argv.
+/// - Unix: at most the supervisor's 32 KiB per-argument ceiling. The builders
+///   further reduce prompt space to fit the 64 KiB aggregate including flags.
 /// - Windows: `CreateProcess` command-line limit is ~32767 chars for the whole
 ///   line — keep each prompt chunk well under that.
 pub fn max_prompt_argv_bytes() -> usize {
-    if cfg!(windows) { 24 * 1024 } else { 96 * 1024 }
+    crate::argv_budget::max_prompt_bytes()
 }
 
 /// First matching executable on `PATH` (Windows: tries PATHEXT suffixes).
@@ -273,6 +273,11 @@ mod tests {
     #[test]
     fn argv_budget_at_least_16k() {
         assert!(max_prompt_argv_bytes() >= 16 * 1024);
+    }
+
+    #[test]
+    fn advertised_prompt_ceiling_fits_the_supervised_argument_limit() {
+        assert!(max_prompt_argv_bytes() <= 32 * 1024);
     }
 
     #[test]

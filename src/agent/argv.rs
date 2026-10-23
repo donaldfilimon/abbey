@@ -7,6 +7,8 @@
 //! process execution stay in `agent/mod.rs`.
 
 use super::{AgentBackend, AgentConfig, Worktree, max_prompt_argv_bytes};
+use crate::argv_budget::append_prompt_args;
+pub use crate::argv_budget::truncate_utf8_bytes;
 use std::path::Path;
 
 /// Map an Abbey model/alias onto `fm`'s two-model vocabulary (`system` | `pcc`).
@@ -201,32 +203,6 @@ pub fn utf8_tail(s: &str, max_bytes: usize) -> &str {
     &s[start..]
 }
 
-/// Truncate `s` on a UTF-8 boundary so its byte length is ≤ `max_bytes`.
-pub fn truncate_utf8_bytes(s: &str, max_bytes: usize) -> String {
-    if s.len() <= max_bytes {
-        return s.to_string();
-    }
-    let marker = format!(
-        "\n\n… [truncated for OS argv limit; kept {max_bytes} of {} bytes]",
-        s.len()
-    );
-    let budget = max_bytes.saturating_sub(marker.len());
-    let mut end = budget.min(s.len());
-    while end > 0 && !s.is_char_boundary(end) {
-        end -= 1;
-    }
-    let mut out = s[..end].to_string();
-    out.push_str(&marker);
-    if out.len() > max_bytes {
-        let mut e = max_bytes;
-        while e > 0 && !out.is_char_boundary(e) {
-            e -= 1;
-        }
-        out.truncate(e);
-    }
-    out
-}
-
 /// Clamp every trailing prompt string so the child argv stays under the OS limit.
 /// Whether a prompt would reach the backend in option position.
 ///
@@ -319,7 +295,7 @@ impl AgentConfig {
             args.push("--save-transcript".into());
             args.push(path.display().to_string());
         }
-        args.extend(prompts);
+        append_prompt_args(&mut args, prompts);
         args
     }
 
@@ -370,7 +346,7 @@ impl AgentConfig {
                 other => format!("Mode: {other}."),
             });
         }
-        args.extend(prompts);
+        append_prompt_args(&mut args, prompts);
         args
     }
 
@@ -438,7 +414,7 @@ impl AgentConfig {
             }
             args.push(id.to_string());
         }
-        args.extend(prompts);
+        append_prompt_args(&mut args, prompts);
         args
     }
 
@@ -478,7 +454,7 @@ impl AgentConfig {
                 other => format!("Mode: {other}."),
             });
         }
-        args.extend(prompts);
+        append_prompt_args(&mut args, prompts);
         args
     }
 
@@ -547,7 +523,7 @@ impl AgentConfig {
             args.push("--resume".into());
             args.push(id.to_string());
         }
-        args.extend(prompts);
+        append_prompt_args(&mut args, prompts);
         args
     }
 }

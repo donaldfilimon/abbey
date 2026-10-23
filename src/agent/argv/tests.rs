@@ -587,6 +587,59 @@ fn build_args_clamps_a_please_fix_sized_prompt() {
     );
 }
 
+#[test]
+fn every_backend_counts_fixed_arguments_in_the_aggregate_prompt_budget() {
+    for backend in [
+        AgentBackend::Cursor,
+        AgentBackend::Grok,
+        AgentBackend::Fm,
+        AgentBackend::Abi,
+        AgentBackend::Claude,
+        AgentBackend::Ollama,
+    ] {
+        let mut cfg = maximal_cursor_config();
+        cfg.backend = backend;
+        cfg.extra_args = vec!["a".repeat(16 * 1024), "b".repeat(16 * 1024)];
+        let prompts = vec!["界".repeat(40_000); 3];
+        let argv = cfg.build_args(None, &prompts);
+        assert!(
+            argv.iter().all(|arg| arg.len() <= 32 * 1024),
+            "{backend:?}: per-argument budget"
+        );
+        assert!(
+            argv.iter().map(String::len).sum::<usize>() <= 64 * 1024,
+            "{backend:?}: fixed arguments must reduce the available prompt budget"
+        );
+        if matches!(backend, AgentBackend::Cursor | AgentBackend::Grok) {
+            assert_eq!(
+                &argv[argv.len() - 5..argv.len() - 3],
+                cfg.extra_args.as_slice(),
+                "configured arguments must not be truncated"
+            );
+        }
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn clamped_multi_argument_prompt_passes_the_actual_capture_supervisor() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let dir = std::env::temp_dir().join(format!("abbey-argv-budget-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir(&dir).unwrap();
+    let executable = dir.join("fixture-cli");
+    std::fs::write(&executable, "#!/bin/sh\nprintf 'accepted\\n'\n").unwrap();
+    std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let mut cfg = maximal_cursor_config();
+    cfg.backend = AgentBackend::Cursor;
+    cfg.extra_args = vec!["a".repeat(16 * 1024), "b".repeat(16 * 1024)];
+    let argv = cfg.build_args(None, &vec!["x".repeat(96 * 1024); 3]);
+    let outcome = cfg.capture_command(&executable, &argv, None);
+    std::fs::remove_dir_all(&dir).unwrap();
+    let (status, stdout, _) = outcome.expect("admitted argv must reach the child");
+    assert!(status.success());
+    assert_eq!(stdout, "accepted\n");
+}
+
 fn streaming(backend: AgentBackend) -> AgentConfig {
     let (tx, _rx) = std::sync::mpsc::channel();
     AgentConfig {

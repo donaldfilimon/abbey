@@ -122,16 +122,15 @@ impl AgentBackend {
     /// The unchosen default: ollama when it resolves, otherwise the first
     /// other installed executor in [`Self::LOCAL_FIRST_FALLBACK`] order —
     /// the on-device `fm` model first when it is actually ready, with cursor
-    /// last. ollama is preferred, never
+    /// last. Model readiness is deferred until generation selects the effective
+    /// requested tag. Ollama is preferred, never
     /// required — a machine with only `abi` (or `grok`/`fm`) still works out
     /// of the box. The legacy `ABBEY_AGENT` path is handled before this
     /// unchosen-default path.
     fn default_with_fallback() -> (Self, &'static str) {
-        Self::pick_default_backend(
-            &|backend| resolve_agent_for(backend).is_ok(),
-            &|| resolve_agent_for(Self::Ollama).is_ok_and(|path| ollama_default_ready(&path)),
-            &|| resolve_agent_for(Self::Fm).is_ok_and(|path| fm_system_ready(&path)),
-        )
+        Self::pick_default_backend(&|backend| resolve_agent_for(backend).is_ok(), &|| {
+            resolve_agent_for(Self::Fm).is_ok_and(|path| fm_system_ready(&path))
+        })
     }
 
     /// Automatic fallback order after ollama: local model first. `fm` serves
@@ -145,25 +144,17 @@ impl AgentBackend {
 
     fn pick_default_backend(
         resolves: &dyn Fn(AgentBackend) -> bool,
-        ollama_ready: &dyn Fn() -> bool,
         fm_ready: &dyn Fn() -> bool,
     ) -> (Self, &'static str) {
         let ollama_installed = resolves(Self::Ollama);
-        if ollama_installed && ollama_ready() {
+        if ollama_installed {
             return (Self::Ollama, "default");
         }
         for candidate in Self::LOCAL_FIRST_FALLBACK {
             // A resolvable `fm` with Apple Intelligence off (or unsupported
             // hardware) fails at spawn; only a ready on-device model may win.
             if resolves(candidate) && (candidate != Self::Fm || fm_ready()) {
-                return (
-                    candidate,
-                    if ollama_installed {
-                        "auto — ollama daemon/default model unavailable"
-                    } else {
-                        "auto — ollama not installed"
-                    },
-                );
+                return (candidate, "auto — ollama not installed");
             }
         }
         // Nothing installed: stay on ollama so the eventual spawn-time error
@@ -285,10 +276,6 @@ fn legacy_agent_path() -> Option<PathBuf> {
     crate::host::is_executable(&path).then_some(path)
 }
 
-fn ollama_default_ready(path: &Path) -> bool {
-    ollama_lists_model(path, crate::models::OLLAMA_DEFAULT_MODEL)
-}
-
 /// Parsed `fm models` answer: which Apple Foundation Models can serve now.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct FmModels {
@@ -402,7 +389,7 @@ fn fm_system_ready(path: &Path) -> bool {
 /// Retries once, but only when the probe failed to produce an answer at all.
 /// Supervised spawns on self-hosted macOS CI can time out under parallel load
 /// even when the binary is a local stub (see tip Gate flake on
-/// `automatic_ollama_probe_requires_the_default_model`). A clean `ollama list`
+/// `ollama_probe_checks_the_exact_requested_tag`). A clean `ollama list`
 /// that simply does not name `model` is a real answer, so it is returned
 /// immediately rather than paying a second spawn to re-derive it.
 pub(crate) fn ollama_lists_model(path: &Path, model: &str) -> bool {
@@ -561,95 +548,26 @@ mod tests {
 
     #[test]
     fn default_backend_prefers_ollama_but_never_requires_cursor() {
-        // ollama wins whenever it resolves, even if cursor-agent is also present.
-        let (b, src) = AgentBackend::pick_default_backend(&|_| true, &|| true, &|| true);
-        assert_eq!(b, AgentBackend::Ollama);
-        assert_eq!(src, "default");
-
-        // cursor present without ollama is a last-resort auto fallback, never
-        // the preferred default.
-        let (b, src) = AgentBackend::pick_default_backend(
-            &|b| matches!(b, AgentBackend::Cursor),
-            &|| false,
-            &|| true,
-        );
-        assert_eq!(b, AgentBackend::Cursor);
-        assert!(
-            src.starts_with("auto"),
-            "cursor without ollama must be an auto fallback: {src}"
-        );
-
-        // otherwise the first other installed executor serves, in the fixed
-        // cycle order, and the source string says the choice was automatic.
-        let (b, src) = AgentBackend::pick_default_backend(
-            &|b| matches!(b, AgentBackend::Abi),
-            &|| false,
-            &|| true,
-        );
-        assert_eq!(b, AgentBackend::Abi);
-        assert!(
-            src.starts_with("auto"),
-            "auto choice must be visible: {src}"
-        );
-
-        // Local first: an installed local executor beats a cloud CLI.
-        let (b, _) = AgentBackend::pick_default_backend(
-            &|b| matches!(b, AgentBackend::Grok | AgentBackend::Abi),
-            &|| false,
-            &|| true,
-        );
-        assert_eq!(
-            b,
-            AgentBackend::Grok,
-            "abi's default is a template, not a model: grok precedes it"
-        );
-        let (b, _) = AgentBackend::pick_default_backend(
-            &|b| {
-                matches!(
-                    b,
-                    AgentBackend::Grok | AgentBackend::Fm | AgentBackend::Claude
-                )
-            },
-            &|| false,
-            &|| true,
-        );
-        assert_eq!(b, AgentBackend::Fm, "on-device fm beats every cloud CLI");
-        let (b, _) = AgentBackend::pick_default_backend(
-            &|b| matches!(b, AgentBackend::Fm | AgentBackend::Abi),
-            &|| false,
-            &|| true,
-        );
-        assert_eq!(b, AgentBackend::Fm, "fm precedes abi");
-        // fm resolves but its on-device model is not ready: skip it.
-        let (b, _) = AgentBackend::pick_default_backend(
-            &|b| matches!(b, AgentBackend::Fm | AgentBackend::Grok),
-            &|| false,
+        let (backend, source) = AgentBackend::pick_default_backend(&|_| true, &|| {
+            panic!("installed Ollama must not probe other providers")
+        });
+        assert_eq!((backend, source), (AgentBackend::Ollama, "default"));
+        for (installed, ready, expected) in [
+            (AgentBackend::Cursor, true, AgentBackend::Cursor),
+            (AgentBackend::Abi, true, AgentBackend::Abi),
+            (AgentBackend::Claude, true, AgentBackend::Claude),
+            (AgentBackend::Fm, true, AgentBackend::Fm),
+            (AgentBackend::Fm, false, AgentBackend::Ollama),
+        ] {
+            let (backend, _) =
+                AgentBackend::pick_default_backend(&|candidate| candidate == installed, &|| ready);
+            assert_eq!(backend, expected);
+        }
+        let (backend, _) = AgentBackend::pick_default_backend(
+            &|candidate| matches!(candidate, AgentBackend::Fm | AgentBackend::Grok),
             &|| false,
         );
-        assert_eq!(b, AgentBackend::Grok, "an unready fm never wins");
-
-        let (b, src) = AgentBackend::pick_default_backend(
-            &|b| matches!(b, AgentBackend::Claude),
-            &|| false,
-            &|| true,
-        );
-        assert_eq!(b, AgentBackend::Claude);
-        assert!(src.starts_with("auto"));
-
-        // Nothing installed: stay on ollama so the spawn-time error names the
-        // preferred install first — never a panic, never a random pick, never
-        // cursor-agent.
-        let (b, src) = AgentBackend::pick_default_backend(&|_| false, &|| false, &|| true);
-        assert_eq!(b, AgentBackend::Ollama);
-        assert_eq!(src, "default — no ready executor found");
-
-        let (b, src) = AgentBackend::pick_default_backend(
-            &|backend| matches!(backend, AgentBackend::Ollama | AgentBackend::Abi),
-            &|| false,
-            &|| true,
-        );
-        assert_eq!(b, AgentBackend::Abi);
-        assert!(src.contains("default model unavailable"));
+        assert_eq!(backend, AgentBackend::Grok);
     }
 
     #[test]
@@ -705,7 +623,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn automatic_ollama_probe_requires_the_default_model() {
+    fn ollama_probe_checks_the_exact_requested_tag() {
         use std::os::unix::fs::PermissionsExt as _;
 
         /// The probe's exact answer, retried while it stays indeterminate.
@@ -731,35 +649,6 @@ mod tests {
             }
         }
 
-        /// The wrapper the automatic backend uses, observed the same way.
-        ///
-        /// Its answer is only conclusive once the probe itself is, so it is
-        /// compared against the probe's exact answer rather than asserted
-        /// on its own. The two are not the same clock: the wrapper gives the
-        /// child two chances and then reports "not ready" for an
-        /// indeterminate probe, while the exact probe keeps retrying. So a
-        /// persistent disagreement has two possible causes — a wrapper that
-        /// answers differently, or a machine where the wrapper's shorter
-        /// budget cannot complete — and this helper cannot tell them apart.
-        /// It reports the disagreement it observed, and names no cause it has
-        /// not established.
-        fn wrapper_answer(path: &std::path::Path) -> bool {
-            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
-            loop {
-                let observed = ollama_default_ready(path);
-                let exact = probe_answer(path, crate::models::OLLAMA_DEFAULT_MODEL);
-                if observed == exact {
-                    return observed;
-                }
-                assert!(
-                    std::time::Instant::now() < deadline,
-                    "the readiness wrapper answered {observed} while the exact probe answered {exact}, \
-                     and the two did not agree within the window"
-                );
-                std::thread::sleep(std::time::Duration::from_millis(50));
-            }
-        }
-
         let path = std::env::temp_dir().join(format!(
             "abbey-ollama-probe-{}-{}",
             std::process::id(),
@@ -778,19 +667,10 @@ mod tests {
             probe_answer(&path, default_model),
             "stub listing {default_model} must count as ready"
         );
-        assert!(
-            wrapper_answer(&path),
-            "the backend's readiness probe must count a listed default model as ready"
-        );
-
         write_stub("#!/bin/sh\nprintf 'NAME ID SIZE\\nother:latest digest 1GB\\n'\n");
         assert!(
             !probe_answer(&path, default_model),
             "stub listing other:latest must not count the default model as ready"
-        );
-        assert!(
-            !wrapper_answer(&path),
-            "the backend's readiness probe must not count an unlisted model as ready"
         );
         std::fs::remove_file(path).unwrap();
     }

@@ -16,7 +16,11 @@ pub use plan::{
     DesiredPermissionState, DesiredStatePlan, PermissionCondition, RollbackPermissionState,
 };
 
-const SCHEMA_VERSION: u16 = 1;
+// Input recordings retain their original schema; replay schema 2 adds explicit
+// permission presence and binds visibility evidence to bot authority inputs.
+const RECORDING_SCHEMA_VERSION: u16 = 1;
+const SCHEMA_VERSION: u16 = 2;
+const MAX_RECORDING_BYTES: usize = 4 * 1024 * 1024;
 const MAX_OBJECTS: usize = 2_048;
 const MAX_REF_LEN: usize = 96;
 const ADMINISTRATOR: u64 = 1 << 3;
@@ -56,6 +60,9 @@ pub struct RecordingGuildSource {
 impl RecordingGuildSource {
     /// Parses and validates a closed synthetic metadata recording.
     pub fn from_json(input: &str) -> Result<Self, GuildIntelligenceError> {
+        if input.len() > MAX_RECORDING_BYTES {
+            return invalid("recording exceeds the 4194304-byte limit");
+        }
         let mut recording: GuildRecording = serde_json::from_str(input)
             .map_err(|error| GuildIntelligenceError::InvalidRecording(error.to_string()))?;
         if !recording.synthetic {
@@ -338,7 +345,16 @@ fn analyze(
     let watermarks = watermarks(recording)?;
     let effective_channel_permissions = effective_permissions(recording);
     let findings = findings(recording, &watermarks, &effective_channel_permissions)?;
-    let alternatives = alternatives(&findings);
+    let everyone_ref = recording
+        .roles
+        .iter()
+        .find(|role| role.position == 0)
+        .map_or("", |role| role.ref_id.as_str());
+    let scoped_change = recording
+        .channels
+        .iter()
+        .any(|channel| plan::overwrite_needs_change(channel, everyone_ref));
+    let alternatives = alternatives(&findings, scoped_change);
     let coverage = Coverage {
         role_count: recording.roles.len() as u32,
         channel_count: recording.channels.len() as u32,
@@ -504,6 +520,12 @@ fn findings(
             evidence_digests: evidence(&role.ref_id)?,
         });
     }
+    let authority_digest = digest(&(
+        "bot-authority-v2",
+        &recording.bot_self,
+        &recording.owner_ref,
+        &recording.roles,
+    ))?;
     for channel in &recording.channels {
         if effective
             .get(&channel.ref_id)
@@ -513,11 +535,13 @@ fn findings(
                 .iter()
                 .any(|item| item.target.is_everyone(everyone_ref) && item.deny & VIEW_CHANNEL != 0)
         {
+            let mut evidence_digests = evidence(&channel.ref_id)?;
+            evidence_digests.push(authority_digest.clone());
             result.push(Finding {
                 code: FindingCode::BotChannelVisibilityRestored,
                 severity: "informational",
                 affected_refs: vec![channel.ref_id.clone()],
-                evidence_digests: evidence(&channel.ref_id)?,
+                evidence_digests,
             });
         }
     }
@@ -533,12 +557,12 @@ fn findings(
     Ok(result)
 }
 
-fn alternatives(findings: &[Finding]) -> Vec<Alternative> {
+fn alternatives(findings: &[Finding], has_channels: bool) -> Vec<Alternative> {
     let addressed = findings
         .iter()
         .filter_map(|item| (item.code == FindingCode::EveryoneCanSend).then_some(item.code))
         .collect::<Vec<_>>();
-    vec![
+    let mut result = vec![
         Alternative {
             id: "least-privilege".into(),
             strategy: "reduce_broad_permission",
@@ -557,7 +581,13 @@ fn alternatives(findings: &[Finding]) -> Vec<Alternative> {
             affected_findings: Vec::new(),
             reversible: true,
         },
-    ]
+    ];
+    result.retain(|alternative| {
+        alternative.id == "do-nothing"
+            || (!alternative.affected_findings.is_empty()
+                && (alternative.id != "focused-overwrite" || has_channels))
+    });
+    result
 }
 
 fn watermarks(recording: &GuildRecording) -> Result<Vec<ObjectWatermark>, GuildIntelligenceError> {

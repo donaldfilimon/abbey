@@ -1,0 +1,187 @@
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -129,3 +129,7 @@
+ lto = true
+ codegen-units = 1
+ strip = true
++
++# Candidate only: upstream Windows updater ZIP extraction security repair.
++[patch.crates-io]
++tauri-plugin-updater = { git = "https://github.com/tauri-apps/plugins-workspace", rev = "ba98bfadc4c868c9a7e1a226c83af528e1f11b89" }
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -393,15 +393,6 @@
+ checksum = "cab112f0a86d568ea0e627cc1d6be74a1e9cd55214684db5561995f6dad897c6"
+ dependencies = [
+  "num-traits",
+-]
+-
+-[[package]]
+-name = "arbitrary"
+-version = "1.5.0"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "3bc62ac97cc33321f50863d514c3bc38a453947a8f9e781137e47c7401020aed"
+-dependencies = [
+- "derive_arbitrary",
+ ]
+ 
+ [[package]]
+@@ -808,7 +799,7 @@
+  "tokenizers 0.23.2",
+  "yoke",
+  "zerocopy",
+- "zip 9.0.5",
++ "zip",
+ ]
+ 
+ [[package]]
+@@ -1302,7 +1293,7 @@
+ checksum = "d045de693cb712d0b22c6a64be5b953f67b3ce00ab5ad3dd5d8b441886ab8e1a"
+ dependencies = [
+  "quote",
+- "syn 3.0.9",
++ "syn 2.0.119",
+ ]
+ 
+ [[package]]
+@@ -1495,17 +1486,6 @@
+ ]
+ 
+ [[package]]
+-name = "derive_arbitrary"
+-version = "1.5.0"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "1b034bd7d5f032402a2479444dcc6f74e36a03f31854d41680fb240ef682a1ac"
+-dependencies = [
+- "proc-macro2",
+- "quote",
+- "syn 3.0.9",
+-]
+-
+-[[package]]
+ name = "derive_builder"
+ version = "0.20.2"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+@@ -1607,7 +1587,7 @@
+  "libc",
+  "option-ext",
+  "redox_users",
+- "windows-sys 0.61.2",
++ "windows-sys 0.59.0",
+ ]
+ 
+ [[package]]
+@@ -1831,7 +1811,7 @@
+ checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
+ dependencies = [
+  "libc",
+- "windows-sys 0.61.2",
++ "windows-sys 0.52.0",
+ ]
+ 
+ [[package]]
+@@ -5335,7 +5315,7 @@
+  "errno",
+  "libc",
+  "linux-raw-sys",
+- "windows-sys 0.61.2",
++ "windows-sys 0.52.0",
+ ]
+ 
+ [[package]]
+@@ -5392,7 +5372,7 @@
+  "security-framework",
+  "security-framework-sys",
+  "webpki-root-certs",
+- "windows-sys 0.61.2",
++ "windows-sys 0.52.0",
+ ]
+ 
+ [[package]]
+@@ -6396,8 +6376,7 @@
+ [[package]]
+ name = "tauri-plugin-updater"
+ version = "2.14.0"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "7259989d4fe11b2bf51f7d671642249b1837c4ae2da1430dc713ae38f98ceeec"
++source = "git+https://github.com/tauri-apps/plugins-workspace?rev=ba98bfadc4c868c9a7e1a226c83af528e1f11b89#ba98bfadc4c868c9a7e1a226c83af528e1f11b89"
+ dependencies = [
+  "base64 0.22.1",
+  "dirs 7.0.0",
+@@ -6424,7 +6403,7 @@
+  "tokio",
+  "url",
+  "windows-sys 0.61.2",
+- "zip 4.6.1",
++ "zip",
+ ]
+ 
+ [[package]]
+@@ -6536,7 +6515,7 @@
+  "getrandom 0.4.3",
+  "once_cell",
+  "rustix",
+- "windows-sys 0.61.2",
++ "windows-sys 0.52.0",
+ ]
+ 
+ [[package]]
+@@ -6568,7 +6547,7 @@
+ checksum = "230a1b821ccbd75b185820a1f1ff7b14d21da1e442e22c0863ea5f08771a8874"
+ dependencies = [
+  "rustix",
+- "windows-sys 0.61.2",
++ "windows-sys 0.59.0",
+ ]
+ 
+ [[package]]
+@@ -6790,9 +6769,9 @@
+ 
+ [[package]]
+ name = "tokio"
+-version = "1.54.0"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "a0c168a474b95bfecfe908a65d4bdffc523144b649a74c09c286afb35d53e0bc"
++version = "1.54.1"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "b52fd3255258d26fac7264ab5a76b53c13367136dc011d3d6ad4f8ed070396a3"
+ dependencies = [
+  "bytes",
+  "libc",
+@@ -7733,7 +7712,7 @@
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
+ dependencies = [
+- "windows-sys 0.61.2",
++ "windows-sys 0.52.0",
+ ]
+ 
+ [[package]]
+@@ -8070,7 +8049,7 @@
+ checksum = "7d6f32a0ff4a9f6f01231eb2059cc85479330739333e0e58cadf03b6af2cca10"
+ dependencies = [
+  "cfg-if",
+- "windows-sys 0.61.2",
++ "windows-sys 0.59.0",
+ ]
+ 
+ [[package]]
+@@ -8349,18 +8328,6 @@
+ 
+ [[package]]
+ name = "zip"
+-version = "4.6.1"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "caa8cd6af31c3b31c6631b8f483848b91589021b28fffe50adada48d4f4d2ed1"
+-dependencies = [
+- "arbitrary",
+- "crc32fast",
+- "indexmap 2.14.2",
+- "memchr",
+-]
+-
+-[[package]]
+-name = "zip"
+ version = "9.0.5"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "6e04976da629d3b04204ba8105b396a193af8ad2583b2c79bfb3ab8af580a11e"

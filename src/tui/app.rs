@@ -450,20 +450,19 @@ impl App {
             None
         } else if backend == AgentBackend::Fm {
             Some("system")
-        } else if self.cfg.backend == AgentBackend::Fm {
-            Some("auto")
         } else {
-            None
+            Some("auto")
         };
         if let Some(model) = reset_model {
             // Persist the exact local choice, so a later local command refresh
-            // cannot resurrect a cloud selection, vendor alias, or Apple-only
-            // model in another provider. Commit before changing live identity.
+            // cannot resurrect a tag or alias from the previous provider.
+            // Commit before changing live identity.
             if let Err(e) = self.state.save_model_literal(model) {
                 self.status = format!("provider unchanged: could not select {model}: {e}");
                 return;
             }
             self.cfg.model = model.into();
+            self.cfg.model_selected = false;
         }
         self.cfg.backend = backend;
         self.cfg.agent_path = path;

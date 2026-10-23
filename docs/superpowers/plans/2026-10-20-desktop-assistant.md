@@ -1,5 +1,7 @@
 # Abbey Desktop Assistant Implementation Plan
 
+> Historical execution checklist. The active [2026-10-22 Completion Program](2026-10-22-abbey-completion.md) supersedes execution order and target-policy choices. These unchecked items are preserved, not asserted complete; distinct obligations are tracked by `retained-plan-reconciliation` in `tasks/completion.json`. Canonical workflow-ledger coverage does not claim to validate every historical plan checkbox.
+
 > For agentic workers: use superpowers:subagent-driven-development. Implement and independently review each task before proceeding. Track steps with checkboxes.
 
 **Goal:** Deliver the complete approved Abbey desktop assistant across macOS, Windows, and Linux: polished chat, task delegation, scoped computer control, external tools, recurring automation, and management.

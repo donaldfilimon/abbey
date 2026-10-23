@@ -10,6 +10,7 @@ mod accel;
 mod actions;
 mod agent;
 pub mod app_core;
+mod argv_budget;
 mod build_info;
 mod capture;
 mod claims;

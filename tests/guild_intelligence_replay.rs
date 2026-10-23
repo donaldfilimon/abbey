@@ -198,21 +198,16 @@ fn owner_and_administrator_closed_replays_are_deterministic_and_distinct() {
 }
 
 #[test]
-fn substantive_plans_are_empty_when_everyone_cannot_send() {
+fn substantive_alternatives_are_unavailable_when_everyone_cannot_send() {
     let mut fixture: serde_json::Value = serde_json::from_str(FIXTURE).unwrap();
     fixture["roles"][0]["permissions"] = 1_024.into();
     let fixture = serde_json::to_string(&fixture).unwrap();
 
     for selected_option in ["least-privilege", "focused-overwrite"] {
-        let replay = RecordingGuildSource::from_json(&fixture)
+        let result = RecordingGuildSource::from_json(&fixture)
             .unwrap()
-            .replay(Some(selected_option))
-            .unwrap();
-        let plan = replay.plan.expect("explicit selection produces a plan");
-        assert!(plan.preconditions.is_empty(), "{selected_option}");
-        assert!(plan.desired_states.is_empty(), "{selected_option}");
-        assert!(plan.postconditions.is_empty(), "{selected_option}");
-        assert!(plan.rollback_preview.is_empty(), "{selected_option}");
+            .replay(Some(selected_option));
+        assert_eq!(result, Err(GuildIntelligenceError::UnknownSelection));
     }
 }
 

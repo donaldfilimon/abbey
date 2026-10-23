@@ -1,0 +1,10 @@
+
+running 5 tests
+test tests::advertised_prompt_fits_supervisor_argument_ceiling ... ok
+test tests::small_arguments_are_preserved_exactly ... ok
+test tests::invalid_fixed_configuration_is_preserved_for_validation ... ok
+test tests::truncation_obeys_tiny_and_unicode_byte_budgets ... ok
+test tests::fixed_arguments_consume_the_aggregate_before_unicode_prompts ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

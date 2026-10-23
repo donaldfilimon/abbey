@@ -1,5 +1,7 @@
 # Abbey Production Completion Implementation Plan
 
+> Historical execution checklist. The active [2026-10-22 Completion Program](2026-10-22-abbey-completion.md) supersedes execution order and target-policy choices. These unchecked items are preserved, not asserted complete; distinct obligations are tracked by `retained-plan-reconciliation` in `tasks/completion.json`. Canonical workflow-ledger coverage does not claim to validate every historical plan checkbox.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox syntax. Donald has already selected subagent-driven implementation and repeatedly authorized continuation. No commits or pushes without a separate request.
 
 **Goal:** Complete the approved Abbey desktop assistant and the remaining Abbey production roadmap, with reproducible, independently reviewed source and installed-artifact evidence.

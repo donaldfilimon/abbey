@@ -240,6 +240,8 @@ dependencies = [
  "abi-agent-runtime",
  "abi-wdbx-gateway",
  "ed25519-dalek",
+ "libc",
+ "nix 0.31.3",
  "serde",
  "serde_json",
  "sha2 0.11.1",

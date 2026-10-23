@@ -29,20 +29,12 @@ env:
   # immutable pins remain mandatory.
   WDBX_REVISION: 5182bc3a60300e1dd152611025e774c4b906638b
 
-# The only job runs on the macOS ARM64 self-hosted runner and is restricted to
-# trusted same-repository events. Fork code must never run on machines that can
-# reach local developer state or credentials, so fork pull requests get no job.
-# The Linux ARM64 gate (no such runner is registered) and the GitHub-hosted
-# fork gate (hosted Actions are billing-locked) were removed on 2026-09-28.
-#
-# macOS ARM64 adjunct successes are narrow/soft evidence for execution of the
-# pinned checkout + check.sh path; they do not constitute Linux or Windows
-# runtime proof. Linux/Windows self-hosted guard patterns are prepared in
-# tools/tests/test_workflow_guards.py and tools/ci/require_executed_run.py
-# (PRIMARY remains the Linux gate for full ci-self-hosted-linux-proof closure).
-# Cross-compile soft checks (x86_64-pc-windows-gnu, x86_64-unknown-linux-gnu)
-# live in check.sh (delegated to tools/ci/cross-compile-guard.sh) and are
-# skipped when targets are uninstalled (never a hard gate).
+# Trusted native ARM64 gates. Jobs remain disabled unless their owner enables
+# the exact runner-availability variable; authoring a job is not execution proof.
+# Fork heads cannot run on self-hosted machines. Linux is the primary CI closure
+# gate; macOS remains separately attributed. Windows native evidence remains open.
+# Runners must have host WebView development prerequisites provisioned by their
+# administrator. No job installs OS packages or obtains signing credentials.
 jobs:
   gate-macos:
     name: gate (macOS ARM64 adjunct)
@@ -100,6 +92,135 @@ jobs:
         env:
           ABBEY_ABI_BIN: ${{ github.workspace }}/abi/target/debug/abi
         run: ./check.sh
+
+      - name: Complete desktop gate
+        working-directory: abbey
+        run: ./desktop/check.sh
+
+      - name: Install cargo-audit if absent
+        run: |
+          command -v cargo-audit >/dev/null 2>&1 && exit 0
+          cargo install cargo-audit --locked
+
+      - name: RustSec dependency scan
+        working-directory: abbey
+        env:
+          ABBEY_DEP_SCAN_REQUIRE: "1"
+        run: ./tools/security/run-dep-scan.sh
+
+      - name: Warning-denied API docs and release binary
+        working-directory: abbey
+        run: |
+          RUSTDOCFLAGS="-D warnings" ./tools/cargo.sh doc --no-deps --document-private-items
+          ./tools/cargo.sh build --release --locked
+          ./target/release/abbey --version
+
+      - name: Release install and provider inventory smoke
+        working-directory: abbey
+        env:
+          ABBEY_ABI_BIN: ${{ github.workspace }}/abi/target/debug/abi
+        run: |
+          smoke_root="${RUNNER_TEMP}/abbey-install-smoke"
+          mkdir -p "$smoke_root/bin" "$smoke_root/home"
+          ABBEY_INSTALL_DIR="$smoke_root/bin" \
+            ABBEY_COMPLETION_HOME="$smoke_root/home" ./install.sh
+          export HOME="$smoke_root/home"
+          export XDG_CONFIG_HOME="$smoke_root/home/.config"
+          export XDG_STATE_HOME="$smoke_root/home/.local/state"
+          export ABBEY_CONFIG="$smoke_root/home/.config/abbey/config.toml"
+          export ABBEY_STATE_DIR="$smoke_root/state"
+          mkdir -p "$XDG_CONFIG_HOME" "$XDG_STATE_HOME" "$ABBEY_STATE_DIR"
+          "$smoke_root/bin/abbey" --version
+          "$smoke_root/bin/abbey" plugins abi list >/dev/null
+          ABBEY_BACKEND=abi "$smoke_root/bin/abbey" mcp status >/dev/null
+          ABBEY_BACKEND=fm "$smoke_root/bin/abbey" mcp paths >/dev/null
+          "$smoke_root/bin/abbey" skills >/dev/null
+
+      - name: ABI-backed local mesh proof
+        working-directory: abbey
+        env:
+          ABBEY_ABI_BIN: ${{ github.workspace }}/abi/target/debug/abi
+          ABBEY_STATE_DIR: ${{ runner.temp }}/abbey-mesh-state
+        run: ./tools/cargo.sh run --release --bin abbey -- mesh local-demo --nodes 3 --json
+
+      - name: Clean runner workspace
+        if: always()
+        run: |
+          for path in \
+            "$GITHUB_WORKSPACE/abbey" \
+            "$GITHUB_WORKSPACE/abi" \
+            "$GITHUB_WORKSPACE/wdbx" \
+            "$RUNNER_TEMP/abbey-mesh-state" \
+            "$RUNNER_TEMP/abbey-install-smoke"
+          do
+            if [ -e "$path" ]; then
+              find "$path" -depth -delete
+            fi
+          done
+
+  gate-linux:
+    name: gate (Linux ARM64)
+    if: >
+      vars.ABBEY_LINUX_ARM64_RUNNER == 'enabled' &&
+      github.repository == 'donaldfilimon/abbey' &&
+      (github.event_name == 'push' ||
+       github.event_name == 'workflow_dispatch' ||
+       (github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.full_name == github.repository))
+    runs-on: [self-hosted, Linux, ARM64, abbey]
+    steps:
+      - name: Check out Abbey
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: abbey
+          persist-credentials: false
+
+      - name: Check out the verified ABI dependency
+        run: >-
+          ./abbey/tools/ci/checkout-public-revision.sh
+          donaldfilimon/abi "${ABI_REVISION}" abi
+
+      - name: Check out the public WDBX substrate
+        run: >-
+          ./abbey/tools/ci/checkout-public-revision.sh
+          donaldfilimon/wdbx "${WDBX_REVISION}" wdbx
+
+      - name: Prefer system compiler and linker tools
+        run: |
+          for directory in /usr/bin /bin /usr/sbin /sbin; do
+            echo "$directory" >> "$GITHUB_PATH"
+          done
+          export PATH="/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+          test "$(command -v cc)" = /usr/bin/cc
+
+      - name: Check provisioned Linux desktop dependencies
+        run: pkg-config --exists gtk+-3.0 webkit2gtk-4.1 librsvg-2.0
+
+      - name: Install pinned ABI toolchain
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: ${{ env.ABI_TOOLCHAIN }}
+          components: rustfmt, clippy, rust-src
+
+      - name: Install pinned Abbey toolchain
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: ${{ env.ABBEY_TOOLCHAIN }}
+          components: rustfmt, clippy
+
+      - name: Build the real ABI binary
+        working-directory: abi
+        run: ./tools/cargo.sh build -p abi-cli
+
+      - name: Gate both Abbey feature sets
+        working-directory: abbey
+        env:
+          ABBEY_ABI_BIN: ${{ github.workspace }}/abi/target/debug/abi
+        run: ./check.sh
+
+      - name: Complete desktop gate
+        working-directory: abbey
+        run: ./desktop/check.sh
 
       - name: Install cargo-audit if absent
         run: |

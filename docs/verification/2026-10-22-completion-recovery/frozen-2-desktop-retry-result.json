@@ -1,0 +1,11 @@
+{
+  "gate": "desktop_retry",
+  "exit": 0,
+  "source_drift": [],
+  "snapshot_revision_metadata": "existing Abbey HEAD referenced via separate Git metadata; no commit created",
+  "canonical_abbey_changed_since_capture": [
+    "docs/superpowers/plans/2026-10-22-abbey-completion.md",
+    "docs/verification/2026-10-22-completion-recovery.md",
+    "tasks/completion.json"
+  ]
+}

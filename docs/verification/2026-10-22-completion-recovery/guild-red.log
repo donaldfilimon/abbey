@@ -1,0 +1,66 @@
+warning: unused import: `simulator::AdmissionSimulator`
+  --> /Users/donald/sources/repos/wdbx/crates/abi-wdbx/src/v3/complete_episode/crypto/admission/mod.rs:11:16
+   |
+11 | pub(super) use simulator::AdmissionSimulator;
+   |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `abi-wdbx` (lib) generated 1 warning (run `cargo fix --lib -p abi-wdbx` to apply 1 suggestion)
+   Compiling abbey v2.6.0 (/Users/donald/sources/repos/abbey)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 7.11s
+     Running tests/guild_intelligence_regressions.rs (target/debug/deps/guild_intelligence_regressions-050b1b003f71c42f)
+
+running 5 tests
+test parent_cycles_are_refused_while_acyclic_parent_chains_remain_valid ... FAILED
+test alternatives_only_offer_permission_plans_with_an_actual_change ... FAILED
+test rollback_distinguishes_absent_overwrites_from_explicit_zero_entries ... FAILED
+test visibility_evidence_binds_bot_authority_even_when_effective_bits_do_not_change ... FAILED
+test recording_byte_limit_is_checked_before_parsing_and_allocation ... FAILED
+
+failures:
+
+---- parent_cycles_are_refused_while_acyclic_parent_chains_remain_valid stdout ----
+
+thread 'parent_cycles_are_refused_while_acyclic_parent_chains_remain_valid' (3389191) panicked at tests/guild_intelligence_regressions.rs:83:5:
+assertion failed: matches!(RecordingGuildSource::from_json(&value.to_string()),
+    Err(GuildIntelligenceError::InvalidRecording(_)))
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- alternatives_only_offer_permission_plans_with_an_actual_change stdout ----
+
+thread 'alternatives_only_offer_permission_plans_with_an_actual_change' (3389190) panicked at tests/guild_intelligence_regressions.rs:21:5:
+assertion `left == right` failed
+  left: 3
+ right: 1
+
+---- rollback_distinguishes_absent_overwrites_from_explicit_zero_entries stdout ----
+
+thread 'rollback_distinguishes_absent_overwrites_from_explicit_zero_entries' (3389193) panicked at tests/guild_intelligence_regressions.rs:43:9:
+assertion `left == right` failed
+  left: 1
+ right: 2
+
+---- visibility_evidence_binds_bot_authority_even_when_effective_bits_do_not_change stdout ----
+
+thread 'visibility_evidence_binds_bot_authority_even_when_effective_bits_do_not_change' (3389194) panicked at tests/guild_intelligence_regressions.rs:63:5:
+assertion `left != right` failed
+  left: ["9868cb4535882dcef2d1c092c589da20b7e7ba47816580437bbed9e5589c8882"]
+ right: ["9868cb4535882dcef2d1c092c589da20b7e7ba47816580437bbed9e5589c8882"]
+
+---- recording_byte_limit_is_checked_before_parsing_and_allocation stdout ----
+
+thread 'recording_byte_limit_is_checked_before_parsing_and_allocation' (3389192) panicked at tests/guild_intelligence_regressions.rs:73:57:
+called `Result::unwrap_err()` on an `Ok` value: RecordingGuildSource { recording: GuildRecording { schema_version: 1, synthetic: true, observed_at_unix: 1787371200, guild_ref: "synthetic-guild-a", operator_ref: "synthetic-operator-a", operator_authority: Owner, owner_ref: "synthetic-operator-a", roles: [RoleRecord { ref_id: "role-bot", position: 10, permissions: 1024, managed: true }, RoleRecord { ref_id: "role-everyone", position: 0, permissions: 3072, managed: false }, RoleRecord { ref_id: "role-helper", position: 5, permissions: 2048, managed: false }], channels: [ChannelRecord { ref_id: "channel-public", parent_ref: None, kind: Text, overwrites: [] }, ChannelRecord { ref_id: "channel-staff", parent_ref: None, kind: Text, overwrites: [PermissionOverwrite { target: Role { ref_id: "role-bot" }, allow: 1024, deny: 0 }, PermissionOverwrite { target: Role { ref_id: "role-everyone" }, allow: 0, deny: 1024 }] }], active_threads: [ThreadRecord { ref_id: "thread-a", parent_ref: "channel-public" }], bot_self: BotSelfRecord { ref_id: "synthetic-bot", role_refs: ["role-bot"] }, coverage: RecordingCoverage { guild: true, roles: true, channels: true, active_threads: true, audit_log: UnavailableByPolicy } }, operations: [] }
+
+
+failures:
+    alternatives_only_offer_permission_plans_with_an_actual_change
+    parent_cycles_are_refused_while_acyclic_parent_chains_remain_valid
+    recording_byte_limit_is_checked_before_parsing_and_allocation
+    rollback_distinguishes_absent_overwrites_from_explicit_zero_entries
+    visibility_evidence_binds_bot_authority_even_when_effective_bits_do_not_change
+
+test result: FAILED. 0 passed; 5 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+error: test failed, to rerun pass `-p abbey --test guild_intelligence_regressions`

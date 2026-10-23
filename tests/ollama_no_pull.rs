@@ -58,7 +58,7 @@ impl Scratch {
                 r#"#!/bin/sh
 case "$1" in
   list)
-    printf x > "$ABBEY_TEST_OLLAMA_LIST_MARKER"
+    printf x >> "$ABBEY_TEST_OLLAMA_LIST_MARKER"
 {listing}
     ;;
   run)
@@ -79,7 +79,12 @@ esac
     /// Run `abbey` hermetically: only the stub bin dir on PATH, a scratch HOME,
     /// state dir, and config, with the Ollama backend selected explicitly.
     fn run(&self, args: &[&str]) -> (i32, String, String) {
-        let out = Command::new(BIN)
+        self.run_selection(args, false)
+    }
+
+    fn run_selection(&self, args: &[&str], automatic: bool) -> (i32, String, String) {
+        let mut command = Command::new(BIN);
+        command
             .args(args)
             .env_clear()
             .env(abbey::edition::ACTIVE.state_dir_env(), &self.0)
@@ -92,12 +97,13 @@ esac
             // Absolute candidate probing (/opt/homebrew, /usr/local) would find
             // a real ollama on the host and defeat the hermetic staging.
             .env("ABBEY_TEST_HOME_AGENTS_ONLY", "1")
-            .env("ABBEY_BACKEND", "ollama")
             .env("ABBEY_MEMORY_BACKEND", "sqlite")
             .env("ABBEY_TEST_OLLAMA_LIST_MARKER", self.list_marker())
-            .env("ABBEY_TEST_OLLAMA_RUN_MARKER", self.run_marker())
-            .output()
-            .expect("spawn abbey");
+            .env("ABBEY_TEST_OLLAMA_RUN_MARKER", self.run_marker());
+        if !automatic {
+            command.env("ABBEY_BACKEND", "ollama");
+        }
+        let out = command.output().expect("spawn abbey");
         (
             out.status.code().unwrap_or(-1),
             String::from_utf8_lossy(&out.stdout).into_owned(),
@@ -118,6 +124,21 @@ const LISTED_NONE: &str = "    printf 'NAME\\tID\\tSIZE\\tMODIFIED\\n'";
 /// `ollama list` with a header and the default tag present locally.
 const LISTED_DEFAULT: &str =
     "    printf 'NAME\\tID\\tSIZE\\tMODIFIED\\ngemma4:26b-mlx\\tabc\\t1GB\\tnow\\n'";
+
+#[test]
+fn automatic_selection_defers_readiness_until_the_requested_model_is_known() {
+    let s = Scratch::new("automatic-requested");
+    s.stub_ollama("    printf 'NAME ID SIZE\\nrequested:latest abc 1GB\\n'");
+    let (code, out, err) =
+        s.run_selection(&["--model", "requested:latest", "print", "hello"], true);
+    assert_eq!(code, 0, "{out}\n{err}");
+    assert!(s.run_marker().exists());
+    assert_eq!(
+        std::fs::read(s.list_marker()).unwrap(),
+        b"x",
+        "selection must not probe the unrelated default model"
+    );
+}
 
 /// `abbey print` is the documented headless capture surface. It must refuse a
 /// tag that is not present locally instead of letting `ollama run` pull it.

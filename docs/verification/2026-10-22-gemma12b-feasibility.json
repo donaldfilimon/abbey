@@ -1,0 +1,169 @@
+{
+  "schema_version": 1,
+  "checked_utc": "2026-10-22T23:47:21.068630+00:00",
+  "model": "google/gemma-4-12B-it-qat-w4a16-ct",
+  "revision": "1d2c2d7f2466070e69d6fb3fd5ce9a7d75f2f6ee",
+  "publisher_api": "https://huggingface.co/api/models/google/gemma-4-12B-it-qat-w4a16-ct?blobs=true",
+  "qualification": "unavailable",
+  "substitution_allowed": false,
+  "license": {
+    "publisher_declaration": "apache-2.0",
+    "publisher_license_url": "https://ai.google.dev/gemma/apache_2",
+    "owner_acceptance": "not_recorded"
+  },
+  "architecture": {
+    "class": "Gemma4UnifiedForConditionalGeneration",
+    "model_type": "gemma4_unified",
+    "text_model_type": "gemma4_unified_text",
+    "layers": 48,
+    "hidden_size": 3840,
+    "vocab_size": 262144,
+    "max_position_embeddings": 262144,
+    "sliding_window": 1024,
+    "attention_heads": 16,
+    "kv_heads": 8,
+    "global_kv_heads": 1,
+    "head_dim": 256,
+    "global_head_dim": 512,
+    "attention_k_eq_v": true,
+    "layer_types": [
+      "sliding_attention",
+      "sliding_attention",
+      "sliding_attention",
+      "sliding_attention",
+      "sliding_attention",
+      "full_attention",
+      "sliding_attention",
+      "sliding_attention",
+      "sliding_attention",
+      "sliding_attention",
+      "sliding_attention",
+      "full_attention",
+      "sliding_attention",
+      "sliding_attention",
+      "sliding_attention",
+      "sliding_attention",
+      "sliding_attention",
+      "full_attention",
+      "sliding_attention",
+      "sliding_attention",
+      "sliding_attention",
+      "sliding_attention",
+      "sliding_attention",
+      "full_attention",
+      "sliding_attention",
+      "sliding_attention",
+      "sliding_attention",
+      "sliding_attention",
+      "sliding_attention",
+      "full_attention",
+      "sliding_attention",
+      "sliding_attention",
+      "sliding_attention",
+      "sliding_attention",
+      "sliding_attention",
+      "full_attention",
+      "sliding_attention",
+      "sliding_attention",
+      "sliding_attention",
+      "sliding_attention",
+      "sliding_attention",
+      "full_attention",
+      "sliding_attention",
+      "sliding_attention",
+      "sliding_attention",
+      "sliding_attention",
+      "sliding_attention",
+      "full_attention"
+    ],
+    "rope_parameters": {
+      "full_attention": {
+        "partial_rotary_factor": 0.25,
+        "rope_theta": 1000000.0,
+        "rope_type": "proportional"
+      },
+      "sliding_attention": {
+        "rope_theta": 10000.0,
+        "rope_type": "default"
+      }
+    }
+  },
+  "quantization": {
+    "method": "compressed-tensors",
+    "format": "pack-quantized",
+    "weights": {
+      "actorder": null,
+      "block_structure": null,
+      "dynamic": false,
+      "group_size": 32,
+      "num_bits": 4,
+      "observer": "memoryless_minmax",
+      "observer_kwargs": {},
+      "scale_dtype": null,
+      "strategy": "group",
+      "symmetric": true,
+      "type": "int",
+      "zp_dtype": null
+    }
+  },
+  "metadata_artifacts": {
+    "config.json": {
+      "url": "https://huggingface.co/google/gemma-4-12B-it-qat-w4a16-ct/resolve/1d2c2d7f2466070e69d6fb3fd5ce9a7d75f2f6ee/config.json",
+      "sha256": "aa3ba82096a857e8b9a157df21a50df15a67e889a84b7580a4eb4f2b86c28d78",
+      "size": 6183,
+      "git_blob": "9335eafc0d2138b6bd4adfd09f5d3999b2f2a757"
+    },
+    "tokenizer_config.json": {
+      "url": "https://huggingface.co/google/gemma-4-12B-it-qat-w4a16-ct/resolve/1d2c2d7f2466070e69d6fb3fd5ce9a7d75f2f6ee/tokenizer_config.json",
+      "sha256": "13c6e1a5abadc12374393fa5fa352682f7326d8091b60cc66d9cb90e640da9b9",
+      "size": 3761,
+      "git_blob": "efdcecc52e008e8b732177aee63e5518eea66893"
+    },
+    "generation_config.json": {
+      "url": "https://huggingface.co/google/gemma-4-12B-it-qat-w4a16-ct/resolve/1d2c2d7f2466070e69d6fb3fd5ce9a7d75f2f6ee/generation_config.json",
+      "sha256": "c70f87dc2995fc43406c0bcfb41b69c6d31c2d0c033fa09e536ffabc091ae24c",
+      "size": 255,
+      "git_blob": "2528bb46703f6abf6489b1bd15e6a724ab4525d7"
+    },
+    "processor_config.json": {
+      "url": "https://huggingface.co/google/gemma-4-12B-it-qat-w4a16-ct/resolve/1d2c2d7f2466070e69d6fb3fd5ce9a7d75f2f6ee/processor_config.json",
+      "sha256": "6b938e76555b3e9946890770e1abcd442a4718f34041a58e8139dc8ad34545c9",
+      "size": 1382,
+      "git_blob": "b889adcd78015bf5a0139438c5fb0b7067529a61"
+    }
+  },
+  "large_artifacts": [
+    {
+      "name": "model.safetensors",
+      "bytes": 10264229896,
+      "publisher_sha256": "60b6e3989502969d8ae04185d72ecbbc7db63978d5af747a493d53895aa6bfa3",
+      "url": "https://huggingface.co/google/gemma-4-12B-it-qat-w4a16-ct/resolve/1d2c2d7f2466070e69d6fb3fd5ce9a7d75f2f6ee/model.safetensors",
+      "downloaded": false,
+      "local_digest_verified": false
+    },
+    {
+      "name": "tokenizer.json",
+      "bytes": 32169626,
+      "publisher_sha256": "cc8d3a0ce36466ccc1278bf987df5f71db1719b9ca6b4118264f45cb627bfe0f",
+      "url": "https://huggingface.co/google/gemma-4-12B-it-qat-w4a16-ct/resolve/1d2c2d7f2466070e69d6fb3fd5ce9a7d75f2f6ee/tokenizer.json",
+      "downloaded": false,
+      "local_digest_verified": false
+    }
+  ],
+  "tokenizer": {
+    "class": "GemmaTokenizer",
+    "implementation_qualified": false,
+    "golden_vectors": "not_run"
+  },
+  "blockers": [
+    "ABI LocalModelProvider currently accepts only abi-bigram-v1; the exact Gemma4Unified architecture and compressed-tensors reader are absent",
+    "Owner license-acceptance evidence and locally verified immutable weight/tokenizer artifacts are absent",
+    "No exact-model 4K plus 64-token smoke, peak RSS, swap, numeric parity, structured-call quality, accelerator or native three-host qualification exists"
+  ],
+  "available_host": {
+    "hw_model": "Mac17,2",
+    "cpu": "Apple M5",
+    "ram_bytes": 25769803776,
+    "production_inference_measured": false
+  }
+}

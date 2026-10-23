@@ -1,0 +1,13 @@
+== toolchain ==
+compiler: /Users/donald/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/rustc
+rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: aarch64-apple-darwin
+release: 1.99.1
+LLVM version: 23.1.1
+cargo 1.99.1 (5f94df478 2026-08-27)
+Terminated: 15
+
+COMPLETION VERIFICATION: timeout; not qualification evidence; wrapper exit 124.
