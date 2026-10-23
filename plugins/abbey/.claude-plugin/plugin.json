@@ -1,0 +1,8 @@
+{
+  "name": "abbey",
+  "version": "0.1.0",
+  "description": "Abbey runtime status, capability claims, diagnostics, bounded runs, and local memory workflows for Claude Code.",
+  "author": { "name": "Donald Filimon" },
+  "repository": "https://github.com/donaldfilimon/abbey",
+  "license": "MIT"
+}

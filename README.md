@@ -18,6 +18,9 @@ Personas · Max/Gemma · parallel · OS control · skills/plugins · self-learn 
 
 Docs: [identity](docs/identity.md) · [architecture](docs/architecture.md) · [production](docs/production.md).
 
+Claude Code: load the [Abbey plugin](plugins/abbey/README.md) with
+`claude --plugin-dir ./plugins/abbey` for runtime status, claims, doctor, memory search, and bounded daemon runs.
+
 | Target CLI | Abbey surface |
 |------------|----------------|
 | **Grok Build** | TUI default, `-c/--continue`, `-w/--worktree`, `--cwd`, model aliases, session resume |
