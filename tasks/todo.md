@@ -770,3 +770,16 @@ on 2026-10-08. Bot publication and installed service cutover are pending at this
 receipt. Provider, independent human corpus, live voice/initiative/moderation,
 Activity ingress/Portal/iframe and hardware acceptance remain open. Historical
 receipts remain historical; this entry does not close the whole all-plans goal.
+
+
+## 2026-10-22 full MLAI release execution
+
+- [x] Reconcile all 64 numbered requirements and engagement/community section contracts into a [release matrix](../docs/verification/2026-10-22-mlai-release-matrix.md), with owners and external prerequisites.
+- [x] Diagnose unavailable service status read-only: owner environment, installed binary and matching loaded agent absent on this host; no runtime crash inferred.
+- [x] Repair new RUSTSEC-2026-0381/0382 via exact WebPKI/roots patch updates in both lockfiles; debt-policy and Linux TLS checks pass with no expanded debt.
+- [x] Correct current README CI coverage and MLX-VLM deployment version; Activity suite 20/20 passes.
+- [ ] Complete repaired strict source gate and independent review, publish, and obtain exact-final-main Gate.
+- [ ] Qualify configured providers on the intended managed host; obtain operator-directed transactional installation, hash equality and readiness.
+- [ ] Complete text, voice V1–V8, 100-label human learning review, continuity/member journeys, bounded initiative pilot, independent community assessment and public Activity witnesses.
+
+Full release remains Partial; [execution receipt](../docs/verification/2026-10-22-mlai-release-baseline.md) separates each proof layer.

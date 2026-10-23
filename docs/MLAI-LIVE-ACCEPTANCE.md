@@ -886,3 +886,21 @@ corpus/voice and Initiative willing-recipient acceptance. ABI foundation aggrega
 split and named Abbey combined source repair/qualification remain required.
 No Git/deploy/service/provider/Discord action occurred. Whole all-plans objective
 is Partial; only this bounded source slice is qualified.
+
+
+## 2026-10-22 full MLAI release baseline correction
+
+The [current release matrix](verification/2026-10-22-mlai-release-matrix.md) covers
+all 64 numbered requirements plus the engagement/community section contracts.
+The [execution receipt](verification/2026-10-22-mlai-release-baseline.md) separates
+current checks from historical source acceptance. Full MLAI release remains Partial.
+
+Read-only inspection on this host found no matching loaded Abbey agent, no owner
+service environment and no installed executable; status exits 1 as unavailable.
+This is absent installation evidence, not a proven service crash. Required
+provider, installed and human/public acceptance remains open.
+
+The strict gate found new TLS trust advisories RUSTSEC-2026-0381/0382. Both locked
+graphs were repaired with patched WebPKI/roots versions; debt and Linux TLS checks
+pass without expanding accepted debt. The complete repaired gate and exact-main
+CI remain separate requirements. No live service or Discord action occurred.

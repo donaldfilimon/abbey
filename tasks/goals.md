@@ -2466,3 +2466,16 @@ on 2026-10-08. Bot publication and installed service cutover are pending at this
 receipt. Provider, independent human corpus, live voice/initiative/moderation,
 Activity ingress/Portal/iframe and hardware acceptance remain open. Historical
 receipts remain historical; this entry does not close the whole all-plans goal.
+
+
+## 2026-10-22 full MLAI release execution baseline
+
+The [requirement matrix](../docs/verification/2026-10-22-mlai-release-matrix.md)
+reconciles the 64 numbered project requirements and engagement/community sections
+without rewriting historical receipts. [Execution evidence](../docs/verification/2026-10-22-mlai-release-baseline.md)
+records the absent managed installation/configuration on this host and the new
+TLS advisory repair. Initial strict gate failed at new RUSTSEC-2026-0381/0382;
+targeted lock updates restore debt-policy and Linux TLS checks without new debt.
+Activity 20/20 passed. Complete repaired source qualification, publication/exact-main
+CI, configured providers, installation and required human/public witnesses remain
+open until their own receipts exist. Full MLAI release is Partial.
