@@ -132,6 +132,15 @@ unchanged while this candidate is unqualified. Candidate functional gates are
 recorded separately when finished; native Windows update/install proof remains
 required before promotion.
 
+The security candidate's complete serial gates subsequently passed: root exit 0
+in 731.91 seconds, desktop exit 0 in 29.73 seconds, with no source/mode drift in
+either. Their separate logs, results, and candidate source manifest are retained.
+These functional passes do not clear the strict-audit warnings or supply native
+Windows/Linux package, update, or signing evidence. The candidate stays separate;
+the canonical Cargo manifests/lockfile retain their existing pins. Shared build
+outputs contain the last tested candidate; rebuild the canonical source before
+using those outputs as canonical artifacts.
+
 The candidate audit has zero vulnerability-category findings but still exits 1
 for denied `RUSTSEC-2024-0370` (unmaintained proc-macro-error) and
 `RUSTSEC-2024-0429` (GLib VariantStrIter unsoundness). No new ignore was added.
@@ -148,3 +157,14 @@ Fresh infrastructure reads found only an offline macOS ARM64 GitHub runner and
 no available Linux/Windows host in the connected-device inventory. No CI run,
 runner provisioning, signing credential change, publisher action, live recording,
 or personal-shell authority was performed.
+
+The final source-correspondence record identifies canonical Abbey HEAD
+`7c8f7834a67e5c55462b9f99a6284e134bc18443`, which advanced externally during this
+work. Existing commits and refs were preserved. Its captured product code,
+manifests and lockfile match frozen-2; active-plan/receipt/requirement/goal metadata
+and newly added audit evidence are supplemental. The source manifest is the
+identity of tested bytes, rather than either snapshot's synthetic base HEAD.
+Concurrent live ABI/WDBX work is outside these frozen qualifications. Bun 1.4.4
+was observed after the gates. License metadata inventories 773 resolved packages
+and 41 declared expressions; the unpublished Abbey code generator lacks a
+declared SPDX expression. No full license clearance is asserted.

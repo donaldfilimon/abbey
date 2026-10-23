@@ -1,0 +1,86 @@
+{
+  "observed_head": "7c8f7834a67e5c55462b9f99a6284e134bc18443",
+  "frozen_base_head": "19d934d88ac1527e3de38d2541e784d2b52a3a10",
+  "snapshot_manifest_sha256": "6575e10c9d4bc92f9cf731046bd6280141df4ffa682ceae8698a6cbc4a399e15",
+  "changed_captured_abbey_paths": [
+    "docs/superpowers/plans/2026-10-22-abbey-completion.md",
+    "docs/verification/2026-10-22-completion-recovery.md",
+    "tasks/completion.json",
+    "tasks/goals.md"
+  ],
+  "product_code_manifest_lock_changed": false,
+  "extra_changes": "new historical/model/security evidence documents outside frozen cohort",
+  "bun_version_observed_after_gates": "1.4.4",
+  "boundary": "Git HEAD advanced externally during work. Existing refs/commits were preserved. The snapshot manifest, not its base commit, identifies tested modified bytes.",
+  "live_siblings_outside_qualification": {
+    "abi": {
+      "head_observed_after_gates": "69910bf61205458dec27dd4b616201e0a5f3898a",
+      "changed_captured_paths": [
+        "AGENTS.md",
+        "CLAUDE.md",
+        "Cargo.lock",
+        "GEMINI.md",
+        "README.md",
+        "crates/abi-control-plane/Cargo.toml",
+        "crates/abi-control-plane/src/authority.rs",
+        "crates/abi-control-plane/src/authority/tests.rs",
+        "crates/abi-control-plane/src/enrollment.rs",
+        "crates/abi-control-plane/src/lib.rs",
+        "crates/abi-control-plane/src/main.rs",
+        "crates/abi-control-plane/src/oidc.rs",
+        "crates/abi-control-plane/src/private.rs",
+        "crates/abi-control-plane/src/schema.sql",
+        "crates/abi-control-plane/src/service.rs",
+        "crates/abi-control-plane/src/service/tests.rs",
+        "crates/abi-control-plane/src/types.rs",
+        "docs/contracts/external-claims-audit.mdx",
+        "docs/verification/2026-10-22-production-ecosystem.md",
+        "tasks/goals.md",
+        "tasks/todo.md"
+      ],
+      "additional_paths": [
+        ".opencode/skills",
+        "crates/abi-control-plane/examples/enroll.rs",
+        "crates/abi-control-plane/src/relay.rs",
+        "crates/abi-control-plane/src/relay/tests.rs",
+        "crates/abi-control-plane/src/relay_crypto.rs",
+        "crates/abi-control-plane/src/relay_http.rs",
+        "crates/abi-control-plane/src/relay_runtime.rs",
+        "crates/abi-control-plane/src/relay_schema.sql",
+        "crates/abi-control-plane/src/relay_types.rs"
+      ],
+      "qualified_by_this_frozen_run": false
+    },
+    "wdbx": {
+      "head_observed_after_gates": "36bc99b699de60be6c07b2838d74580084fb5d4c",
+      "changed_captured_paths": [
+        "specimen-studio/native/specimen-kernel/src/lib.rs"
+      ],
+      "additional_paths": [
+        "docs/completion/execution/evidence/2026-10-22-studio/browser-gate.log",
+        "docs/completion/execution/evidence/2026-10-22-studio/identity-report.md",
+        "docs/completion/execution/evidence/2026-10-22-studio/kernel-baseline.log",
+        "docs/completion/execution/evidence/2026-10-22-studio/lint.log",
+        "docs/completion/execution/evidence/2026-10-22-studio/native-test-gate.log",
+        "docs/completion/execution/evidence/2026-10-22-studio/source-audit-hashes.json",
+        "docs/completion/execution/evidence/2026-10-22-studio/source-audit.json",
+        "docs/completion/execution/evidence/2026-10-22-studio/task-8-identity-behavior-red.log",
+        "docs/completion/execution/evidence/2026-10-22-studio/task-8-identity-clippy.log",
+        "docs/completion/execution/evidence/2026-10-22-studio/task-8-identity-fixture-green.log",
+        "docs/completion/execution/evidence/2026-10-22-studio/task-8-identity-green.log",
+        "docs/completion/execution/evidence/2026-10-22-studio/task-8-identity-kernel-suite.log",
+        "docs/completion/execution/evidence/2026-10-22-studio/task-8-identity-red.log",
+        "docs/completion/execution/evidence/2026-10-22-studio/task-8-identity-repeat-red.log",
+        "docs/completion/execution/studio-research.md",
+        "specimen-studio/native/specimen-kernel/src/identity/index.rs",
+        "specimen-studio/native/specimen-kernel/src/identity/mod.rs",
+        "specimen-studio/native/specimen-kernel/src/identity/model.rs",
+        "specimen-studio/native/specimen-kernel/src/identity/validate.rs",
+        "specimen-studio/native/specimen-kernel/tests/identity.rs",
+        "specimen-studio/native/specimen-kernel/tests/identity_fixture.rs"
+      ],
+      "qualified_by_this_frozen_run": false
+    }
+  },
+  "observed_after_gates_utc": "2026-10-23T00:20:10.904384+00:00"
+}
