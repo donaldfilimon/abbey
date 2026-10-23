@@ -607,7 +607,7 @@ separate, pinned MLX-VLM service (it does not share MLX-Audio's environment):
 ./deploy/install-mlx-vlm-launchd.sh
 ```
 
-It stages `mlx-vlm==0.6.15`, downloads
+It stages `mlx-vlm==0.7.8` from the hashed deployment lock, downloads
 `mlx-community/gemma-4-12B-it-4bit` at revision
 `73bcf09092aa277861d5a191b989b666f7f32e8f`, and requires exact offline
 streamed-text, streamed tool-loop, colored-shape, and OCR smokes before publishing
@@ -839,15 +839,20 @@ runs fully offline.
 
 ## Verification and acceptance layers
 
+The [full MLAI release matrix](docs/verification/2026-10-22-mlai-release-matrix.md)
+tracks each completion requirement and its separate evidence layers. The release
+remains incomplete until all required installation and live witnesses pass.
+
 Abbey keeps these evidence layers separate; passing one never implies the next:
 
 1. Focused source tests prove only their named contracts.
 2. An isolated `ABBEY_REQUIRE_WDBX_CONFORMANCE=1 ./check.sh` plus locked release
    build proves the checked-out source on that host. It does not prove delivery.
 3. A reviewed local SHA equal to `origin/main` proves normal mainline delivery.
-4. Successful Ubuntu, macOS, and Windows jobs for that exact remote SHA prove
-   hosted source/build coverage. Windows CI is not a real Windows live-runtime
-   acceptance.
+4. Successful `Gate (macOS)` for that exact remote SHA proves source/build
+   coverage on the self-hosted macOS arm64 runner. Ubuntu and Windows CI jobs
+   were removed on 2026-09-28; Linux and Windows qualification needs separate
+   host-specific evidence. macOS CI does not prove their live runtimes.
 5. Synthetic provider fixtures and an identity-bound manifest prove only the
    exact provider binary/model/OS/schema/sandbox qualification they name.
 6. An atomic install record with matching artifact hashes, environment source,
@@ -861,7 +866,7 @@ Abbey keeps these evidence layers separate; passing one never implies the next:
    managed deployment. It cannot be inferred from the foreground run.
 
 The complete privacy-preserving operator sequence is in
-`docs/live-test-protocol.md`. Telegram and Slack share source and CI coverage,
+`docs/live-test-protocol.md`. Telegram and Slack share the Rust source and macOS source gate,
 but are not live-qualified unless their own connector round trips are
 explicitly recorded.
 
