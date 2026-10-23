@@ -1,0 +1,85 @@
+--- /Users/donald/.codex/verification/abbey-completion-20261022/windows-round1-prechange/qualify-windows.ps1	2026-10-23 01:47:08
++++ tools/ci/qualify-windows.ps1	2026-10-23 01:47:31
+@@ -73,6 +73,7 @@
+         }
+     } finally { $stream.Dispose() }
+ }
++$binaries = @{}
+ foreach ($features in @('', 'wdbx', 'personal-edition', 'wdbx,personal-edition')) {
+     $cohort = if ($features) { $features.Replace(',', '-') } else { 'safe' }
+     $env:CARGO_TARGET_DIR = Join-Path $root "target-$cohort"
+@@ -84,9 +85,50 @@
+     Invoke-Checked 'cargo' (@('+1.99.1', 'test') + $common)
+     $binary = Join-Path $env:CARGO_TARGET_DIR 'aarch64-pc-windows-msvc/debug/abbey.exe'
+     Assert-ArmBinary $binary
++    $binaries[$cohort] = $binary
+     Invoke-Checked $binary @('--version')
+     $edition = (Invoke-Checked $binary @('edition', '--name') | Out-String).Trim()
+     $expected = if ($features -match 'personal-edition') { 'abbey-personal' } else { 'abbey' }
+     if ($edition -ne $expected) { throw 'Produced edition identity mismatch' }
+ }
++# Retained binaries coexist in their independent cohort target directories.
++# Read-only identity commands must resolve the edition's own roots and preserve
++# every seeded byte, including the other edition's config and state sentinel.
++function Invoke-Coexistence([string]$SafeBinary, [string]$PersonalBinary) {
++    $fixtures = @(
++        @{ Binary = $SafeBinary; Name = 'abbey'; Config = $env:ABBEY_CONFIG; State = $env:ABBEY_STATE_DIR },
++        @{ Binary = $PersonalBinary; Name = 'abbey-personal'; Config = $env:ABBEY_PERSONAL_CONFIG; State = $env:ABBEY_PERSONAL_STATE_DIR }
++    )
++    if ($fixtures[0].Config -eq $fixtures[1].Config -or $fixtures[0].State -eq $fixtures[1].State) {
++        throw 'Coexistence roots must differ'
++    }
++    $before = @{}
++    foreach ($fixture in $fixtures) {
++        # TOML comments are valid config; these are deliberately distinct bytes.
++        [IO.File]::WriteAllText($fixture.Config, "# coexistence $($fixture.Name)`n")
++        $sentinel = Join-Path $fixture.State 'coexistence-sentinel.txt'
++        [IO.File]::WriteAllText($sentinel, "state owned by $($fixture.Name)`n")
++        foreach ($path in @($fixture.Config, $sentinel)) {
++            $before[$path] = (Get-FileHash -Algorithm SHA256 -LiteralPath $path).Hash
++        }
++    }
++    foreach ($fixture in $fixtures) {
++        $name = (Invoke-Checked $fixture.Binary @('edition', '--name') | Out-String).Trim()
++        if ($name -ne $fixture.Name) { throw 'Coexistence edition identity mismatch' }
++        $report = (Invoke-Checked $fixture.Binary @('edition') | Out-String)
++        $configLine = '(?m)^config:\s*' + [regex]::Escape($fixture.Config) + '\r?$'
++        $stateLine = '(?m)^state root:\s*' + [regex]::Escape($fixture.State) + '\r?$'
++        if ($report -notmatch $configLine -or $report -notmatch $stateLine) {
++            throw 'Coexistence resolved config/state roots mismatch'
++        }
++        foreach ($path in $before.Keys) {
++            if ((Get-FileHash -Algorithm SHA256 -LiteralPath $path).Hash -ne $before[$path]) {
++                throw 'Coexistence fixture changed seeded data'
++            }
++        }
++    }
++}
++Invoke-Coexistence $binaries['safe'] $binaries['personal-edition']
++Invoke-Coexistence $binaries['wdbx'] $binaries['wdbx-personal-edition']
++Write-Host 'CLI coexistence fixtures complete; installation/service acceptance remains separate.'
+ Write-Host 'CLI cohorts complete; desktop, installer and daemon acceptance remain separate.'
+--- /Users/donald/.codex/verification/abbey-completion-20261022/windows-round1-prechange/test_windows_ci_qualification.py	2026-10-23 01:47:08
++++ tools/tests/test_windows_ci_qualification.py	2026-10-23 01:47:52
+@@ -34,6 +34,8 @@
+         assert value in qualification, value
+     for value in ('HOME', 'USERPROFILE', 'LOCALAPPDATA', 'APPDATA', 'XDG_CONFIG_HOME', 'XDG_STATE_HOME', 'ABBEY_CONFIG', 'ABBEY_STATE_DIR', 'ABBEY_PERSONAL_CONFIG', 'ABBEY_PERSONAL_STATE_DIR', 'RUSTUP_HOME', 'CARGO_HOME'):
+         assert value in qualification, value
++    for value in ("$binaries[$cohort] = $binary", "Invoke-Coexistence $binaries['safe'] $binaries['personal-edition']", "Invoke-Coexistence $binaries['wdbx'] $binaries['wdbx-personal-edition']", "Invoke-Checked $fixture.Binary @('edition')", "$fixture.Config", "$fixture.State", "Get-FileHash -Algorithm SHA256", "$before[$path]", "if ((Get-FileHash -Algorithm SHA256 -LiteralPath $path).Hash -ne $before[$path])", "if ($report -notmatch $configLine -or $report -notmatch $stateLine)", "if ($name -ne $fixture.Name)", "Coexistence fixture changed seeded data"):
++        assert value in qualification, value
+     assert 'Remove-Item "Env:' in qualification
+     assert not re.search(r'^\s*(cargo|rustc|git)\s', qualification, re.M), 'unchecked native invocation'
+     for value in ('ReparsePoint', 'GetFileSystemEntries', 'Assert-NoReparse', "@('abbey', 'abi', 'wdbx')", 'ABBEY_WINDOWS_SCRATCH', 'GITHUB_RUN_ATTEMPT', 'GITHUB_RUN_ID'):
+@@ -62,6 +64,12 @@
+             (1, 'ProcessArchitecture', 'IgnoredArchitecture'),
+             (1, '$LASTEXITCODE -ne 0', '$false'),
+             (1, '0xAA64', '0x8664'),
++            (1, "Invoke-Coexistence $binaries['safe'] $binaries['personal-edition']", '# removed invocation'),
++            (1, 'if ((Get-FileHash -Algorithm SHA256 -LiteralPath $path).Hash -ne $before[$path])', 'if ($false)'),
++            (1, 'if ($report -notmatch $configLine -or $report -notmatch $stateLine)', 'if ($false)'),
++            (1, 'if ($name -ne $fixture.Name)', 'if ($false)'),
++            (1, '$fixture.Config', '$ignored.Config'),
++            (1, '$fixture.State', '$ignored.State'),
+             (2, 'ReparsePoint', 'Directory')]
+         guard(*self.sources)
+         for index, old, new in mutations:

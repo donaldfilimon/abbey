@@ -1,0 +1,13 @@
+{
+  "compiler": "/usr/bin/cc",
+  "compiler_sha256": "ed6f5284033aa2aae6a58427c25ba3ab119947b40365627b24e5d51a4b70a1cd",
+  "version": "Apple clang version 21.0.0 (clang-2100.3.34.1)\nTarget: arm64-apple-darwin27.2.0\nThread model: posix\nInstalledDir: /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin\n",
+  "trial_source_identity": {
+    "binary_sha256": "f219f31d27ff794368a7efadd3145c188d1e350ce8300c0f697f2b7ce6524e0b",
+    "source": {
+      "tools/tests/smoke_tui_metadata_pty.py": "914c35956d2dd306f8fe544c40c637b2c04ff30fbcc91da153c273d7d9d8a60c",
+      "tools/tests/test_metadata_fixture.py": "3ee01f0906988b943a92387d580a8a4787ca403c58ea6dc7b24e0079c8e82d16",
+      "tools/tests/metadata_probe_fixture.c": "acbeb50bbf3e6e390bfe622312b58596ebc13f79fc1e2fd99d101fcf00260473"
+    }
+  }
+}

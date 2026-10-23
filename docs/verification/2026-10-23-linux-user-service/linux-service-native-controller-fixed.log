@@ -1,0 +1,10 @@
+Traceback (most recent call last):
+  File "/tmp/abbey-linux-controller-native.py", line 17, in <module>
+    try:event=c.status();break
+              ~~~~~~~~^^
+  File "/Users/donald/sources/repos/abbey/tools/linux_user_service.py", line 212, in status
+    event = json.loads(run([self.cli, 'daemon', 'status', '--json'], self.service_env))
+                       ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/donald/sources/repos/abbey/tools/linux_user_service.py", line 83, in run
+    raise ServiceError('command failed')
+service.ServiceError: command failed

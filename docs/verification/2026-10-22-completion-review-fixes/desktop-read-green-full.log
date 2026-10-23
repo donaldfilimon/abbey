@@ -1,0 +1,95 @@
+warning: unused import: `simulator::AdmissionSimulator`
+  --> /Users/donald/.codex/verification/abbey-completion-20261022/corpus-golden-qualified/wdbx/crates/abi-wdbx/src/v3/complete_episode/crypto/admission/mod.rs:11:16
+   |
+11 | pub(super) use simulator::AdmissionSimulator;
+   |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `abi-wdbx` (lib) generated 1 warning (run `cargo fix --lib -p abi-wdbx` to apply 1 suggestion)
+   Compiling abbey-desktop v2.6.0 (/Users/donald/.codex/verification/abbey-completion-20261022/corpus-golden-qualified/abbey/desktop/src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 30.91s
+     Running unittests src/main.rs (/Users/donald/.codex/verification/abbey-completion-20261022/qualification-target/debug/deps/abbey_desktop-e46db2f5bfaa6761)
+
+running 69 tests
+test appearance::tests::a_platform_without_native_material_is_opaque ... ok
+test appearance::tests::a_window_without_a_titlebar_has_no_strip ... ok
+test appearance::tests::increased_contrast_degrades_to_opaque ... ok
+test appearance::tests::no_display_option_keeps_the_native_material ... ok
+test appearance::tests::reduced_transparency_degrades_to_opaque ... ok
+test appearance::tests::the_first_display_condition_wins_and_is_stable ... ok
+test appearance::tests::the_native_description_names_the_appkit_class ... ok
+test appearance::tests::the_opaque_description_says_so_plainly ... ok
+test appearance::tests::the_titlebar_strip_is_what_is_left_above_the_content_view ... ok
+test appearance::tests::forced_colors_degrade_to_opaque ... ok
+test backend::conversations::tests::live_daemon_desktop_conversation_crud_and_history ... ok
+test backend::conversations::tests::missing_daemon_never_opens_conversation_storage ... ok
+test backend::conversations::tests::conversation_authority_is_exact_and_never_executes ... ok
+test backend::models::tests::model_grants_are_exact_and_separate ... ok
+test backend::models::tests::missing_daemon_never_opens_model_authority ... ok
+test backend::models::tests::signed_model_lifecycle_bridge_fixture ... ok
+test backend::models::tests::status_queries_only_accept_the_exact_operation_id ... ok
+test backend::tests::a_configured_daemon_never_falls_back_to_the_in_process_core ... ok
+test backend::tests::a_run_snapshot_never_carries_prompt_or_provider_output ... ok
+test backend::tests::an_unconfigured_daemon_reads_the_linked_application_core ... ok
+test backend::tests::connection_detail_never_contains_bearer_material ... ok
+test backend::tests::in_process_run_reads_are_rejected_and_do_not_execute ... ok
+test backend::tests::live_daemon_desktop_reads_status_and_run_lifecycle ... ok
+test backend::v3::tests::requested_v3_grants_are_read_only ... ok
+test commands::tests::a_half_requested_pair_is_refused ... ok
+test backend::tools::tests::live_daemon_desktop_lists_the_tool_inventory ... ok
+test backend::tools::tests::the_tool_session_requests_enumeration_and_nothing_else ... ok
+test backend::tools::tests::without_a_daemon_the_tool_inventory_is_refused ... ok
+test backend::v3::tests::in_process_v3_grants_are_empty_and_reads_reject ... ok
+test backend::v3::tests::live_daemon_desktop_v3_reads ... ok
+test commands::read_tests::daemon_read_bridges_return_futures_without_performing_io_at_invocation ... ok
+test commands::tests::a_route_id_combined_with_a_named_pair_is_refused ... ok
+test commands::tests::live_daemon_desktop_effective_model_comes_from_the_runtime_route ... ok
+test commands::tests::the_reported_host_facts_are_the_shipped_ones ... ok
+test backend::tests::the_route_audit_is_reachable_and_never_carries_a_path ... ok
+test commands::read_tests::read_worker_panic_is_a_sanitized_transport_failure ... ok
+test commands::tests::an_explicit_backend_and_model_resolve_with_the_shared_rules ... ok
+test commands::tests::an_unknown_backend_is_refused_rather_than_guessed ... ok
+test commands::tests::an_unpublished_route_id_is_refused_rather_than_replaced ... ok
+test commands::tests::live_daemon_desktop_the_selected_route_answers_the_effective_model ... ok
+test commands::tests::no_declared_permission_can_execute ... ok
+test commands::tests::without_a_daemon_there_is_no_runtime_route_to_report ... ok
+test commands::tests::the_reported_permissions_are_the_manifests_own ... ok
+test tests::invoke_surface_has_only_enumerated_model_and_conversation_effects ... ok
+test tests::bundle_identity_is_derived_from_the_edition_table ... ok
+test tests::the_menu_keeps_apple_roles_and_one_user_initiated_handler ... ok
+test tests::every_declared_bundle_icon_exists_and_covers_both_platforms ... ok
+test tests::the_app_menu_offers_a_bounded_update_check ... ok
+test tests::no_execution_capable_plugin_is_declared ... ok
+test tests::the_declared_csp_is_strict ... ok
+test tests::the_two_editions_agree_on_the_window_except_the_title ... ok
+test tests::the_native_appearance_is_wired_and_never_makes_the_window_transparent ... ok
+test v3_ipc::tests::capability_declaration_order_matches_core_exactly ... ok
+test tests::the_window_is_transparent_only_so_the_material_can_show ... ok
+test commands::read_tests::a_stalled_read_yields_and_runs_on_a_different_thread ... ok
+test tests::the_two_editions_never_share_a_bundle_identity ... ok
+test tests::the_personal_edition_inherits_the_same_icon_chain ... ok
+test v3_ipc::tests::memory_wire_matches_app_core_serde ... ok
+test tests::the_window_title_names_the_edition_that_is_on_screen ... ok
+test v3_ipc::tests::entity_record_wire_matches_app_core_serde ... ok
+test v3_ipc::tests::entity_page_wire_matches_app_core_serde ... ok
+test tests::the_window_keeps_its_titlebar_for_the_native_material ... ok
+test v3_ipc::tests::operation_state_wire_matches_app_core_serde ... ok
+test v3_ipc::tests::exact_model_wire_matches_core_and_rejects_extra_authority ... ok
+test v3_ipc::tests::page_query_wire_matches_app_core_serde ... ok
+test v3_ipc::tests::resource_query_wire_matches_app_core_serde ... ok
+test v3_ipc::tests::stable_claim_wire_matches_app_core_serde ... ok
+test v3_ipc::tests::tool_effect_wire_matches_app_core_serde ... ok
+test v3_ipc::tests::tool_page_wire_matches_app_core_serde ... ok
+
+test result: ok. 69 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/updater_signature.rs (/Users/donald/.codex/verification/abbey-completion-20261022/qualification-target/debug/deps/updater_signature-7d6e0d6d117bb7ac)
+
+running 3 tests
+test a_built_artifact_verifies_against_the_shipped_pin ... ok
+test the_shipped_updater_pin_is_a_real_minisign_public_key ... ok
+test the_signed_fixture_verifies_and_carries_its_version_binding ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

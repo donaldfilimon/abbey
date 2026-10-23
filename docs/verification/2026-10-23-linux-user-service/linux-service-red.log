@@ -1,0 +1,24 @@
+E
+======================================================================
+ERROR: test_linux_user_service (unittest.loader._FailedTest.test_linux_user_service)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_linux_user_service
+Traceback (most recent call last):
+  File "/opt/homebrew/Cellar/python@3.15/3.15.0/Frameworks/Python.framework/Versions/3.15/lib/python3.15/unittest/loader.py", line 433, in _find_test_path
+    module = self._get_module_from_name(name)
+  File "/opt/homebrew/Cellar/python@3.15/3.15.0/Frameworks/Python.framework/Versions/3.15/lib/python3.15/unittest/loader.py", line 374, in _get_module_from_name
+    __import__(name)
+    ~~~~~~~~~~^^^^^^
+  File "/Users/donald/sources/repos/abbey/tools/tests/test_linux_user_service.py", line 11, in <module>
+    SPEC.loader.exec_module(service)
+    ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+  File "<frozen importlib._bootstrap_external>", line 743, in exec_module
+  File "<frozen importlib._bootstrap_external>", line 876, in get_code
+  File "<frozen importlib._bootstrap_external>", line 922, in get_data
+FileNotFoundError: [Errno 2] No such file or directory: '/Users/donald/sources/repos/abbey/tools/linux_user_service.py'
+
+
+----------------------------------------------------------------------
+Ran 1 test in 0.000s
+
+FAILED (errors=1)

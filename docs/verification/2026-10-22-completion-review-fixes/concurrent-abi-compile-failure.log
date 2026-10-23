@@ -1,0 +1,34 @@
+warning: unused import: `simulator::AdmissionSimulator`
+  --> /Users/donald/sources/repos/wdbx/crates/abi-wdbx/src/v3/complete_episode/crypto/admission/mod.rs:11:16
+   |
+11 | pub(super) use simulator::AdmissionSimulator;
+   |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `abi-wdbx` (lib) generated 1 warning (run `cargo fix --lib -p abi-wdbx` to apply 1 suggestion)
+   Compiling abi-worker v0.1.0 (/Users/donald/sources/repos/abi/crates/abi-worker)
+error[E0277]: `F` cannot be sent between threads safely
+   --> /Users/donald/sources/repos/abi/crates/abi-worker/src/inference.rs:156:71
+    |
+156 | impl<F: FnMut(&ResultChunk) -> Result<(), WorkerError>> EventSink for BoundedOutput<'_, F> {
+    |                                                                       ^^^^^^^^^^^^^^^^^^^^ `F` cannot be sent between threads safely
+    |
+    = note: required because it appears within the type `&mut F`
+note: required because it appears within the type `BoundedOutput<'_, F>`
+   --> /Users/donald/sources/repos/abi/crates/abi-worker/src/inference.rs:145:8
+    |
+145 | struct BoundedOutput<'a, F> {
+    |        ^^^^^^^^^^^^^
+note: required by a bound in `EventSink`
+   --> /Users/donald/sources/repos/abi/crates/abi-agent-runtime/src/event.rs:125:22
+    |
+125 | pub trait EventSink: Send {
+    |                      ^^^^ required by this bound in `EventSink`
+help: consider further restricting type parameter `F` with trait `Send`
+    |
+156 | impl<F: FnMut(&ResultChunk) -> Result<(), WorkerError> + std::marker::Send> EventSink for BoundedOutput<'_, F> {
+    |                                                        +++++++++++++++++++
+
+For more information about this error, try `rustc --explain E0277`.
+error: could not compile `abi-worker` (lib) due to 1 previous error

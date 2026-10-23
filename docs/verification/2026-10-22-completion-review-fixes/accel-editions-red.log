@@ -1,0 +1,27 @@
+FF
+======================================================================
+FAIL: test_both_install_orders_keep_other_editions_library_bytes (tools.tests.test_install_accel_editions.AcceleratorEditionInstall.test_both_install_orders_keep_other_editions_library_bytes) (order=('abbey', 'abbey-personal'))
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/donald/sources/repos/abbey/tools/tests/test_install_accel_editions.py", line 68, in test_both_install_orders_keep_other_editions_library_bytes
+    self.assertEqual(path.read_bytes(), contents,
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                     "install changed the other edition's library")
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: b'@loader_path/libabi_metal_dot.dylib\nabbey-personal\n' != b'@loader_path/libabi_metal_dot.dylib\nabbey\n' : install changed the other edition's library
+
+======================================================================
+FAIL: test_both_install_orders_keep_other_editions_library_bytes (tools.tests.test_install_accel_editions.AcceleratorEditionInstall.test_both_install_orders_keep_other_editions_library_bytes) (order=('abbey-personal', 'abbey'))
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/donald/sources/repos/abbey/tools/tests/test_install_accel_editions.py", line 68, in test_both_install_orders_keep_other_editions_library_bytes
+    self.assertEqual(path.read_bytes(), contents,
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                     "install changed the other edition's library")
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: b'@loader_path/libabi_metal_dot.dylib\nabbey\n' != b'@loader_path/libabi_metal_dot.dylib\nabbey-personal\n' : install changed the other edition's library
+
+----------------------------------------------------------------------
+Ran 1 test in 1.125s
+
+FAILED (failures=2)

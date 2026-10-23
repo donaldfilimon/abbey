@@ -1,0 +1,7 @@
+{
+  "changed": [
+    "abbey/tools/tests/smoke_tui_metadata_pty.py",
+    "abbey/tools/tests/test_metadata_fixture.py"
+  ],
+  "rust_or_dependency_changes": false
+}

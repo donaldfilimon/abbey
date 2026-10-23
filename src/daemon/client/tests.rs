@@ -653,3 +653,45 @@ fn scratch_dir(label: &str) -> PathBuf {
     std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o700)).unwrap();
     root
 }
+
+#[test]
+fn completion_legacy_v1_claim_schema_is_rejected() {
+    let (config, server, root) = fake_server(|request| {
+        let mut status = v2_status();
+        status.protocol_version = 1;
+        status.schema_version = 1;
+        status.capabilities = CapabilitySet::standard();
+        status.run_routes.clear();
+        encoded_response(ResponseEnvelope {
+            version: request.version,
+            request_id: request.request_id,
+            payload: ResponsePayload::Ok {
+                event: AppEvent::Status(status),
+            },
+        })
+    });
+    let result = unix::request(&config, AppCommand::Status, 1);
+    server.join().unwrap();
+    std::fs::remove_dir_all(root).unwrap();
+    assert!(matches!(result, Err(ClientError::InvalidRuntimeStatus(_))));
+}
+
+#[test]
+fn completion_unaffected_v2_schema_three_still_round_trips() {
+    let (config, server, root) = fake_server(|request| {
+        let mut status = v2_status();
+        status.protocol_version = 2;
+        status.schema_version = 3;
+        encoded_response(ResponseEnvelope {
+            version: request.version,
+            request_id: request.request_id,
+            payload: ResponsePayload::Ok {
+                event: AppEvent::Status(status),
+            },
+        })
+    });
+    let result = DaemonClient::new(config).request(AppCommand::Status);
+    server.join().unwrap();
+    std::fs::remove_dir_all(root).unwrap();
+    assert!(matches!(result, Ok(AppEvent::Status(_))));
+}

@@ -246,6 +246,7 @@ mod unix {
         let bearer = config.bearer.as_str().to_owned();
         let request = RequestEnvelope {
             version,
+            schema_version: crate::daemon::RequestEnvelope::schema_for(version),
             request_id: request_id.clone(),
             bearer,
             command,

@@ -1,0 +1,11 @@
+................................................................/Users/donald/sources/repos/abbey/tools/check_completion.py:24: ResourceWarning: unclosed file <_io.FileIO name=3 mode='rb' closefd=True>
+  def unique_object(pairs):
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/donald/sources/repos/abbey/tools/check_completion.py:24: ResourceWarning: unclosed file <_io.FileIO name=5 mode='rb' closefd=True>
+  def unique_object(pairs):
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+.................................................................................................................................................
+----------------------------------------------------------------------
+Ran 209 tests in 7.858s
+
+OK

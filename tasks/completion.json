@@ -294,6 +294,21 @@
             "tasks/completion-historical.json",
             "docs/verification/2026-10-22-completion-recovery.md"
           ]
+        },
+        "historical_gate": {
+          "status": "passed",
+          "refs": [
+            "tools/check_completion.py",
+            "tools/tests/test_completion_matrix.py",
+            "docs/verification/2026-10-22-completion-review-fixes.md"
+          ]
+        },
+        "frozen_macos_gates": {
+          "status": "passed",
+          "refs": [
+            "docs/verification/2026-10-22-completion-review-fixes.md",
+            "docs/verification/2026-10-22-completion-review-fixes/final-gate-results.json"
+          ]
         }
       },
       "required_evidence": [
@@ -347,7 +362,7 @@
       ],
       "todos": [
         "**Blocked on runner provisioning:** provision/register Linux ARM64 with labels",
-        "**Phase 2 \u2014 Self-hosted runners replace the broken hosted-CI assumption:**"
+        "**Phase 2 — Self-hosted runners replace the broken hosted-CI assumption:**"
       ],
       "evidence": {
         "source": {
@@ -379,12 +394,35 @@
       "id": "windows-foundation",
       "milestone": "platforms",
       "owner": "Windows maintainer and runner administrator",
-      "status": "open",
+      "status": "in_progress",
       "acceptance": [
         "Implement native named pipes, owner ACLs, peer restriction, bounded framing/deadlines, Job Object teardown and native Windows ARM CI/install proofs"
       ],
       "todos": [],
-      "evidence": {},
+      "evidence": {
+        "source": {
+          "status": "required",
+          "refs": [
+            ".github/workflows/rust.yml",
+            "tools/ci/qualify-windows.ps1",
+            "tools/ci/windows-workspace.ps1",
+            "docs/verification/2026-10-23-windows-arm-ci.md"
+          ]
+        },
+        "automated": {
+          "status": "required",
+          "refs": [
+            "tools/tests/test_windows_ci_qualification.py",
+            "docs/verification/2026-10-23-windows-arm-ci.md"
+          ]
+        },
+        "native_ci": {
+          "status": "blocked",
+          "refs": [
+            "docs/verification/2026-10-22-completion-baseline.md"
+          ]
+        }
+      },
       "required_evidence": [
         "source",
         "automated",
@@ -401,7 +439,7 @@
       ],
       "todos": [
         "**1. Runtime contracts:** define provider-neutral executor, tool-call, permission,",
-        "**Phase 4 \u2014 Shared Abbey application core + durable `abbeyd` daemon:**"
+        "**Phase 4 — Shared Abbey application core + durable `abbeyd` daemon:**"
       ],
       "evidence": {},
       "required_evidence": [
@@ -419,8 +457,8 @@
       ],
       "todos": [
         "**2. Owned tool host:** implement capability-scoped tool registry plus MCP/ACP host",
-        "**Phase 5 \u2014 Model and tool runtime ownership in ABI:**",
-        "**Phase 9 \u2014 MCP hosting without exposing the personal shell:**"
+        "**Phase 5 — Model and tool runtime ownership in ABI:**",
+        "**Phase 9 — MCP hosting without exposing the personal shell:**"
       ],
       "evidence": {},
       "required_evidence": [
@@ -438,7 +476,7 @@
       ],
       "todos": [
         "**3. Desktop GUI:** add a Tauri 2 + React/TypeScript frontend over shared",
-        "**Phase 7 \u2014 Tauri 2 React/TypeScript desktop product:**"
+        "**Phase 7 — Tauri 2 React/TypeScript desktop product:**"
       ],
       "evidence": {},
       "required_evidence": [
@@ -614,7 +652,7 @@
         "Reproduce or retain the exact historical recovery failure; serial/parallel and load fixtures discriminate journal ownership without attributing an unobserved cause"
       ],
       "todos": [
-        "**Flaky test observed 2026-08-09 in Phase 4B.5's own suite \u2014 not yet diagnosed:**"
+        "**Flaky test observed 2026-08-09 in Phase 4B.5's own suite — not yet diagnosed:**"
       ],
       "evidence": {},
       "required_evidence": [
@@ -648,7 +686,7 @@
         "Revise conflicting invariants explicitly, keep safe os_control behavior, implement local personal structured shell without per-command confirmation and verify isolation, bounds, audit and OS authorization"
       ],
       "todos": [
-        "**Phase 6 \u2014 Two deliberately separate runtime editions:**"
+        "**Phase 6 — Two deliberately separate runtime editions:**"
       ],
       "evidence": {},
       "required_evidence": [
@@ -665,7 +703,7 @@
         "Every inference, accelerator, training and media acceptance in milestone models-media passes independently"
       ],
       "todos": [
-        "**Phase 8 \u2014 Local model and media roadmap:**"
+        "**Phase 8 — Local model and media roadmap:**"
       ],
       "evidence": {},
       "required_evidence": [
@@ -682,7 +720,7 @@
         "Three independent Ubuntu ARM64 VM identities/state/IPs pass authenticated fault/recovery and upgrade scenarios with an independent membership control store"
       ],
       "todos": [
-        "**Phase 10 \u2014 Authenticated three-VM shared-compute proof:**"
+        "**Phase 10 — Authenticated three-VM shared-compute proof:**"
       ],
       "evidence": {},
       "required_evidence": [
@@ -701,7 +739,7 @@
         "Run coordinated ABI/WDBX gates, dependency/license/secret and external security reviews, native installed journeys and sustained-resource acceptance against exact frozen inputs; regenerate claims only from their independently reported evidence"
       ],
       "todos": [
-        "**Phase 11 \u2014 Verification and final ledger closure:**"
+        "**Phase 11 — Verification and final ledger closure:**"
       ],
       "evidence": {},
       "required_evidence": [
@@ -713,7 +751,7 @@
       "id": "wire-vocabularies",
       "milestone": "correctness",
       "owner": "Abbey protocol maintainer",
-      "status": "open",
+      "status": "implemented",
       "acceptance": [
         "Bump affected v1/v3 schemas, reject old clients before changed claim/model vocabularies, update canonical claim boundaries and generated wire samples"
       ],
@@ -721,7 +759,33 @@
         "**The protocol v1 and v3 schemas do not cover the claim lifecycle",
         "**The wire schemas do not cover every vocabulary they now carry** (#94"
       ],
-      "evidence": {},
+      "evidence": {
+        "source": {
+          "status": "passed",
+          "refs": [
+            "src/app_core/contracts.rs",
+            "src/app_core/v3.rs",
+            "docs/verification/2026-10-22-completion-review-fixes.md"
+          ]
+        },
+        "automated": {
+          "status": "passed",
+          "refs": [
+            "src/daemon/client/tests.rs::completion_legacy_v1_claim_schema_is_rejected",
+            "src/daemon/client/v3_tests.rs::completion_legacy_v3_claim_schema_is_rejected_without_retry",
+            "src/daemon/server/schema_tests.rs::completion_legacy_v3_schema_never_reaches_authority_dispatch",
+            "docs/verification/2026-10-22-completion-review-fixes.md",
+            "src/daemon/server/schema_tests.rs::completion_legacy_v1_envelope_never_reaches_claim_dispatch"
+          ]
+        },
+        "frozen_macos_gates": {
+          "status": "passed",
+          "refs": [
+            "docs/verification/2026-10-22-completion-review-fixes.md",
+            "docs/verification/2026-10-22-completion-review-fixes/final-gate-results.json"
+          ]
+        }
+      },
       "required_evidence": [
         "source",
         "automated"
@@ -925,14 +989,30 @@
       "id": "corpus-golden-vectors",
       "milestone": "correctness",
       "owner": "Abbey and ABI corpus maintainers",
-      "status": "open",
+      "status": "in_progress",
       "acceptance": [
         "Compute and independently compare canonical bytes and expected corpus digests; altered expected values cannot return Valid"
       ],
       "todos": [
         "**The corpus golden vectors are never computed** (#89 \"Exercise golden"
       ],
-      "evidence": {},
+      "evidence": {
+        "source": {
+          "status": "passed",
+          "refs": [
+            "src/abbey_contracts/golden_validation.rs",
+            "src/abbey_contracts/golden_tests.rs"
+          ]
+        },
+        "focused_tests": {
+          "status": "passed",
+          "refs": [
+            "docs/verification/2026-10-22-completion-review-fixes/corpus-corpus-green.log",
+            "docs/verification/2026-10-22-completion-review-fixes/corpus-corpus-integration-focused.log",
+            "docs/verification/2026-10-22-completion-review-fixes/corpus-red-provenance.json"
+          ]
+        }
+      },
       "required_evidence": [
         "source",
         "automated"
@@ -980,14 +1060,43 @@
       "id": "accelerator-install-isolation",
       "milestone": "platforms",
       "owner": "Abbey installer maintainer",
-      "status": "open",
+      "status": "implemented",
       "acceptance": [
         "Safe/personal installed accelerator layouts cannot replace each other; staged/published verification and rollback fixtures preserve prior bytes"
       ],
       "todos": [
         "**The accelerator dylib is shared between the editions** (#45 \"Keep the"
       ],
-      "evidence": {},
+      "evidence": {
+        "source": {
+          "status": "passed",
+          "refs": [
+            "install.sh",
+            "tools/tests/smoke_accel_install.sh"
+          ]
+        },
+        "focused_stub_tests": {
+          "status": "passed",
+          "refs": [
+            "tools/tests/test_install_accel_editions.py",
+            "docs/verification/2026-10-22-completion-review-fixes/accel-editions-stub-green.log"
+          ]
+        },
+        "automated": {
+          "status": "passed",
+          "refs": [
+            "docs/verification/2026-10-22-completion-review-fixes/installer-gate-results.json",
+            "docs/verification/2026-10-22-completion-review-fixes/installer-root.log"
+          ]
+        },
+        "macos_arm64": {
+          "status": "passed",
+          "refs": [
+            "docs/verification/2026-10-22-completion-review-fixes.md",
+            "docs/verification/2026-10-22-completion-review-fixes/installer-root.log"
+          ]
+        }
+      },
       "required_evidence": [
         "source",
         "automated"
@@ -997,14 +1106,29 @@
       "id": "model-request-validation",
       "milestone": "correctness",
       "owner": "Abbey and ABI model-runtime maintainers",
-      "status": "open",
+      "status": "in_progress",
       "acceptance": [
         "Serialized frame bounds and ordinary multiline whitespace are tested; budget exhaustion stays typed and elapsed-duration handling is repaired upstream before a qualified pin change"
       ],
       "todos": [
         "**The v3 model request bounds and validation are narrower than the"
       ],
-      "evidence": {},
+      "evidence": {
+        "source": {
+          "status": "passed",
+          "refs": [
+            "src/app_core/v3_model.rs",
+            "src/daemon/runtime_v3/model_lifecycle/model_inference.rs"
+          ]
+        },
+        "focused_tests": {
+          "status": "passed",
+          "refs": [
+            "docs/verification/2026-10-22-completion-review-fixes/inference-red.log",
+            "docs/verification/2026-10-22-completion-review-fixes/inference-focused-green.log"
+          ]
+        }
+      },
       "required_evidence": [
         "source",
         "automated"
@@ -1112,13 +1236,41 @@
       "id": "linux-service-foundation",
       "milestone": "platforms",
       "owner": "Linux platform maintainer and Ubuntu ARM64 runner operator",
-      "status": "open",
+      "status": "in_progress",
       "acceptance": [
         "Provide edition-isolated Linux daemon/service and desktop discovery/startup integration with owner-only credentials and exact Unix framing/correlation/cancellation parity",
         "Run native minimal install/start/status/cancel/restart/uninstall-retention fixtures on Ubuntu ARM64 before foundation closure; completed Tasks/Tools/Automations journeys are tracked separately under portable-package-services"
       ],
       "todos": [],
-      "evidence": {},
+      "evidence": {
+        "source": {
+          "status": "required",
+          "refs": [
+            "tools/linux_user_service.py",
+            "docs/linux-user-service.md",
+            "docs/verification/2026-10-23-linux-user-service.md"
+          ]
+        },
+        "automated": {
+          "status": "required",
+          "refs": [
+            "tools/tests/test_linux_user_service.py",
+            "docs/verification/2026-10-23-linux-user-service.md"
+          ]
+        },
+        "ubuntu_arm64": {
+          "status": "blocked",
+          "refs": [
+            "docs/verification/2026-10-22-completion-baseline.md"
+          ]
+        },
+        "native_ci": {
+          "status": "blocked",
+          "refs": [
+            "docs/verification/2026-10-22-completion-baseline.md"
+          ]
+        }
+      },
       "required_evidence": [
         "source",
         "automated",
@@ -1179,6 +1331,56 @@
         "macos_arm64",
         "ubuntu_arm64",
         "windows11_arm"
+      ]
+    },
+    {
+      "id": "completion-review-boundaries",
+      "milestone": "correctness",
+      "owner": "Abbey training and TUI maintainers",
+      "status": "implemented",
+      "acceptance": [
+        "Trainer deadlines include inherited pipes and preserve process-group ownership; invocation errors remove partial artifacts",
+        "Rollback validates and records consent; failed baseline scoring never replaces current state",
+        "UTF-8 cannot bypass PEM redaction; terminal entry errors reach event-loop cleanup",
+        "Focused discriminating regressions plus serial unchanged-source root/desktop gates; required native evidence remains separate",
+        "CLI fixtures isolate HOME and both editions even when a stale executable is launched; qualification builds and metadata checks never overlap"
+      ],
+      "todos": [],
+      "evidence": {
+        "source": {
+          "status": "passed",
+          "refs": [
+            "src/train/",
+            "src/tui/run_loop.rs",
+            "docs/verification/2026-10-22-completion-review-fixes.md"
+          ]
+        },
+        "automated": {
+          "status": "passed",
+          "refs": [
+            "src/train/review_regressions.rs",
+            "src/tui/run_loop.rs::tests::review_suspend_propagates_terminal_reentry_failure",
+            "docs/verification/2026-10-22-completion-review-fixes.md"
+          ]
+        },
+        "frozen_macos_gates": {
+          "status": "passed",
+          "refs": [
+            "docs/verification/2026-10-22-completion-review-fixes.md",
+            "docs/verification/2026-10-22-completion-review-fixes/final-gate-results.json"
+          ]
+        },
+        "fixture_isolation": {
+          "status": "passed",
+          "refs": [
+            "tests/cli_surface.rs::fixture_environment_contains_both_editions_even_for_a_stale_binary",
+            "docs/verification/2026-10-22-completion-review-fixes.md"
+          ]
+        }
+      },
+      "required_evidence": [
+        "source",
+        "automated"
       ]
     }
   ],

@@ -15,6 +15,9 @@ use std::path::{Component, Path};
 use thiserror::Error;
 
 mod fixture_validation;
+#[cfg(test)]
+mod golden_tests;
+mod golden_validation;
 use fixture_validation::validate_wire;
 
 const SOURCE_REPOSITORY: &str = "https://github.com/donaldfilimon/abi";

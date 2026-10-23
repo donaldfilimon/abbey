@@ -8,6 +8,8 @@ use abi_capability::{Decision, Digest, ReasonCode};
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use sha2::{Digest as _, Sha256};
 
+pub(super) mod local;
+
 const CAPACITY: i64 = 100_000;
 
 fn unavailable(_: impl std::fmt::Display) -> LifecycleError {
@@ -195,6 +197,9 @@ impl DurableLifecycle for RuntimeStore {
             }
         }
         let legacy = if let Some(exact) = &request.approval {
+            if !local::exact_matches(&tx, &request.call_id, exact)? {
+                return Ok(PrepareOutcome::Refused(ReasonCode::ApprovalInsufficient));
+            }
             let preview: Option<String> = tx
                 .query_row(
                     "SELECT binding_json FROM governed_approval_previews WHERE call_id=?1",
@@ -214,7 +219,8 @@ impl DurableLifecycle for RuntimeStore {
                 }
                 Err(e) => return Err(unavailable(e)),
             };
-            if current.call_digest != hex(request.binding.request_digest)
+            if current.updated_at_ms > request.now_ms
+                || current.call_digest != hex(request.binding.request_digest)
                 || current.tool_id != request.tool_id
                 || current.decision_id.as_deref() != Some(exact.approval.decision_id.as_str())
                 || current.created_at_ms != exact.issued_at_ms

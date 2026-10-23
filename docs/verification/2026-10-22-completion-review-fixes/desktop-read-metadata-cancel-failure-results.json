@@ -1,0 +1,9 @@
+[
+  {
+    "gate": "root",
+    "exit_code": 101,
+    "seconds": 96.85586500167847,
+    "source_drift": [],
+    "target": "/Users/donald/.codex/verification/abbey-completion-20261022/qualification-target"
+  }
+]

@@ -237,7 +237,7 @@ else:
         build_marker = self.root / 'matched-build'
         fault_marker = self.root / 'staged-fault'
         self.script(self.bin / 'cargo', f"""import os, pathlib, shutil
-assert sys.argv[1:] == ['build', '--release', '--locked', '--features', 'accel']
+assert sys.argv[1:] == ['build', '--release', '--locked', '-p', 'abbey', '--bins', '--features', 'accel']
 assert shutil.which('rustc') == {str(self.bin / 'rustc')!r}
 assert os.environ['DYLD_FALLBACK_LIBRARY_PATH'].startswith({str(self.bin.parent / 'lib')!r})
 pathlib.Path({str(build_marker)!r}).touch()

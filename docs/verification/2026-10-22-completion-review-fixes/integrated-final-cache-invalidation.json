@@ -1,0 +1,5 @@
+{
+  "source_files_touched": 4150,
+  "fingerprints_removed": 207,
+  "reason": "copy2 preserved source mtimes across snapshot overlays"
+}

@@ -1,0 +1,68 @@
+--- before/tools/linux_user_service.py
++++ after/tools/linux_user_service.py
+@@ -211,8 +211,10 @@
+         try:
+             event = json.loads(run([self.cli, 'daemon', 'status', '--json'], self.service_env))
+             payload = event['payload']
++            protocol, schema = payload['protocol_version'], payload['schema_version']
+             if (event['type'] != 'status' or payload['edition'] != self.edition
+-                    or payload['protocol_version'] != 1 or payload['schema_version'] != 2
++                    or type(protocol) is not int or type(schema) is not int
++                    or (protocol, schema) not in ((1, 2), (2, 3))
+                     or payload['state'] != 'ready'):
+                 raise ValueError()
+         except (ValueError, KeyError, TypeError) as error:
+--- before/tools/tests/test_linux_user_service.py
++++ after/tools/tests/test_linux_user_service.py
+@@ -26,9 +26,9 @@
+         self.env = patch.dict(os.environ, {'CALLS': str(self.log), 'ABBEYD_BEARER_TOKEN': 'must-not-leak'})
+         self.env.start()
+         self.addCleanup(self.env.stop)
+-    def make_cli(self, name, daemon, edition):
++    def make_cli(self, name, daemon, edition, protocol=1, schema=2):
+         self.cli = self.bin / name
+-        self.cli.write_text('#!' + sys.executable + ' -S\nimport sys,json,os\nif sys.argv[1:]==["edition","--name"]: print('+repr(name)+')\nelif sys.argv[1:]==["edition","--daemon-name"]: print('+repr(daemon)+')\nelse:\n assert "ABBEYD_BEARER_TOKEN" not in os.environ\n print(json.dumps({"type":"status","payload":{"edition":'+repr(edition)+',"state":"ready","protocol_version":1,"schema_version":2}}))\n')
++        self.cli.write_text('#!' + sys.executable + ' -S\nimport sys,json,os\nif sys.argv[1:]==["edition","--name"]: print('+repr(name)+')\nelif sys.argv[1:]==["edition","--daemon-name"]: print('+repr(daemon)+')\nelse:\n assert "ABBEYD_BEARER_TOKEN" not in os.environ\n print(json.dumps({"type":"status","payload":{"edition":'+repr(edition)+',"state":"ready","protocol_version":'+repr(protocol)+',"schema_version":'+repr(schema)+'}}))\n')
+         self.cli.chmod(0o700)
+         (self.bin / daemon).write_text('#!/bin/sh\nexit 0\n')
+         (self.bin / daemon).chmod(0o700)
+@@ -36,6 +36,25 @@
+         c = service.Controller(self.cli, self.home, self.home, self.systemctl, platform='linux')
+         c.env['CALLS'] = str(self.log)
+         return c
++    def test_status_accepts_exact_supported_pairs_both_editions(self):
++        for name, daemon, edition in [('abbey','abbeyd','standard'), ('abbey-personal','abbey-personal-daemon','personal')]:
++            self.make_cli(name, daemon, edition)
++            c = self.controller(); c.install()
++            for protocol, schema in [(1, 2), (2, 3)]:
++                with self.subTest(edition=edition, protocol=protocol, schema=schema):
++                    self.make_cli(name, daemon, edition, protocol, schema)
++                    event = c.status()
++                    self.assertEqual((event['payload']['protocol_version'], event['payload']['schema_version']), (protocol, schema))
++
++    def test_status_rejects_crossed_unknown_and_noninteger_versions(self):
++        c = self.controller(); c.install()
++        for protocol, schema in [(1, 3), (2, 2), (1, 1), (2, 4), (3, 3), (0, 2), ('2', 3), (2, '3'), (True, 2), (2, True)]:
++            with self.subTest(protocol=protocol, schema=schema):
++                self.make_cli('abbey','abbeyd','standard', protocol, schema)
++                with self.assertRaises(service.ServiceError): c.status()
++        self.make_cli('abbey','abbeyd','personal', 2, 3)
++        with self.assertRaises(service.ServiceError): c.status()
++
+     def eager_identity(self, name, daemon, edition, fail=False):
+         self.make_cli(name, daemon, edition)
+         original = self.cli.read_text()
+--- before/docs/linux-user-service.md
++++ after/docs/linux-user-service.md
+@@ -55,7 +55,10 @@
+ 
+ `start` makes at most three authenticated CLI `daemon status --json` probes,
+ each bounded to three seconds and 64 KiB of output, and validates the status
+-kind, ready state, protocol/schema versions and exact edition. Systemd activity
++kind, ready state, exact edition, and the exact integer protocol/schema pairs
++`(1, 2)` or `(2, 3)`. The existing typed CLI prefers current protocol 2 and
++permits read-only protocol 1 compatibility only after explicit version rejection;
++the controller adds no transport fallback or retry. Systemd activity
+ alone is insufficient. Failed readiness requests stop and returns failure;
+ stop failure also returns failure. `restart` explicitly stops before starting.
+ `status` performs one authenticated probe. Child diagnostics are suppressed to

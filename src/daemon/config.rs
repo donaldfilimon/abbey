@@ -233,7 +233,7 @@ fn trim_line_ending(mut bytes: &[u8]) -> &[u8] {
 
 #[cfg(unix)]
 fn load_bearer_file(path: &Path) -> Result<BearerSecret, ConfigError> {
-    use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
+    use std::os::unix::fs::{MetadataExt as _, OpenOptionsExt as _, PermissionsExt as _};
 
     let metadata =
         std::fs::symlink_metadata(path).map_err(|source| ConfigError::InspectBearer {
@@ -243,16 +243,47 @@ fn load_bearer_file(path: &Path) -> Result<BearerSecret, ConfigError> {
     if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
         return Err(ConfigError::BearerFileType(path.to_owned()));
     }
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(path)
+        .map_err(|source| ConfigError::ReadBearer {
+            path: path.to_owned(),
+            source,
+        })?;
+    // Trust the opened descriptor, not metadata from an earlier path lookup.
+    let metadata = file
+        .metadata()
+        .map_err(|source| ConfigError::InspectBearer {
+            path: path.to_owned(),
+            source,
+        })?;
+    if !metadata.is_file() {
+        return Err(ConfigError::BearerFileType(path.to_owned()));
+    }
     if metadata.uid() != nix::unistd::Uid::effective().as_raw() {
         return Err(ConfigError::BearerFileOwner(path.to_owned()));
     }
     if metadata.permissions().mode() & 0o077 != 0 {
         return Err(ConfigError::BearerFilePermissions(path.to_owned()));
     }
-    let bytes = std::fs::read(path).map_err(|source| ConfigError::ReadBearer {
-        path: path.to_owned(),
-        source,
-    })?;
+    read_bearer(file, path)
+}
+
+#[cfg(unix)]
+fn read_bearer(reader: impl std::io::Read, path: &Path) -> Result<BearerSecret, ConfigError> {
+    use std::io::Read as _;
+
+    // One byte beyond the largest valid token plus CRLF detects oversize
+    // input even if the file grows after descriptor validation.
+    let mut reader = reader.take((MAX_BEARER_LEN + 3) as u64);
+    let mut bytes = Vec::with_capacity(MAX_BEARER_LEN + 3);
+    reader
+        .read_to_end(&mut bytes)
+        .map_err(|source| ConfigError::ReadBearer {
+            path: path.to_owned(),
+            source,
+        })?;
     BearerSecret::parse(bytes)
 }
 
@@ -331,3 +362,7 @@ mod tests {
         path
     }
 }
+
+#[cfg(all(test, unix))]
+#[path = "config/bearer_tests.rs"]
+mod bearer_tests;

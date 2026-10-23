@@ -585,6 +585,14 @@ def run_manifest_command(
         else:
             process.kill()
         process.wait()
+        if isolated_group:
+            # POSIX communicate has no pipe-reader threads. Close our readers
+            # directly: draining to EOF could hang on an escaped descendant
+            # that inherited a writer. Windows communicate uses reader threads;
+            # closing their buffered streams can block, so this cleanup is
+            # deliberately POSIX-only until Windows process-tree teardown exists.
+            process.stdout.close()
+            process.stderr.close()
         # A bare traceback here hides the fact that the tool was still
         # compiling; say what happened and how to widen the budget.
         raise SystemExit(

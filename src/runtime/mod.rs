@@ -33,10 +33,10 @@ pub(crate) use identity::{
 pub(crate) use legacy::prepare as prepare_legacy_import;
 
 pub use store::{
-    AuditEvent, AuditMetadata, ConversationBackend, MAX_TOOL_APPROVAL_TTL_MS, ModelOperationKind,
-    ModelOperationRecord, ModelOperationState, NewAuditEvent, NewModelOperation, NewRun,
-    NewRunEvent, NewToolApproval, RunEvent, RunRecord, RuntimeStore, StoreError,
-    ToolApprovalDecision, ToolApprovalEvent, ToolApprovalRecord, ToolApprovalState,
-    ToolExecutionEvent, ToolExecutionOutcome, ToolExecutionPreparation, ToolExecutionRecord,
-    ToolExecutionState,
+    AbbeyLocalApprovalAuthority, AuditEvent, AuditMetadata, ConversationBackend,
+    MAX_TOOL_APPROVAL_TTL_MS, ModelOperationKind, ModelOperationRecord, ModelOperationState,
+    NewAuditEvent, NewModelOperation, NewRun, NewRunEvent, NewToolApproval, RunEvent, RunRecord,
+    RuntimeStore, StoreError, ToolApprovalDecision, ToolApprovalEvent, ToolApprovalRecord,
+    ToolApprovalState, ToolExecutionEvent, ToolExecutionOutcome, ToolExecutionPreparation,
+    ToolExecutionRecord, ToolExecutionState,
 };

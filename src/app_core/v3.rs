@@ -14,8 +14,8 @@ use serde::{Deserialize, Serialize};
 
 /// Additive application protocol reserved for capability-gated authority.
 pub const APP_PROTOCOL_V3: u16 = 3;
-/// Serialized schema used by protocol-v3 contracts.
-pub const APP_SCHEMA_V3: u16 = 3;
+/// Serialized schema including current claim and model vocabularies.
+pub const APP_SCHEMA_V3: u16 = 4;
 /// Maximum number of records in any protocol-v3 page.
 pub const MAX_V3_PAGE: u16 = 32;
 const MAX_ID_BYTES: usize = 128;

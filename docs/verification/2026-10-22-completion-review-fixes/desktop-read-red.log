@@ -1,0 +1,195 @@
+warning: unused import: `simulator::AdmissionSimulator`
+  --> /Users/donald/.codex/verification/abbey-completion-20261022/corpus-golden-qualified/wdbx/crates/abi-wdbx/src/v3/complete_episode/crypto/admission/mod.rs:11:16
+   |
+11 | pub(super) use simulator::AdmissionSimulator;
+   |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `abi-wdbx` (lib) generated 1 warning (run `cargo fix --lib -p abi-wdbx` to apply 1 suggestion)
+   Compiling abbey-desktop v2.6.0 (/Users/donald/.codex/verification/abbey-completion-20261022/corpus-golden-qualified/abbey/desktop/src-tauri)
+error[E0277]: `Result<RuntimeStatus, ipc::IpcError>` is not a future
+  --> desktop/src-tauri/src/commands/read_tests.rs:14:10
+   |
+14 |     zero(app_status);
+   |     ---- ^^^^^^^^^^ `Result<RuntimeStatus, ipc::IpcError>` is not a future
+   |     |
+   |     required by a bound introduced by this call
+   |
+   = help: the trait `Future` is not implemented for `Result<RuntimeStatus, ipc::IpcError>`
+note: required by a bound in `zero`
+  --> desktop/src-tauri/src/commands/read_tests.rs:10:19
+   |
+10 |     fn zero<T, F: Future<Output = Result<T, IpcError>>>(_: fn() -> F) {}
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `zero`
+
+error[E0277]: `Result<abbey::app_core::V3CapabilitySet, ipc::IpcError>` is not a future
+  --> desktop/src-tauri/src/commands/read_tests.rs:15:10
+   |
+15 |     zero(app_v3_grants);
+   |     ---- ^^^^^^^^^^^^^ `Result<abbey::app_core::V3CapabilitySet, ipc::IpcError>` is not a future
+   |     |
+   |     required by a bound introduced by this call
+   |
+   = help: the trait `Future` is not implemented for `Result<abbey::app_core::V3CapabilitySet, ipc::IpcError>`
+note: required by a bound in `zero`
+  --> desktop/src-tauri/src/commands/read_tests.rs:10:19
+   |
+10 |     fn zero<T, F: Future<Output = Result<T, IpcError>>>(_: fn() -> F) {}
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `zero`
+
+error[E0277]: `ConnectionInfo` is not a future
+  --> desktop/src-tauri/src/commands/read_tests.rs:16:10
+   |
+16 |     zero(app_connection);
+   |     ---- ^^^^^^^^^^^^^^ `ConnectionInfo` is not a future
+   |     |
+   |     required by a bound introduced by this call
+   |
+help: the trait `Future` is not implemented for `ConnectionInfo`
+  --> desktop/src-tauri/src/ipc.rs:46:1
+   |
+46 | pub struct ConnectionInfo {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `zero`
+  --> desktop/src-tauri/src/commands/read_tests.rs:10:19
+   |
+10 |     fn zero<T, F: Future<Output = Result<T, IpcError>>>(_: fn() -> F) {}
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `zero`
+
+error[E0277]: `Result<EffectiveModel, ipc::IpcError>` is not a future
+  --> desktop/src-tauri/src/commands/read_tests.rs:17:11
+   |
+17 |     three(app_effective_model);
+   |     ----- ^^^^^^^^^^^^^^^^^^^ `Result<EffectiveModel, ipc::IpcError>` is not a future
+   |     |
+   |     required by a bound introduced by this call
+   |
+   = help: the trait `Future` is not implemented for `Result<EffectiveModel, ipc::IpcError>`
+note: required by a bound in `three`
+  --> desktop/src-tauri/src/commands/read_tests.rs:12:29
+   |
+12 |     fn three<A, B, C, T, F: Future<Output = Result<T, IpcError>>>(_: fn(A, B, C) -> F) {}
+   |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `three`
+
+error[E0277]: `Result<ClaimsSnapshot, ipc::IpcError>` is not a future
+  --> desktop/src-tauri/src/commands/read_tests.rs:18:9
+   |
+18 |     one(app_claims);
+   |     --- ^^^^^^^^^^ `Result<ClaimsSnapshot, ipc::IpcError>` is not a future
+   |     |
+   |     required by a bound introduced by this call
+   |
+   = help: the trait `Future` is not implemented for `Result<ClaimsSnapshot, ipc::IpcError>`
+note: required by a bound in `one`
+  --> desktop/src-tauri/src/commands/read_tests.rs:11:21
+   |
+11 |     fn one<A, T, F: Future<Output = Result<T, IpcError>>>(_: fn(A) -> F) {}
+   |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `one`
+
+error[E0277]: `Result<RouteAuditPage, ipc::IpcError>` is not a future
+  --> desktop/src-tauri/src/commands/read_tests.rs:19:9
+   |
+19 |     one(app_routes);
+   |     --- ^^^^^^^^^^ `Result<RouteAuditPage, ipc::IpcError>` is not a future
+   |     |
+   |     required by a bound introduced by this call
+   |
+   = help: the trait `Future` is not implemented for `Result<RouteAuditPage, ipc::IpcError>`
+note: required by a bound in `one`
+  --> desktop/src-tauri/src/commands/read_tests.rs:11:21
+   |
+11 |     fn one<A, T, F: Future<Output = Result<T, IpcError>>>(_: fn(A) -> F) {}
+   |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `one`
+
+error[E0277]: `Result<RunSnapshot, ipc::IpcError>` is not a future
+  --> desktop/src-tauri/src/commands/read_tests.rs:20:9
+   |
+20 |     one(app_run_status);
+   |     --- ^^^^^^^^^^^^^^ `Result<RunSnapshot, ipc::IpcError>` is not a future
+   |     |
+   |     required by a bound introduced by this call
+   |
+   = help: the trait `Future` is not implemented for `Result<RunSnapshot, ipc::IpcError>`
+note: required by a bound in `one`
+  --> desktop/src-tauri/src/commands/read_tests.rs:11:21
+   |
+11 |     fn one<A, T, F: Future<Output = Result<T, IpcError>>>(_: fn(A) -> F) {}
+   |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `one`
+
+error[E0277]: `Result<RunEventPage, ipc::IpcError>` is not a future
+  --> desktop/src-tauri/src/commands/read_tests.rs:21:9
+   |
+21 |     one(app_run_events);
+   |     --- ^^^^^^^^^^^^^^ `Result<RunEventPage, ipc::IpcError>` is not a future
+   |     |
+   |     required by a bound introduced by this call
+   |
+   = help: the trait `Future` is not implemented for `Result<RunEventPage, ipc::IpcError>`
+note: required by a bound in `one`
+  --> desktop/src-tauri/src/commands/read_tests.rs:11:21
+   |
+11 |     fn one<A, T, F: Future<Output = Result<T, IpcError>>>(_: fn(A) -> F) {}
+   |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `one`
+
+error[E0277]: `Result<abbey::app_core::V3EntityPage, ipc::IpcError>` is not a future
+  --> desktop/src-tauri/src/commands/read_tests.rs:22:9
+   |
+22 |     one(app_memory_search);
+   |     --- ^^^^^^^^^^^^^^^^^ `Result<abbey::app_core::V3EntityPage, ipc::IpcError>` is not a future
+   |     |
+   |     required by a bound introduced by this call
+   |
+   = help: the trait `Future` is not implemented for `Result<abbey::app_core::V3EntityPage, ipc::IpcError>`
+note: required by a bound in `one`
+  --> desktop/src-tauri/src/commands/read_tests.rs:11:21
+   |
+11 |     fn one<A, T, F: Future<Output = Result<T, IpcError>>>(_: fn(A) -> F) {}
+   |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `one`
+
+error[E0277]: `Result<abbey::app_core::V3EntityRecord, ipc::IpcError>` is not a future
+  --> desktop/src-tauri/src/commands/read_tests.rs:23:9
+   |
+23 |     one(app_memory_metadata);
+   |     --- ^^^^^^^^^^^^^^^^^^^ `Result<abbey::app_core::V3EntityRecord, ipc::IpcError>` is not a future
+   |     |
+   |     required by a bound introduced by this call
+   |
+   = help: the trait `Future` is not implemented for `Result<abbey::app_core::V3EntityRecord, ipc::IpcError>`
+note: required by a bound in `one`
+  --> desktop/src-tauri/src/commands/read_tests.rs:11:21
+   |
+11 |     fn one<A, T, F: Future<Output = Result<T, IpcError>>>(_: fn(A) -> F) {}
+   |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `one`
+
+error[E0277]: `Result<abbey::app_core::V3StableClaim, ipc::IpcError>` is not a future
+  --> desktop/src-tauri/src/commands/read_tests.rs:24:9
+   |
+24 |     one(app_claim_by_id);
+   |     --- ^^^^^^^^^^^^^^^ `Result<abbey::app_core::V3StableClaim, ipc::IpcError>` is not a future
+   |     |
+   |     required by a bound introduced by this call
+   |
+   = help: the trait `Future` is not implemented for `Result<abbey::app_core::V3StableClaim, ipc::IpcError>`
+note: required by a bound in `one`
+  --> desktop/src-tauri/src/commands/read_tests.rs:11:21
+   |
+11 |     fn one<A, T, F: Future<Output = Result<T, IpcError>>>(_: fn(A) -> F) {}
+   |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `one`
+
+error[E0425]: cannot find function `read_task` in this scope
+  --> desktop/src-tauri/src/commands/read_tests.rs:32:31
+   |
+32 |     let mut future = Box::pin(read_task(move || {
+   |                               ^^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find function `read_task` in this scope
+  --> desktop/src-tauri/src/commands/read_tests.rs:47:48
+   |
+47 |     let error = tauri::async_runtime::block_on(read_task(|| -> Result<(), IpcError> {
+   |                                                ^^^^^^^^^ not found in this scope
+
+Some errors have detailed explanations: E0277, E0425.
+For more information about an error, try `rustc --explain E0277`.
+error: could not compile `abbey-desktop` (bin "abbey-desktop" test) due to 13 previous errors
+warning: build failed, waiting for other jobs to finish...

@@ -1,0 +1,10 @@
+{
+  "reason": "runner retained previous cohort path; stopped before qualification",
+  "owned_process_ids": [
+    56799,
+    56803,
+    57188,
+    58901
+  ],
+  "no_pass_claimed": true
+}

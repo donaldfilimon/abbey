@@ -21,8 +21,8 @@ use crate::ipc::{
 
 /// `ReadStatus` — process identity, build stamp, and granted capabilities.
 #[tauri::command]
-pub fn app_status() -> Result<RuntimeStatus, IpcError> {
-    backend::status()
+pub async fn app_status() -> Result<RuntimeStatus, IpcError> {
+    read_task(backend::status).await
 }
 
 /// The effective model — the model a turn would use right now, resolved with
@@ -50,7 +50,15 @@ pub fn app_status() -> Result<RuntimeStatus, IpcError> {
 ///   with the same rules. This is an explicit request for a specific pair,
 ///   not a report of what a turn would use, and it is labeled as such.
 #[tauri::command]
-pub fn app_effective_model(
+pub async fn app_effective_model(
+    route_id: Option<String>,
+    backend: Option<String>,
+    model: Option<String>,
+) -> Result<EffectiveModel, IpcError> {
+    read_task(move || effective_model(route_id, backend, model)).await
+}
+
+fn effective_model(
     route_id: Option<String>,
     backend: Option<String>,
     model: Option<String>,
@@ -106,7 +114,10 @@ fn runtime_effective_model(route_id: Option<&str>) -> Result<EffectiveModel, Ipc
     if !route.available {
         return Err(IpcError::new(
             IpcErrorKind::Rejected,
-            format!("the runtime publishes route {:?} as unavailable", route.route_id),
+            format!(
+                "the runtime publishes route {:?} as unavailable",
+                route.route_id
+            ),
         ));
     }
     resolve_for_route(&route.backend, &route.model)
@@ -143,8 +154,8 @@ fn resolve_for_route(backend: &str, model: &str) -> Result<EffectiveModel, IpcEr
 /// `ReadClaims` — the canonical capability ledger, filtered by a bounded query
 /// that the application core validates.
 #[tauri::command]
-pub fn app_claims(query: ClaimsQuery) -> Result<ClaimsSnapshot, IpcError> {
-    backend::claims(query)
+pub async fn app_claims(query: ClaimsQuery) -> Result<ClaimsSnapshot, IpcError> {
+    read_task(move || backend::claims(query)).await
 }
 
 /// `ReadRoutes` — a bounded, sanitized tail of the persona/role routing audit
@@ -152,23 +163,23 @@ pub fn app_claims(query: ClaimsQuery) -> Result<ClaimsSnapshot, IpcError> {
 /// filesystem path: this process has no filesystem plugin with which it could
 /// read the log directly, so the sanitized contract is the only route to it.
 #[tauri::command]
-pub fn app_routes(query: RouteAuditQuery) -> Result<RouteAuditPage, IpcError> {
-    backend::routes(query)
+pub async fn app_routes(query: RouteAuditQuery) -> Result<RouteAuditPage, IpcError> {
+    read_task(move || backend::routes(query)).await
 }
 
 /// `ReadRun` — one durable run snapshot. User input and provider output are
 /// not on the type; submit and cancel are different commands and are not
 /// registered here.
 #[tauri::command]
-pub fn app_run_status(query: RunQuery) -> Result<RunSnapshot, IpcError> {
-    backend::run_status(query)
+pub async fn app_run_status(query: RunQuery) -> Result<RunSnapshot, IpcError> {
+    read_task(move || backend::run_status(query)).await
 }
 
 /// `ReadRunEvents` — a bounded, snapshot-consistent page of sanitized
 /// lifecycle events for one run. This is not a live subscription.
 #[tauri::command]
-pub fn app_run_events(query: RunEventsQuery) -> Result<RunEventPage, IpcError> {
-    backend::run_events(query)
+pub async fn app_run_events(query: RunEventsQuery) -> Result<RunEventPage, IpcError> {
+    read_task(move || backend::run_events(query)).await
 }
 
 /// Negotiated protocol-v3 grants. The desktop requests exactly `ReadMemory`,
@@ -177,20 +188,20 @@ pub fn app_run_events(query: RunEventsQuery) -> Result<RunEventPage, IpcError> {
 /// unavailable; `ReadClaimsById` is granted unconditionally at daemon startup.
 /// No bearer → empty set. Never falls back to opening the memory store.
 #[tauri::command]
-pub fn app_v3_grants() -> Result<V3CapabilitySet, IpcError> {
-    backend::v3_grants()
+pub async fn app_v3_grants() -> Result<V3CapabilitySet, IpcError> {
+    read_task(backend::v3_grants).await
 }
 
 /// `ReadMemory` search over sanitized summaries in `memory-v1-summary`.
 #[tauri::command]
-pub fn app_memory_search(request: V3SearchRequest) -> Result<V3EntityPage, IpcError> {
-    backend::memory_search(request)
+pub async fn app_memory_search(request: V3SearchRequest) -> Result<V3EntityPage, IpcError> {
+    read_task(move || backend::memory_search(request)).await
 }
 
 /// `ReadMemory` metadata for one opaque domain-separated record id.
 #[tauri::command]
-pub fn app_memory_metadata(query: V3ResourceQuery) -> Result<V3EntityRecord, IpcError> {
-    backend::memory_metadata(query)
+pub async fn app_memory_metadata(query: V3ResourceQuery) -> Result<V3EntityRecord, IpcError> {
+    read_task(move || backend::memory_metadata(query)).await
 }
 
 /// `ReadModels` — bounded inventory via the unchanged read-only session.
@@ -202,8 +213,8 @@ pub async fn app_models_list(query: V3PageQuery) -> Result<V3EntityPage, IpcErro
 /// `ReadClaimsById` — one canonical claim by exact stable ID. Complements the
 /// protocol-v1 `app_claims` ledger read rather than replacing it.
 #[tauri::command]
-pub fn app_claim_by_id(query: V3ResourceQuery) -> Result<V3StableClaim, IpcError> {
-    backend::claim_by_id(query)
+pub async fn app_claim_by_id(query: V3ResourceQuery) -> Result<V3StableClaim, IpcError> {
+    read_task(move || backend::claim_by_id(query)).await
 }
 
 /// `ListTools` — the tool inventory the daemon actually advertises.
@@ -300,6 +311,20 @@ fn system_integration() -> SystemIntegration {
     }
 }
 
+/// Daemon I/O, token-file reads and metadata probes must yield to the UI.
+async fn read_task<T: Send + 'static>(
+    task: impl FnOnce() -> Result<T, IpcError> + Send + 'static,
+) -> Result<T, IpcError> {
+    tauri::async_runtime::spawn_blocking(task)
+        .await
+        .map_err(|_| {
+            IpcError::new(
+                IpcErrorKind::Transport,
+                "read request worker was interrupted; retry the read",
+            )
+        })?
+}
+
 /// Unix IPC blocks; keep the tool inventory read off the UI thread.
 async fn tools_task<T: Send + 'static>(
     task: impl FnOnce() -> Result<T, IpcError> + Send + 'static,
@@ -316,8 +341,8 @@ async fn tools_task<T: Send + 'static>(
 
 /// How this client reaches Abbey. No secret material; see `ipc::ConnectionInfo`.
 #[tauri::command]
-pub fn app_connection() -> ConnectionInfo {
-    backend::connection()
+pub async fn app_connection() -> Result<ConnectionInfo, IpcError> {
+    read_task(|| Ok(backend::connection())).await
 }
 
 /// Packaged identity of the running build, derived from `abbey::edition`.
@@ -502,7 +527,7 @@ mod tests {
     /// surfaces cannot disagree.
     #[test]
     fn an_explicit_backend_and_model_resolve_with_the_shared_rules() {
-        let ollama = app_effective_model(None, Some("ollama".into()), Some("gemma".into()))
+        let ollama = effective_model(None, Some("ollama".into()), Some("gemma".into()))
             .expect("a known backend resolves");
         assert_eq!(ollama.backend, "ollama");
         assert_eq!(ollama.raw, "gemma");
@@ -510,11 +535,11 @@ mod tests {
 
         // The alias table, the fm vocabulary, and the abi vocabulary all
         // resolve exactly as they do for the CLI.
-        let cursor = app_effective_model(None, Some("cursor-agent".into()), Some("opus".into()))
+        let cursor = effective_model(None, Some("cursor-agent".into()), Some("opus".into()))
             .expect("a known backend resolves");
         assert_eq!(cursor.resolved, "claude-opus-5-thinking-high");
 
-        let fm = app_effective_model(
+        let fm = effective_model(
             None,
             Some("fm".into()),
             Some("claude-opus-5-thinking-high".into()),
@@ -522,7 +547,7 @@ mod tests {
         .expect("a known backend resolves");
         assert_eq!(fm.resolved, "system");
 
-        let abi = app_effective_model(None, Some("abi".into()), Some("fable".into()))
+        let abi = effective_model(None, Some("abi".into()), Some("fable".into()))
             .expect("a known backend resolves");
         assert_eq!(abi.resolved, "local");
     }
@@ -530,7 +555,7 @@ mod tests {
     /// An unknown backend label is refused, never guessed into one.
     #[test]
     fn an_unknown_backend_is_refused_rather_than_guessed() {
-        let error = app_effective_model(None, Some("nonsense".into()), Some("gemma".into()))
+        let error = effective_model(None, Some("nonsense".into()), Some("gemma".into()))
             .expect_err("an unknown backend resolves to nothing");
         assert_eq!(error.kind, IpcErrorKind::Rejected);
         assert!(error.message.contains("unknown backend"));
@@ -540,7 +565,7 @@ mod tests {
     /// would otherwise resolve against an invented model.
     #[test]
     fn a_half_requested_pair_is_refused() {
-        let error = app_effective_model(None, Some("ollama".into()), None)
+        let error = effective_model(None, Some("ollama".into()), None)
             .expect_err("half a request is refused");
         assert_eq!(error.kind, IpcErrorKind::Rejected);
         assert!(error.message.contains("ask for a route id"));
@@ -551,7 +576,7 @@ mod tests {
     /// report a model the route does not use.
     #[test]
     fn a_route_id_combined_with_a_named_pair_is_refused() {
-        let error = app_effective_model(Some("abi.local".into()), Some("abi".into()), None)
+        let error = effective_model(Some("abi.local".into()), Some("abi".into()), None)
             .expect_err("a route id and a half pair are refused");
         assert_eq!(error.kind, IpcErrorKind::Rejected);
         assert!(error.message.contains("ask for a route id"));
@@ -566,7 +591,8 @@ mod tests {
             // proof covers the daemon-backed path.
             return;
         }
-        let error = app_effective_model(None, None, None).expect_err("no daemon means no runtime route");
+        let error =
+            effective_model(None, None, None).expect_err("no daemon means no runtime route");
         assert_eq!(error.kind, IpcErrorKind::Rejected);
         assert!(error.message.contains("no runtime route is published"));
     }
@@ -581,7 +607,7 @@ mod tests {
             // proof covers the daemon-backed path.
             return;
         }
-        let error = app_effective_model(Some("no.such.route".into()), None, None)
+        let error = effective_model(Some("no.such.route".into()), None, None)
             .expect_err("an unpublished route is refused");
         // Without a daemon there is no published route list at all, so the
         // refusal is the same one a missing daemon produces.
@@ -606,7 +632,7 @@ mod tests {
         // The scratch daemon binds the ABI local provider.
         assert_eq!(route.backend, "abi");
         assert_eq!(route.model, "local");
-        let effective = app_effective_model(None, None, None).expect("the runtime route resolves");
+        let effective = effective_model(None, None, None).expect("the runtime route resolves");
         assert_eq!(effective.backend, route.backend);
         assert_eq!(effective.raw, route.model);
         assert_eq!(effective.resolved, "local");
@@ -626,7 +652,7 @@ mod tests {
             .find(|route| route.available)
             .expect("an available route");
         // Asking for that exact route must answer with that route's model.
-        let effective = app_effective_model(Some(route.route_id.clone()), None, None)
+        let effective = effective_model(Some(route.route_id.clone()), None, None)
             .expect("the selected route resolves");
         assert_eq!(effective.backend, route.backend);
         assert_eq!(effective.raw, route.model);
@@ -724,3 +750,6 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod read_tests;

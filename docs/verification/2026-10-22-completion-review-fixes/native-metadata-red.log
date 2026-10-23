@@ -1,0 +1,41 @@
+test_draft_enter_precedes_readiness_and_escape_follows_queue_observation (test_metadata_fixture.CancellationOrdering.test_draft_enter_precedes_readiness_and_escape_follows_queue_observation) ... ok
+test_metadata_leaf_skips_unrelated_python_site_hooks (test_metadata_fixture.MetadataFixture.test_metadata_leaf_skips_unrelated_python_site_hooks) ... FAIL
+test_version_does_not_invoke_configured_python (test_metadata_fixture.MetadataFixture.test_version_does_not_invoke_configured_python) ... ERROR
+test_a_probe_that_never_starts_fails_after_three_explicit_reads (test_metadata_fixture.OrdinaryProbeReadiness.test_a_probe_that_never_starts_fails_after_three_explicit_reads) ... ok
+test_an_observed_wrong_response_is_fatal_without_another_read (test_metadata_fixture.OrdinaryProbeReadiness.test_an_observed_wrong_response_is_fatal_without_another_read) ... ok
+test_cold_start_without_events_can_reach_an_exact_positive_control (test_metadata_fixture.OrdinaryProbeReadiness.test_cold_start_without_events_can_reach_an_exact_positive_control) ... ok
+
+======================================================================
+ERROR: test_version_does_not_invoke_configured_python (test_metadata_fixture.MetadataFixture.test_version_does_not_invoke_configured_python)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/donald/sources/repos/abbey/tools/tests/test_metadata_fixture.py", line 111, in test_version_does_not_invoke_configured_python
+    proc = subprocess.Popen([str(root / "bin/abi"), "--version"], env=fixture.env,
+                            start_new_session=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+  File "/opt/homebrew/Cellar/python@3.15/3.15.0/Frameworks/Python.framework/Versions/3.15/lib/python3.15/subprocess.py", line 1213, in __init__
+    self._execute_child(args, executable, preexec_fn, close_fds,
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                        pass_fds, cwd, env,
+                        ^^^^^^^^^^^^^^^^^^^
+    ...<5 lines>...
+                        gid, gids, uid, umask,
+                        ^^^^^^^^^^^^^^^^^^^^^^
+                        start_new_session, process_group)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.15/3.15.0/Frameworks/Python.framework/Versions/3.15/lib/python3.15/subprocess.py", line 2156, in _execute_child
+    raise child_exception_type(errno_num, err_msg, err_filename)
+OSError: [Errno 8] Exec format error: '/var/folders/c_/thtfn_7d1p9378rxsp4pwz6c0000gn/T/abbey-native-poison-b06dxv5v/bin/abi'
+
+======================================================================
+FAIL: test_metadata_leaf_skips_unrelated_python_site_hooks (test_metadata_fixture.MetadataFixture.test_metadata_leaf_skips_unrelated_python_site_hooks)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/donald/sources/repos/abbey/tools/tests/test_metadata_fixture.py", line 159, in test_metadata_leaf_skips_unrelated_python_site_hooks
+    self.assertEqual(len(fixture.events(fixture.nonce, "leaf")), 1)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 != 1
+
+----------------------------------------------------------------------
+Ran 6 tests in 1.053s
+
+FAILED (failures=1, errors=1)

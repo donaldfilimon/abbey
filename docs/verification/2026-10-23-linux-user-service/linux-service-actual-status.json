@@ -1,0 +1,32 @@
+{
+  "type": "status",
+  "payload": {
+    "protocol_version": 2,
+    "schema_version": 3,
+    "edition": "standard",
+    "state": "ready",
+    "version": "2.6.0",
+    "build_git": "86bc5b2",
+    "build_target": "aarch64-apple-darwin",
+    "capabilities": {
+      "capabilities": [
+        "read_status",
+        "read_claims",
+        "read_run",
+        "read_run_events",
+        "submit_run",
+        "cancel_run",
+        "read_routes"
+      ]
+    },
+    "run_routes": [
+      {
+        "backend": "foundation_models",
+        "modes": [
+          "one_shot",
+          "background"
+        ]
+      }
+    ]
+  }
+}

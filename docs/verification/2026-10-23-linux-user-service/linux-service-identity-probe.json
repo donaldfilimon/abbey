@@ -1,0 +1,39 @@
+[
+  {
+    "scoped": false,
+    "exit": 0,
+    "stdout": "abbey\n",
+    "stderr": "",
+    "home_entries": [
+      ".local",
+      ".local/state",
+      ".local/state/abbey",
+      ".local/state/abbey/by-cwd"
+    ],
+    "created_dirs": {
+      "default-home": "0o700",
+      "default-home/.local": "0o755",
+      "default-home/.local/state": "0o755",
+      "default-home/.local/state/abbey": "0o755",
+      "default-home/.local/state/abbey/by-cwd": "0o755"
+    }
+  },
+  {
+    "scoped": true,
+    "exit": 0,
+    "stdout": "abbey\n",
+    "stderr": "",
+    "home_entries": [],
+    "created_dirs": {
+      "default-home": "0o700",
+      "scoped-home": "0o700",
+      "private-probes": "0o700",
+      "default-home/.local": "0o755",
+      "private-probes/safe-state": "0o755",
+      "private-probes/safe-state/by-cwd": "0o755",
+      "default-home/.local/state": "0o755",
+      "default-home/.local/state/abbey": "0o755",
+      "default-home/.local/state/abbey/by-cwd": "0o755"
+    }
+  }
+]

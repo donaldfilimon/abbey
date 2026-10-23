@@ -1,0 +1,12 @@
+{
+  "scope": "macOS scratch Unix daemon plus Linux controller test seam; no systemd or Ubuntu acceptance",
+  "checks": [
+    "actual authenticated ready standard status",
+    "wrong bearer refused",
+    "offline daemon refused",
+    "uninstall retains credential and daemon state"
+  ],
+  "abbey_sha256": "f219f31d27ff794368a7efadd3145c188d1e350ce8300c0f697f2b7ce6524e0b",
+  "abbeyd_sha256": "9d57e10fa4d13986eb56ba3571b41f632368c1820e12b901876fd40a6dc1436d",
+  "status": "passed"
+}

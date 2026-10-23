@@ -52,6 +52,8 @@ mod trainer;
 mod fixture;
 #[cfg(test)]
 mod metric_tests;
+#[cfg(all(test, unix))]
+mod review_regressions;
 #[cfg(test)]
 mod tests;
 
@@ -69,7 +71,7 @@ pub const USAGE: &str = "usage: abbey train <verb> [options]\n\
      \x20  prepare --consent <path>   write dataset.jsonl + manifest.json\n\
      \x20  run --consent <path>       train, evaluate, decide, record\n\
      \x20  evaluate                   re-score the current artifact; writes nothing\n\
-     \x20  rollback [--to <run-id>]   restore a previous artifact\n\
+     \x20  rollback --consent <path> [--to <run-id>]   restore a previous artifact\n\
      \x20  status                     ledger summary and the current artifact\n\
      options:\n\
      \x20  --source memory|specs      corpus source (default: memory)\n\
@@ -362,7 +364,9 @@ fn cmd_run(state: &AbbeyState, options: &Options, trainer: Option<&Path>) -> Res
     };
     // A holdout that leaked into the training corpus is not a holdout, so
     // nothing is promoted — whatever the score says.
-    let decision = if leak.is_clean() {
+    let decision = if current.is_some() && baseline.is_none() {
+        evaluate::Decision::NotEvaluated
+    } else if leak.is_clean() {
         evaluate::decide((score.probes > 0).then_some(score.score), baseline)
     } else {
         evaluate::Decision::ValidationLeak
@@ -523,6 +527,16 @@ fn cmd_evaluate(state: &AbbeyState, options: &Options, trainer: Option<&Path>) -
 
 /// `abbey train rollback` — restore a previous artifact.
 fn cmd_rollback(state: &AbbeyState, options: &Options) -> Result<Outcome> {
+    let Some(consent) = require_consent(options) else {
+        return Ok(Outcome::usage_error(
+            2,
+            "abbey train rollback requires --consent <path>",
+        ));
+    };
+    let consent = match consent {
+        Ok(consent) => consent,
+        Err(error) => return Ok(Outcome::error(2, format!("{error:#}"))),
+    };
     let rows = ledger::read(&state.state_dir)?;
     let current = ledger::read_current(&state.state_dir)?;
     let target: Option<ledger::LedgerRow> = match &options.to {
@@ -571,6 +585,7 @@ fn cmd_rollback(state: &AbbeyState, options: &Options) -> Result<Outcome> {
     };
     ledger::write_current(&state.state_dir, &current)?;
     let mut row = ledger::LedgerRow::new("rollback");
+    row.consent_digest = Some(consent.digest);
     row.run_id = Some(run_id.clone());
     row.artifact_path = Some(artifact_path.clone());
     row.artifact_digest = Some(digest.clone());

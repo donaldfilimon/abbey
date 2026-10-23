@@ -44,6 +44,60 @@ class CompletionMatrix(unittest.TestCase):
             "goals": {"completion": ["baseline"]},
         }
 
+        self.history()
+
+    def history(self):
+        import json
+        source = "docs/superpowers/plans/retained.md"
+        path = self.root / source
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("- [ ] Restore recovery\n", encoding="utf-8")
+        history = {"schema_version": 1, "boundary": "Mapping only", "sources": [source],
+                   "open_occurrences": 1, "entries": [{"id": "occurrence", "source": source,
+                    "line": 1, "section": "Recovery", "text": "Restore recovery",
+                    "requirement": "provider", "milestone": "baseline", "blocker_owner": "maintainer",
+                    "acceptance": ["Provider transitions select a valid model"],
+                    "disposition": "revalidate_against_current_source_and_evidence"}]}
+        def save():
+            (self.root / "tasks/completion-historical.json").write_text(json.dumps(history), encoding="utf-8")
+        save()
+        return history, path, save
+
+    def test_new_historical_checkbox_must_be_mapped(self):
+        _, path, _ = self.history()
+        path.write_text("- [ ] Restore recovery\n- [ ] New obligation\n", encoding="utf-8")
+        self.assertTrue(any("unmapped historical" in e for e in self.errors()))
+
+    def test_historical_owner_and_acceptance_follow_active_requirement(self):
+        history, _, save = self.history()
+        history["entries"][0]["blocker_owner"] = "wrong owner"
+        history["entries"][0]["acceptance"] = ["No acceptance"]
+        save()
+        self.assertTrue(any("historical binding" in e for e in self.errors()))
+
+    def test_historical_location_cannot_be_forged_or_duplicated(self):
+        history, _, save = self.history()
+        history["entries"].append(copy.deepcopy(history["entries"][0]))
+        history["open_occurrences"] = 2
+        save()
+        self.assertTrue(any("duplicate historical" in e for e in self.errors()))
+
+    def test_historical_mapping_keeps_closed_evidence_and_ignores_fences(self):
+        _, path, _ = self.history()
+        path.write_text("- [x] Restore recovery\n````md\n- [ ] Example only\n```\n- [ ] Still an example\n````\n", encoding="utf-8")
+        self.assertEqual(self.errors(), [])
+
+    def test_new_plan_cannot_escape_historical_inventory(self):
+        self.history()
+        (self.root / "docs/superpowers/plans/new.md").write_text("- [ ] New authority\n", encoding="utf-8")
+        self.assertTrue(any("unmapped historical" in e for e in self.errors()))
+
+    def test_historical_mapping_rejects_paths_outside_the_repository(self):
+        history, _, save = self.history()
+        history["entries"][0]["source"] = "../private.md"
+        save()
+        self.assertTrue(any("historical source" in e for e in self.errors()))
+
     def errors(self, matrix=None):
         return module.validate(self.matrix if matrix is None else matrix, self.root)
 

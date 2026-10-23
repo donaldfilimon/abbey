@@ -1,0 +1,16 @@
+[
+  {
+    "gate": "root",
+    "exit_code": 0,
+    "seconds": 528.7186410427094,
+    "source_drift": [],
+    "target": "/Users/donald/.codex/verification/abbey-completion-20261022/qualification-target"
+  },
+  {
+    "gate": "desktop",
+    "exit_code": 0,
+    "seconds": 45.21465802192688,
+    "source_drift": [],
+    "target": "/Users/donald/.codex/verification/abbey-completion-20261022/qualification-target"
+  }
+]

@@ -1,0 +1,383 @@
+diff --git a/.github/workflows/rust.yml b/.github/workflows/rust.yml
+index feecd66..46ccc28 100644
+--- a/.github/workflows/rust.yml
++++ b/.github/workflows/rust.yml
+@@ -282,3 +282,91 @@ jobs:
+               find "$path" -depth -delete
+             fi
+           done
++
++  # Infrastructure prerequisite: exclusive/ephemeral Windows 11 ARM64 runner,
++  # native pwsh/Rust, MSVC+SDK and Git Bash; administrator owns residual cleanup.
++  # Git Bash may be x64; only qualification PowerShell/Rust/Abbey must be ARM64.
++  qualify-windows-arm64:
++    name: qualification (Windows 11 ARM64 CLI)
++    if: >
++      vars.ABBEY_WINDOWS_ARM64_RUNNER == 'enabled' &&
++      github.repository == 'donaldfilimon/abbey' &&
++      (github.event_name == 'push' ||
++       github.event_name == 'workflow_dispatch' ||
++       (github.event_name == 'pull_request' &&
++        github.event.pull_request.head.repo.full_name == github.repository))
++    runs-on: [self-hosted, Windows, ARM64, abbey]
++    timeout-minutes: 60
++    defaults:
++      run:
++        shell: pwsh
++    steps:
++      # This must precede checkout: checkout itself may remove stale files.
++      - name: Refuse reparse points before checkout
++        run: |
++          $ErrorActionPreference = 'Stop'
++          $workspace = [IO.Path]::GetFullPath($env:GITHUB_WORKSPACE)
++          $ancestor = $workspace
++          while ($ancestor) {
++            if ((Get-Item -Force -LiteralPath $ancestor).Attributes -band [IO.FileAttributes]::ReparsePoint) {
++              throw 'Untrusted workspace ancestor'
++            }
++            $ancestor = [IO.Path]::GetDirectoryName($ancestor)
++          }
++          $pending = [Collections.Generic.Stack[string]]::new()
++          foreach ($name in @('abbey', 'abi', 'wdbx')) {
++            $pending.Push((Join-Path $workspace $name))
++          }
++          while ($pending.Count) {
++            $path = $pending.Pop()
++            try { $item = Get-Item -Force -LiteralPath $path }
++            catch [System.Management.Automation.ItemNotFoundException] { continue }
++            if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
++              throw 'Reparse checkout refused; runner administration required'
++            }
++            if ($item.PSIsContainer) {
++              foreach ($child in [IO.Directory]::GetFileSystemEntries($path)) { $pending.Push($child) }
++            }
++          }
++
++      - name: Check out Abbey
++        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
++        with:
++          path: abbey
++          persist-credentials: false
++
++      - name: Refuse workspace reparse points and allocate scratch
++        run: '& ./abbey/tools/ci/windows-workspace.ps1 -Mode Preflight'
++
++      - name: Check out public dependencies using provisioned Git Bash
++        shell: bash
++        run: |
++          set -eu
++          command -v cygpath
++          bash --version
++          native_workspace="$GITHUB_WORKSPACE"
++          export GITHUB_WORKSPACE="$(cygpath -u "$GITHUB_WORKSPACE")"
++          test "$(cygpath -w "$GITHUB_WORKSPACE")" = "$native_workspace"
++          test -d "$GITHUB_WORKSPACE/abbey"
++          ./abbey/tools/ci/checkout-public-revision.sh donaldfilimon/abi "${ABI_REVISION}" abi
++          ./abbey/tools/ci/checkout-public-revision.sh donaldfilimon/wdbx "${WDBX_REVISION}" wdbx
++
++      - name: Install pinned ABI native ARM64 toolchain
++        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
++        with:
++          toolchain: 1.99.1-aarch64-pc-windows-msvc
++          components: rustfmt, clippy, rust-src
++
++      - name: Install pinned Abbey native ARM64 toolchain
++        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
++        with:
++          toolchain: 1.99.1-aarch64-pc-windows-msvc
++          components: rustfmt, clippy
++
++      - name: Native Windows 11 ARM64 CLI qualification
++        working-directory: abbey
++        run: '& ./tools/ci/qualify-windows.ps1'
++
++      - name: Clean runner workspace
++        if: always()
++        run: '& ./abbey/tools/ci/windows-workspace.ps1 -Mode Cleanup'
+diff --git a/tools/tests/test_workflow_guards.py b/tools/tests/test_workflow_guards.py
+index 87566e7..1b546ee 100644
+--- a/tools/tests/test_workflow_guards.py
++++ b/tools/tests/test_workflow_guards.py
+@@ -234,7 +234,7 @@ class WorkflowGuards(unittest.TestCase):
+         self.assertIn("name: gate (Linux ARM64)", body)
+ 
+     def test_trusted_jobs_run_only_on_self_hosted_runners(self) -> None:
+-        for name in ("gate-macos", "gate-linux"):
++        for name in ("gate-macos", "gate-linux", "qualify-windows-arm64"):
+             body = self.jobs[name]
+             self.assertIn(
+                 "self-hosted",
+@@ -243,7 +243,7 @@ class WorkflowGuards(unittest.TestCase):
+             )
+ 
+     def test_every_self_hosted_job_requires_same_repository(self) -> None:
+-        for name in ("gate-macos", "gate-linux"):
++        for name in ("gate-macos", "gate-linux", "qualify-windows-arm64"):
+             body = self.jobs[name]
+             self.assertIn(
+                 "github.repository == 'donaldfilimon/abbey'",
+@@ -261,6 +261,7 @@ class WorkflowGuards(unittest.TestCase):
+         expected = {
+             "gate-macos": "vars.ABBEY_MACOS_ARM64_RUNNER == 'enabled'",
+             "gate-linux": "vars.ABBEY_LINUX_ARM64_RUNNER == 'enabled'",
++            "qualify-windows-arm64": "vars.ABBEY_WINDOWS_ARM64_RUNNER == 'enabled'",
+         }
+         self.assertEqual(set(self.jobs), set(expected))
+         for name, guard in expected.items():
+@@ -324,7 +325,7 @@ class ForkSafety(unittest.TestCase):
+         )
+ 
+     def test_pull_request_jobs_require_a_same_repo_head(self) -> None:
+-        for name in ("gate-macos", "gate-linux"):
++        for name in ("gate-macos", "gate-linux", "qualify-windows-arm64"):
+             body = self.jobs[name]
+             condition = job_field(body, "if")
+             if "pull_request" not in condition:
+diff --git a/tools/ci/qualify-windows.ps1 b/tools/ci/qualify-windows.ps1
+new file mode 100644
+index 0000000..afb79da
+--- /dev/null
++++ b/tools/ci/qualify-windows.ps1
+@@ -0,0 +1,92 @@
++# Windows 11 ARM64 CLI cohorts only: no desktop/root-gate qualification.
++$ErrorActionPreference = 'Stop'
++Set-StrictMode -Version Latest
++function Invoke-Checked([string]$Command, [string[]]$Arguments) {
++    & $Command @Arguments
++    if ($LASTEXITCODE -ne 0) { throw "Native qualification command failed: $Command" }
++}
++if ([Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne 'Arm64' -or
++    [Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture -ne 'Arm64') {
++    throw 'Native ARM64 OS and PowerShell process required'
++}
++$os = Get-CimInstance Win32_OperatingSystem
++Write-Host "Windows: $($os.Caption), build $($os.BuildNumber)"
++if ([int]$os.BuildNumber -lt 22000 -or $os.ProductType -ne 1) {
++    throw 'Windows 11 client build >=22000 required'
++}
++# Preserve explicit provisioned Rust locations before redirecting profile state.
++$rustupHome = if ($env:RUSTUP_HOME) { $env:RUSTUP_HOME } else { Join-Path $env:USERPROFILE '.rustup' }
++$env:RUSTUP_HOME = $rustupHome
++$root = $env:ABBEY_WINDOWS_SCRATCH
++if (-not $root -or -not (Test-Path -LiteralPath $root)) { throw 'Preflight scratch root required' }
++$env:CARGO_HOME = Join-Path $root 'cargo'
++# Clear inherited provider, execution, credentials and model overrides without values.
++foreach ($variable in Get-ChildItem Env:) {
++    if (($variable.Name -match 'TOKEN|KEY|PASSWORD|SECRET|CREDENTIAL|BEARER' -or
++        $variable.Name -match '^(ABBEY|ABI|OLLAMA|FM|GROK|ANTHROPIC|OPENAI|CURSOR|CLAUDE|HF|HUGGING_FACE|AWS|AZURE|GOOGLE|GITHUB_TOKEN|GH_TOKEN)') -and
++        $variable.Name -ne 'ABBEY_WINDOWS_SCRATCH') {
++        Remove-Item "Env:$($variable.Name)"
++    }
++}
++$env:HOME = Join-Path $root 'home'
++$env:USERPROFILE = $env:HOME
++$env:LOCALAPPDATA = Join-Path $root 'localappdata'
++$env:APPDATA = Join-Path $root 'appdata'
++$env:XDG_CONFIG_HOME = Join-Path $root 'config'
++$env:XDG_STATE_HOME = Join-Path $root 'state'
++$env:ABBEY_CONFIG = Join-Path $root 'safe/config.toml'
++$env:ABBEY_STATE_DIR = Join-Path $root 'safe/state'
++$env:ABBEY_PERSONAL_CONFIG = Join-Path $root 'personal/config.toml'
++$env:ABBEY_PERSONAL_STATE_DIR = Join-Path $root 'personal/state'
++foreach ($directory in @($env:CARGO_HOME, $env:HOME, $env:LOCALAPPDATA, $env:APPDATA, $env:XDG_CONFIG_HOME,
++    $env:XDG_STATE_HOME, (Split-Path $env:ABBEY_CONFIG), $env:ABBEY_STATE_DIR,
++    (Split-Path $env:ABBEY_PERSONAL_CONFIG), $env:ABBEY_PERSONAL_STATE_DIR)) {
++    New-Item -ItemType Directory -Force -Path $directory | Out-Null
++}
++$rust = Invoke-Checked 'rustc' @('+1.99.1', '-Vv')
++$rustText = $rust -join "`n"
++Write-Host $rustText
++if ($rustText -notmatch '(?m)^host: aarch64-pc-windows-msvc\r?$' -or
++    $rustText -notmatch '(?m)^release: 1.99.1\r?$') { throw 'Exact native Rust host required' }
++Invoke-Checked 'cargo' @('+1.99.1', '-V')
++foreach ($checkout in @('abbey', 'abi', 'wdbx')) {
++    Invoke-Checked 'git' @('-C', (Join-Path $env:GITHUB_WORKSPACE $checkout), 'rev-parse', 'HEAD')
++}
++# ABI-backed CLI tests use the actual native sibling binary, never a shim.
++$env:CARGO_TARGET_DIR = Join-Path $root 'target-abi'
++Set-Location (Join-Path $env:GITHUB_WORKSPACE 'abi')
++Invoke-Checked 'cargo' @('+1.99.1', 'build', '--locked', '-p', 'abi-cli', '--target', 'aarch64-pc-windows-msvc')
++$env:ABBEY_ABI_BIN = Join-Path $env:CARGO_TARGET_DIR 'aarch64-pc-windows-msvc/debug/abi.exe'
++Set-Location (Join-Path $env:GITHUB_WORKSPACE 'abbey')
++Invoke-Checked 'cargo' @('+1.99.1', 'fmt', '--package', 'abbey', '--', '--check')
++function Assert-ArmBinary([string]$Path) {
++    $stream = [IO.File]::OpenRead($Path)
++    try {
++        $reader = [IO.BinaryReader]::new($stream)
++        if ($reader.ReadUInt16() -ne 0x5A4D) { throw 'Missing DOS header' }
++        $stream.Position = 0x3c
++        $offset = $reader.ReadInt32()
++        if ($offset -lt 64 -or $offset -gt ($stream.Length - 6)) { throw 'Invalid PE offset' }
++        $stream.Position = $offset
++        if ($reader.ReadUInt32() -ne 0x00004550 -or $reader.ReadUInt16() -ne 0xAA64) {
++            throw 'Produced binary must have ARM64 PE machine type'
++        }
++    } finally { $stream.Dispose() }
++}
++foreach ($features in @('', 'wdbx', 'personal-edition', 'wdbx,personal-edition')) {
++    $cohort = if ($features) { $features.Replace(',', '-') } else { 'safe' }
++    $env:CARGO_TARGET_DIR = Join-Path $root "target-$cohort"
++    $common = @('--locked', '-p', 'abbey', '--target', 'aarch64-pc-windows-msvc')
++    if ($features) { $common += @('--features', $features) }
++    Invoke-Checked 'cargo' (@('+1.99.1', 'check') + $common)
++    Invoke-Checked 'cargo' (@('+1.99.1', 'clippy') + $common + @('--all-targets', '--', '-D', 'warnings'))
++    Invoke-Checked 'cargo' (@('+1.99.1', 'build') + $common + @('--bins'))
++    Invoke-Checked 'cargo' (@('+1.99.1', 'test') + $common)
++    $binary = Join-Path $env:CARGO_TARGET_DIR 'aarch64-pc-windows-msvc/debug/abbey.exe'
++    Assert-ArmBinary $binary
++    Invoke-Checked $binary @('--version')
++    $edition = (Invoke-Checked $binary @('edition', '--name') | Out-String).Trim()
++    $expected = if ($features -match 'personal-edition') { 'abbey-personal' } else { 'abbey' }
++    if ($edition -ne $expected) { throw 'Produced edition identity mismatch' }
++}
++Write-Host 'CLI cohorts complete; desktop, installer and daemon acceptance remain separate.'
+diff --git a/tools/ci/windows-workspace.ps1 b/tools/ci/windows-workspace.ps1
+new file mode 100644
+index 0000000..54a7a50
+--- /dev/null
++++ b/tools/ci/windows-workspace.ps1
+@@ -0,0 +1,61 @@
++# Source guard only on non-Windows hosts. Provisioned workspace ancestors must be trusted.
++param([ValidateSet('Preflight', 'Cleanup')][string]$Mode = 'Preflight')
++$ErrorActionPreference = 'Stop'
++
++function Assert-NoReparse([string]$Path) {
++    try { $item = Get-Item -Force -LiteralPath $Path }
++    catch [System.Management.Automation.ItemNotFoundException] { return }
++    if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
++        throw 'Reparse point refused; trusted runner administration must remove it'
++    }
++    if ($item.PSIsContainer) {
++        foreach ($entry in [IO.Directory]::GetFileSystemEntries($item.FullName)) {
++            Assert-NoReparse $entry
++        }
++    }
++}
++function Assert-Ancestors([string]$Path) {
++    $current = [IO.Path]::GetFullPath($Path)
++    while ($current) {
++        $item = Get-Item -Force -LiteralPath $current
++        if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
++            throw 'Workspace ancestor reparse point refused'
++        }
++        $current = [IO.Path]::GetDirectoryName($current)
++    }
++}
++# Delete individually only after a complete no-link scan. Runner must be exclusive:
++# no concurrent untrusted writer may race the scan/removal (ephemeral recommended).
++function Remove-OwnedTree([string]$Path) {
++    try { $item = Get-Item -Force -LiteralPath $Path }
++    catch [System.Management.Automation.ItemNotFoundException] { return }
++    if ($item.PSIsContainer) {
++        foreach ($entry in [IO.Directory]::GetFileSystemEntries($item.FullName)) {
++            Remove-OwnedTree $entry
++        }
++    }
++    Remove-Item -Force -LiteralPath $Path
++}
++foreach ($value in @($env:GITHUB_WORKSPACE, $env:RUNNER_TEMP)) {
++    if (-not $value -or -not [IO.Path]::IsPathFullyQualified($value)) {
++        throw 'Absolute provisioned workspace and temporary roots required'
++    }
++    Assert-Ancestors $value
++}
++if ($env:GITHUB_RUN_ID -notmatch '^\d+$' -or $env:GITHUB_RUN_ATTEMPT -notmatch '^\d+$') {
++    throw 'Numeric run identity required'
++}
++$workspace = [IO.Path]::GetFullPath($env:GITHUB_WORKSPACE)
++$scratch = Join-Path ([IO.Path]::GetFullPath($env:RUNNER_TEMP)) "abbey-windows-$($env:GITHUB_RUN_ID)-$($env:GITHUB_RUN_ATTEMPT)"
++$owned = @('abbey', 'abi', 'wdbx') | ForEach-Object { Join-Path $workspace $_ }
++$owned += $scratch
++foreach ($path in $owned) { Assert-NoReparse $path }
++if ($Mode -eq 'Cleanup') {
++    # Script may be removed with Abbey; all definitions are already loaded.
++    Set-Location $env:RUNNER_TEMP
++    foreach ($path in $owned) { Remove-OwnedTree $path }
++} else {
++    if (Test-Path -LiteralPath $scratch) { throw 'Scratch root already exists' }
++    New-Item -ItemType Directory -Path $scratch | Out-Null
++    "ABBEY_WINDOWS_SCRATCH=$scratch" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
++}
+diff --git a/tools/tests/test_windows_ci_qualification.py b/tools/tests/test_windows_ci_qualification.py
+new file mode 100644
+index 0000000..95d5874
+--- /dev/null
++++ b/tools/tests/test_windows_ci_qualification.py
+@@ -0,0 +1,77 @@
++"""Windows source guards only; these do not execute or parse PowerShell."""
++from pathlib import Path
++import re
++import unittest
++from test_workflow_guards import job_blocks, job_field, checkout_commands
++
++ROOT = Path(__file__).resolve().parents[2]
++
++
++def guard(workflow, qualification, workspace):
++    job = job_blocks(workflow).get('qualify-windows-arm64')
++    assert job is not None, 'Windows qualification job missing'
++    assert job_field(job, 'runs-on') == '[self-hosted, Windows, ARM64, abbey]'
++    condition = job_field(job, 'if')
++    assert condition == ("vars.ABBEY_WINDOWS_ARM64_RUNNER == 'enabled' && "
++        "github.repository == 'donaldfilimon/abbey' && "
++        "(github.event_name == 'push' || github.event_name == 'workflow_dispatch' || "
++        "(github.event_name == 'pull_request' && "
++        "github.event.pull_request.head.repo.full_name == github.repository))")
++    assert 'secrets.' not in job and not re.search(r'^    permissions:', job, re.M)
++    assert 'persist-credentials: false' in job
++    assert job.index('Refuse reparse points before checkout') < job.index('uses: actions/checkout@')
++    assert '[IO.FileAttributes]::ReparsePoint' in job
++    assert 'GetFileSystemEntries' in job
++    assert 'shell: bash' in job
++    assert 'export GITHUB_WORKSPACE="$(cygpath -u "$GITHUB_WORKSPACE")"' in job
++    assert 'test "$(cygpath -w "$GITHUB_WORKSPACE")" = "$native_workspace"' in job
++    assert set(checkout_commands(job)) == {('donaldfilimon/abi', 'ABI_REVISION', 'abi'), ('donaldfilimon/wdbx', 'WDBX_REVISION', 'wdbx')}
++    assert '-Mode Preflight' in job
++    assert job.index('-Mode Preflight') < job.index('checkout-public-revision.sh')
++    assert re.search(r'name: Clean runner workspace\n        if: always\(\)', job)
++    assert '-Mode Cleanup' in job
++    for value in ('OSArchitecture', 'ProcessArchitecture', "-ne 'Arm64'", '22000', 'Win32_OperatingSystem', 'aarch64-pc-windows-msvc', 'release: 1.99.1', '0xAA64', 'Invoke-Checked', '$LASTEXITCODE -ne 0', '--locked', "'wdbx'", "'personal-edition'", "'wdbx,personal-edition'"):
++        assert value in qualification, value
++    for value in ('HOME', 'USERPROFILE', 'LOCALAPPDATA', 'APPDATA', 'XDG_CONFIG_HOME', 'XDG_STATE_HOME', 'ABBEY_CONFIG', 'ABBEY_STATE_DIR', 'ABBEY_PERSONAL_CONFIG', 'ABBEY_PERSONAL_STATE_DIR', 'RUSTUP_HOME', 'CARGO_HOME'):
++        assert value in qualification, value
++    assert 'Remove-Item "Env:' in qualification
++    assert not re.search(r'^\s*(cargo|rustc|git)\s', qualification, re.M), 'unchecked native invocation'
++    for value in ('ReparsePoint', 'GetFileSystemEntries', 'Assert-NoReparse', "@('abbey', 'abi', 'wdbx')", 'ABBEY_WINDOWS_SCRATCH', 'GITHUB_RUN_ATTEMPT', 'GITHUB_RUN_ID'):
++        assert value in workspace, value
++    assert '-Recurse' not in workspace, 'must enumerate and refuse links before removal'
++
++
++class WindowsSourceGuards(unittest.TestCase):
++    def setUp(self):
++        self.sources = [(ROOT / p).read_text() if (ROOT / p).exists() else '' for p in
++            ('.github/workflows/rust.yml', 'tools/ci/qualify-windows.ps1', 'tools/ci/windows-workspace.ps1')]
++
++    def test_authored_source_contract(self):
++        guard(*self.sources)
++
++    def test_mutations_fail_closed(self):
++        mutations = [(0, "vars.ABBEY_WINDOWS_ARM64_RUNNER == 'enabled'", 'true'),
++            (0, 'self-hosted, Windows, ARM64, abbey', 'self-hosted, Windows, abbey'),
++            (0, 'head.repo.full_name == github.repository', 'head.repo.full_name != github.repository'),
++            (0, 'if: always()', 'if: success()'),
++            (0, '-Mode Preflight', '-Mode Other'),
++            (0, 'persist-credentials: false', 'persist-credentials: true'),
++            (0, 'donaldfilimon/abi', 'other/abi'),
++            (0, '    timeout-minutes: 60', '    permissions: write-all'),
++            (0, '        shell: bash', '        shell: pwsh'),
++            (1, 'ProcessArchitecture', 'IgnoredArchitecture'),
++            (1, '$LASTEXITCODE -ne 0', '$false'),
++            (1, '0xAA64', '0x8664'),
++            (2, 'ReparsePoint', 'Directory')]
++        guard(*self.sources)
++        for index, old, new in mutations:
++            with self.subTest(old=old):
++                changed = self.sources.copy()
++                # Limit workflow mutations to Windows; Unix guards remain independent.
++                if index == 0:
++                    prefix, body = changed[0].split('  qualify-windows-arm64:', 1)
++                    changed[0] = prefix + '  qualify-windows-arm64:' + body.replace(old, new)
++                else:
++                    changed[index] = changed[index].replace(old, new)
++                with self.assertRaises(AssertionError):
++                    guard(*changed)

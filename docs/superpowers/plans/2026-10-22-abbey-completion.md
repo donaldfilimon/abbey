@@ -21,7 +21,7 @@ contact live services, publish, accept model terms, or use absent credentials.
   but are not themselves live ledger inputs. `tasks/completion-historical.json`
   maps all 266 unchecked occurrences in five retained plans to requirements,
   acceptance criteria and blocker owners, including superseded process steps.
-  It is a reviewed audit artifact, not yet enforced by the coverage checker;
+  The coverage checker now enforces exact retained locations, active requirement bindings, and complete open-checkbox coverage (including newly added plans), excluding fenced examples;
   `retained-plan-reconciliation` owns further source/evidence revalidation.
   Duplicate reports share one requirement. Checked history
   may retain its binding. Adding or changing a checkbox requires reconciliation.

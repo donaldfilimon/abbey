@@ -10,21 +10,21 @@ $ErrorActionPreference = "Stop"
 Set-Location -Path $PSScriptRoot
 
 if ($env:ABBEY_CARGO_FEATURES) {
-    Write-Host "== cargo build --release --locked --features $env:ABBEY_CARGO_FEATURES =="
-    cargo build --release --locked --features $env:ABBEY_CARGO_FEATURES
+    Write-Host "== cargo build --release --locked -p abbey --bins --features $env:ABBEY_CARGO_FEATURES =="
+    cargo build --release --locked -p abbey --bins --features $env:ABBEY_CARGO_FEATURES
     # PowerShell 5.1 does not turn a native command's nonzero exit into a
     # terminating error, not even under `$ErrorActionPreference = "Stop"`, so
     # the build's own status has to be checked. Without this the install
     # continues past a failed build and reports the missing artifact instead
     # of the build failure.
     if ($LASTEXITCODE -ne 0) {
-        throw "cargo build --release --locked --features $env:ABBEY_CARGO_FEATURES failed with exit code $LASTEXITCODE"
+        throw "cargo build --release --locked -p abbey --bins --features $env:ABBEY_CARGO_FEATURES failed with exit code $LASTEXITCODE"
     }
 } else {
-    Write-Host "== cargo build --release --locked =="
-    cargo build --release --locked
+    Write-Host "== cargo build --release --locked -p abbey --bins =="
+    cargo build --release --locked -p abbey --bins
     if ($LASTEXITCODE -ne 0) {
-        throw "cargo build --release --locked failed with exit code $LASTEXITCODE"
+        throw "cargo build --release --locked -p abbey --bins failed with exit code $LASTEXITCODE"
     }
 }
 

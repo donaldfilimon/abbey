@@ -1,0 +1,419 @@
+NEW FILE tools/linux_user_service.py
+#!/usr/bin/env python3
+"""Explicit, Linux-only systemd user integration for installed Abbey binaries."""
+import argparse
+import json
+import os
+from pathlib import Path
+import secrets
+import selectors
+import shutil
+import stat
+import subprocess
+import sys
+import tempfile
+import time
+
+
+class ServiceError(Exception):
+    pass
+
+
+def checked(path, directory=False, private=True):
+    """Never follow a symlink in any existing path component."""
+    path = Path(path)
+    if not path.is_absolute() or any(ord(c) < 32 or ord(c) == 127 for c in str(path)):
+        raise ServiceError('paths must be absolute and contain no controls')
+    for part in reversed((path, *path.parents)):
+        info = part.lstat()
+        trusted_sticky = (part != path and info.st_uid == 0
+                          and stat.S_ISDIR(info.st_mode) and info.st_mode & stat.S_ISVTX)
+        if stat.S_ISLNK(info.st_mode) or (info.st_mode & 0o022 and not trusted_sticky):
+            raise ServiceError('unsafe path component')
+        if info.st_uid not in (0, os.getuid()):
+            raise ServiceError('foreign-owned path component')
+    info = path.lstat()
+    kind = stat.S_ISDIR if directory else stat.S_ISREG
+    if not kind(info.st_mode) or info.st_uid not in ((os.getuid(),) if private else (0, os.getuid())):
+        raise ServiceError('wrong path type or owner')
+    if private and info.st_mode & 0o077:
+        raise ServiceError('private path grants group or other access')
+    return path
+
+
+def mkdir(path):
+    if not path.exists() and not path.is_symlink():
+        mkdir(path.parent)
+        path.mkdir(mode=0o700)
+    checked(path, directory=True, private=False)
+
+
+def quote(value, executable=False):
+    # systemd specifiers and ExecStart environment substitution are distinct.
+    value = str(value).replace('\\', '\\\\').replace('"', '\\"').replace('%', '%%')
+    if executable:
+        value = value.replace('$', '$$')
+    return '"' + value + '"'
+
+
+def run(argv, env):
+    # Drain a pipe with both an output ceiling and a wall-clock deadline.
+    try:
+        child = subprocess.Popen([str(a) for a in argv], env=env, stdin=subprocess.DEVNULL,
+                                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    except OSError as error:
+        raise ServiceError('command unavailable') from error
+    output = bytearray()
+    deadline = time.monotonic() + 3
+    try:
+        with selectors.DefaultSelector() as selector:
+            selector.register(child.stdout, selectors.EVENT_READ)
+            while selector.get_map():
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise ServiceError('command timed out')
+                for key, _ in selector.select(remaining):
+                    data = os.read(key.fileobj.fileno(), 4096)
+                    if not data:
+                        selector.unregister(key.fileobj)
+                    else:
+                        output.extend(data)
+                        if len(output) > 65536:
+                            raise ServiceError('command output exceeds limit')
+            if child.wait(timeout=max(0.001, deadline - time.monotonic())):
+                raise ServiceError('command failed')
+    except subprocess.TimeoutExpired as error:
+        raise ServiceError('command timed out') from error
+    finally:
+        if child.poll() is None:
+            child.kill()
+        child.wait()
+        child.stdout.close()
+    return output.decode('utf-8', errors='strict').strip()
+
+
+class Controller:
+    def __init__(self, cli, home, workspace, systemctl, *, platform=None):
+        if (sys.platform if platform is None else platform) != 'linux':
+            raise ServiceError('Linux systemd user services only')
+        self.home = checked(Path(home), directory=True, private=False)
+        self.workspace = checked(Path(workspace), directory=True, private=False)
+        self.cli = checked(Path(cli), private=False)
+        self.systemctl = checked(Path(systemctl), private=False)
+        self.env = {'HOME': str(self.home), 'PATH': '/usr/bin:/bin'}
+        # Transport context only; no Abbey/model/credential environment inheritance.
+        for key in ('XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS'):
+            if key in os.environ:
+                self.env[key] = os.environ[key]
+        name = run([self.cli, 'edition', '--name'], self.env)
+        daemon = run([self.cli, 'edition', '--daemon-name'], self.env)
+        pairs = {'abbey': ('abbeyd', 'standard', 'ABBEYD', 'ABBEY'),
+                 'abbey-personal': ('abbey-personal-daemon', 'personal', 'ABBEY_PERSONAL_DAEMON', 'ABBEY_PERSONAL')}
+        if name not in pairs or pairs[name][0] != daemon or self.cli.name != name:
+            raise ServiceError('unknown or inconsistent installed edition')
+        _, self.edition, prefix, state_prefix = pairs[name]
+        self.daemon = checked(self.cli.parent / daemon, private=False)
+        if not os.access(self.cli, os.X_OK) or not os.access(self.daemon, os.X_OK):
+            raise ServiceError('installed binaries must be executable')
+        self.config = self.home / '.config' / (name + '-user-service')
+        self.state = self.home / '.local' / 'state' / name
+        self.token = self.config / 'bearer'
+        self.unit = self.home / '.config' / 'systemd' / 'user' / (daemon + '.service')
+        self.marker = '# Abbey linux_user_service.py v1 ' + name + '\n'
+        self.service_env = dict(self.env)
+        self.service_env.update({prefix + '_BEARER_TOKEN_FILE': str(self.token),
+                                 prefix + '_SOCKET_PATH': str(self.state / 'daemon' / (daemon + '.sock')),
+                                 state_prefix + '_STATE_DIR': str(self.state)})
+
+    def content(self):
+        args = ['/usr/bin/env', '-i', *[key + '=' + value for key, value in sorted(self.service_env.items())
+                                      if key not in ('DBUS_SESSION_BUS_ADDRESS', 'XDG_RUNTIME_DIR')], str(self.daemon)]
+        return (self.marker + '[Unit]\nDescription=Abbey local daemon\n[Service]\nType=simple\nUMask=0077\n'
+                + 'WorkingDirectory=' + quote(self.workspace) + '\nExecStart=' + ' '.join(quote(arg, executable=True) for arg in args)
+                + '\nRestart=no\n[Install]\nWantedBy=default.target\n')
+
+    def validate(self):
+        for path in (self.config, self.state):
+            checked(path, directory=True)
+        checked(self.token)
+        token = self.token.read_bytes()
+        if not 32 <= len(token) <= 4096 or any(c < 32 or c == 127 for c in token):
+            raise ServiceError('invalid retained bearer')
+        checked(self.unit)
+        if self.unit.read_text() != self.content():
+            raise ServiceError('unit is not the exact installer-owned configuration')
+
+    def ctl(self, action):
+        run([self.systemctl, '--user', action, self.unit.name], self.env)
+
+    def install(self):
+        for path in (self.config, self.state, self.unit.parent):
+            mkdir(path)
+            checked(path, directory=True)
+        if self.unit.exists() or self.unit.is_symlink():
+            self.validate()
+        if self.token.exists() or self.token.is_symlink():
+            checked(self.token)
+            token = self.token.read_bytes()
+            if not 32 <= len(token) <= 4096 or any(c < 32 or c == 127 for c in token):
+                raise ServiceError('invalid retained bearer')
+        else:
+            fd = os.open(self.token, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, 'w') as token:
+                token.write(secrets.token_hex(32))
+        fd, staged = tempfile.mkstemp(prefix='.abbey-unit-', dir=self.unit.parent)
+        try:
+            with os.fdopen(fd, 'w') as unit:
+                unit.write(self.content()); unit.flush(); os.fsync(unit.fileno())
+            os.replace(staged, self.unit)
+        finally:
+            if os.path.exists(staged): os.unlink(staged)
+        self.validate()
+        run([self.systemctl, '--user', 'daemon-reload'], self.env)
+
+    def status(self):
+        self.validate()
+        try:
+            event = json.loads(run([self.cli, 'daemon', 'status', '--json'], self.service_env))
+            payload = event['payload']
+            if (event['type'] != 'status' or payload['edition'] != self.edition
+                    or payload['protocol_version'] != 1 or payload['schema_version'] != 2
+                    or payload['state'] != 'ready'):
+                raise ValueError()
+        except (ValueError, KeyError, TypeError) as error:
+            raise ServiceError('authenticated status does not match ready edition contract') from error
+        return event
+
+    def start(self):
+        self.validate(); self.ctl('start')
+        for attempt in range(3):
+            try: return self.status()
+            except ServiceError:
+                if attempt == 2:
+                    # Explicit start failure cleanup; never claim readiness.
+                    self.ctl('stop')
+                    raise ServiceError('service failed authenticated readiness; stop requested')
+                time.sleep(0.1)
+
+    def stop(self):
+        self.validate(); self.ctl('stop')
+
+    def restart(self):
+        self.stop(); return self.start()
+
+    def uninstall(self):
+        self.validate(); self.ctl('stop'); self.ctl('disable')
+        self.unit.unlink()
+        run([self.systemctl, '--user', 'daemon-reload'], self.env)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('action', choices=('install', 'start', 'status', 'stop', 'restart', 'uninstall'))
+    parser.add_argument('--cli', required=True, type=Path)
+    parser.add_argument('--workspace', required=True, type=Path)
+    args = parser.parse_args()
+    try:
+        if sys.platform != 'linux': raise ServiceError('Linux systemd user services only')
+        systemctl = shutil.which('systemctl', path='/usr/bin:/bin')
+        if systemctl is None: raise ServiceError('systemctl unavailable')
+        controller = Controller(args.cli, Path.home(), args.workspace, Path(systemctl))
+        getattr(controller, args.action)()
+        print(args.action + ' succeeded' + ('; authenticated ready' if args.action in ('start', 'restart', 'status') else ''))
+    except (ServiceError, OSError, UnicodeError) as error:
+        print('Abbey service operation refused or failed: ' + str(error), file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())
+
+NEW FILE tools/tests/test_linux_user_service.py
+import importlib.util
+import json
+import os
+from pathlib import Path
+import tempfile
+import unittest
+from unittest.mock import patch
+
+SPEC = importlib.util.spec_from_file_location('service', Path(__file__).parents[1] / 'linux_user_service.py')
+service = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(service)
+
+class ServiceTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.home = Path(self.tmp.name).resolve()
+        self.bin = self.home / 'bin space%$'
+        self.bin.mkdir(mode=0o700)
+        self.log = self.home / 'calls'
+        self.systemctl = self.bin / 'systemctl'
+        self.systemctl.write_text('#!/usr/bin/env python3\nimport os,sys,json\nwith open(os.environ["CALLS"],"a") as f: f.write(json.dumps(sys.argv[1:])+"\\n")\n')
+        self.systemctl.chmod(0o700)
+        self.make_cli('abbey', 'abbeyd', 'standard')
+        self.env = patch.dict(os.environ, {'CALLS': str(self.log), 'ABBEYD_BEARER_TOKEN': 'must-not-leak'})
+        self.env.start()
+        self.addCleanup(self.env.stop)
+    def make_cli(self, name, daemon, edition):
+        self.cli = self.bin / name
+        self.cli.write_text('#!/usr/bin/env python3\nimport sys,json,os\nif sys.argv[1:]==["edition","--name"]: print('+repr(name)+')\nelif sys.argv[1:]==["edition","--daemon-name"]: print('+repr(daemon)+')\nelse:\n assert "ABBEYD_BEARER_TOKEN" not in os.environ\n print(json.dumps({"type":"status","payload":{"edition":'+repr(edition)+',"state":"ready","protocol_version":1,"schema_version":2}}))\n')
+        self.cli.chmod(0o700)
+        (self.bin / daemon).write_text('#!/bin/sh\nexit 0\n')
+        (self.bin / daemon).chmod(0o700)
+    def controller(self):
+        c = service.Controller(self.cli, self.home, self.home, self.systemctl, platform='linux')
+        c.env['CALLS'] = str(self.log)
+        return c
+    def test_install_retains_secret_and_uninstall_state(self):
+        c = self.controller(); c.install()
+        secret = c.token.read_bytes(); unit = c.unit.read_text()
+        self.assertNotIn(secret.decode(), unit)
+        self.assertIn('%%', unit); self.assertIn('UMask=0077', unit)
+        self.assertFalse(self.log.exists() and 'start' in self.log.read_text())
+        c.install(); self.assertEqual(secret, c.token.read_bytes())
+        (c.state / 'runtime.sqlite').write_text('retained')
+        c.start(); c.uninstall()
+        self.assertFalse(c.unit.exists()); self.assertTrue(c.token.exists())
+        self.assertTrue((c.state / 'runtime.sqlite').exists())
+    def test_personal_and_wrong_readiness(self):
+        self.make_cli('abbey-personal', 'abbey-personal-daemon', 'standard')
+        c = self.controller(); c.install()
+        with self.assertRaises(service.ServiceError): c.start()
+        self.assertIn('personal', str(c.unit)); self.assertTrue(c.unit.exists())
+    def test_platform_refusal(self):
+        with self.assertRaises(service.ServiceError):
+            service.Controller(self.cli, self.home, self.home, self.systemctl, platform='darwin')
+    def test_unknown_unit_and_insecure_token(self):
+        c = self.controller(); c.install()
+        c.token.chmod(0o644)
+        with self.assertRaises(service.ServiceError): c.install()
+        c.token.chmod(0o600); c.unit.write_text('unrelated')
+        with self.assertRaises(service.ServiceError): c.uninstall()
+    def test_symlink_and_publication_rollback(self):
+        c = self.controller(); c.install(); old = c.unit.read_bytes()
+        with patch.object(service.os, 'replace', side_effect=OSError('fixture failure')):
+            with self.assertRaises(OSError): c.install()
+        self.assertEqual(old, c.unit.read_bytes())
+        c.token.unlink(); c.token.symlink_to(self.cli)
+        with self.assertRaises(service.ServiceError): c.status()
+
+    def test_missing_binary_and_unknown_identity(self):
+        (self.bin / 'abbeyd').unlink()
+        with self.assertRaises((service.ServiceError, OSError)): self.controller()
+        self.make_cli('unknown', 'unknown-daemon', 'standard')
+        with self.assertRaises(service.ServiceError): self.controller()
+
+    def test_personal_ready_and_isolated(self):
+        safe = self.controller(); safe.install()
+        self.make_cli('abbey-personal', 'abbey-personal-daemon', 'personal')
+        personal = self.controller(); personal.install(); personal.start()
+        self.assertNotEqual(safe.token, personal.token)
+        personal.uninstall(); self.assertTrue(safe.unit.exists())
+        calls = self.log.read_text()
+        self.assertNotIn(safe.token.read_text(), calls)
+        self.assertNotIn(personal.token.read_text(), calls)
+        self.assertNotIn('enable', calls)
+
+    def test_bounded_output_and_foreign_owner(self):
+        noisy = self.bin / 'noisy'
+        noisy.write_text('#!/usr/bin/env python3\nprint("x" * 70000)\n')
+        noisy.chmod(0o700)
+        with self.assertRaises(service.ServiceError): service.run([noisy], {'PATH': '/usr/bin:/bin'})
+        with patch.object(service.os, 'getuid', return_value=987654):
+            with self.assertRaises(service.ServiceError): service.checked(self.cli)
+
+    def test_root_sticky_temp_ancestor(self):
+        with tempfile.TemporaryDirectory(dir='/tmp') as scratch:
+            directory = Path(scratch).resolve()
+            self.assertEqual(service.checked(directory, directory=True), directory)
+
+    def test_directory_permissions_and_quotes(self):
+        c = self.controller(); c.install()
+        c.config.chmod(0o755)
+        with self.assertRaises(service.ServiceError): c.start()
+        self.assertEqual(service.quote('a$%"'), '\"a$%%\\\"\"')
+        self.assertEqual(service.quote('$', executable=True), '\"$$\"')
+
+if __name__ == '__main__': unittest.main()
+
+NEW FILE docs/linux-user-service.md
+# Explicit Linux user-service bootstrap
+
+`tools/linux_user_service.py` manages an opt-in systemd user service using
+already installed, matching edition binaries. It does not install binaries,
+enable login startup, configure models, discover credentials for the desktop,
+or run automatically from `install.sh`. Native Ubuntu ARM64 acceptance remains
+pending; fixture tests on macOS do not establish systemd behavior.
+
+On Linux, run with Python 3, an absolute installed CLI path and an explicit,
+existing working directory:
+
+```sh
+python3 tools/linux_user_service.py install --cli /home/me/.local/bin/abbey --workspace /home/me/project
+python3 tools/linux_user_service.py start --cli /home/me/.local/bin/abbey --workspace /home/me/project
+python3 tools/linux_user_service.py status --cli /home/me/.local/bin/abbey --workspace /home/me/project
+```
+
+The same arguments support `stop`, `restart`, and `uninstall`. Use
+`abbey-personal` for the personal edition; its matching daemon must be alongside
+it. Identity probes run separately with `edition --name` and
+`edition --daemon-name`. Unknown pairs and missing executables fail closed.
+
+Safe integration uses `~/.config/abbey-user-service/bearer`,
+`~/.local/state/abbey`, and `~/.config/systemd/user/abbeyd.service`.
+Personal integration uses `~/.config/abbey-personal-user-service/bearer`,
+`~/.local/state/abbey-personal`, and
+`~/.config/systemd/user/abbey-personal-daemon.service`. The socket lives in the
+edition state directory's `daemon` subdirectory. HOME-based roots are explicit;
+XDG config/state overrides are not consumed by this controller.
+
+The controller creates managed directories with mode 0700 and files with mode
+0600. Existing managed roots, units and credentials must be owner-only and
+user-owned. Binary paths may be root-owned. Symlink path components, control
+characters, foreign owners, and group/other writable path components are
+refused (root-owned sticky ancestor directories such as `/tmp` are allowed).
+This conservative policy can require installing real binaries rather than
+symlinks. Existing unit content must match the exact generated configuration;
+repeat management with the same CLI and workspace paths. Relocation and
+adopting hand-edited or unrelated units are deliberately unavailable.
+
+The unit starts the daemon without daemon arguments through `/usr/bin/env -i`,
+with HOME, a fixed PATH, and the edition's bearer-file, socket and state
+variables. No bearer bytes enter unit content, argv or diagnostic output.
+Parent Abbey/provider settings and inline credentials are not inherited.
+Systemd paths escape specifiers; ExecStart also escapes dollar substitution.
+No shell is invoked. Units are staged and atomically replaced; failed staging
+preserves the previous unit. A daemon-reload failure is reported, leaving the
+published unit available for inspection and explicit retry. Newly generated
+credentials remain retained after installation failure.
+
+`start` makes at most three authenticated CLI `daemon status --json` probes,
+each bounded to three seconds and 64 KiB of output, and validates the status
+kind, ready state, protocol/schema versions and exact edition. Systemd activity
+alone is insufficient. Failed readiness requests stop and returns failure;
+stop failure also returns failure. `restart` explicitly stops before starting.
+`status` performs one authenticated probe. Child diagnostics are suppressed to
+avoid relaying sensitive output. Other subprocesses use the same bounds.
+
+`uninstall` stops and disables only the exactly matched unit, removes that unit,
+and reloads the user manager. It retains credentials, service configuration
+directory, runtime state, memory, chats, audit and backups. It does not touch
+another edition. No automatic replay, enablement, credential rotation, native
+package distribution, service hardening beyond the private environment/umask,
+or desktop startup/discovery is implemented.
+
+Verification uses only temporary trees, fixture CLI binaries and fake
+systemctl commands:
+
+```sh
+python3 -m unittest discover -s tools/tests -p test_linux_user_service.py
+```
+
+Before promoting Linux service acceptance, exercise real systemd user services
+on native Ubuntu ARM64 with both editions concurrently, authenticated status,
+run cancellation, restart/recovery, private-file inspection and uninstall
+retention. Real daemon transport behavior remains covered separately by the
+Rust daemon suites; these controller tests add no native transport evidence.

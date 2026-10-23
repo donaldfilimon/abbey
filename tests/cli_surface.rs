@@ -51,9 +51,60 @@ impl Drop for Scratch {
 /// that pins the audit would then be reading a different session's evidence.
 const AMBIENT_RECIPE_ENV: &str = "ABBEY_INTERNAL_TUI_LOCAL_RECIPE";
 
+fn fixture_command(scratch: &Scratch, binary: impl AsRef<std::ffi::OsStr>) -> Command {
+    let mut command = Command::new(binary);
+    command.env_clear();
+    // Compiler/native loader paths are required for built fixtures; credentials
+    // and application overrides must not leak from the invoking shell.
+    for key in [
+        "PATH",
+        "LANG",
+        "LC_ALL",
+        "DYLD_LIBRARY_PATH",
+        "DYLD_FALLBACK_LIBRARY_PATH",
+        "SYSTEMROOT",
+        "WINDIR",
+    ] {
+        if let Some(value) = std::env::var_os(key) {
+            command.env(key, value);
+        }
+    }
+    command
+        .env("HOME", &scratch.0)
+        .env("USERPROFILE", &scratch.0)
+        .env("APPDATA", &scratch.0)
+        .env("LOCALAPPDATA", &scratch.0)
+        .env("XDG_CONFIG_HOME", &scratch.0)
+        .env("XDG_STATE_HOME", &scratch.0)
+        .env("ABBEY_STATE_DIR", &scratch.0)
+        .env("ABBEY_PERSONAL_STATE_DIR", &scratch.0)
+        .env("ABBEY_CONFIG", scratch.0.join("config.toml"))
+        .env("ABBEY_PERSONAL_CONFIG", scratch.0.join("config.toml"));
+    command
+}
+
+#[cfg(unix)]
+#[test]
+fn fixture_environment_contains_both_editions_even_for_a_stale_binary() {
+    let scratch = Scratch::new("both-editions-contained");
+    let output = fixture_command(&scratch, "/bin/sh")
+        .args(["-c", "printf '%s\\n' \"$HOME\" \"$ABBEY_STATE_DIR\" \"$ABBEY_PERSONAL_STATE_DIR\" \"$ABBEY_CONFIG\" \"$ABBEY_PERSONAL_CONFIG\""])
+        .output().unwrap();
+    assert!(output.status.success());
+    let text = String::from_utf8(output.stdout).unwrap();
+    let paths: Vec<_> = text.lines().collect();
+    assert_eq!(paths.len(), 5);
+    assert!(
+        paths
+            .iter()
+            .all(|value| std::path::Path::new(value).starts_with(&scratch.0)),
+        "HOME and both editions' state/config must be owned even when the executable's edition differs"
+    );
+}
+
 /// Run abbey with an isolated state dir; returns (exit code, stdout, stderr).
 fn run(scratch: &Scratch, args: &[&str]) -> (i32, String, String) {
-    let out = Command::new(BIN)
+    let out = fixture_command(scratch, BIN)
         .args(args)
         .env(abbey::edition::ACTIVE.state_dir_env(), &scratch.0)
         .env_remove(AMBIENT_RECIPE_ENV)
@@ -266,7 +317,7 @@ fn write_stub_agent(s: &Scratch) -> PathBuf {
 /// verbs execute deterministically without a real backend on the host.
 #[cfg(unix)]
 fn run_stubbed(s: &Scratch, agent: &PathBuf, args: &[&str]) -> (i32, String, String) {
-    let out = Command::new(BIN)
+    let out = fixture_command(s, BIN)
         .args(args)
         .env(abbey::edition::ACTIVE.state_dir_env(), &s.0)
         .env("ABBEY_AGENT", agent)
@@ -312,7 +363,7 @@ fn explicit_backend_cannot_receive_the_legacy_agent_executable() {
         std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700)).unwrap();
     }
 
-    let output = Command::new(BIN)
+    let output = fixture_command(&scratch, BIN)
         .args(["print", "hello"])
         .env(abbey::edition::ACTIVE.state_dir_env(), &scratch.0)
         .env("ABBEY_BACKEND", "abi")
@@ -503,7 +554,7 @@ fn closing_a_pipe_early_is_not_an_error() {
     // `abbey … | head` must exit cleanly like `cat` or `ls` would. Only shows up
     // once output exceeds the pipe buffer, so this uses a long listing.
     let s = Scratch::new("sigpipe");
-    let mut producer = Command::new(BIN)
+    let mut producer = fixture_command(&s, BIN)
         .args(["claims"])
         .env(abbey::edition::ACTIVE.state_dir_env(), &s.0)
         .stdout(Stdio::piped())
@@ -527,11 +578,8 @@ fn closing_a_pipe_early_is_not_an_error() {
 /// on developer hosts that have cursor-agent.
 #[cfg(unix)]
 fn run_isolated(s: &Scratch, path: &std::path::Path, args: &[&str]) -> (i32, String, String) {
-    let out = Command::new(BIN)
+    let out = fixture_command(s, BIN)
         .args(args)
-        .env_clear()
-        .env(abbey::edition::ACTIVE.state_dir_env(), &s.0)
-        .env("HOME", &s.0)
         .env("PATH", path)
         // Absolute candidate probing (/opt/homebrew, /usr/bin) would find a
         // real grok/fm on the host and defeat the "no executor" staging.

@@ -143,8 +143,10 @@ fn pem_block_end(input: &str, index: usize) -> Option<usize> {
     // The marker must be close behind the BEGIN line, so ordinary prose that
     // merely mentions the words cannot swallow the rest of the corpus.
     let window_end = (index + 512).min(input.len());
-    let window = input.get(index..window_end)?;
-    let marker = window.find(KEY_MARK)?;
+    let window = &input.as_bytes()[index..window_end];
+    let marker = window
+        .windows(KEY_MARK.len())
+        .position(|part| part == KEY_MARK.as_bytes())?;
     let after_marker = index + marker + KEY_MARK.len();
     // Consume the body through the matching END marker when it is present.
     if let Some(end) = input[after_marker..].find("-----END ") {

@@ -1,0 +1,30 @@
+{
+  "kind": "post-incident backup, not a pre-incident restore point",
+  "scope": "two stubbed fixture turns in the owned qualification workspace",
+  "workspace": "/Users/donald/.codex/verification/abbey-completion-20261022/review-qualified-final/abbey",
+  "route_audit_rows": 2,
+  "conversation_history_rows": 2,
+  "times_utc": [
+    "2026-10-23T01:31:54Z"
+  ],
+  "source_records_deleted": false,
+  "backup_root": "/Users/donald/.codex/verification/abbey-completion-20261022/fixture-collision-state-backup",
+  "affected_files": [
+    "history.log",
+    "route.jsonl",
+    "by-cwd/_Users_donald_.codex_verification_abbey-completion-20261022_review-qualified-final_abbey",
+    "memory.sqlite",
+    "daemon/runtime.sqlite"
+  ],
+  "curated_fixture_memory_rows": 3,
+  "memory_records_deleted": false,
+  "curated_fixture_memory_identity_digests": [
+    "7c7abaa2374281bfcd5cce8f67a57987abe361fc28dde85b108b6da53a773be0",
+    "635bce293a28c7c5c29ae0aa8b08a90179a61eea6066c363291af8af06452ddd",
+    "3efdc3d3deccc244d206afe842300fcb5cb28ca5177c6fef74a7ed4b2e0ed3df"
+  ],
+  "fixture_memory_rows_in_window": 4,
+  "all_four_fixture_memory_rows_now_obsolete": true,
+  "scoped_clear_attempt_verified_success": false,
+  "cleanup_complete": false
+}

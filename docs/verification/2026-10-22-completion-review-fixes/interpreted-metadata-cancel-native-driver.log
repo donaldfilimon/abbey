@@ -1,0 +1,16 @@
+1 control 0
+1 cancel 0
+1 quit 0
+2 control 0
+2 cancel 0
+2 quit 0
+3 control 0
+3 cancel 0
+3 quit 0
+4 control 0
+4 cancel 1
+Traceback (most recent call last):
+  File "/tmp/abbey-metadata-cancel-trials.py", line 12, in <module>
+    assert p.returncode==0,row
+           ^^^^^^^^^^^^^^^
+AssertionError: {'trial': 4, 'mode': 'cancel', 'exit_code': 1, 'seconds': 16.71670862499741, 'stdout': '{"failures": [{"error": "control: fixture did not enter actual metadata argv", "scenario": "doctor-metadata-cancel", "status": "failed"}], "mode": "cancel", "scenarios": [], "status": "failed"}\n', 'stderr': ''}

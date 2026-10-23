@@ -217,4 +217,53 @@ fi
 assert_old_install_unchanged "$RELOCATE_DIR" "$RELOCATE_SNAPSHOT"
 echo "accelerator install smoke: mid-relocation fault reached (status $relocation_status)"
 
-echo "accelerator install smoke: OK (isolated layout + verification/relocation rollback)"
+# Install both actual accelerator editions into the same directory, in both
+# orders. A different build may use different ABI bytes: preserve the entire
+# other edition's publication unit byte-for-byte rather than assuming equality.
+SAFE_SNAPSHOT="$SCRATCH/coexist-safe"
+PERSONAL_SNAPSHOT="$SCRATCH/coexist-personal"
+mkdir -p "$SAFE_SNAPSHOT" "$PERSONAL_SNAPSHOT"
+for file in abbey abbeyd libabi_metal_dot.dylib; do
+  cp "$SUCCESS_DIR/$file" "$SAFE_SNAPSHOT/$file"
+done
+ABBEY_CARGO_FEATURES=personal-edition,accel \
+ABBEY_INSTALL_DIR="$SUCCESS_DIR" \
+ABBEY_COMPLETION_HOME="$SUCCESS_HOME" \
+  ./install.sh
+for file in abbey abbeyd libabi_metal_dot.dylib; do
+  cmp "$SUCCESS_DIR/$file" "$SAFE_SNAPSHOT/$file"
+done
+for file in abbey-personal abbey-personal-daemon libabbey-personal-abi-metal.dylib; do
+  test -f "$SUCCESS_DIR/$file"
+  codesign --verify --strict "$SUCCESS_DIR/$file"
+  cp "$SUCCESS_DIR/$file" "$PERSONAL_SNAPSHOT/$file"
+done
+otool -D "$SUCCESS_DIR/libabbey-personal-abi-metal.dylib" |
+  grep -Fqx '@loader_path/libabbey-personal-abi-metal.dylib'
+for file in abbey-personal abbey-personal-daemon; do
+  otool -L "$SUCCESS_DIR/$file" |
+    grep -Fq '@loader_path/libabbey-personal-abi-metal.dylib ('
+  if otool -L "$SUCCESS_DIR/$file" |
+    grep -Fq '@loader_path/libabi_metal_dot.dylib ('; then
+    echo "accelerator install smoke: personal binary retained shared dependency" >&2
+    exit 1
+  fi
+done
+"$SUCCESS_DIR/abbey-personal" accel verify --json
+smoke_personal_daemon_output=$(
+  unset ABBEY_PERSONAL_DAEMON_BEARER_TOKEN ABBEY_PERSONAL_DAEMON_BEARER_TOKEN_FILE
+  "$SUCCESS_DIR/abbey-personal-daemon" 2>&1 || true
+)
+printf '%s\n' "$smoke_personal_daemon_output" |
+  grep -Eq '^abbeyd: set exactly one of ABBEY_PERSONAL_DAEMON_BEARER_TOKEN or ABBEY_PERSONAL_DAEMON_BEARER_TOKEN_FILE$'
+ABBEY_CARGO_FEATURES=accel \
+ABBEY_INSTALL_DIR="$SUCCESS_DIR" \
+ABBEY_COMPLETION_HOME="$SUCCESS_HOME" \
+  ./install.sh
+for file in abbey-personal abbey-personal-daemon libabbey-personal-abi-metal.dylib; do
+  cmp "$SUCCESS_DIR/$file" "$PERSONAL_SNAPSHOT/$file"
+done
+"$SUCCESS_DIR/abbey-personal" accel verify --json
+"$SUCCESS_DIR/abbey" accel verify --json
+
+echo "accelerator install smoke: OK (native edition coexistence + verification/relocation rollback)"

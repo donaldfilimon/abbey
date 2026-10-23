@@ -1,0 +1,14 @@
+Traceback (most recent call last):
+  File "/Users/donald/sources/repos/abbey/tools/linux_user_service.py", line 217, in status
+    raise ValueError()
+ValueError
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/tmp/abbey-linux-controller-native-short.py", line 17, in <module>
+    try:event=c.status();break
+              ~~~~~~~~^^
+  File "/Users/donald/sources/repos/abbey/tools/linux_user_service.py", line 219, in status
+    raise ServiceError('authenticated status does not match ready edition contract') from error
+service.ServiceError: authenticated status does not match ready edition contract

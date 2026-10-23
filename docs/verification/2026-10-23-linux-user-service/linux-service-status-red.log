@@ -1,0 +1,48 @@
+.................EEF..
+======================================================================
+ERROR: test_status_accepts_exact_supported_pairs_both_editions (test_linux_user_service.ServiceTests.test_status_accepts_exact_supported_pairs_both_editions) (edition='standard', protocol=2, schema=3)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/donald/sources/repos/abbey/tools/linux_user_service.py", line 217, in status
+    raise ValueError()
+ValueError
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/donald/sources/repos/abbey/tools/tests/test_linux_user_service.py", line 46, in test_status_accepts_exact_supported_pairs_both_editions
+    event = c.status()
+  File "/Users/donald/sources/repos/abbey/tools/linux_user_service.py", line 219, in status
+    raise ServiceError('authenticated status does not match ready edition contract') from error
+service.ServiceError: authenticated status does not match ready edition contract
+
+======================================================================
+ERROR: test_status_accepts_exact_supported_pairs_both_editions (test_linux_user_service.ServiceTests.test_status_accepts_exact_supported_pairs_both_editions) (edition='personal', protocol=2, schema=3)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/donald/sources/repos/abbey/tools/linux_user_service.py", line 217, in status
+    raise ValueError()
+ValueError
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/donald/sources/repos/abbey/tools/tests/test_linux_user_service.py", line 46, in test_status_accepts_exact_supported_pairs_both_editions
+    event = c.status()
+  File "/Users/donald/sources/repos/abbey/tools/linux_user_service.py", line 219, in status
+    raise ServiceError('authenticated status does not match ready edition contract') from error
+service.ServiceError: authenticated status does not match ready edition contract
+
+======================================================================
+FAIL: test_status_rejects_crossed_unknown_and_noninteger_versions (test_linux_user_service.ServiceTests.test_status_rejects_crossed_unknown_and_noninteger_versions) (protocol=True, schema=2)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/donald/sources/repos/abbey/tools/tests/test_linux_user_service.py", line 54, in test_status_rejects_crossed_unknown_and_noninteger_versions
+    with self.assertRaises(service.ServiceError): c.status()
+         ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: ServiceError not raised
+
+----------------------------------------------------------------------
+Ran 21 tests in 6.104s
+
+FAILED (failures=1, errors=2)

@@ -329,6 +329,7 @@ fn exact_model_inference_claim_is_fixture_bounded_and_surface_narrow() {
         "already-loaded exact model ID and immutable revision",
         "domain-separated SHA-256",
         "1..=256 output tokens",
+        "1 MiB frame",
         "32 KiB",
         "positive native-operation evidence",
         "false no-fallback/no-mixed-execution evidence",

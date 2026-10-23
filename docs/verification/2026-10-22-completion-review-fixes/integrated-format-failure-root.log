@@ -1,0 +1,31 @@
+== toolchain ==
+compiler: /Users/donald/.rustup/toolchains/1.99.1-aarch64-apple-darwin/bin/rustc
+rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: aarch64-apple-darwin
+release: 1.99.1
+LLVM version: 23.1.1
+cargo 1.99.1 (5f94df478 2026-08-27)
+warning: unused import: `simulator::AdmissionSimulator`
+  --> /Users/donald/.codex/verification/abbey-completion-20261022/review-qualified-final/wdbx/crates/abi-wdbx/src/v3/complete_episode/crypto/admission/mod.rs:11:16
+   |
+11 | pub(super) use simulator::AdmissionSimulator;
+   |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+== rustfmt ==
+Diff in /Users/donald/.codex/verification/abbey-completion-20261022/review-qualified-final/abbey/src/runtime/store/governed/local/tests.rs:85:
+     );
+     drop(a);
+     let mut a = authority(&path, "alice");
+-    assert!(a.exact_local_approval(&p.request.call_id, p.digest(), 1050).is_err());
++    assert!(
++        a.exact_local_approval(&p.request.call_id, p.digest(), 1050)
++            .is_err()
++    );
+     let exact = a
+         .exact_local_approval(&p.request.call_id, p.digest(), 1200)
+         .unwrap()

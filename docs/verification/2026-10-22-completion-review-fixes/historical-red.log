@@ -1,0 +1,50 @@
+........F.FF.F.F....
+======================================================================
+FAIL: test_historical_location_cannot_be_forged_or_duplicated (test_completion_matrix.CompletionMatrix.test_historical_location_cannot_be_forged_or_duplicated)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/donald/sources/repos/abbey/tools/tests/test_completion_matrix.py", line 81, in test_historical_location_cannot_be_forged_or_duplicated
+    self.assertTrue(any("duplicate historical" in e for e in self.errors()))
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: False is not true
+
+======================================================================
+FAIL: test_historical_mapping_rejects_paths_outside_the_repository (test_completion_matrix.CompletionMatrix.test_historical_mapping_rejects_paths_outside_the_repository)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/donald/sources/repos/abbey/tools/tests/test_completion_matrix.py", line 97, in test_historical_mapping_rejects_paths_outside_the_repository
+    self.assertTrue(any("historical source" in e for e in self.errors()))
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: False is not true
+
+======================================================================
+FAIL: test_historical_owner_and_acceptance_follow_active_requirement (test_completion_matrix.CompletionMatrix.test_historical_owner_and_acceptance_follow_active_requirement)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/donald/sources/repos/abbey/tools/tests/test_completion_matrix.py", line 74, in test_historical_owner_and_acceptance_follow_active_requirement
+    self.assertTrue(any("historical binding" in e for e in self.errors()))
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: False is not true
+
+======================================================================
+FAIL: test_new_historical_checkbox_must_be_mapped (test_completion_matrix.CompletionMatrix.test_new_historical_checkbox_must_be_mapped)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/donald/sources/repos/abbey/tools/tests/test_completion_matrix.py", line 67, in test_new_historical_checkbox_must_be_mapped
+    self.assertTrue(any("unmapped historical" in e for e in self.errors()))
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: False is not true
+
+======================================================================
+FAIL: test_new_plan_cannot_escape_historical_inventory (test_completion_matrix.CompletionMatrix.test_new_plan_cannot_escape_historical_inventory)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/donald/sources/repos/abbey/tools/tests/test_completion_matrix.py", line 91, in test_new_plan_cannot_escape_historical_inventory
+    self.assertTrue(any("unmapped historical" in e for e in self.errors()))
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: False is not true
+
+----------------------------------------------------------------------
+Ran 20 tests in 0.020s
+
+FAILED (failures=5)

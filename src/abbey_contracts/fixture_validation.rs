@@ -27,7 +27,9 @@ pub(super) fn validate_wire(
     if !validator.is_valid(&wire.document) {
         return FixtureDisposition::SchemaInvalid;
     }
-    semantic_disposition(&wire.schema, &wire.document).unwrap_or(FixtureDisposition::Valid)
+    super::golden_validation::validate(wire)
+        .or_else(|| semantic_disposition(&wire.schema, &wire.document))
+        .unwrap_or(FixtureDisposition::Valid)
 }
 
 fn privacy_violation(value: &Value) -> bool {

@@ -225,6 +225,11 @@ pub fn score_artifact(
     seeds: &[char],
     timeout: Duration,
 ) -> Result<Score> {
+    anyhow::ensure!(
+        artifact.is_file(),
+        "artifact is missing: {}",
+        artifact.display()
+    );
     let corpus_bytes = corpus.as_bytes();
     let context = context_length(artifact);
     if corpus_bytes.is_empty() {

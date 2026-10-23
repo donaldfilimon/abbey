@@ -1,0 +1,7 @@
+# Metadata cancellation ordering review
+
+Spec compliance: PASS by static inspection. Cancel mode sends the exact two bracketed-paste submissions and Enter keys, in order, before readiness waits. Quit mode retains its original submission/readiness flow. The actual queue marker, selected executable/argv check, live owner/leaf and supervisor checks, Esc, joined status 130, discard notice, process closure, and no queued-generation inspection remain required. Closure assertions precede cleanup/release. No production timeout or retry behavior changes.
+
+Code quality: PASS by static inspection. No actionable introduced findings. The focused interaction regression rejects the old ordering and checks the meaningful cancellation/closure sequence without replacing native proof. The single write removes avoidable harness delay but is not an atomic TUI transaction; arbitrary suspension can still fail the retained assertions, as the investigation/report correctly state.
+
+Reviewed metadata-cancel-review.patch, metadata-cancel-investigation.md, metadata-cancel-fix-report.md and canonical cancellation function under the root AGENTS.md gate/evidence and shared-checkout rules. No unrelated branch review performed. Only this requested external report was written. No builds, tests, native PTY operations, services, agents or external actions were performed. Controller-reported Python RED/GREEN was not independently executed; native repeat proof remains pending.

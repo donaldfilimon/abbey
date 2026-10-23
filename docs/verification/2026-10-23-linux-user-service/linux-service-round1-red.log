@@ -1,0 +1,23 @@
+.......FF...
+======================================================================
+FAIL: test_reload_failure_removes_new_unit_and_retains_credentials (test_linux_user_service.ServiceTests.test_reload_failure_removes_new_unit_and_retains_credentials)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/donald/sources/repos/abbey/tools/tests/test_linux_user_service.py", line 78, in test_reload_failure_removes_new_unit_and_retains_credentials
+    self.assertFalse(c.unit.exists())
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+AssertionError: True is not false
+
+======================================================================
+FAIL: test_reload_failure_restores_previous_unit_bytes_and_mode (test_linux_user_service.ServiceTests.test_reload_failure_restores_previous_unit_bytes_and_mode)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/donald/sources/repos/abbey/tools/tests/test_linux_user_service.py", line 90, in test_reload_failure_restores_previous_unit_bytes_and_mode
+    self.assertEqual(c.unit.stat().st_mode & 0o777, 0o400)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 384 != 256
+
+----------------------------------------------------------------------
+Ran 12 tests in 3.009s
+
+FAILED (failures=2)

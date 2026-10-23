@@ -1,0 +1,207 @@
+.E.EE.FE.EE.EEEEE.EE
+======================================================================
+ERROR: test_directory_permissions_and_quotes (test_linux_user_service.ServiceTests.test_directory_permissions_and_quotes)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/donald/sources/repos/abbey/tools/tests/test_linux_user_service.py", line 215, in test_directory_permissions_and_quotes
+    c = self.controller(); c.install()
+  File "/Users/donald/sources/repos/abbey/tools/tests/test_linux_user_service.py", line 35, in controller
+    c = service.Controller(self.cli, self.home, self.home, self.systemctl, platform='linux')
+  File "/Users/donald/sources/repos/abbey/tools/linux_user_service.py", line 123, in __init__
+    name = run([self.cli, 'edition', '--name'], probe_env)
+  File "/Users/donald/sources/repos/abbey/tools/linux_user_service.py", line 73, in run
+    raise ServiceError('command timed out')
+service.ServiceError: command timed out
+
+======================================================================
+ERROR: test_eager_identity_isolated_for_both_editions (test_linux_user_service.ServiceTests.test_eager_identity_isolated_for_both_editions) (edition='standard')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/donald/sources/repos/abbey/tools/tests/test_linux_user_service.py", line 56, in test_eager_identity_isolated_for_both_editions
+    c = self.controller()
+  File "/Users/donald/sources/repos/abbey/tools/tests/test_linux_user_service.py", line 35, in controller
+    c = service.Controller(self.cli, self.home, self.home, self.systemctl, platform='linux')
+  File "/Users/donald/sources/repos/abbey/tools/linux_user_service.py", line 123, in __init__
+    name = run([self.cli, 'edition', '--name'], probe_env)
+  File "/Users/donald/sources/repos/abbey/tools/linux_user_service.py", line 73, in run
+    raise ServiceError('command timed out')
+service.ServiceError: command timed out
+
+======================================================================
+ERROR: test_eager_identity_isolated_for_both_editions (test_linux_user_service.ServiceTests.test_eager_identity_isolated_for_both_editions) (edition='personal')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/donald/sources/repos/abbey/tools/tests/test_linux_user_service.py", line 56, in test_eager_identity_isolated_for_both_editions
+    c = self.controller()
+  File "/Users/donald/sources/repos/abbey/tools/tests/test_linux_user_service.py", line 35, in controller
+    c = service.Controller(self.cli, self.home, self.home, self.systemctl, platform='linux')
+  File "/Users/donald/sources/repos/abbey/tools/linux_user_service.py", line 124, in __init__
+    daemon = run([self.cli, 'edition', '--daemon-name'], probe_env)
+  File "/Users/donald/sources/repos/abbey/tools/linux_user_service.py", line 73, in run
+    raise ServiceError('command timed out')
+service.ServiceError: command timed out
+
+======================================================================
+ERROR: test_install_retains_secret_and_uninstall_state (test_linux_user_service.ServiceTests.test_install_retains_secret_and_uninstall_state)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/donald/sources/repos/abbey/tools/linux_user_service.py", line 194, in install
+    run([self.systemctl, '--user', 'daemon-reload'], self.env)
+    ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/donald/sources/repos/abbey/tools/linux_user_service.py", line 73, in run
+    raise ServiceError('command timed out')
+service.ServiceError: command timed out
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/donald/sources/repos/abbey/tools/tests/test_linux_user_service.py", line 105, in test_install_retains_secret_and_uninstall_state
+    c = self.controller(); c.install()
+                           ~~~~~~~~~^^
+  File "/Users/donald/sources/repos/abbey/tools/linux_user_service.py", line 207, in install
+    raise ServiceError('installation failed; previous unit state restored and reloaded') from error
+service.ServiceError: installation failed; previous unit state restored and reloaded
+
+======================================================================
+ERROR: test_personal_and_wrong_readiness (test_linux_user_service.ServiceTests.test_personal_and_wrong_readiness)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/donald/sources/repos/abbey/tools/tests/test_linux_user_service.py", line 117, in test_personal_and_wrong_readiness
+    c = self.controller(); c.install()
+  File "/Users/donald/sources/repos/abbey/tools/tests/test_linux_user_service.py", line 35, in controller
+    c = service.Controller(self.cli, self.home, self.home, self.systemctl, platform='linux')
+  File "/Users/donald/sources/repos/abbey/tools/linux_user_service.py", line 123, in __init__
+    name = run([self.cli, 'edition', '--name'], probe_env)
+  File "/Users/donald/sources/repos/abbey/tools/linux_user_service.py", line 73, in run
+    raise ServiceError('command timed out')
+service.ServiceError: command timed out
+
+======================================================================
+ERROR: test_personal_ready_and_isolated (test_linux_user_service.ServiceTests.test_personal_ready_and_isolated)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/donald/sources/repos/abbey/tools/tests/test_linux_user_service.py", line 191, in test_personal_ready_and_isolated
+    safe = self.controller(); safe.install()
+  File "/Users/donald/sources/repos/abbey/tools/tests/test_linux_user_service.py", line 35, in controller
+    c = service.Controller(self.cli, self.home, self.home, self.systemctl, platform='linux')
+  File "/Users/donald/sources/repos/abbey/tools/linux_user_service.py", line 123, in __init__
+    name = run([self.cli, 'edition', '--name'], probe_env)
+  File "/Users/donald/sources/repos/abbey/tools/linux_user_service.py", line 73, in run
+    raise ServiceError('command timed out')
+service.ServiceError: command timed out
+
+======================================================================
+ERROR: test_reload_failure_removes_new_unit_and_retains_credentials (test_linux_user_service.ServiceTests.test_reload_failure_removes_new_unit_and_retains_credentials)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/donald/sources/repos/abbey/tools/tests/test_linux_user_service.py", line 141, in test_reload_failure_removes_new_unit_and_retains_credentials
+    c = self.controller()
+  File "/Users/donald/sources/repos/abbey/tools/tests/test_linux_user_service.py", line 35, in controller
+    c = service.Controller(self.cli, self.home, self.home, self.systemctl, platform='linux')
+  File "/Users/donald/sources/repos/abbey/tools/linux_user_service.py", line 123, in __init__
+    name = run([self.cli, 'edition', '--name'], probe_env)
+  File "/Users/donald/sources/repos/abbey/tools/linux_user_service.py", line 73, in run
+    raise ServiceError('command timed out')
+service.ServiceError: command timed out
+
+======================================================================
+ERROR: test_reload_failure_reports_failed_rollback (test_linux_user_service.ServiceTests.test_reload_failure_reports_failed_rollback)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/donald/sources/repos/abbey/tools/tests/test_linux_user_service.py", line 161, in test_reload_failure_reports_failed_rollback
+    c = self.controller()
+  File "/Users/donald/sources/repos/abbey/tools/tests/test_linux_user_service.py", line 35, in controller
+    c = service.Controller(self.cli, self.home, self.home, self.systemctl, platform='linux')
+  File "/Users/donald/sources/repos/abbey/tools/linux_user_service.py", line 123, in __init__
+    name = run([self.cli, 'edition', '--name'], probe_env)
+  File "/Users/donald/sources/repos/abbey/tools/linux_user_service.py", line 73, in run
+    raise ServiceError('command timed out')
+service.ServiceError: command timed out
+
+======================================================================
+ERROR: test_reload_failure_reports_restored_but_reload_failed (test_linux_user_service.ServiceTests.test_reload_failure_reports_restored_but_reload_failed)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/donald/sources/repos/abbey/tools/tests/test_linux_user_service.py", line 171, in test_reload_failure_reports_restored_but_reload_failed
+    c = self.controller(); self.fail_reloads(c)
+  File "/Users/donald/sources/repos/abbey/tools/tests/test_linux_user_service.py", line 35, in controller
+    c = service.Controller(self.cli, self.home, self.home, self.systemctl, platform='linux')
+  File "/Users/donald/sources/repos/abbey/tools/linux_user_service.py", line 123, in __init__
+    name = run([self.cli, 'edition', '--name'], probe_env)
+  File "/Users/donald/sources/repos/abbey/tools/linux_user_service.py", line 73, in run
+    raise ServiceError('command timed out')
+service.ServiceError: command timed out
+
+======================================================================
+ERROR: test_reload_failure_reports_successful_rollback_reload (test_linux_user_service.ServiceTests.test_reload_failure_reports_successful_rollback_reload)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/donald/sources/repos/abbey/tools/tests/test_linux_user_service.py", line 177, in test_reload_failure_reports_successful_rollback_reload
+    c = self.controller()
+  File "/Users/donald/sources/repos/abbey/tools/tests/test_linux_user_service.py", line 35, in controller
+    c = service.Controller(self.cli, self.home, self.home, self.systemctl, platform='linux')
+  File "/Users/donald/sources/repos/abbey/tools/linux_user_service.py", line 123, in __init__
+    name = run([self.cli, 'edition', '--name'], probe_env)
+  File "/Users/donald/sources/repos/abbey/tools/linux_user_service.py", line 73, in run
+    raise ServiceError('command timed out')
+service.ServiceError: command timed out
+
+======================================================================
+ERROR: test_reload_failure_restores_previous_unit_bytes_and_mode (test_linux_user_service.ServiceTests.test_reload_failure_restores_previous_unit_bytes_and_mode)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/donald/sources/repos/abbey/tools/tests/test_linux_user_service.py", line 149, in test_reload_failure_restores_previous_unit_bytes_and_mode
+    c = self.controller(); c.install()
+  File "/Users/donald/sources/repos/abbey/tools/tests/test_linux_user_service.py", line 35, in controller
+    c = service.Controller(self.cli, self.home, self.home, self.systemctl, platform='linux')
+  File "/Users/donald/sources/repos/abbey/tools/linux_user_service.py", line 123, in __init__
+    name = run([self.cli, 'edition', '--name'], probe_env)
+  File "/Users/donald/sources/repos/abbey/tools/linux_user_service.py", line 73, in run
+    raise ServiceError('command timed out')
+service.ServiceError: command timed out
+
+======================================================================
+ERROR: test_symlink_and_publication_rollback (test_linux_user_service.ServiceTests.test_symlink_and_publication_rollback)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/donald/sources/repos/abbey/tools/tests/test_linux_user_service.py", line 130, in test_symlink_and_publication_rollback
+    c = self.controller(); c.install(); old = c.unit.read_bytes()
+  File "/Users/donald/sources/repos/abbey/tools/tests/test_linux_user_service.py", line 35, in controller
+    c = service.Controller(self.cli, self.home, self.home, self.systemctl, platform='linux')
+  File "/Users/donald/sources/repos/abbey/tools/linux_user_service.py", line 123, in __init__
+    name = run([self.cli, 'edition', '--name'], probe_env)
+  File "/Users/donald/sources/repos/abbey/tools/linux_user_service.py", line 73, in run
+    raise ServiceError('command timed out')
+service.ServiceError: command timed out
+
+======================================================================
+ERROR: test_unknown_unit_and_insecure_token (test_linux_user_service.ServiceTests.test_unknown_unit_and_insecure_token)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/donald/sources/repos/abbey/tools/tests/test_linux_user_service.py", line 124, in test_unknown_unit_and_insecure_token
+    c = self.controller(); c.install()
+  File "/Users/donald/sources/repos/abbey/tools/tests/test_linux_user_service.py", line 35, in controller
+    c = service.Controller(self.cli, self.home, self.home, self.systemctl, platform='linux')
+  File "/Users/donald/sources/repos/abbey/tools/linux_user_service.py", line 123, in __init__
+    name = run([self.cli, 'edition', '--name'], probe_env)
+  File "/Users/donald/sources/repos/abbey/tools/linux_user_service.py", line 73, in run
+    raise ServiceError('command timed out')
+service.ServiceError: command timed out
+
+======================================================================
+FAIL: test_eager_unknown_identity_cleans_probe_roots (test_linux_user_service.ServiceTests.test_eager_unknown_identity_cleans_probe_roots)
+----------------------------------------------------------------------
+service.ServiceError: command timed out
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/donald/sources/repos/abbey/tools/tests/test_linux_user_service.py", line 84, in test_eager_unknown_identity_cleans_probe_roots
+    with self.assertRaisesRegex(service.ServiceError, 'unknown or inconsistent'):
+         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: "unknown or inconsistent" does not match "command timed out"
+
+----------------------------------------------------------------------
+Ran 19 tests in 56.381s
+
+FAILED (failures=1, errors=13)

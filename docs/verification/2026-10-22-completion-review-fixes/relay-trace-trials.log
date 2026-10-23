@@ -1,0 +1,110 @@
+
+running 4 tests
+test crash_after_abbey_prepare_child ... ok
+
+running 1 test
+test another_tenant_cannot_use_the_same_local_approval_authority ... ok
+test crash_after_prepare_recovers_unresolved_without_effect_or_readmission ... ok
+test encrypted_proposal_requires_local_decision_then_reopen_never_repeats_effect ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.44s
+
+
+running 4 tests
+test crash_after_abbey_prepare_child ... ok
+
+running 1 test
+test another_tenant_cannot_use_the_same_local_approval_authority ... ok
+test crash_after_prepare_recovers_unresolved_without_effect_or_readmission ... ok
+test encrypted_proposal_requires_local_decision_then_reopen_never_repeats_effect ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.45s
+
+
+running 4 tests
+test crash_after_abbey_prepare_child ... ok
+
+running 1 test
+test another_tenant_cannot_use_the_same_local_approval_authority ... ok
+test crash_after_prepare_recovers_unresolved_without_effect_or_readmission ... ok
+test encrypted_proposal_requires_local_decision_then_reopen_never_repeats_effect ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.37s
+
+
+running 4 tests
+test crash_after_abbey_prepare_child ... ok
+
+running 1 test
+test another_tenant_cannot_use_the_same_local_approval_authority ... ok
+test crash_after_prepare_recovers_unresolved_without_effect_or_readmission ... ok
+test encrypted_proposal_requires_local_decision_then_reopen_never_repeats_effect ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.40s
+
+
+running 4 tests
+test crash_after_abbey_prepare_child ... ok
+
+running 1 test
+test another_tenant_cannot_use_the_same_local_approval_authority ... ok
+test crash_after_prepare_recovers_unresolved_without_effect_or_readmission ... ok
+test encrypted_proposal_requires_local_decision_then_reopen_never_repeats_effect ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.37s
+
+
+running 4 tests
+test crash_after_abbey_prepare_child ... ok
+
+running 1 test
+test another_tenant_cannot_use_the_same_local_approval_authority ... ok
+test crash_after_prepare_recovers_unresolved_without_effect_or_readmission ... ok
+test encrypted_proposal_requires_local_decision_then_reopen_never_repeats_effect ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.34s
+
+
+running 4 tests
+test crash_after_abbey_prepare_child ... ok
+
+running 1 test
+test another_tenant_cannot_use_the_same_local_approval_authority ... ok
+test crash_after_prepare_recovers_unresolved_without_effect_or_readmission ... ok
+test encrypted_proposal_requires_local_decision_then_reopen_never_repeats_effect ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.35s
+
+
+running 4 tests
+test crash_after_abbey_prepare_child ... ok
+
+running 1 test
+test another_tenant_cannot_use_the_same_local_approval_authority ... ok
+test crash_after_prepare_recovers_unresolved_without_effect_or_readmission ... ok
+test encrypted_proposal_requires_local_decision_then_reopen_never_repeats_effect ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.35s
+
+
+running 4 tests
+test crash_after_abbey_prepare_child ... ok
+
+running 1 test
+test another_tenant_cannot_use_the_same_local_approval_authority ... ok
+test crash_after_prepare_recovers_unresolved_without_effect_or_readmission ... ok
+test encrypted_proposal_requires_local_decision_then_reopen_never_repeats_effect ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.33s
+
+
+running 4 tests
+test crash_after_abbey_prepare_child ... ok
+
+running 1 test
+test another_tenant_cannot_use_the_same_local_approval_authority ... ok
+test crash_after_prepare_recovers_unresolved_without_effect_or_readmission ... ok
+test encrypted_proposal_requires_local_decision_then_reopen_never_repeats_effect ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.40s
+

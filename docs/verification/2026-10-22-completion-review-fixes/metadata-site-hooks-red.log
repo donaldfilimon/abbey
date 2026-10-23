@@ -1,0 +1,14 @@
+F
+======================================================================
+FAIL: test_metadata_leaf_skips_unrelated_python_site_hooks (test_metadata_fixture.MetadataFixture.test_metadata_leaf_skips_unrelated_python_site_hooks)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/donald/sources/repos/abbey/tools/tests/test_metadata_fixture.py", line 37, in test_metadata_leaf_skips_unrelated_python_site_hooks
+    self.assertFalse(marker.exists(), "the metadata descendant must skip ambient site hooks")
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: True is not false : the metadata descendant must skip ambient site hooks
+
+----------------------------------------------------------------------
+Ran 1 test in 1.055s
+
+FAILED (failures=1)

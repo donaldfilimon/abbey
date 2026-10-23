@@ -1,0 +1,123 @@
+{
+  "source": "root.log after mid-relocation fixture",
+  "strict_native_assertions_passed": true,
+  "reports": [
+    {
+      "feature": "accel",
+      "adapter": "abi-gpu MetalAccelerator",
+      "kernels_linked": true,
+      "device_initialized": true,
+      "backend_requested": "gpu-metal",
+      "backend_used": "gpu-metal",
+      "relative_tolerance": 0.001,
+      "kernels": [
+        {
+          "kernel": "dot",
+          "elements": 1024,
+          "executed_natively": true,
+          "oracle_parity": true,
+          "detail": "native=-2.539062 oracle=-2.539062 \u00b7 Metal numerical execution matched the deterministic CPU oracle"
+        },
+        {
+          "kernel": "cosine",
+          "elements": 1024,
+          "executed_natively": true,
+          "oracle_parity": true,
+          "detail": "native=-0.008919 oracle=-0.008919 \u00b7 Metal numerical execution matched the deterministic CPU oracle"
+        },
+        {
+          "kernel": "top_k",
+          "elements": 1024,
+          "executed_natively": true,
+          "oracle_parity": true,
+          "detail": "native ranking=[0,1,2,3] oracle ranking=[0,1,2,3] \u00b7 Metal numerical execution matched the deterministic CPU oracle"
+        }
+      ],
+      "verified": true,
+      "not_proof_of": [
+        "gpu_npu_tpu_compilation",
+        "training_or_model_inference",
+        "device_residency_or_placement",
+        "speedup_or_performance"
+      ]
+    },
+    {
+      "feature": "accel",
+      "adapter": "abi-gpu MetalAccelerator",
+      "kernels_linked": true,
+      "device_initialized": true,
+      "backend_requested": "gpu-metal",
+      "backend_used": "gpu-metal",
+      "relative_tolerance": 0.001,
+      "kernels": [
+        {
+          "kernel": "dot",
+          "elements": 1024,
+          "executed_natively": true,
+          "oracle_parity": true,
+          "detail": "native=-2.539062 oracle=-2.539062 \u00b7 Metal numerical execution matched the deterministic CPU oracle"
+        },
+        {
+          "kernel": "cosine",
+          "elements": 1024,
+          "executed_natively": true,
+          "oracle_parity": true,
+          "detail": "native=-0.008919 oracle=-0.008919 \u00b7 Metal numerical execution matched the deterministic CPU oracle"
+        },
+        {
+          "kernel": "top_k",
+          "elements": 1024,
+          "executed_natively": true,
+          "oracle_parity": true,
+          "detail": "native ranking=[0,1,2,3] oracle ranking=[0,1,2,3] \u00b7 Metal numerical execution matched the deterministic CPU oracle"
+        }
+      ],
+      "verified": true,
+      "not_proof_of": [
+        "gpu_npu_tpu_compilation",
+        "training_or_model_inference",
+        "device_residency_or_placement",
+        "speedup_or_performance"
+      ]
+    },
+    {
+      "feature": "accel",
+      "adapter": "abi-gpu MetalAccelerator",
+      "kernels_linked": true,
+      "device_initialized": true,
+      "backend_requested": "gpu-metal",
+      "backend_used": "gpu-metal",
+      "relative_tolerance": 0.001,
+      "kernels": [
+        {
+          "kernel": "dot",
+          "elements": 1024,
+          "executed_natively": true,
+          "oracle_parity": true,
+          "detail": "native=-2.539062 oracle=-2.539062 \u00b7 Metal numerical execution matched the deterministic CPU oracle"
+        },
+        {
+          "kernel": "cosine",
+          "elements": 1024,
+          "executed_natively": true,
+          "oracle_parity": true,
+          "detail": "native=-0.008919 oracle=-0.008919 \u00b7 Metal numerical execution matched the deterministic CPU oracle"
+        },
+        {
+          "kernel": "top_k",
+          "elements": 1024,
+          "executed_natively": true,
+          "oracle_parity": true,
+          "detail": "native ranking=[0,1,2,3] oracle ranking=[0,1,2,3] \u00b7 Metal numerical execution matched the deterministic CPU oracle"
+        }
+      ],
+      "verified": true,
+      "not_proof_of": [
+        "gpu_npu_tpu_compilation",
+        "training_or_model_inference",
+        "device_residency_or_placement",
+        "speedup_or_performance"
+      ]
+    }
+  ]
+}

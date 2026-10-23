@@ -104,3 +104,19 @@ fn inference_stops_locally_when_its_separate_grant_is_denied() {
     thread.join().unwrap();
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn inference_accounts_for_serialized_envelope_overhead_before_connecting() {
+    let root = scratch_dir("v3-inference-frame-overhead");
+    let mut config = test_config(root.join("absent.sock"));
+    config.bearer = crate::daemon::BearerSecret::parse("s".repeat(4096)).unwrap();
+    let request =
+        V3ModelInferenceRequest::new("fixture", "revision", "x".repeat(1_048_576 - 512), 4)
+            .expect("the request body alone fits the frame");
+    assert!(serde_json::to_vec(&request).unwrap().len() < config.max_frame_len);
+    let grants = V3CapabilitySet::from_sorted(vec![V3Capability::InferModels]).unwrap();
+    let result = super::unix::request_v3(&config, grants, V3Command::InferModel(request));
+    assert!(matches!(result, Err(ClientError::RequestTooLarge)));
+    assert!(!config.socket_path.exists());
+    std::fs::remove_dir_all(root).unwrap();
+}

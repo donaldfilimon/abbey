@@ -1,0 +1,10 @@
+Traceback (most recent call last):
+  File "/tmp/abbey-linux-controller-native.py", line 12, in <module>
+    c=service.Controller(bins/'abbey',home,home,Path('/usr/bin/true'),platform='linux');c.install();secret=c.token.read_bytes()
+                                                                                        ~~~~~~~~~^^
+  File "/Users/donald/sources/repos/abbey/tools/linux_user_service.py", line 161, in install
+    checked(path, directory=True)
+    ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/donald/sources/repos/abbey/tools/linux_user_service.py", line 39, in checked
+    raise ServiceError('private path grants group or other access')
+service.ServiceError: private path grants group or other access

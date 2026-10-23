@@ -1,0 +1,10 @@
+test_draft_enter_precedes_readiness_and_escape_follows_queue_observation (test_metadata_fixture.CancellationOrdering.test_draft_enter_precedes_readiness_and_escape_follows_queue_observation) ... ok
+test_metadata_leaf_skips_unrelated_python_site_hooks (test_metadata_fixture.MetadataFixture.test_metadata_leaf_skips_unrelated_python_site_hooks) ... ok
+test_a_probe_that_never_starts_fails_after_three_explicit_reads (test_metadata_fixture.OrdinaryProbeReadiness.test_a_probe_that_never_starts_fails_after_three_explicit_reads) ... ok
+test_an_observed_wrong_response_is_fatal_without_another_read (test_metadata_fixture.OrdinaryProbeReadiness.test_an_observed_wrong_response_is_fatal_without_another_read) ... ok
+test_cold_start_without_events_can_reach_an_exact_positive_control (test_metadata_fixture.OrdinaryProbeReadiness.test_cold_start_without_events_can_reach_an_exact_positive_control) ... ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 0.096s
+
+OK

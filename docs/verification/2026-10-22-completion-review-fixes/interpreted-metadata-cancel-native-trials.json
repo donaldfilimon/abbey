@@ -1,0 +1,99 @@
+{
+  "identity": {
+    "binary_sha256": "f219f31d27ff794368a7efadd3145c188d1e350ce8300c0f697f2b7ce6524e0b",
+    "source": {
+      "tools/tests/smoke_tui_metadata_pty.py": "152b0f056363db46c55b55334fe8243a7da0b98491082391ed892035b5059beb",
+      "tools/tests/test_metadata_fixture.py": "1d89d67929e60ec0e78ecabf23e5e492fbb4ebde46ac0e073afd075d3258b41d"
+    }
+  },
+  "trials": [
+    {
+      "trial": 1,
+      "mode": "control",
+      "exit_code": 0,
+      "seconds": 0.4135271249979269,
+      "stdout": "{\"failures\": [], \"mode\": \"control\", \"scenarios\": [{\"scenario\": \"doctor-metadata-control\", \"status\": \"passed\"}], \"setup\": {\"ordinary_readiness_attempts\": 1}, \"status\": \"passed\"}\n",
+      "stderr": ""
+    },
+    {
+      "trial": 1,
+      "mode": "cancel",
+      "exit_code": 0,
+      "seconds": 0.8256795840134146,
+      "stdout": "{\"failures\": [], \"mode\": \"cancel\", \"scenarios\": [{\"scenario\": \"doctor-metadata-cancel\", \"status\": \"passed\"}], \"status\": \"passed\"}\n",
+      "stderr": ""
+    },
+    {
+      "trial": 1,
+      "mode": "quit",
+      "exit_code": 0,
+      "seconds": 0.7881702500017127,
+      "stdout": "{\"failures\": [], \"mode\": \"quit\", \"scenarios\": [{\"scenario\": \"doctor-metadata-quit\", \"status\": \"passed\"}], \"status\": \"passed\"}\n",
+      "stderr": ""
+    },
+    {
+      "trial": 2,
+      "mode": "control",
+      "exit_code": 0,
+      "seconds": 0.37333804099762347,
+      "stdout": "{\"failures\": [], \"mode\": \"control\", \"scenarios\": [{\"scenario\": \"doctor-metadata-control\", \"status\": \"passed\"}], \"setup\": {\"ordinary_readiness_attempts\": 1}, \"status\": \"passed\"}\n",
+      "stderr": ""
+    },
+    {
+      "trial": 2,
+      "mode": "cancel",
+      "exit_code": 0,
+      "seconds": 0.8375704579957528,
+      "stdout": "{\"failures\": [], \"mode\": \"cancel\", \"scenarios\": [{\"scenario\": \"doctor-metadata-cancel\", \"status\": \"passed\"}], \"status\": \"passed\"}\n",
+      "stderr": ""
+    },
+    {
+      "trial": 2,
+      "mode": "quit",
+      "exit_code": 0,
+      "seconds": 0.6969828750006855,
+      "stdout": "{\"failures\": [], \"mode\": \"quit\", \"scenarios\": [{\"scenario\": \"doctor-metadata-quit\", \"status\": \"passed\"}], \"status\": \"passed\"}\n",
+      "stderr": ""
+    },
+    {
+      "trial": 3,
+      "mode": "control",
+      "exit_code": 0,
+      "seconds": 1.587065250001615,
+      "stdout": "{\"failures\": [], \"mode\": \"control\", \"scenarios\": [{\"scenario\": \"doctor-metadata-control\", \"status\": \"passed\"}], \"setup\": {\"ordinary_readiness_attempts\": 2}, \"status\": \"passed\"}\n",
+      "stderr": ""
+    },
+    {
+      "trial": 3,
+      "mode": "cancel",
+      "exit_code": 0,
+      "seconds": 0.9271364159940276,
+      "stdout": "{\"failures\": [], \"mode\": \"cancel\", \"scenarios\": [{\"scenario\": \"doctor-metadata-cancel\", \"status\": \"passed\"}], \"status\": \"passed\"}\n",
+      "stderr": ""
+    },
+    {
+      "trial": 3,
+      "mode": "quit",
+      "exit_code": 0,
+      "seconds": 1.7962872089992743,
+      "stdout": "{\"failures\": [], \"mode\": \"quit\", \"scenarios\": [{\"scenario\": \"doctor-metadata-quit\", \"status\": \"passed\"}], \"status\": \"passed\"}\n",
+      "stderr": ""
+    },
+    {
+      "trial": 4,
+      "mode": "control",
+      "exit_code": 0,
+      "seconds": 3.997467749999487,
+      "stdout": "{\"failures\": [], \"mode\": \"control\", \"scenarios\": [{\"scenario\": \"doctor-metadata-control\", \"status\": \"passed\"}], \"setup\": {\"ordinary_readiness_attempts\": 2}, \"status\": \"passed\"}\n",
+      "stderr": ""
+    },
+    {
+      "trial": 4,
+      "mode": "cancel",
+      "exit_code": 1,
+      "seconds": 16.71670862499741,
+      "stdout": "{\"failures\": [{\"error\": \"control: fixture did not enter actual metadata argv\", \"scenario\": \"doctor-metadata-cancel\", \"status\": \"failed\"}], \"mode\": \"cancel\", \"scenarios\": [], \"status\": \"failed\"}\n",
+      "stderr": ""
+    }
+  ]
+}

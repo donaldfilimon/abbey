@@ -7,12 +7,14 @@ ABBEY_INSTALL_PATH=$PATH
 ABBEY_TOOLCHAIN_ROOT=$(pwd)
 . "$ABBEY_TOOLCHAIN_ROOT/tools/toolchain-env.sh"
 
+# Install the CLI and daemon without requiring desktop GUI build dependencies.
+# Full-workspace qualification remains the root and desktop gates.
 # Extra cargo features, e.g. `ABBEY_CARGO_FEATURES=personal-edition ./install.sh`
 # to build and install the separately named personal edition (src/edition.rs).
 if [ -n "${ABBEY_CARGO_FEATURES:-}" ]; then
-  cargo build --release --locked --features "$ABBEY_CARGO_FEATURES"
+  cargo build --release --locked -p abbey --bins --features "$ABBEY_CARGO_FEATURES"
 else
-  cargo build --release --locked
+  cargo build --release --locked -p abbey --bins
 fi
 # Compiler/linker precedence is scoped to the build. Verification/publication
 # retain the caller's PATH tool contract, including staged rollback fault tools.
@@ -58,18 +60,27 @@ DEST_DIR="${ABBEY_INSTALL_DIR:-${HOME}/.local/bin}"
 COMPLETION_HOME="${ABBEY_COMPLETION_HOME:-${HOME}}"
 
 ACCEL_DYLIB_NAME="libabi_metal_dot.dylib"
+ACCEL_SOURCE_INSTALL_NAME="@loader_path/$ACCEL_DYLIB_NAME"
+# Keep the safe edition's existing loader path. The personal install receives
+# its own dependency name; publishing it can never replace the safe library.
+case "$EDITION_BIN:$EDITION_DAEMON" in
+  abbey:abbeyd) ;;
+  abbey-personal:abbey-personal-daemon)
+    ACCEL_DYLIB_NAME="libabbey-personal-abi-metal.dylib" ;;
+  *) printf 'install.sh: unknown compiled edition identity\n' >&2; exit 1 ;;
+esac
 ACCEL_INSTALL_NAME="@loader_path/$ACCEL_DYLIB_NAME"
-ACCEL_DYLIB="$(dirname "$BIN")/$ACCEL_DYLIB_NAME"
+ACCEL_DYLIB="$(dirname "$BIN")/libabi_metal_dot.dylib"
 DAEMON_BIN="${CARGO_TARGET_DIR:-target}/release/abbeyd"
 
 verify_accel_dylib() {
   candidate="$1"
-  otool -D "$candidate" | grep -Fqx "$ACCEL_INSTALL_NAME"
+  otool -D "$candidate" | grep -Fqx "${2:-$ACCEL_INSTALL_NAME}"
 }
 
 verify_accel_binary() {
   candidate="$1"
-  otool -L "$candidate" | grep -Fq "$ACCEL_INSTALL_NAME ("
+  otool -L "$candidate" | grep -Fq "${2:-$ACCEL_INSTALL_NAME} ("
 }
 
 smoke_daemon_without_starting() {
@@ -117,20 +128,27 @@ if [ "$ACCEL_REQUESTED" -eq 1 ]; then
     printf 'install.sh: accelerator installation requires otool verification\n' >&2
     exit 1
   }
+  if [ "$ACCEL_INSTALL_NAME" != "$ACCEL_SOURCE_INSTALL_NAME" ]; then
+    command -v install_name_tool >/dev/null 2>&1 &&
+      command -v codesign >/dev/null 2>&1 || {
+        printf 'install.sh: edition relocation requires install_name_tool and codesign\n' >&2
+        exit 1
+      }
+  fi
   [ -f "$ACCEL_DYLIB" ] && [ ! -L "$ACCEL_DYLIB" ] || {
     printf 'install.sh: missing regular ABI Metal dylib beside %s\n' "$BIN" >&2
     exit 1
   }
-  verify_accel_dylib "$ACCEL_DYLIB" || {
+  verify_accel_dylib "$ACCEL_DYLIB" "$ACCEL_SOURCE_INSTALL_NAME" || {
     printf 'install.sh: ABI Metal dylib identity is not %s\n' "$ACCEL_INSTALL_NAME" >&2
     exit 1
   }
-  verify_accel_binary "$BIN" || {
+  verify_accel_binary "$BIN" "$ACCEL_SOURCE_INSTALL_NAME" || {
     printf 'install.sh: Abbey binary does not use %s\n' "$ACCEL_INSTALL_NAME" >&2
     exit 1
   }
   if [ -f "$DAEMON_BIN" ]; then
-    verify_accel_binary "$DAEMON_BIN" || {
+    verify_accel_binary "$DAEMON_BIN" "$ACCEL_SOURCE_INSTALL_NAME" || {
       printf 'install.sh: Abbey daemon does not use %s\n' "$ACCEL_INSTALL_NAME" >&2
       exit 1
     }
@@ -216,6 +234,23 @@ if [ "$ACCEL_REQUESTED" -eq 1 ]; then
   STAGED_DYLIB="$STAGE_DIR/$ACCEL_DYLIB_NAME"
   cp "$ACCEL_DYLIB" "$STAGED_DYLIB"
   chmod 755 "$STAGED_DYLIB"
+  if [ "$ACCEL_INSTALL_NAME" != "$ACCEL_SOURCE_INSTALL_NAME" ]; then
+    # Only staged copies are changed. Mach-O edits invalidate signatures, so
+    # sign and verify these local-install artifacts before publication.
+    install_name_tool -id "$ACCEL_INSTALL_NAME" "$STAGED_DYLIB"
+    install_name_tool -change "$ACCEL_SOURCE_INSTALL_NAME" "$ACCEL_INSTALL_NAME" "$STAGED_BIN"
+    if [ -n "$STAGED_DAEMON" ]; then
+      install_name_tool -change "$ACCEL_SOURCE_INSTALL_NAME" "$ACCEL_INSTALL_NAME" "$STAGED_DAEMON"
+    fi
+    codesign --force --sign - "$STAGED_DYLIB"
+    codesign --force --sign - "$STAGED_BIN"
+    codesign --verify --strict "$STAGED_DYLIB"
+    codesign --verify --strict "$STAGED_BIN"
+    if [ -n "$STAGED_DAEMON" ]; then
+      codesign --force --sign - "$STAGED_DAEMON"
+      codesign --verify --strict "$STAGED_DAEMON"
+    fi
+  fi
   verify_accel_dylib "$STAGED_DYLIB" || {
     printf 'install.sh: staged ABI Metal dylib identity verification failed\n' >&2
     exit 1

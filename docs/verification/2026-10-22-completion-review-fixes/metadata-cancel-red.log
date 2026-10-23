@@ -1,0 +1,34 @@
+test_draft_enter_precedes_readiness_and_escape_follows_queue_observation (test_metadata_fixture.CancellationOrdering.test_draft_enter_precedes_readiness_and_escape_follows_queue_observation) ... FAIL
+test_metadata_leaf_skips_unrelated_python_site_hooks (test_metadata_fixture.MetadataFixture.test_metadata_leaf_skips_unrelated_python_site_hooks) ... ok
+test_a_probe_that_never_starts_fails_after_three_explicit_reads (test_metadata_fixture.OrdinaryProbeReadiness.test_a_probe_that_never_starts_fails_after_three_explicit_reads) ... ok
+test_an_observed_wrong_response_is_fatal_without_another_read (test_metadata_fixture.OrdinaryProbeReadiness.test_an_observed_wrong_response_is_fatal_without_another_read) ... ok
+test_cold_start_without_events_can_reach_an_exact_positive_control (test_metadata_fixture.OrdinaryProbeReadiness.test_cold_start_without_events_can_reach_an_exact_positive_control) ... ok
+
+======================================================================
+FAIL: test_draft_enter_precedes_readiness_and_escape_follows_queue_observation (test_metadata_fixture.CancellationOrdering.test_draft_enter_precedes_readiness_and_escape_follows_queue_observation)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/donald/sources/repos/abbey/tools/tests/test_metadata_fixture.py", line 93, in test_draft_enter_precedes_readiness_and_escape_follows_queue_observation
+    metadata.cancellation(Path("unused"), Path("unused"))
+    ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/donald/sources/repos/abbey/tools/tests/smoke_tui_metadata_pty.py", line 136, in cancellation
+    record = fixture.wait_call(session, "metadata")
+  File "/Users/donald/sources/repos/abbey/tools/tests/test_metadata_fixture.py", line 59, in wait_call
+    self.assertEqual(interactions, [expected],
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+                     "both Enter inputs must be sent in one write before readiness")
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Lists differ: [b'\x[14 chars] \x1b[201~\r'] != [b'\x[14 chars] \x1b[201~\r\x1b[200~metadata-queued-never-contact\x1b[201~\r']
+
+First differing element 0:
+b'\x1b[200~/doctor \x1b[201~\r'
+b'\x1b[200~/doctor \x1b[201~\r\x1b[200~metadata-queued-never-contact\x1b[201~\r'
+
+- [b'\x1b[200~/doctor \x1b[201~\r']
++ [b'\x1b[200~/doctor \x1b[201~\r\x1b[200~metadata-queued-never-contact\x1b[20'
++  b'1~\r'] : both Enter inputs must be sent in one write before readiness
+
+----------------------------------------------------------------------
+Ran 5 tests in 0.151s
+
+FAILED (failures=1)

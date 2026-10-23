@@ -1,0 +1,132 @@
+--- before/tools/linux_user_service.py
++++ after/tools/linux_user_service.py
+@@ -145,12 +145,24 @@
+     def ctl(self, action):
+         run([self.systemctl, '--user', action, self.unit.name], self.env)
+ 
++    def publish_unit(self, content, mode=0o600):
++        fd, staged = tempfile.mkstemp(prefix='.abbey-unit-', dir=self.unit.parent)
++        try:
++            with os.fdopen(fd, 'wb') as unit:
++                unit.write(content); unit.flush(); os.fchmod(unit.fileno(), mode)
++                os.fsync(unit.fileno())
++            os.replace(staged, self.unit)
++        finally:
++            if os.path.exists(staged): os.unlink(staged)
++
+     def install(self):
+         for path in (self.config, self.state, self.unit.parent):
+             mkdir(path)
+             checked(path, directory=True)
++        previous = None
+         if self.unit.exists() or self.unit.is_symlink():
+             self.validate()
++            previous = (self.unit.read_bytes(), stat.S_IMODE(self.unit.stat().st_mode))
+         if self.token.exists() or self.token.is_symlink():
+             checked(self.token)
+             token = self.token.read_bytes()
+@@ -160,15 +172,23 @@
+             fd = os.open(self.token, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+             with os.fdopen(fd, 'w') as token:
+                 token.write(secrets.token_hex(32))
+-        fd, staged = tempfile.mkstemp(prefix='.abbey-unit-', dir=self.unit.parent)
++        self.publish_unit(self.content().encode('utf-8'))
+         try:
+-            with os.fdopen(fd, 'w') as unit:
+-                unit.write(self.content()); unit.flush(); os.fsync(unit.fileno())
+-            os.replace(staged, self.unit)
+-        finally:
+-            if os.path.exists(staged): os.unlink(staged)
+-        self.validate()
+-        run([self.systemctl, '--user', 'daemon-reload'], self.env)
++            self.validate()
++            run([self.systemctl, '--user', 'daemon-reload'], self.env)
++        except (ServiceError, OSError, UnicodeError) as error:
++            try:
++                if previous is None:
++                    self.unit.unlink()
++                else:
++                    self.publish_unit(*previous)
++            except (ServiceError, OSError) as rollback_error:
++                raise ServiceError('installation failed; unit rollback failed; inspect unit before retry') from rollback_error
++            try:
++                run([self.systemctl, '--user', 'daemon-reload'], self.env)
++            except (ServiceError, OSError, UnicodeError) as reload_error:
++                raise ServiceError('installation failed; previous unit state restored; rollback daemon-reload failed') from reload_error
++            raise ServiceError('installation failed; previous unit state restored and reloaded') from error
+ 
+     def status(self):
+         self.validate()
+--- before/tools/tests/test_linux_user_service.py
++++ after/tools/tests/test_linux_user_service.py
+@@ -68,6 +68,53 @@
+         c.token.unlink(); c.token.symlink_to(self.cli)
+         with self.assertRaises(service.ServiceError): c.status()
+ 
++    def fail_reloads(self, c):
++        self.systemctl.write_text('#!/usr/bin/env python3\nimport sys\nif "daemon-reload" in sys.argv: sys.exit(1)\n')
++
++    def test_reload_failure_removes_new_unit_and_retains_credentials(self):
++        c = self.controller()
++        self.fail_reloads(c)
++        with self.assertRaises(service.ServiceError): c.install()
++        self.assertFalse(c.unit.exists())
++        self.assertTrue(c.token.exists()); self.assertTrue(c.state.is_dir())
++        self.assertEqual(c.token.stat().st_mode & 0o777, 0o600)
++
++    def test_reload_failure_restores_previous_unit_bytes_and_mode(self):
++        c = self.controller(); c.install()
++        c.unit.chmod(0o400)
++        previous = c.unit.read_bytes(); token = c.token.read_bytes()
++        (c.state / 'runtime.sqlite').write_text('retained')
++        self.fail_reloads(c)
++        with self.assertRaises(service.ServiceError): c.install()
++        self.assertEqual(c.unit.read_bytes(), previous)
++        self.assertEqual(c.unit.stat().st_mode & 0o777, 0o400)
++        self.assertEqual(c.token.read_bytes(), token)
++        self.assertEqual((c.state / 'runtime.sqlite').read_text(), 'retained')
++
++    def test_reload_failure_reports_failed_rollback(self):
++        c = self.controller()
++        self.fail_reloads(c)
++        publish = c.publish_unit
++        with patch.object(c, 'publish_unit', side_effect=lambda *args: publish(*args)):
++            with patch.object(Path, 'unlink', side_effect=OSError('fixture rollback failure')):
++                with self.assertRaisesRegex(service.ServiceError, 'unit rollback failed'):
++                    c.install()
++        self.assertTrue(c.unit.exists()); self.assertTrue(c.token.exists())
++
++    def test_reload_failure_reports_restored_but_reload_failed(self):
++        c = self.controller(); self.fail_reloads(c)
++        with self.assertRaisesRegex(service.ServiceError, 'state restored; rollback daemon-reload failed'):
++            c.install()
++        self.assertFalse(c.unit.exists()); self.assertTrue(c.token.exists())
++
++    def test_reload_failure_reports_successful_rollback_reload(self):
++        c = self.controller()
++        marker = self.home / 'reload-once'
++        self.systemctl.write_text('#!/usr/bin/env python3\nimport sys\nfrom pathlib import Path\np = Path(' + repr(str(marker)) + ')\nif "daemon-reload" in sys.argv and not p.exists():\n p.touch()\n sys.exit(1)\n')
++        with self.assertRaisesRegex(service.ServiceError, 'state restored and reloaded'):
++            c.install()
++        self.assertFalse(c.unit.exists()); self.assertTrue(c.token.exists())
++
+     def test_missing_binary_and_unknown_identity(self):
+         (self.bin / 'abbeyd').unlink()
+         with self.assertRaises((service.ServiceError, OSError)): self.controller()
+--- before/docs/linux-user-service.md
++++ after/docs/linux-user-service.md
+@@ -44,9 +44,11 @@
+ Parent Abbey/provider settings and inline credentials are not inherited.
+ Systemd paths escape specifiers; ExecStart also escapes dollar substitution.
+ No shell is invoked. Units are staged and atomically replaced; failed staging
+-preserves the previous unit. A daemon-reload failure is reported, leaving the
+-published unit available for inspection and explicit retry. Newly generated
+-credentials remain retained after installation failure.
++preserves the previous unit. If validation or daemon-reload fails after
++publication, installation restores the previous unit bytes and mode, or removes
++the newly created unit, then attempts another daemon-reload. Rollback or reload
++failures are reported explicitly and require inspection before retry. Newly
++generated credentials and runtime state remain retained after installation failure.
+ 
+ `start` makes at most three authenticated CLI `daemon status --json` probes,
+ each bounded to three seconds and 64 KiB of output, and validates the status

@@ -97,3 +97,26 @@ fn model_details_contract_is_bounded_and_read_only() {
     bad.revision = "a".repeat(257);
     assert!(bad.validate().is_err());
 }
+
+#[test]
+fn inference_accepts_ordinary_multiline_whitespace_and_frame_sized_prompts() {
+    for prompt in ["first\n\tsecond\r\nthird".to_owned(), "x".repeat(65_536)] {
+        let request = V3ModelInferenceRequest::new("fixture", "revision", prompt, 4)
+            .expect("valid prompt below the serialized frame ceiling");
+        request.validate().unwrap();
+        assert_eq!(request.request_digest, request.computed_digest());
+    }
+}
+
+#[test]
+fn inference_rejects_unsafe_controls_and_json_expansion_over_the_frame_ceiling() {
+    for prompt in [
+        "first\0second".to_owned(),
+        "first\u{1b}[31msecond".to_owned(),
+        "first\u{7f}second".to_owned(),
+        "x".repeat(1_048_577),
+        "\"\\".repeat(300_000),
+    ] {
+        assert!(V3ModelInferenceRequest::new("fixture", "revision", prompt, 4).is_err());
+    }
+}

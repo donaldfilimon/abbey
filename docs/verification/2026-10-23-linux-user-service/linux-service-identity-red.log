@@ -1,0 +1,41 @@
+..FFFF.............
+======================================================================
+FAIL: test_eager_identity_failure_cleans_probe_roots (test_linux_user_service.ServiceTests.test_eager_identity_failure_cleans_probe_roots)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/donald/sources/repos/abbey/tools/tests/test_linux_user_service.py", line 76, in test_eager_identity_failure_cleans_probe_roots
+    self.assertNotEqual(env['HOME'], str(self.home))
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: '/private/var/folders/c_/thtfn_7d1p9378rxsp4pwz6c0000gn/T/tmp4vvh2agc' == '/private/var/folders/c_/thtfn_7d1p9378rxsp4pwz6c0000gn/T/tmp4vvh2agc'
+
+======================================================================
+FAIL: test_eager_identity_isolated_for_both_editions (test_linux_user_service.ServiceTests.test_eager_identity_isolated_for_both_editions) (edition='standard')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/donald/sources/repos/abbey/tools/tests/test_linux_user_service.py", line 57, in test_eager_identity_isolated_for_both_editions
+    self.assertFalse(c.state.exists(), 'identity polluted intended service state')
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: True is not false : identity polluted intended service state
+
+======================================================================
+FAIL: test_eager_identity_isolated_for_both_editions (test_linux_user_service.ServiceTests.test_eager_identity_isolated_for_both_editions) (edition='personal')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/donald/sources/repos/abbey/tools/tests/test_linux_user_service.py", line 57, in test_eager_identity_isolated_for_both_editions
+    self.assertFalse(c.state.exists(), 'identity polluted intended service state')
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: True is not false : identity polluted intended service state
+
+======================================================================
+FAIL: test_eager_identity_preserves_existing_permissive_state (test_linux_user_service.ServiceTests.test_eager_identity_preserves_existing_permissive_state)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/donald/sources/repos/abbey/tools/tests/test_linux_user_service.py", line 89, in test_eager_identity_preserves_existing_permissive_state
+    self.assertFalse((state/'by-cwd').exists())
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: True is not false
+
+----------------------------------------------------------------------
+Ran 18 tests in 6.685s
+
+FAILED (failures=4)

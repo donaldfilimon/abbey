@@ -1,0 +1,42 @@
+[
+  {
+    "name": "candidate-format",
+    "exit_code": 0,
+    "seconds": 0.5505521297454834
+  },
+  {
+    "name": "alias-reconstructed-red",
+    "exit_code": 101,
+    "seconds": 13.74180293083191
+  },
+  {
+    "name": "corpus-green",
+    "exit_code": 0,
+    "seconds": 12.715170621871948
+  },
+  {
+    "name": "installer-focused",
+    "exit_code": 0,
+    "seconds": 1.5132081508636475
+  },
+  {
+    "name": "native-focused-build",
+    "exit_code": 0,
+    "seconds": 13.551295042037964
+  },
+  {
+    "name": "native-focused-1",
+    "exit_code": 0,
+    "seconds": 12.074295043945312
+  },
+  {
+    "name": "native-focused-2",
+    "exit_code": 0,
+    "seconds": 1.498340129852295
+  },
+  {
+    "name": "native-focused-3",
+    "exit_code": 0,
+    "seconds": 1.067523717880249
+  }
+]

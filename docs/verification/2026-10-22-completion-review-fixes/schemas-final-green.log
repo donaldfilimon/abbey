@@ -1,0 +1,160 @@
+   Compiling ring v0.17.14
+warning: unused import: `simulator::AdmissionSimulator`
+  --> /Users/donald/sources/repos/wdbx/crates/abi-wdbx/src/v3/complete_episode/crypto/admission/mod.rs:11:16
+   |
+11 | pub(super) use simulator::AdmissionSimulator;
+   |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+   Compiling onig_sys v69.9.3
+warning: `abi-wdbx` (lib) generated 1 warning (run `cargo fix --lib -p abi-wdbx` to apply 1 suggestion)
+   Compiling libsqlite3-sys v0.38.2
+   Compiling rustls v0.23.46
+   Compiling rustls-webpki v0.103.16
+   Compiling onig v6.5.3
+   Compiling rusqlite v0.40.2
+   Compiling syntect v5.3.0
+   Compiling tokio-rustls v0.26.6
+   Compiling ureq v3.4.2
+   Compiling tonic v0.14.6
+   Compiling axum-server v0.8.0
+   Compiling abi-models v0.1.0 (/Users/donald/sources/repos/abi/crates/abi-models)
+   Compiling abi-model-runtime v0.1.0 (/Users/donald/sources/repos/abi/crates/abi-model-runtime)
+   Compiling tonic-prost v0.14.6
+   Compiling abi-wdbx-gateway v0.1.0 (/Users/donald/sources/repos/abi/crates/abi-wdbx-gateway)
+   Compiling abi-worker v0.1.0 (/Users/donald/sources/repos/abi/crates/abi-worker)
+   Compiling abbey v2.6.0 (/Users/donald/sources/repos/abbey)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 21.70s
+     Running unittests src/lib.rs (target/debug/deps/abbey-eb7b9cf1fe10f594)
+
+running 126 tests
+test daemon::client::tests::completion_unaffected_v2_schema_three_still_round_trips ... ok
+test daemon::client::tests::peer_close_during_connection_handoff_is_one_stable_bounded_error ... ok
+test daemon::client::tests::completion_legacy_v1_claim_schema_is_rejected ... ok
+test daemon::client::tests::unreachable_socket_is_bounded_connect_error ... ok
+test daemon::client::tests::rejects_oversized_truncated_and_malformed_responses ... ok
+test daemon::client::tests::debug_and_errors_do_not_reveal_bearer ... ok
+test daemon::client::tests::read_only_request_downgrades_once_but_mutation_never_replays ... ok
+test daemon::client::tests::rejects_mismatched_protocol_version_and_request_id ... ok
+test daemon::client::tests::v3_cancellation_tests::v3_tool_cancellation_refuses_locally_when_negotiation_denies_the_grant ... ok
+test daemon::client::tests::v3_cancellation_tests::v3_tool_cancellation_is_single_shot_correlated_and_bounded ... ok
+test daemon::client::tests::run_responses_must_match_submission_identity_and_requested_page_limit ... ok
+test daemon::client::tests::rejects_cross_kind_and_approval_events ... ok
+test daemon::client::tests::v3_memory_tests::v3_memory_read_stops_locally_when_the_grant_is_denied ... ok
+test daemon::client::tests::v3_model_tests::inference_echoes_the_exact_grant_and_recomputes_all_correlation_digests ... ok
+test daemon::client::tests::v3_model_tests::inference_stops_locally_when_its_separate_grant_is_denied ... ok
+test daemon::client::tests::v3_memory_tests::v3_memory_reads_echo_exact_grants_and_correlate_each_response ... ok
+test daemon::client::tests::v3_tests::v3_model_lifecycle_echoes_exact_grants_and_correlates_every_status ... ok
+test daemon::client::tests::v3_tests::v3_claim_read_echoes_grants_and_requires_the_exact_response_id ... ok
+test daemon::client::tests::v3_tests::completion_legacy_v3_claim_schema_is_rejected_without_retry ... ok
+test daemon::client::tests::v3_tests::v3_claim_read_refuses_locally_when_negotiation_denies_the_grant ... ok
+test daemon::client::tests::v3_tests::v3_safe_tool_invocation_is_single_shot_and_correlates_the_terminal_result ... ok
+test daemon::client::tests::v3_tests::v3_pending_tool_request_is_exactly_correlated_and_never_replayed ... ok
+test daemon::client::tests::v3_tests::model_details_client_correlates_identity_and_exact_grants ... ok
+test daemon::client::tests::v3_tests::v3_model_read_refuses_locally_when_negotiation_denies_the_grant ... ok
+test daemon::client::tests::real_scratch_server_round_trip ... ok
+test daemon::client::tests::v3_tests::v3_tool_decisions_are_single_shot_exactly_correlated_and_bounded ... ok
+test daemon::client::tests::v3_tests::v3_safe_tool_invocation_refuses_locally_when_negotiation_denies_the_grant ... ok
+test daemon::client::tests::v3_tests::v3_rejects_unrequested_grants_and_never_downgrades_or_retries ... ok
+test daemon::client::v4::cancellation_tests::v4_cancel_client_missing_grant_never_connects ... ok
+test daemon::client::tests::v3_tests::v3_session_echoes_exact_negotiated_grants_for_one_model_read ... ok
+test daemon::client::tests::v3_tests::v3_tool_inventory_refuses_locally_when_negotiation_denies_the_grant ... ok
+test daemon::client::tests::v3_tests::v3_tool_inventory_echoes_grants_and_correlates_the_fixed_page ... ok
+test daemon::client::tests::v3_tests::v3_tool_decision_refuses_locally_when_negotiation_denies_the_grant ... ok
+test daemon::client::v4::lookup_tests::v4_lookup_without_read_turns_grant_never_connects ... ok
+test daemon::client::v4::tests::v4_client_errors_do_not_retain_transport_text ... ok
+test daemon::config::tests::debug_never_reveals_secret ... ok
+test daemon::config::tests::authenticated_rate_limit_is_bounded ... ok
+test daemon::federation::tests::mismatches_fail_before_a_method_can_run ... ok
+test daemon::federation::tests::depth_and_collection_limits_are_exact ... ok
+test daemon::federation::tests::manifest_and_parameter_digests_are_deterministic_across_key_order ... ok
+test daemon::client::tests::validates_status_and_claims_invariants ... ok
+test daemon::config::tests::owner_only_bearer_file_rejects_non_utf8 ... ok
+test daemon::config::tests::bearer_file_rejects_group_permissions ... ok
+test daemon::protocol::tests::protocol_v1_envelope_fixture_and_secret_redaction_remain_exact ... ok
+test daemon::protocol::tests::protocol_v3_envelope_is_separate_strict_and_redacted ... ok
+test daemon::federation::tests::request_parameters_respect_the_contract_property_bound ... ok
+test daemon::federation::tests::read_only_catalog_works_and_authority_methods_are_disabled ... ok
+test daemon::protocol::tests::protocol_v4_envelope_stays_out_of_the_legacy_and_v3_decoders ... ok
+test daemon::runtime_config::tests::manager_and_process_limits_reject_implicit_clamping ... ok
+test daemon::runtime_config::tests::debug_redacts_every_authority_path ... ok
+test daemon::protocol::tests::response_schema_rejects_unknown_envelope_and_outcome_fields ... ok
+test daemon::runtime_config::tests::private_store_rejects_insecure_directory_and_symlink_database ... ok
+test daemon::client::v4::lookup_tests::v4_lookup_client_lost_read_response_never_resubmits ... ok
+test daemon::client::v4::cancellation_tests::v4_cancel_client_lost_response_sends_once_and_terminal_race_is_truthful ... ok
+test daemon::client::v4::cancellation_tests::v4_cancel_client_rejects_wrong_pair_or_event_and_sends_once ... ok
+test daemon::client::v4::lookup_tests::v4_lookup_client_correlates_missing_and_found_receipts_and_sends_once ... ok
+test daemon::runtime_handler::tests::socket_readiness_requires_an_accepting_listener ... ok
+test daemon::runtime_config::tests::new_runtime_store_is_owner_only ... ok
+test daemon::runtime_handler::tests::cancellation_acknowledges_and_reaches_a_durable_terminal_state ... ok
+test daemon::runtime_handler::tests::authenticated_unix_server_negotiates_v4_without_replacing_the_legacy_envelope ... ok
+test daemon::runtime_handler::tests::cancellation_tests::v4_cancel_requires_exact_assistant_turn_and_grant_before_manager_effect ... ok
+test daemon::runtime_handler::tests::daemon_starts_without_provider_and_omits_only_submission_authority ... ok
+test daemon::runtime_handler::tests::cancellation_tests::v4_cancel_completion_race_returns_the_actual_terminal_state ... ok
+test daemon::runtime_handler::tests::cancellation_tests::v4_cancel_running_provider_persists_cancelled_messages_and_terminal_content ... ok
+test daemon::runtime_v3::memory_reads::tests::not_found_failures_carry_a_memory_specific_message ... ok
+test daemon::runtime_handler::tests::v1_stays_read_only_while_v2_advertises_only_bound_routes ... ok
+test daemon::runtime_handler::tests::route_and_store_failures_are_stable_and_redacted ... ok
+test daemon::runtime_handler::tests::authenticated_unix_server_accepts_v1_v2_and_separate_v3_envelopes ... ok
+test daemon::runtime_v3::model_inventory::tests::a_malformed_manifest_refuses_the_whole_inventory ... ok
+test daemon::runtime_v3::model_inventory::tests::a_manifest_id_outside_the_sanitized_wire_charset_refuses_startup ... ok
+test daemon::runtime_v3::memory_reads::tests::search_and_metadata_expose_only_opaque_ids_and_sanitized_summaries ... ok
+test daemon::runtime_v3::model_inventory::tests::a_missing_manifest_directory_refuses_startup ... ok
+test daemon::runtime_v3::model_inventory::tests::an_unbound_manifest_dir_yields_an_empty_inventory_without_io ... ok
+test daemon::runtime_v3::memory_reads::tests::summary_space_is_exact_and_fixed ... ok
+test daemon::runtime_v3::memory_reads::tests::unknown_space_record_and_unavailable_backend_fail_closed ... ok
+test daemon::runtime_v3::model_inventory::tests::a_size_mismatch_is_not_downloaded_rather_than_present ... ok
+test daemon::runtime_v3::model_inventory::tests::present_and_absent_artifacts_split_available_from_not_downloaded ... ok
+test daemon::runtime_v3::memory_reads::tests::search_watermarks_are_query_bound_and_snapshot_consistent ... ok
+test daemon::runtime_handler::tests::submit_status_and_events_use_canonical_redacted_projections ... ok
+test daemon::runtime_v3::execution_tests::safe::exact_approved_resubmission_marks_memory_obsolete_and_persists_terminal_digest ... ok
+test daemon::runtime_v3::execution_tests::safe::invalid_configured_backend_never_substitutes_sqlite_for_an_approved_effect ... ok
+test daemon::runtime_v3::execution_tests::safe::missing_memory_is_a_bounded_terminal_failure_not_an_unconsumed_retry ... ok
+test daemon::runtime_v3::tests::exact_pending_decisions_are_durable_without_implicit_execution ... ok
+test daemon::runtime_v3::model_lifecycle::tests::model_details_acceptance_is_scoped_to_startup_principal ... ok
+test daemon::runtime_v3::model_lifecycle::tests::inference_uses_the_same_exact_revision_active_guard_as_lifecycle_actions ... ok
+test daemon::runtime_handler::tests::v4_handler_schedules_turns_through_the_manager_and_keeps_the_prompt_out_of_the_receipt ... ok
+test daemon::runtime_v3::model_lifecycle::tests::exact_accepted_model_downloads_loads_reports_and_unloads ... ok
+test daemon::runtime_v3::model_lifecycle::tests::manifest_presence_and_signed_lifecycle_catalogs_coexist ... ok
+test daemon::runtime_v3::tests::inventory_only_authority_refuses_exact_model_details ... ok
+test daemon::runtime_v3::tests::exact_tool_cancellation_is_durable_without_consumption_or_execution ... ok
+test daemon::runtime_v3::tests::mutating_safe_tool_only_persists_an_exact_pending_approval ... ok
+test daemon::runtime_v3::tests::negotiates_only_startup_bound_abi_model_reads ... ok
+test daemon::runtime_v3::tool_catalog::tests::daemon_mutation_is_safe_edition_only_and_never_enters_mcp ... ok
+test daemon::runtime_v3::tests::no_abi_route_still_negotiates_safe_tools_and_canonical_claim_reads ... ok
+test daemon::runtime_v3::tests::worker_authority_is_denied_until_a_real_startup_adapter_exists ... ok
+test daemon::runtime_v3::tests::manifest_models_negotiate_reads_and_append_after_route_entries ... ok
+test daemon::server::schema_tests::completion_current_v1_schema_and_unchanged_v2_dispatch ... ok
+test daemon::server::schema_tests::completion_legacy_v1_envelope_never_reaches_claim_dispatch ... ok
+test daemon::server::schema_tests::completion_legacy_v3_schema_never_reaches_authority_dispatch ... ok
+test daemon::server::schema_tests::completion_v2_rejects_an_explicit_null_schema_header ... ok
+test daemon::runtime_v3::model_lifecycle::tests::one_model_revision_cannot_download_and_load_concurrently ... ok
+test daemon::server::tests::authenticated_request_round_trips_and_server_tears_down ... ok
+test daemon::server::tests::claims_query_uses_app_core_validation ... ok
+test daemon::server::tests::federation_never_reflects_invalid_request_ids ... ok
+test daemon::server::tests::federation_requires_exact_digests_and_never_downgrades ... ok
+test daemon::server::tests::insecure_socket_directory_is_rejected ... ok
+test daemon::server::tests::malformed_and_oversize_frames_are_rejected ... ok
+test daemon::server::tests::oversized_v2_response_fallback_retains_requested_version ... ok
+test daemon::runtime_v3::model_lifecycle::tests::exact_model_details_report_acceptance_and_actual_loaded_state_without_secrets ... ok
+test daemon::server::tests::only_authenticated_requests_consume_the_bounded_rate_limit ... ok
+test daemon::server::tests::protocol_v4_socket_keeps_its_envelope_for_denial_and_unsupported_authority ... ok
+test daemon::server::v4::tests::default_handler_does_not_accept_protocol_v4 ... ok
+test daemon::server::tests::an_accepted_connection_waits_for_a_delayed_partial_frame ... ok
+test daemon::server::v4::tests::protocol_v4_accepts_the_exact_json_envelope_used_by_the_scratch_fixture ... ok
+test daemon::runtime_v4::tests::v4_negotiation_never_grants_stubbed_authorities ... ok
+test daemon::server::v4::tests::protocol_v4_cancel_acknowledgement_requires_exact_pair_and_honest_state ... ok
+test daemon::server::v4::tests::protocol_v4_cancel_missing_grant_never_calls_the_handler ... ok
+test daemon::server::v4::tests::protocol_v4_negotiation_grants_only_the_requested_subset ... ok
+test daemon::server::v4::tests::protocol_v4_rejects_a_missing_grant_without_calling_the_handler ... ok
+test daemon::server::tests::wrong_bearer_and_version_fail_closed ... ok
+test daemon::runtime_v4::tests::v4_negotiation_returns_only_requested_served_grants ... ok
+test daemon::server::tests::reflected_request_ids_use_a_bounded_ascii_grammar ... ok
+test daemon::runtime_v3::model_lifecycle::tests::owner_only_startup_document_verifies_the_publisher_signature ... ok
+test daemon::runtime_v3::model_lifecycle::tests::unaccepted_revision_and_reused_operation_ids_fail_closed ... ok
+test daemon::runtime_v4::tests::v4_dispatch_admits_a_turn_without_copying_the_prompt_or_executing ... ok
+test daemon::runtime_v3::tests::persisted_authorization_rejects_duplicate_call_ids_after_reopen ... ok
+
+test result: ok. 126 passed; 0 failed; 0 ignored; 0 measured; 1125 filtered out; finished in 1.70s
+

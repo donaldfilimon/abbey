@@ -1,0 +1,29 @@
+FF
+======================================================================
+FAIL: test_authored_source_contract (test_windows_ci_qualification.WindowsSourceGuards.test_authored_source_contract)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/donald/sources/repos/abbey/tools/tests/test_windows_ci_qualification.py", line 52, in test_authored_source_contract
+    guard(*self.sources)
+    ~~~~~^^^^^^^^^^^^^^^
+  File "/Users/donald/sources/repos/abbey/tools/tests/test_windows_ci_qualification.py", line 38, in guard
+    assert value in qualification, value
+           ^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: $binaries[$cohort] = $binary
+
+======================================================================
+FAIL: test_mutations_fail_closed (test_windows_ci_qualification.WindowsSourceGuards.test_mutations_fail_closed)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/donald/sources/repos/abbey/tools/tests/test_windows_ci_qualification.py", line 72, in test_mutations_fail_closed
+    guard(*self.sources)
+    ~~~~~^^^^^^^^^^^^^^^
+  File "/Users/donald/sources/repos/abbey/tools/tests/test_windows_ci_qualification.py", line 38, in guard
+    assert value in qualification, value
+           ^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: $binaries[$cohort] = $binary
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.002s
+
+FAILED (failures=2)

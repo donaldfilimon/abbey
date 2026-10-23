@@ -2,6 +2,9 @@
 """Actual /doctor PTY metadata owner; private selected ABI and no providers."""
 import argparse
 import json
+import hashlib
+import os
+import subprocess
 from pathlib import Path
 import sys
 import tempfile
@@ -10,54 +13,40 @@ import time
 sys.dont_write_bytecode = True
 import smoke_tui_slash_pty as harness
 
-VERSION_BLOCK = '''if args in (["--version"], ["version"]):
-    print("owned-fixture-version")
-    sys.exit(0)
-'''
-OWNED_VERSION_BLOCK = r'''if args in (["--version"], ["version"]):
-    if control.get("action") != "metadata":
-        print("owned-fixture-version")
-        sys.exit(0)
-    leaf = None
-    if control.get("hold"):
-        leaf = subprocess.Popen([sys.executable, sys.argv[0], "--fixture-leaf"])
-    def close_metadata_leaf():
-        if leaf is not None:
-            if leaf.poll() is None:
-                try: leaf.terminate()
-                except ProcessLookupError: pass
-            try: leaf.wait(timeout=1)
-            except subprocess.TimeoutExpired:
-                leaf.kill(); leaf.wait(timeout=1)
-    def cancel_metadata(*_):
-        write_event("terminated", action="metadata")
-        close_metadata_leaf()
-        sys.exit(130)
-    signal.signal(signal.SIGTERM, cancel_metadata)
-    write_event("call", action="metadata", leaf_pid=leaf.pid if leaf else None)
-    if control.get("hold"):
-        deadline = time.monotonic() + float(os.environ["ABBEY_FIXTURE_HOLD_SECONDS"])
-        while not (root / "release").exists() and time.monotonic() < deadline:
-            time.sleep(.01)
-        close_metadata_leaf()
-    print(control["marker"], flush=True)
-    sys.exit(0)
-'''
-
-
 class MetadataFixture(harness.Fixture):
     def __init__(self, root):
+        self.generation_python = str(Path(sys.executable).absolute())
+        self.generation_script = str((root / "generation" / "abi").resolve())
         super().__init__(root, backend="abi")
-        harness.require(harness.STUB.count(VERSION_BLOCK) == 1,
-                        "fixture compatibility: original version response block changed")
-        # This fixture uses only the standard library. Skip unrelated installed
-        # site hooks: cold package discovery can consume the real 500 ms probe
-        # deadline before this owned executable reaches its first instruction.
-        stub = "#!" + sys.executable + " -S\n" + harness.STUB.replace(
-            VERSION_BLOCK, OWNED_VERSION_BLOCK, 1)
-        binary = root / "bin" / "abi"
-        binary.write_text(stub)
-        binary.chmod(0o700)
+        generation = Path(self.generation_script)
+        generation.parent.mkdir()
+        generation.write_text(harness.STUB)
+        source = Path(__file__).with_name("metadata_probe_fixture.c")
+        compiler = os.environ.get("CC", "/usr/bin/cc")
+        harness.require(Path(compiler).is_absolute(), "native fixture CC must be an absolute executable path")
+        command = [compiler, "-std=c99", "-D_XOPEN_SOURCE=700", "-Wall", "-Wextra",
+                   str(source), "-o", str(root / "bin" / "abi")]
+        compiled = subprocess.run(command, capture_output=True, text=True, timeout=30)
+        harness.require(compiled.returncode == 0,
+                        "native fixture compiler failed: " + compiled.stderr[-8192:])
+        version = subprocess.run([compiler, "--version"], capture_output=True, text=True, check=True, timeout=10)
+        (root / "native-compiler-proof.json").write_text(json.dumps(dict(
+            command=command, compiler_version=version.stdout[:4096],
+            source_sha256=hashlib.sha256(source.read_bytes()).hexdigest())))
+
+    def set_control(self, action="generation", hold=False, marker=None):
+        super().set_control(action, hold, marker)
+        fields = [self.nonce, str(int(action == "metadata")), str(int(hold)),
+                  self.marker, self.generation_python, self.generation_script]
+        harness.require(all("\n" not in v and "\r" not in v for v in fields),
+                        "native fixture sidecar fields must be single lines")
+        harness.require(len(self.marker) <= 255 and self.marker and
+                        all(c in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
+                            for c in self.marker), "native fixture marker outside bounded grammar")
+        harness.require(all(len(v.encode()) < 4095 for v in fields), "native sidecar field too long")
+        pending = self.root / "native-control.pending"
+        pending.write_text("\n".join(fields) + "\n")
+        pending.replace(self.root / "native-control")
 
     def assert_exact_probe(self, record):
         harness.require(record["backend"] == "abi" and
@@ -81,16 +70,33 @@ class MetadataFixture(harness.Fixture):
         raise AssertionError("control: actual metadata leaf readiness was not observed")
 
 
+def ordinary_control_probe(binary, fixture):
+    # Cold interpreter/loader startup can consume a legitimate 500 ms probe
+    # deadline before the owned stub records any event. These are explicit
+    # read-only setup attempts, each with a new nonce. Never retry an observed
+    # wrong response, and never count an unanswered attempt as positive proof.
+    diagnostics = []
+    for attempt in range(3):
+        fixture.set_control("metadata", marker="owned-doctor-version-control")
+        output, stderr = fixture.cli(binary, ["/doctor"])
+        rows = fixture.events(fixture.nonce)
+        if fixture.marker.encode() in output:
+            fixture.control_readiness_attempts = attempt + 1
+            return rows
+        diagnostics.append(dict(attempt=attempt + 1, stdout=repr(output[-4096:]),
+                                stderr=repr(stderr[-4096:]), owned_events=rows))
+        harness.require(not rows,
+                        "control: observed metadata response omitted its actual version; "
+                        f"diagnostics={json.dumps(diagnostics, sort_keys=True)[:16384]}")
+    raise AssertionError("control: ordinary doctor omitted the actual version response "
+                         "after three explicit reads; "
+                         f"diagnostics={json.dumps(diagnostics, sort_keys=True)[:32768]}")
+
+
 def control(binary, root):
     fixture = MetadataFixture(root)
     # This proves the unchanged ordinary CLI protocol separately from the TUI.
-    fixture.set_control("metadata", marker="owned-doctor-version-control")
-    output, stderr = fixture.cli(binary, ["/doctor"])
-    rows = fixture.events(fixture.nonce)
-    harness.require(fixture.marker.encode() in output,
-                    "control: ordinary doctor omitted the actual version response; "
-                    f"stdout={output[-4096:]!r}; stderr={stderr[-4096:]!r}; "
-                    f"owned_events={json.dumps(rows, sort_keys=True)[:4096]}")
+    rows = ordinary_control_probe(binary, fixture)
     metadata = [r for r in rows if r["action"] == "metadata"]
     harness.require(len(metadata) == 1,
                     "control: ordinary doctor did not use one actual metadata probe")
@@ -106,6 +112,7 @@ def control(binary, root):
         session.quit_observed()
     finally:
         fixture.cleanup(session)
+    return dict(ordinary_readiness_attempts=fixture.control_readiness_attempts)
 
 
 def cancellation(binary, root, quit_run=False):
@@ -114,7 +121,14 @@ def cancellation(binary, root, quit_run=False):
     session = harness.OwnedSession(binary, fixture)
     try:
         fixture.set_control("metadata", hold=True, marker="must-not-publish-held-version")
-        session.submit("/doctor ")
+        if quit_run:
+            session.submit("/doctor ")
+        else:
+            # Queue both Enter inputs before spending the real 500 ms metadata
+            # deadline observing process readiness. Keep the normal bracketed
+            # paste grammar; one write preserves the two submissions' order.
+            session.send(b"\x1b[200~/doctor \x1b[201~\r"
+                         b"\x1b[200~metadata-queued-never-contact\x1b[201~\r")
         record = fixture.wait_call(session, "metadata")
         fixture.assert_exact_probe(record)
         fixture.wait_leaf(session, record)
@@ -123,7 +137,6 @@ def cancellation(binary, root, quit_run=False):
         if quit_run:
             session.quit_observed()
         else:
-            session.submit("metadata-queued-never-contact")
             session.wait_output(b"queued (1)", timeout=harness.WAIT)
             session.send(b"\x1b")
             session.wait_join(130)
@@ -148,9 +161,11 @@ def main():
     scenario = "doctor-metadata-" + OPTIONS.mode
     try:
         with tempfile.TemporaryDirectory(prefix="abbey-metadata-pty-") as scratch:
-            test(Path(OPTIONS.binary).resolve(), Path(scratch))
+            setup = test(Path(OPTIONS.binary).resolve(), Path(scratch))
         proof = dict(status="passed", mode=OPTIONS.mode,
                      scenarios=[dict(scenario=scenario, status="passed")], failures=[])
+        if setup is not None:
+            proof["setup"] = setup
     except Exception as error:
         proof = dict(status="failed", mode=OPTIONS.mode, scenarios=[],
                      failures=[dict(scenario=scenario, status="failed", error=str(error))])

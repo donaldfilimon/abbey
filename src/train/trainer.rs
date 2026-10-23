@@ -112,7 +112,10 @@ pub fn run_trainer(
         STDOUT_CAP,
         STDERR_CAP,
     )
-    .map_err(|error| anyhow::anyhow!("trainer invocation failed: {error}"))?;
+    .map_err(|error| {
+        let _ = std::fs::remove_file(artifact);
+        anyhow::anyhow!("trainer invocation failed: {error}")
+    })?;
     if outcome.code != Some(0) {
         let _ = std::fs::remove_file(artifact);
         bail!(

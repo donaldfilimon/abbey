@@ -1,0 +1,35 @@
+warning: unused import: `simulator::AdmissionSimulator`
+  --> /Users/donald/sources/repos/wdbx/crates/abi-wdbx/src/v3/complete_episode/crypto/admission/mod.rs:11:16
+   |
+11 | pub(super) use simulator::AdmissionSimulator;
+   |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `abi-wdbx` (lib) generated 1 warning (run `cargo fix --lib -p abi-wdbx` to apply 1 suggestion)
+   Compiling abi-wdbx-gateway v0.1.0 (/Users/donald/sources/repos/abi/crates/abi-wdbx-gateway)
+   Compiling abi-models v0.1.0 (/Users/donald/sources/repos/abi/crates/abi-models)
+   Compiling abi-model-runtime v0.1.0 (/Users/donald/sources/repos/abi/crates/abi-model-runtime)
+   Compiling abi-worker v0.1.0 (/Users/donald/sources/repos/abi/crates/abi-worker)
+   Compiling abbey v2.6.0 (/Users/donald/sources/repos/abbey)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 11.43s
+     Running tests/cli_surface.rs (target/debug/deps/cli_surface-4fa8df7add362fd2)
+
+running 1 test
+test fixture_environment_contains_both_editions_even_for_a_stale_binary ... FAILED
+
+failures:
+
+---- fixture_environment_contains_both_editions_even_for_a_stale_binary stdout ----
+
+thread 'fixture_environment_contains_both_editions_even_for_a_stale_binary' (4337985) panicked at tests/cli_surface.rs:71:5:
+HOME and both editions' state/config must be owned even when the executable's edition differs
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    fixture_environment_contains_both_editions_even_for_a_stale_binary
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 16 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p abbey --test cli_surface`

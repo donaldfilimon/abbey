@@ -15,7 +15,7 @@ pub const CONTRACT_MAJOR: u32 = 2;
 pub const CONTRACT_REVISION: u32 = 2;
 pub const CORPUS_DIGEST: &str =
     "sha256:3ffd487bdc497b7ce54b8c29978a3686dcbffdb66a85957a0ee4f99ba576cdfd";
-pub const MAX_FRAME_BYTES: usize = 1024 * 1024;
+pub const MAX_FRAME_BYTES: usize = crate::app_core::MAX_APP_FRAME_BYTES;
 pub const MAX_JSON_CONTAINER_DEPTH: usize = 32;
 pub const MAX_IDENTIFIER_BYTES: usize = 64;
 pub const MAX_COLLECTION_ITEMS: usize = 2_048;

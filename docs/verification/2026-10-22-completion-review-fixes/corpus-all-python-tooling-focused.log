@@ -1,0 +1,11 @@
+............................................................./opt/homebrew/Cellar/python@3.15/3.15.0/Frameworks/Python.framework/Versions/3.15/lib/python3.15/pathlib/__init__.py:344: ResourceWarning: unclosed file <_io.FileIO name=3 mode='rb' closefd=True>
+  @property
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/opt/homebrew/Cellar/python@3.15/3.15.0/Frameworks/Python.framework/Versions/3.15/lib/python3.15/pathlib/__init__.py:344: ResourceWarning: unclosed file <_io.FileIO name=5 mode='rb' closefd=True>
+  @property
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+..........................................................................................................................................................
+----------------------------------------------------------------------
+Ran 215 tests in 7.627s
+
+OK

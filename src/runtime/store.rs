@@ -36,6 +36,7 @@ use codec::{
     backend_as_str, parse_conversation_id, parse_run_id, row_to_event, row_to_run, sql_sequence,
     state_as_str, to_sql_error,
 };
+pub use governed::local::AbbeyLocalApprovalAuthority;
 pub use model_operation::{
     ModelOperationKind, ModelOperationRecord, ModelOperationState, NewModelOperation,
 };

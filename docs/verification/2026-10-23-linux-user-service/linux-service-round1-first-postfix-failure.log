@@ -1,0 +1,16 @@
+Command: python3 -m unittest discover -s tools/tests -p test_linux_user_service.py
+First post-fix run, captured tool output (no original redirected file):
+ERROR: test_personal_and_wrong_readiness (test_linux_user_service.ServiceTests.test_personal_and_wrong_readiness)
+Traceback (most recent call last):
+  File "tools/tests/test_linux_user_service.py", line 51, in test_personal_and_wrong_readiness
+    c = self.controller(); c.install()
+  File "tools/tests/test_linux_user_service.py", line 35, in controller
+    c = service.Controller(self.cli, self.home, self.home, self.systemctl, platform='linux')
+  File "tools/linux_user_service.py", line 107, in __init__
+    name = run([self.cli, 'edition', '--name'], self.env)
+  File "tools/linux_user_service.py", line 73, in run
+    raise ServiceError('command timed out')
+service.ServiceError: command timed out
+Ran 12 tests in 34.501s
+FAILED (errors=1)
+Cause unestablished. Bounds unchanged. The subsequent full run adds two rollback-diagnostic tests; it is not an unchanged full-suite rerun.

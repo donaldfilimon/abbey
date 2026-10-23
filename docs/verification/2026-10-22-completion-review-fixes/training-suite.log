@@ -1,0 +1,99 @@
+warning: unused import: `simulator::AdmissionSimulator`
+  --> /Users/donald/.codex/verification/abbey-completion-20261022/review-fixes/wdbx/crates/abi-wdbx/src/v3/complete_episode/crypto/admission/mod.rs:11:16
+   |
+11 | pub(super) use simulator::AdmissionSimulator;
+   |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `abi-wdbx` (lib) generated 1 warning (run `cargo fix --lib -p abi-wdbx` to apply 1 suggestion)
+   Compiling abbey v2.6.0 (/Users/donald/.codex/verification/abbey-completion-20261022/review-fixes/abbey)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.81s
+     Running unittests src/lib.rs (target/debug/deps/abbey-fa888c3060f76541)
+
+running 82 tests
+test train::evaluate::tests::a_leak_is_never_promoted ... ok
+test train::dataset::tests::source_parsing_is_exact ... ok
+test train::args::tests::the_verbs_are_exact ... ok
+test train::args::tests::an_unknown_option_or_source_is_refused ... ok
+test train::evaluate::tests::the_decision_follows_the_baseline_and_the_floor ... ok
+test train::digest::tests::domains_are_distinct_and_digests_are_stable ... ok
+test train::consent::tests::a_missing_file_is_refused ... ok
+test train::consent::tests::the_wrong_content_is_refused_and_says_what_is_expected ... ok
+test train::args::tests::the_flags_are_parsed ... ok
+test train::evaluate::tests::the_probe_seeds_are_the_first_character_of_each_prompt ... ok
+test train::evaluate::tests::the_common_prefix_is_counted_in_characters ... ok
+test train::evaluate::tests::a_leaked_validation_pair_is_found ... ok
+test train::consent::tests::the_exact_line_is_accepted_and_digested ... ok
+test train::metric_tests::a_leak_is_never_promoted ... ok
+test train::evaluate::tests::the_wrapped_slice_wraps_at_the_end_of_the_corpus ... ok
+test train::ledger::tests::a_row_carries_its_own_digest_and_it_detects_tampering ... ok
+test train::ledger::tests::a_corrupted_pointer_is_an_error_and_not_an_absent_artifact ... ok
+test train::ledger::tests::the_ledger_keeps_every_row ... ok
+test train::metric_tests::the_leak_check_finds_a_held_out_pair_in_the_corpus ... ok
+test train::dataset::tests::only_ready_pairs_enter_the_memory_corpus ... ok
+test train::metric_tests::an_artifact_that_reproduces_its_corpus_scores_one ... ok
+test train::process::tests::a_missing_program_is_a_spawn_error ... ok
+test train::redaction::tests::a_clean_string_passes_through_unchanged ... ok
+test train::redaction::tests::a_pem_block_is_redacted_with_its_body ... ok
+test train::redaction::tests::absolute_paths_become_path_placeholders ... ok
+test train::redaction::tests::redaction_is_deterministic ... ok
+test train::redaction::tests::secret_shapes_become_redacted ... ok
+test train::redaction::tests::short_matches_and_ordinary_words_survive ... ok
+test train::redaction::tests::urls_are_not_treated_as_paths ... ok
+test train::metric_tests::an_artifact_that_emits_something_unrelated_scores_zero ... ok
+test train::metric_tests::a_validation_pair_in_the_training_corpus_is_detected_and_reported ... ok
+test train::metric_tests::the_score_is_the_same_twice ... ok
+test train::review_regressions::review_pem_redaction_survives_a_split_utf8_window_boundary ... ok
+test train::review_regressions::review_descendant_pipe_retention_cannot_escape_the_deadline ... ok
+test train::metric_tests::the_probe_seeds_come_from_the_held_out_pairs ... ok
+test train::metric_tests::a_reproducing_artifact_is_promoted_and_recorded ... ok
+test train::runs::tests::a_dataset_row_is_the_text_field_the_trainer_reads ... ok
+test train::runs::tests::a_prepared_run_writes_the_dataset_and_the_manifest ... ok
+test train::specs::tests::a_malformed_goal_block_is_skipped_and_counted ... ok
+test train::metric_tests::an_unreproducing_artifact_is_not_promoted ... ok
+test train::metric_tests::the_evaluate_verb_re_scores_the_current_artifact ... ok
+test train::specs::tests::the_real_goal_ledger_parses_without_skips ... ok
+test train::split::tests::a_different_ratio_moves_records ... ok
+test train::split::tests::assignment_is_stable_for_a_record_id ... ok
+test train::split::tests::the_eighty_twenty_rule_is_the_specified_one ... ok
+test train::tests::a_fresh_install_with_no_baseline_records_trained_not_promoted ... ok
+test train::tests::a_missing_or_wrong_consent_file_is_refused ... ok
+test train::tests::a_plan_over_an_empty_corpus_says_so_and_writes_nothing ... ok
+test train::tests::a_promoted_distilled_pair_reaches_the_memory_corpus ... ok
+test train::tests::a_run_with_a_wrong_consent_file_is_refused_with_exit_two ... ok
+test train::tests::a_run_without_consent_is_refused_with_exit_two ... ok
+test train::review_regressions::review_timeout_removes_an_artifact_written_before_the_hang ... ok
+test train::review_regressions::review_failed_baseline_scoring_preserves_current_and_records_refusal ... ok
+test train::metric_tests::a_regression_keeps_the_previous_artifact ... ok
+test train::tests::an_unknown_verb_exits_two_with_the_usage_on_stderr ... ok
+test train::tests::help_exits_zero ... ok
+test train::tests::redaction_is_deterministic_and_reports_whether_it_changed_anything ... ok
+test train::tests::the_consent_digest_is_recorded_in_the_manifest ... ok
+test train::tests::the_corpus_is_kept_in_split_order ... ok
+test train::tests::the_dataset_digest_is_stable_and_sensitive ... ok
+test train::tests::a_trainer_that_fails_leaves_no_artifact ... ok
+test train::tests::the_redaction_table_is_exact ... ok
+test train::tests::a_trainer_that_writes_the_artifact_reports_its_digest ... ok
+test train::tests::the_split_follows_the_eighty_twenty_rule ... ok
+test train::tests::the_split_is_deterministic_and_stable_for_a_record_id ... ok
+test train::tests::the_split_is_part_of_the_dataset_digest ... ok
+test train::tests::the_split_rule_is_mixed_into_the_dataset_digest ... ok
+test train::trainer::tests::an_artifact_outside_the_run_directory_is_refused ... ok
+test train::trainer::tests::an_empty_dataset_reconstructs_to_an_empty_corpus ... ok
+test train::trainer::tests::the_corpus_is_reconstructed_the_way_the_trainer_reads_it ... ok
+test train::trainer::tests::the_sample_argv_is_exactly_the_documented_grammar ... ok
+test train::trainer::tests::the_sampled_text_is_taken_from_the_last_marker ... ok
+test train::trainer::tests::the_train_argv_is_exactly_the_documented_grammar ... ok
+test train::review_regressions::review_rollback_requires_valid_consent_before_any_state_change ... ok
+test train::tests::the_score_is_deterministic_for_a_fixed_artifact ... ok
+test train::review_regressions::review_sampler_failure_preserves_current_and_records_refusal ... ok
+test train::metric_tests::a_rollback_restores_the_previous_artifact_and_keeps_every_row ... ok
+test train::tests::the_dataset_file_is_the_corpus_the_trainer_consumed ... ok
+test train::tests::a_trainer_that_hangs_is_stopped_by_the_timeout ... ok
+test train::review_regressions::review_group_leader_is_not_reaped_while_descendants_hold_pipes ... ok
+test train::specs::tests::the_claim_registry_becomes_one_pair_per_claim ... ok
+test train::specs::tests::a_specs_pair_with_an_absolute_path_is_redacted_and_counted ... ok
+
+test result: ok. 82 passed; 0 failed; 0 ignored; 0 measured; 1162 filtered out; finished in 1.79s
+

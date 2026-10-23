@@ -482,6 +482,36 @@ class ManifestInvocationTests(unittest.TestCase):
         self.assertIn("building", message)
         self.assertNotIn("Traceback", message)
 
+    @unittest.skipUnless(os.name == "posix", "POSIX pipe cleanup contract")
+    def test_expired_build_budget_closes_pipe_readers(self) -> None:
+        # Capture a real scratch child, never the manifest or Cargo. Retain it
+        # so garbage collection cannot hide unclosed readers from this check.
+        children = []
+        real_popen = claims_sync.subprocess.Popen
+
+        def capture(*args, **kwargs):
+            child = real_popen(*args, **kwargs)
+            children.append(child)
+            return child
+
+        try:
+            with mock.patch.object(claims_sync.subprocess, "Popen", side_effect=capture):
+                with self.assertRaises(SystemExit):
+                    claims_sync.run_manifest_command(
+                        [sys.executable, "-c", "import time; time.sleep(30)"],
+                        os.environ.copy(),
+                        1,
+                    )
+            self.assertEqual(len(children), 1)
+            child = children[0]
+            self.assertIsNotNone(child.returncode)
+            self.assertTrue(child.stdout.closed)
+            self.assertTrue(child.stderr.closed)
+        finally:
+            for child in children:
+                child.stdout.close()
+                child.stderr.close()
+
     def test_failed_build_reports_cargos_own_diagnosis(self) -> None:
         with self.assertRaises(SystemExit) as raised:
             self._run_with_stubbed_cargo(

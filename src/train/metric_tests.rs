@@ -267,7 +267,16 @@ fn a_rollback_restores_the_previous_artifact_and_keeps_every_row() {
     let promoted = ledger::read_current(&scratch.dir).unwrap().unwrap();
     assert_ne!(promoted.run_id, first.run_id);
 
-    let outcome = dispatch_with(&state, &["rollback".to_string()], Some(&good)).unwrap();
+    let outcome = dispatch_with(
+        &state,
+        &[
+            "rollback".to_string(),
+            "--consent".to_string(),
+            consent.display().to_string(),
+        ],
+        Some(&good),
+    )
+    .unwrap();
     assert_eq!(outcome.code, 0, "{outcome:?}");
     let restored = ledger::read_current(&scratch.dir).unwrap().unwrap();
     assert_eq!(restored.run_id, first.run_id);

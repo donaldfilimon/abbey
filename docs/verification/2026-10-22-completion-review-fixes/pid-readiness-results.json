@@ -1,0 +1,52 @@
+[
+  {
+    "trial": 1,
+    "exit_code": 0,
+    "seconds": 0.7439470829995116
+  },
+  {
+    "trial": 2,
+    "exit_code": 0,
+    "seconds": 0.7201733330002753
+  },
+  {
+    "trial": 3,
+    "exit_code": 0,
+    "seconds": 0.717994542006636
+  },
+  {
+    "trial": 4,
+    "exit_code": 0,
+    "seconds": 0.7229393329907907
+  },
+  {
+    "trial": 5,
+    "exit_code": 0,
+    "seconds": 0.7170774580008583
+  },
+  {
+    "trial": 6,
+    "exit_code": 0,
+    "seconds": 0.7147206660010852
+  },
+  {
+    "trial": 7,
+    "exit_code": 0,
+    "seconds": 0.7297748750133906
+  },
+  {
+    "trial": 8,
+    "exit_code": 0,
+    "seconds": 0.7160937500011642
+  },
+  {
+    "trial": 9,
+    "exit_code": 0,
+    "seconds": 0.7209811659995466
+  },
+  {
+    "trial": 10,
+    "exit_code": 0,
+    "seconds": 0.7246908749948489
+  }
+]

@@ -9,12 +9,14 @@ use std::fmt;
 
 /// Original read-only Status/Claims command/event protocol.
 pub const APP_PROTOCOL_V1: u16 = 1;
-/// Original read-only serialized application-state schema.
-pub const APP_SCHEMA_V1: u16 = 1;
+/// Read-only schema including the full claim lifecycle vocabulary.
+pub const APP_SCHEMA_V1: u16 = 2;
 /// Current command/event exchange protocol.
 pub const APP_PROTOCOL_VERSION: u16 = 2;
 /// Current serialized application-state schema.
 pub const APP_SCHEMA_VERSION: u16 = 3;
+/// Maximum serialized JSON payload for an application transport frame.
+pub const MAX_APP_FRAME_BYTES: usize = 1024 * 1024;
 
 const MAX_CLAIMS_FILTER_BYTES: usize = 256;
 const MAX_APPROVAL_SUMMARY_BYTES: usize = 1_024;
@@ -267,9 +269,10 @@ pub enum ClaimStatus {
     Blocked,
     OutOfScope,
     /// Terminal lifecycle states (constitution decision 68). Adding these to
-    /// the wire vocabulary is why `APP_SCHEMA_VERSION` moved to 3: a schema-2
-    /// reader rejects them rather than silently reading a failed claim as
-    /// anything else.
+    /// the wire vocabulary requires independent schema revisions: v1 uses
+    /// schema 2, v2 uses schema 3, and v3 uses schema 4. Older schema readers
+    /// are rejected during status/grant validation rather than receiving an
+    /// apparently compatible vocabulary.
     Failed,
     Revoked,
     Superseded,

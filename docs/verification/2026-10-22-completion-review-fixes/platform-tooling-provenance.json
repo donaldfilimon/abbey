@@ -1,0 +1,10 @@
+{
+  "compiled_source": "/Users/donald/.codex/verification/abbey-completion-20261022/corpus-golden-qualified/abbey",
+  "retained_identical_source": "/Users/donald/.codex/verification/abbey-completion-20261022/corpus-golden-qualified/checkpoints/platform-tooling/abbey",
+  "source_hash_mode_verified": true,
+  "root_desktop_passed": true,
+  "additional_combinations": "all four passed clippy/build/test, no source hash/mode drift",
+  "warnings": "upstream WDBX unused import plus two claims timeout PIPE ResourceWarnings; no warning-free global claim",
+  "native_report_scope": "exact installer section only; preceding Rust unit test emits a fourth report, not installed evidence",
+  "scratch_defaults": "both edition namespaces; CARGO_HOME/RUSTUP_HOME retained explicitly"
+}

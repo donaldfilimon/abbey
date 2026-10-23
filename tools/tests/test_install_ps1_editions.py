@@ -159,9 +159,9 @@ class InstallPs1Source(unittest.TestCase):
         self.assertIn("$env:ABBEY_CARGO_FEATURES", self.text)
         self.assertRegex(
             self.text,
-            r"cargo build --release --locked --features \$env:ABBEY_CARGO_FEATURES",
+            r"cargo build --release --locked -p abbey --bins --features \$env:ABBEY_CARGO_FEATURES",
         )
-        self.assertRegex(self.text, r"(?m)^\s*cargo build --release --locked\s*$")
+        self.assertRegex(self.text, r"(?m)^\s*cargo build --release --locked -p abbey --bins\s*$")
 
     def test_a_failed_build_stops_the_installation(self) -> None:
         # PowerShell 5.1 does not turn a native command's nonzero exit into a
@@ -170,7 +170,7 @@ class InstallPs1Source(unittest.TestCase):
         # build and reports the missing artifact instead of the build failure.
         builds = list(
             re.finditer(
-                r"(?m)^\s*cargo build --release --locked"
+                r"(?m)^\s*cargo build --release --locked -p abbey --bins"
                 r"(?: --features \$env:ABBEY_CARGO_FEATURES)?\s*$",
                 self.text,
             )

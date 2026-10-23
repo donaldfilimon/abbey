@@ -1,0 +1,43 @@
+   Compiling abi-wdbx v0.1.0 (/Users/donald/.codex/verification/abbey-completion-20261022/review-qualified/wdbx/crates/abi-wdbx)
+   Compiling objc2-metal v0.3.2
+   Compiling abi-wdbx-gateway v0.1.0 (/Users/donald/.codex/verification/abbey-completion-20261022/review-qualified/abi/crates/abi-wdbx-gateway)
+   Compiling abi-capability v0.1.0 (/Users/donald/.codex/verification/abbey-completion-20261022/review-qualified/abi/crates/abi-capability)
+   Compiling abi-models v0.1.0 (/Users/donald/.codex/verification/abbey-completion-20261022/review-qualified/abi/crates/abi-models)
+   Compiling abi-gpu v0.1.0 (/Users/donald/.codex/verification/abbey-completion-20261022/review-qualified/abi/crates/abi-gpu)
+warning: unused import: `simulator::AdmissionSimulator`
+  --> /Users/donald/.codex/verification/abbey-completion-20261022/review-qualified/wdbx/crates/abi-wdbx/src/v3/complete_episode/crypto/admission/mod.rs:11:16
+   |
+11 | pub(super) use simulator::AdmissionSimulator;
+   |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+   Compiling abi-agent-host v0.1.0 (/Users/donald/.codex/verification/abbey-completion-20261022/review-qualified/abi/crates/abi-agent-host)
+   Compiling candle-metal-kernels v0.11.0 (https://github.com/huggingface/candle.git?rev=70f72e9cfdbfc570846ca363ead2135394af3e9a#70f72e9c)
+   Compiling candle-core v0.11.0 (https://github.com/huggingface/candle.git?rev=70f72e9cfdbfc570846ca363ead2135394af3e9a#70f72e9c)
+   Compiling abi-sea v0.1.0 (/Users/donald/.codex/verification/abbey-completion-20261022/review-qualified/abi/crates/abi-sea)
+   Compiling abi-model-runtime v0.1.0 (/Users/donald/.codex/verification/abbey-completion-20261022/review-qualified/abi/crates/abi-model-runtime)
+   Compiling abi-worker v0.1.0 (/Users/donald/.codex/verification/abbey-completion-20261022/review-qualified/abi/crates/abi-worker)
+   Compiling abbey v2.6.0 (/Users/donald/.codex/verification/abbey-completion-20261022/review-qualified/abbey)
+warning: `abi-wdbx` (lib) generated 1 warning (run `cargo fix --lib -p abi-wdbx` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 21.99s
+     Running tests/tui_metadata_pty.rs (target/debug/deps/tui_metadata_pty-d3a5d7e988e82b2b)
+
+running 3 tests
+
+thread 'doctor_metadata_cancel_joins_nested_probe_before_queue_reuse' (3975993) panicked at tests/tui_metadata_pty.rs:26:5:
+metadata PTY cancel failed: {"failures": [{"error": "control: fixture did not enter actual metadata argv", "scenario": "doctor-metadata-cancel", "status": "failed"}], "mode": "cancel", "scenarios": [], "status": "failed"}
+
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test doctor_metadata_cancel_joins_nested_probe_before_queue_reuse ... FAILED
+test doctor_metadata_control_executes_exact_selected_version_probe ... ok
+test doctor_metadata_quit_joins_nested_probe_before_terminal_restore ... ok
+
+failures:
+
+failures:
+    doctor_metadata_cancel_joins_nested_probe_before_queue_reuse
+
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 18.29s
+
+error: test failed, to rerun pass `-p abbey --test tui_metadata_pty`

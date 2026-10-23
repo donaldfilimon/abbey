@@ -1,0 +1,33 @@
+warning: unused import: `simulator::AdmissionSimulator`
+  --> /Users/donald/sources/repos/wdbx/crates/abi-wdbx/src/v3/complete_episode/crypto/admission/mod.rs:11:16
+   |
+11 | pub(super) use simulator::AdmissionSimulator;
+   |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `abi-wdbx` (lib) generated 1 warning (run `cargo fix --lib -p abi-wdbx` to apply 1 suggestion)
+   Compiling abi-worker v0.1.0 (/Users/donald/sources/repos/abi/crates/abi-worker)
+   Compiling abbey v2.6.0 (/Users/donald/sources/repos/abbey)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 6.67s
+     Running unittests src/lib.rs (target/debug/deps/abbey-8a47aea52c9a9d49)
+
+running 15 tests
+test learn::tests::plan_improvements_flags_low_confidence_routes_for_review_only ... ok
+test train::review_regressions::review_pem_redaction_survives_a_split_utf8_window_boundary ... ok
+test runtime::store::v4_tests::content::v4_preview_failure_rolls_back_content_event ... ok
+test runtime::store::v4_tests::v4_preview_truncation_keeps_utf8_boundary ... ok
+test tui::predict::tests::natural_language_maps_review_and_fix ... ok
+test runtime::store::governed::tests::every_preview_commitment_is_immutable_before_decision_and_consumption ... ok
+test runtime::store::v4_tests::content::v4_truncated_preview_preserves_total_bytes_after_reopen ... ok
+test automation_schedule::tests::validation_rejects_out_of_bounds_and_accepts_preview_limit ... ok
+test tui::run_loop::tests::review_suspend_propagates_terminal_reentry_failure ... ok
+test train::review_regressions::review_descendant_pipe_retention_cannot_escape_the_deadline ... ok
+test train::review_regressions::review_timeout_removes_an_artifact_written_before_the_hang ... ok
+test train::review_regressions::review_failed_baseline_scoring_preserves_current_and_records_refusal ... ok
+test train::review_regressions::review_rollback_requires_valid_consent_before_any_state_change ... ok
+test train::review_regressions::review_sampler_failure_preserves_current_and_records_refusal ... ok
+test train::review_regressions::review_group_leader_is_not_reaped_while_descendants_hold_pipes ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 1229 filtered out; finished in 0.71s
+

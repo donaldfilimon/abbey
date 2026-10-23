@@ -410,7 +410,7 @@ fn model_details_client_correlates_identity_and_exact_grants() {
             client: DaemonClient::new(config),
             negotiation: V3GrantNegotiation {
                 protocol_version: 3,
-                schema_version: 3,
+                schema_version: crate::app_core::APP_SCHEMA_V3,
                 granted: V3CapabilitySet::from_sorted(vec![V3Capability::ReadModels]).unwrap(),
             },
         };
@@ -425,4 +425,27 @@ fn model_details_client_correlates_identity_and_exact_grants() {
         server.join().unwrap();
         std::fs::remove_dir_all(root).unwrap();
     }
+}
+
+#[test]
+fn completion_legacy_v3_claim_schema_is_rejected_without_retry() {
+    let (config, server, root) = fake_v3_server(|request| {
+        let mut response = V3ResponseEnvelope::ok(
+            request.request_id,
+            V3Event::Negotiated(V3GrantNegotiation {
+                protocol_version: 3,
+                schema_version: 3,
+                granted: V3CapabilitySet::deny_all(),
+            }),
+        );
+        response.schema_version = 3;
+        encoded_v3_response(response)
+    });
+    assert!(
+        DaemonClient::new(config)
+            .negotiate_v3(V3CapabilitySet::deny_all())
+            .is_err()
+    );
+    server.join().unwrap();
+    std::fs::remove_dir_all(root).unwrap();
 }

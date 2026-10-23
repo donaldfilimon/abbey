@@ -43,6 +43,90 @@ def strings(value) -> bool:
     )
 
 
+def historical_checkboxes(path: Path):
+    """Read actual Markdown checkboxes, excluding fenced examples."""
+    fence = None
+    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        marker = re.match(r"^\s{0,3}(`{3,}|~{3,})(.*)$", line)
+        if marker:
+            run, tail = marker.groups()
+            if fence is None:
+                fence = run
+            elif run[0] == fence[0] and len(run) >= len(fence) and not tail.strip():
+                fence = None
+            continue
+        if fence is None:
+            checkbox = re.match(r"^\s*- \[([ xX])\] (.+)$", line)
+            if checkbox:
+                yield number, checkbox[2], checkbox[1] == " "
+
+
+def validate_history(matrix: dict, root: Path) -> list[str]:
+    """Check retained obligations without treating references as execution proof."""
+    try:
+        history = json.loads((root / "tasks/completion-historical.json").read_text(encoding="utf-8"),
+                             object_pairs_hook=unique_object)
+    except (OSError, ValueError) as error:
+        return [f"historical mapping: {error}"]
+    if not isinstance(history, dict) or history.get("schema_version") != 1:
+        return ["invalid historical mapping schema"]
+    entries, sources = history.get("entries"), history.get("sources")
+    if not isinstance(entries, list) or not strings(sources) or len(set(sources)) != len(sources):
+        return ["invalid historical mapping inventory"]
+    errors = []
+    if type(history.get("open_occurrences")) is not int or history["open_occurrences"] != len(entries):
+        errors.append("historical occurrence count differs from retained entries")
+    requirements = {r.get("id"): r for r in matrix.get("requirements", []) if isinstance(r, dict)}
+    locations, identifiers, documents = set(), set(), {}
+
+    def source_checkboxes(source):
+        if not isinstance(source, str) or source not in sources:
+            errors.append("invalid historical source")
+            return {}
+        path = root / source
+        if Path(source).is_absolute() or ".." in Path(source).parts or not path.resolve().is_relative_to(root.resolve()) or path.suffix != ".md":
+            errors.append(f"invalid historical source: {source}")
+            return {}
+        try:
+            return {n: (text, opened) for n, text, opened in historical_checkboxes(path)}
+        except OSError:
+            errors.append(f"missing historical source: {source}")
+            return {}
+
+    for source in sources:
+        documents[source] = source_checkboxes(source)
+    for entry in entries:
+        if not isinstance(entry, dict):
+            errors.append("invalid historical entry")
+            continue
+        source, line, identifier = entry.get("source"), entry.get("line"), entry.get("id")
+        if not isinstance(source, str) or source not in documents:
+            errors.append("invalid historical source")
+            continue
+        if type(line) is not int or line < 1 or not isinstance(identifier, str) or not identifier:
+            errors.append("invalid historical location or identity")
+            continue
+        location = (source, line)
+        if location in locations or identifier in identifiers:
+            errors.append(f"duplicate historical occurrence: {source}:{line}")
+        locations.add(location)
+        identifiers.add(identifier)
+        actual = documents[source].get(line)
+        if actual is None or actual[0] != entry.get("text"):
+            errors.append(f"stale historical location: {source}:{line}")
+        requirement = requirements.get(entry.get("requirement"))
+        if requirement is None or any(entry.get(old) != requirement.get(new) for old, new in (
+            ("milestone", "milestone"), ("blocker_owner", "owner"), ("acceptance", "acceptance"))):
+            errors.append(f"invalid historical binding: {source}:{line}")
+    plans = set((root / "docs/superpowers/plans").glob("*.md")) | set((root / "docs").glob("*plan*.md"))
+    for path in plans:
+        source = path.relative_to(root).as_posix()
+        for line, _text, opened in historical_checkboxes(path):
+            if opened and (source, line) not in locations:
+                errors.append(f"unmapped historical checkbox: {source}:{line}")
+    return errors
+
+
 def validate(matrix: dict, root: Path = ROOT) -> list[str]:
     errors = []
     if not isinstance(matrix, dict) or set(matrix) != {
@@ -179,7 +263,7 @@ def validate(matrix: dict, root: Path = ROOT) -> list[str]:
     for identifier, targets in goals.items():
         if identifier not in live_goals or not strings(targets) or any(t not in by_id for t in targets):
             errors.append(f"invalid goal mapping: {identifier}")
-    return errors
+    return errors + validate_history(matrix, root)
 
 
 def main() -> int:

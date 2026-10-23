@@ -1,0 +1,5 @@
+{
+  "initial_candidate": "already fixed by concurrent canonical edit",
+  "red": "isolated reconstruction removing only canonical path guard",
+  "canonical_source_reverted": false
+}

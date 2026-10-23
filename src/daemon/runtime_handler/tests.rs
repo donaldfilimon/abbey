@@ -264,6 +264,7 @@ fn authenticated_unix_server_accepts_v1_v2_and_separate_v3_envelopes() {
         &socket,
         crate::daemon::RequestEnvelope {
             version: APP_PROTOCOL_V1,
+            schema_version: crate::daemon::RequestEnvelope::schema_for(APP_PROTOCOL_V1),
             request_id: "v1-status".into(),
             bearer: BEARER.into(),
             command: AppCommand::Status,
@@ -282,6 +283,7 @@ fn authenticated_unix_server_accepts_v1_v2_and_separate_v3_envelopes() {
         &socket,
         crate::daemon::RequestEnvelope {
             version: APP_PROTOCOL_VERSION,
+            schema_version: crate::daemon::RequestEnvelope::schema_for(APP_PROTOCOL_VERSION),
             request_id: "v2-submit".into(),
             bearer: BEARER.into(),
             command: AppCommand::SubmitRun(request("wire:submit", "wire private prompt")),
@@ -302,6 +304,7 @@ fn authenticated_unix_server_accepts_v1_v2_and_separate_v3_envelopes() {
             &socket,
             crate::daemon::RequestEnvelope {
                 version: APP_PROTOCOL_VERSION,
+                schema_version: crate::daemon::RequestEnvelope::schema_for(APP_PROTOCOL_VERSION),
                 request_id: "v2-get".into(),
                 bearer: BEARER.into(),
                 command: AppCommand::GetRun(RunQuery {
@@ -327,6 +330,7 @@ fn authenticated_unix_server_accepts_v1_v2_and_separate_v3_envelopes() {
         &socket,
         crate::daemon::RequestEnvelope {
             version: APP_PROTOCOL_VERSION,
+            schema_version: crate::daemon::RequestEnvelope::schema_for(APP_PROTOCOL_VERSION),
             request_id: "v2-events".into(),
             bearer: BEARER.into(),
             command: AppCommand::RunEvents(RunEventsQuery {
@@ -755,6 +759,7 @@ fn authenticated_unix_server_negotiates_v4_without_replacing_the_legacy_envelope
         &socket,
         crate::daemon::RequestEnvelope {
             version: APP_PROTOCOL_V1,
+            schema_version: crate::daemon::RequestEnvelope::schema_for(APP_PROTOCOL_V1),
             request_id: "v1-still-status".into(),
             bearer: BEARER.into(),
             command: AppCommand::Status,

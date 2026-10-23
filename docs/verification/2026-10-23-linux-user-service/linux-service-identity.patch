@@ -1,0 +1,171 @@
+--- before/tools/linux_user_service.py
++++ after/tools/linux_user_service.py
+@@ -104,8 +104,24 @@
+         for key in ('XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS'):
+             if key in os.environ:
+                 self.env[key] = os.environ[key]
+-        name = run([self.cli, 'edition', '--name'], self.env)
+-        daemon = run([self.cli, 'edition', '--daemon-name'], self.env)
++        # CLI initialization precedes edition dispatch and may create/read state.
++        # Identity discovery must never touch the intended service/user roots.
++        with tempfile.TemporaryDirectory(prefix='abbey-service-identity-') as scratch:
++            probe = Path(scratch).resolve()
++            roots = {key: probe / leaf for key, leaf in (
++                ('HOME', 'home'), ('XDG_CONFIG_HOME', 'config'),
++                ('XDG_STATE_HOME', 'state'), ('XDG_DATA_HOME', 'data'),
++                ('XDG_CACHE_HOME', 'cache'), ('XDG_RUNTIME_DIR', 'runtime'),
++                ('ABBEY_STATE_DIR', 'safe-state'),
++                ('ABBEY_PERSONAL_STATE_DIR', 'personal-state'))}
++            for root in roots.values():
++                root.mkdir(mode=0o700)
++            probe_env = {key: str(root) for key, root in roots.items()}
++            probe_env.update({'PATH': '/usr/bin:/bin', 'USERPROFILE': str(roots['HOME']),
++                              'ABBEY_CONFIG': str(probe / 'safe-config.toml'),
++                              'ABBEY_PERSONAL_CONFIG': str(probe / 'personal-config.toml')})
++            name = run([self.cli, 'edition', '--name'], probe_env)
++            daemon = run([self.cli, 'edition', '--daemon-name'], probe_env)
+         pairs = {'abbey': ('abbeyd', 'standard', 'ABBEYD', 'ABBEY'),
+                  'abbey-personal': ('abbey-personal-daemon', 'personal', 'ABBEY_PERSONAL_DAEMON', 'ABBEY_PERSONAL')}
+         if name not in pairs or pairs[name][0] != daemon or self.cli.name != name:
+--- before/tools/tests/test_linux_user_service.py
++++ after/tools/tests/test_linux_user_service.py
+@@ -1,6 +1,7 @@
+ import importlib.util
+ import json
+ import os
++import sys
+ from pathlib import Path
+ import tempfile
+ import unittest
+@@ -19,7 +20,7 @@
+         self.bin.mkdir(mode=0o700)
+         self.log = self.home / 'calls'
+         self.systemctl = self.bin / 'systemctl'
+-        self.systemctl.write_text('#!/usr/bin/env python3\nimport os,sys,json\nwith open(os.environ["CALLS"],"a") as f: f.write(json.dumps(sys.argv[1:])+"\\n")\n')
++        self.systemctl.write_text('#!' + sys.executable + ' -S\nimport os,sys,json\nwith open(os.environ["CALLS"],"a") as f: f.write(json.dumps(sys.argv[1:])+"\\n")\n')
+         self.systemctl.chmod(0o700)
+         self.make_cli('abbey', 'abbeyd', 'standard')
+         self.env = patch.dict(os.environ, {'CALLS': str(self.log), 'ABBEYD_BEARER_TOKEN': 'must-not-leak'})
+@@ -27,7 +28,7 @@
+         self.addCleanup(self.env.stop)
+     def make_cli(self, name, daemon, edition):
+         self.cli = self.bin / name
+-        self.cli.write_text('#!/usr/bin/env python3\nimport sys,json,os\nif sys.argv[1:]==["edition","--name"]: print('+repr(name)+')\nelif sys.argv[1:]==["edition","--daemon-name"]: print('+repr(daemon)+')\nelse:\n assert "ABBEYD_BEARER_TOKEN" not in os.environ\n print(json.dumps({"type":"status","payload":{"edition":'+repr(edition)+',"state":"ready","protocol_version":1,"schema_version":2}}))\n')
++        self.cli.write_text('#!' + sys.executable + ' -S\nimport sys,json,os\nif sys.argv[1:]==["edition","--name"]: print('+repr(name)+')\nelif sys.argv[1:]==["edition","--daemon-name"]: print('+repr(daemon)+')\nelse:\n assert "ABBEYD_BEARER_TOKEN" not in os.environ\n print(json.dumps({"type":"status","payload":{"edition":'+repr(edition)+',"state":"ready","protocol_version":1,"schema_version":2}}))\n')
+         self.cli.chmod(0o700)
+         (self.bin / daemon).write_text('#!/bin/sh\nexit 0\n')
+         (self.bin / daemon).chmod(0o700)
+@@ -35,6 +36,72 @@
+         c = service.Controller(self.cli, self.home, self.home, self.systemctl, platform='linux')
+         c.env['CALLS'] = str(self.log)
+         return c
++    def eager_identity(self, name, daemon, edition, fail=False):
++        self.make_cli(name, daemon, edition)
++        original = self.cli.read_text()
++        log = self.home / ('identity-' + name + '.jsonl')
++        initialization = ('import os,json,sys\nfrom pathlib import Path\n'
++            + 'if sys.argv[1] == "edition":\n'
++            + ' keys = ["HOME","USERPROFILE","XDG_CONFIG_HOME","XDG_STATE_HOME","ABBEY_STATE_DIR","ABBEY_PERSONAL_STATE_DIR","ABBEY_CONFIG","ABBEY_PERSONAL_CONFIG"]\n'
++            + ' with open(' + repr(str(log)) + ', "a") as f: f.write(json.dumps({k:os.environ.get(k) for k in keys}) + "\\n")\n'
++            + ' state = Path(os.environ.get(' + repr('ABBEY_PERSONAL_STATE_DIR' if edition == 'personal' else 'ABBEY_STATE_DIR') + ', str(Path.home()/".local/state"/' + repr(name) + ')))\n'
++            + ' state.mkdir(parents=True,exist_ok=True,mode=0o755)\n (state/"by-cwd").mkdir(exist_ok=True,mode=0o755)\n'
++            + (' sys.exit(1)\n' if fail else ''))
++        self.cli.write_text(original.split('\n', 1)[0] + '\n' + initialization + original.split('\n', 1)[1])
++        return log
++
++    def test_eager_identity_isolated_for_both_editions(self):
++        for name, daemon, edition in [('abbey','abbeyd','standard'), ('abbey-personal','abbey-personal-daemon','personal')]:
++            with self.subTest(edition=edition):
++                log = self.eager_identity(name, daemon, edition)
++                c = self.controller()
++                self.assertFalse(c.state.exists(), 'identity polluted intended service state')
++                probes = [json.loads(row) for row in log.read_text().splitlines()]
++                self.assertEqual(len(probes), 2)
++                for env in probes:
++                    self.assertNotEqual(env['HOME'], str(self.home))
++                    self.assertTrue(all(env.values()))
++                    self.assertFalse(Path(env['HOME']).exists())
++                    self.assertFalse(Path(env['ABBEY_STATE_DIR']).exists())
++                    self.assertFalse(Path(env['ABBEY_PERSONAL_STATE_DIR']).exists())
++                self.assertEqual(c.service_env['HOME'], str(self.home))
++                self.assertNotIn('ABBEY_CONFIG', c.service_env)
++                self.assertNotIn('ABBEY_PERSONAL_CONFIG', c.service_env)
++                self.assertNotIn('ABBEY_STATE_DIR' if edition == 'personal' else 'ABBEY_PERSONAL_STATE_DIR', c.service_env)
++                self.assertNotIn('USERPROFILE', c.service_env)
++                self.assertEqual(c.service_env['ABBEY_PERSONAL_STATE_DIR' if edition == 'personal' else 'ABBEY_STATE_DIR'], str(c.state))
++                c.install(); self.assertEqual(c.state.stat().st_mode & 0o777, 0o700)
++
++    def test_eager_identity_failure_cleans_probe_roots(self):
++        log = self.eager_identity('abbey','abbeyd','standard', fail=True)
++        with self.assertRaises(service.ServiceError): self.controller()
++        env = json.loads(log.read_text().splitlines()[0])
++        self.assertNotEqual(env['HOME'], str(self.home))
++        self.assertFalse(Path(env['HOME']).exists())
++        self.assertFalse((self.home/'.local/state/abbey').exists())
++
++    def test_eager_unknown_identity_cleans_probe_roots(self):
++        log = self.eager_identity('unknown','unknown-daemon','standard')
++        with self.assertRaisesRegex(service.ServiceError, 'unknown or inconsistent'):
++            self.controller()
++        probes = [json.loads(row) for row in log.read_text().splitlines()]
++        self.assertEqual(len(probes), 2)
++        for env in probes:
++            self.assertFalse(Path(env['HOME']).exists())
++            self.assertFalse(Path(env['ABBEY_STATE_DIR']).exists())
++        self.assertFalse((self.home/'.local/state/unknown').exists())
++
++    def test_eager_identity_preserves_existing_permissive_state(self):
++        state = self.home/'.local/state/abbey'
++        state.mkdir(parents=True,mode=0o755);state.chmod(0o755)
++        (state/'sentinel').write_text('retain')
++        self.eager_identity('abbey','abbeyd','standard')
++        c = self.controller()
++        with self.assertRaises(service.ServiceError): c.install()
++        self.assertEqual(state.stat().st_mode & 0o777, 0o755)
++        self.assertEqual((state/'sentinel').read_text(), 'retain')
++        self.assertFalse((state/'by-cwd').exists())
++
+     def test_install_retains_secret_and_uninstall_state(self):
+         c = self.controller(); c.install()
+         secret = c.token.read_bytes(); unit = c.unit.read_text()
+@@ -69,7 +136,7 @@
+         with self.assertRaises(service.ServiceError): c.status()
+ 
+     def fail_reloads(self, c):
+-        self.systemctl.write_text('#!/usr/bin/env python3\nimport sys\nif "daemon-reload" in sys.argv: sys.exit(1)\n')
++        self.systemctl.write_text('#!' + sys.executable + ' -S\nimport sys\nif "daemon-reload" in sys.argv: sys.exit(1)\n')
+ 
+     def test_reload_failure_removes_new_unit_and_retains_credentials(self):
+         c = self.controller()
+@@ -110,7 +177,7 @@
+     def test_reload_failure_reports_successful_rollback_reload(self):
+         c = self.controller()
+         marker = self.home / 'reload-once'
+-        self.systemctl.write_text('#!/usr/bin/env python3\nimport sys\nfrom pathlib import Path\np = Path(' + repr(str(marker)) + ')\nif "daemon-reload" in sys.argv and not p.exists():\n p.touch()\n sys.exit(1)\n')
++        self.systemctl.write_text('#!' + sys.executable + ' -S\nimport sys\nfrom pathlib import Path\np = Path(' + repr(str(marker)) + ')\nif "daemon-reload" in sys.argv and not p.exists():\n p.touch()\n sys.exit(1)\n')
+         with self.assertRaisesRegex(service.ServiceError, 'state restored and reloaded'):
+             c.install()
+         self.assertFalse(c.unit.exists()); self.assertTrue(c.token.exists())
+@@ -134,7 +201,7 @@
+ 
+     def test_bounded_output_and_foreign_owner(self):
+         noisy = self.bin / 'noisy'
+-        noisy.write_text('#!/usr/bin/env python3\nprint("x" * 70000)\n')
++        noisy.write_text('#!' + sys.executable + ' -S\nprint("x" * 70000)\n')
+         noisy.chmod(0o700)
+         with self.assertRaises(service.ServiceError): service.run([noisy], {'PATH': '/usr/bin:/bin'})
+         with patch.object(service.os, 'getuid', return_value=987654):
+--- before/docs/linux-user-service.md
++++ after/docs/linux-user-service.md
+@@ -18,7 +18,10 @@
+ The same arguments support `stop`, `restart`, and `uninstall`. Use
+ `abbey-personal` for the personal edition; its matching daemon must be alongside
+ it. Identity probes run separately with `edition --name` and
+-`edition --daemon-name`. Unknown pairs and missing executables fail closed.
++`edition --daemon-name` inside a temporary private HOME with explicit config
++and state roots for both editions. These probes can initialize CLI state; their
++scratch roots are removed on success or failure and never enter the service
++environment. Existing user or service state is neither adopted nor chmodded. Unknown pairs and missing executables fail closed.
+ 
+ Safe integration uses `~/.config/abbey-user-service/bearer`,
+ `~/.local/state/abbey`, and `~/.config/systemd/user/abbeyd.service`.

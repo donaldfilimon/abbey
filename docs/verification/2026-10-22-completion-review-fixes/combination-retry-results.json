@@ -1,0 +1,92 @@
+[
+  {
+    "features": "personal-edition,accel",
+    "commands": [
+      {
+        "argv": [
+          "clippy",
+          "--locked",
+          "-p",
+          "abbey",
+          "--features",
+          "personal-edition,accel",
+          "--all-targets",
+          "--",
+          "-D",
+          "warnings"
+        ],
+        "exit_code": 0
+      },
+      {
+        "argv": [
+          "build",
+          "--locked",
+          "-p",
+          "abbey",
+          "--features",
+          "personal-edition,accel",
+          "--bins"
+        ],
+        "exit_code": 0
+      },
+      {
+        "argv": [
+          "test",
+          "--locked",
+          "-p",
+          "abbey",
+          "--features",
+          "personal-edition,accel"
+        ],
+        "exit_code": 0
+      }
+    ],
+    "seconds": 92.4323341846466,
+    "source_drift": []
+  },
+  {
+    "features": "wdbx,personal-edition,accel",
+    "commands": [
+      {
+        "argv": [
+          "clippy",
+          "--locked",
+          "-p",
+          "abbey",
+          "--features",
+          "wdbx,personal-edition,accel",
+          "--all-targets",
+          "--",
+          "-D",
+          "warnings"
+        ],
+        "exit_code": 0
+      },
+      {
+        "argv": [
+          "build",
+          "--locked",
+          "-p",
+          "abbey",
+          "--features",
+          "wdbx,personal-edition,accel",
+          "--bins"
+        ],
+        "exit_code": 0
+      },
+      {
+        "argv": [
+          "test",
+          "--locked",
+          "-p",
+          "abbey",
+          "--features",
+          "wdbx,personal-edition,accel"
+        ],
+        "exit_code": 0
+      }
+    ],
+    "seconds": 101.2384569644928,
+    "source_drift": []
+  }
+]

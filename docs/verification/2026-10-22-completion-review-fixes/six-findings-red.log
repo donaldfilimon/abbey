@@ -1,0 +1,85 @@
+warning: unused import: `simulator::AdmissionSimulator`
+  --> /Users/donald/sources/repos/wdbx/crates/abi-wdbx/src/v3/complete_episode/crypto/admission/mod.rs:11:16
+   |
+11 | pub(super) use simulator::AdmissionSimulator;
+   |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `abi-wdbx` (lib) generated 1 warning (run `cargo fix --lib -p abi-wdbx` to apply 1 suggestion)
+   Compiling abi-models v0.1.0 (/Users/donald/sources/repos/abi/crates/abi-models)
+   Compiling abi-wdbx-gateway v0.1.0 (/Users/donald/sources/repos/abi/crates/abi-wdbx-gateway)
+   Compiling abbey v2.6.0 (/Users/donald/sources/repos/abbey)
+   Compiling abi-sea v0.1.0 (/Users/donald/sources/repos/abi/crates/abi-sea)
+   Compiling abi-model-runtime v0.1.0 (/Users/donald/sources/repos/abi/crates/abi-model-runtime)
+   Compiling abi-worker v0.1.0 (/Users/donald/sources/repos/abi/crates/abi-worker)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 18.62s
+     Running unittests src/lib.rs (target/debug/deps/abbey-8a47aea52c9a9d49)
+
+running 13 tests
+test learn::tests::plan_improvements_flags_low_confidence_routes_for_review_only ... ok
+test train::review_regressions::review_pem_redaction_survives_a_split_utf8_window_boundary ... FAILED
+test tui::predict::tests::natural_language_maps_review_and_fix ... ok
+test tui::run_loop::tests::review_suspend_propagates_terminal_reentry_failure ... FAILED
+test runtime::store::v4_tests::content::v4_preview_failure_rolls_back_content_event ... ok
+test runtime::store::v4_tests::v4_preview_truncation_keeps_utf8_boundary ... ok
+test runtime::store::governed::tests::every_preview_commitment_is_immutable_before_decision_and_consumption ... ok
+test automation_schedule::tests::validation_rejects_out_of_bounds_and_accepts_preview_limit ... ok
+test runtime::store::v4_tests::content::v4_truncated_preview_preserves_total_bytes_after_reopen ... ok
+test train::review_regressions::review_timeout_removes_an_artifact_written_before_the_hang ... FAILED
+test train::review_regressions::review_failed_baseline_scoring_preserves_current_and_records_refusal ... FAILED
+test train::review_regressions::review_rollback_requires_valid_consent_before_any_state_change ... FAILED
+test train::review_regressions::review_descendant_pipe_retention_cannot_escape_the_deadline ... FAILED
+
+failures:
+
+---- train::review_regressions::review_pem_redaction_survives_a_split_utf8_window_boundary stdout ----
+
+thread 'train::review_regressions::review_pem_redaction_survives_a_split_utf8_window_boundary' (3841686) panicked at src/train/review_regressions.rs:41:5:
+assertion failed: !result.text.contains("secret-material")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- tui::run_loop::tests::review_suspend_propagates_terminal_reentry_failure stdout ----
+abbey: unknown slash /no-such-review-command — try /help
+
+thread 'tui::run_loop::tests::review_suspend_propagates_terminal_reentry_failure' (3841698) panicked at src/tui/run_loop.rs:293:9:
+terminal entry failure must reach the event loop
+
+---- train::review_regressions::review_timeout_removes_an_artifact_written_before_the_hang stdout ----
+
+thread 'train::review_regressions::review_timeout_removes_an_artifact_written_before_the_hang' (3841691) panicked at src/train/review_regressions.rs:33:5:
+assertion failed: !artifact.exists()
+
+---- train::review_regressions::review_failed_baseline_scoring_preserves_current_and_records_refusal stdout ----
+
+thread 'train::review_regressions::review_failed_baseline_scoring_preserves_current_and_records_refusal' (3841685) panicked at src/train/review_regressions.rs:59:5:
+assertion `left == right` failed
+  left: [123, 10, 32, 32, 34, 114, 117, 110, 95, 105, 100, 34, 58, 32, 34, 50, 48, 50, 54, 49, 48, 50, 51, 84, 48, 48, 52, 54, 51, 55, 90, 45, 48, 98, 50, 55, 100, 101, 50, 54, 34, 44, 10, 32, 32, 34, 97, 114, 116, 105, 102, 97, 99, 116, 95, 112, 97, 116, 104, 34, 58, 32, 34, 47, 118, 97, 114, 47, 102, 111, 108, 100, 101, 114, 115, 47, 99, 95, 47, 116, 104, 116, 102, 110, 95, 55, 100, 49, 112, 57, 51, 55, 56, 114, 120, 115, 112, 52, 112, 119, 122, 54, 99, 48, 48, 48, 48, 103, 110, 47, 84, 47, 97, 98, 98, 101, 121, 45, 116, 114, 97, 105, 110, 45, 114, 101, 118, 105, 101, 119, 45, 98, 97, 115, 101, 108, 105, 110, 101, 45, 57, 52, 56, 55, 52, 45, 53, 101, 55, 51, 98, 49, 98, 101, 57, 102, 57, 49, 52, 102, 97, 101, 57, 51, 52, 56, 57, 51, 100, 52, 48, 57, 55, 51, 56, 50, 54, 49, 47, 116, 114, 97, 105, 110, 47, 50, 48, 50, 54, 49, 48, 50, 51, 84, 48, 48, 52, 54, 51, 55, 90, 45, 48, 98, 50, 55, 100, 101, 50, 54, 47, 97, 114, 116, 105, 102, 97, 99, 116, 46, 106, 115, 111, 110, 34, 44, 10, 32, 32, 34, 97, 114, 116, 105, 102, 97, 99, 116, 95, 100, 105, 103, 101, 115, 116, 34, 58, 32, 34, 115, 104, 97, 50, 53, 54, 58, 97, 55, 53, 54, 101, 54, 52, 98, 101, 56, 97, 99, 49, 53, 57, 53, 97, 49, 102, 97, 101, 98, 49, 51, 54, 52, 54, 52, 49, 101, 97, 101, 102, 52, 98, 100, 54, 100, 52, 98, 51, 54, 52, 55, 52, 99, 99, 52, 54, 55, 99, 55, 100, 48, 100, 49, 51, 102, 48, 55, 55, 48, 100, 48, 34, 44, 10, 32, 32, 34, 114, 101, 112, 114, 111, 100, 117, 99, 116, 105, 111, 110, 95, 115, 99, 111, 114, 101, 34, 58, 32, 49, 46, 48, 44, 10, 32, 32, 34, 117, 112, 100, 97, 116, 101, 100, 95, 97, 116, 34, 58, 32, 34, 50, 48, 50, 54, 45, 49, 48, 45, 50, 51, 84, 48, 48, 58, 52, 54, 58, 51, 55, 90, 34, 10, 125]
+ right: [123, 10, 32, 32, 34, 114, 117, 110, 95, 105, 100, 34, 58, 32, 34, 50, 48, 50, 54, 49, 48, 50, 51, 84, 48, 48, 52, 54, 51, 55, 90, 45, 98, 56, 99, 102, 54, 53, 99, 48, 34, 44, 10, 32, 32, 34, 97, 114, 116, 105, 102, 97, 99, 116, 95, 112, 97, 116, 104, 34, 58, 32, 34, 47, 118, 97, 114, 47, 102, 111, 108, 100, 101, 114, 115, 47, 99, 95, 47, 116, 104, 116, 102, 110, 95, 55, 100, 49, 112, 57, 51, 55, 56, 114, 120, 115, 112, 52, 112, 119, 122, 54, 99, 48, 48, 48, 48, 103, 110, 47, 84, 47, 97, 98, 98, 101, 121, 45, 116, 114, 97, 105, 110, 45, 114, 101, 118, 105, 101, 119, 45, 98, 97, 115, 101, 108, 105, 110, 101, 45, 57, 52, 56, 55, 52, 45, 53, 101, 55, 51, 98, 49, 98, 101, 57, 102, 57, 49, 52, 102, 97, 101, 57, 51, 52, 56, 57, 51, 100, 52, 48, 57, 55, 51, 56, 50, 54, 49, 47, 116, 114, 97, 105, 110, 47, 50, 48, 50, 54, 49, 48, 50, 51, 84, 48, 48, 52, 54, 51, 55, 90, 45, 98, 56, 99, 102, 54, 53, 99, 48, 47, 97, 114, 116, 105, 102, 97, 99, 116, 46, 106, 115, 111, 110, 34, 44, 10, 32, 32, 34, 97, 114, 116, 105, 102, 97, 99, 116, 95, 100, 105, 103, 101, 115, 116, 34, 58, 32, 34, 115, 104, 97, 50, 53, 54, 58, 97, 55, 53, 54, 101, 54, 52, 98, 101, 56, 97, 99, 49, 53, 57, 53, 97, 49, 102, 97, 101, 98, 49, 51, 54, 52, 54, 52, 49, 101, 97, 101, 102, 52, 98, 100, 54, 100, 52, 98, 51, 54, 52, 55, 52, 99, 99, 52, 54, 55, 99, 55, 100, 48, 100, 49, 51, 102, 48, 55, 55, 48, 100, 48, 34, 44, 10, 32, 32, 34, 114, 101, 112, 114, 111, 100, 117, 99, 116, 105, 111, 110, 95, 115, 99, 111, 114, 101, 34, 58, 32, 49, 46, 48, 44, 10, 32, 32, 34, 117, 112, 100, 97, 116, 101, 100, 95, 97, 116, 34, 58, 32, 34, 50, 48, 50, 54, 45, 49, 48, 45, 50, 51, 84, 48, 48, 58, 52, 54, 58, 51, 55, 90, 34, 10, 125]
+
+---- train::review_regressions::review_rollback_requires_valid_consent_before_any_state_change stdout ----
+
+thread 'train::review_regressions::review_rollback_requires_valid_consent_before_any_state_change' (3841687) panicked at src/train/review_regressions.rs:83:9:
+assertion `left == right` failed
+  left: 0
+ right: 2
+
+---- train::review_regressions::review_descendant_pipe_retention_cannot_escape_the_deadline stdout ----
+
+thread 'train::review_regressions::review_descendant_pipe_retention_cannot_escape_the_deadline' (3841684) panicked at src/train/review_regressions.rs:19:5:
+assertion `left == right` failed
+  left: Ok(Captured { code: Some(0), stdout: "", stderr: "", truncated: false })
+ right: Err(TimedOut)
+
+
+failures:
+    train::review_regressions::review_descendant_pipe_retention_cannot_escape_the_deadline
+    train::review_regressions::review_failed_baseline_scoring_preserves_current_and_records_refusal
+    train::review_regressions::review_pem_redaction_survives_a_split_utf8_window_boundary
+    train::review_regressions::review_rollback_requires_valid_consent_before_any_state_change
+    train::review_regressions::review_timeout_removes_an_artifact_written_before_the_hang
+    tui::run_loop::tests::review_suspend_propagates_terminal_reentry_failure
+
+test result: FAILED. 7 passed; 6 failed; 0 ignored; 0 measured; 1229 filtered out; finished in 2.07s
+
+error: test failed, to rerun pass `-p abbey --lib`

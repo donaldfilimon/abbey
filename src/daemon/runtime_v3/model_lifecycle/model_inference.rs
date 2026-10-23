@@ -3,7 +3,8 @@
 use std::time::Duration;
 
 use abi_agent_runtime::{
-    CancellationToken, EventSink, ModelEvent, ModelRequest, RunBudget, StopReason, run_provider,
+    CancellationToken, EventSink, ModelEvent, ModelProvider, ModelRequest, RunBudget, RunReport,
+    StopReason, run_provider,
 };
 use abi_model_runtime::{DevicePreference, ExecutionPath};
 use serde_json::json;
@@ -47,27 +48,7 @@ impl ModelLifecycleAuthority {
         let model_request = ModelRequest::new(&request.model_id)
             .with_user(request.prompt.clone())
             .with_max_output_tokens(u64::from(request.max_output_tokens));
-        let mut sink = ExactModelSink::new(&request.model_id);
-        let cancellation = CancellationToken::new();
-        let budget = RunBudget::unlimited()
-            .with_max_events(u64::from(request.max_output_tokens) + 2)
-            .with_max_output_tokens(u64::from(request.max_output_tokens))
-            .with_max_duration(Duration::from_secs(1));
-        let run = run_provider(
-            provider.as_ref(),
-            &model_request,
-            &mut sink,
-            &cancellation,
-            budget,
-        )
-        .map_err(|_| runtime_failure())?;
-        if run.stop != StopReason::Completed
-            || run.output.truncated()
-            || run.text().len() > MAX_V3_MODEL_OUTPUT_BYTES
-            || !sink.valid()
-        {
-            return Err(runtime_failure());
-        }
+        let run = run_exact_provider(provider.as_ref(), &model_request, request.max_output_tokens)?;
         let evidence = provider
             .last_inference_report()
             .map_err(|_| runtime_failure())?
@@ -135,6 +116,35 @@ impl ModelLifecycleAuthority {
     }
 }
 
+fn run_exact_provider(
+    provider: &dyn ModelProvider,
+    request: &ModelRequest,
+    max_output_tokens: u16,
+) -> Result<RunReport, HandlerFailure> {
+    let mut sink = ExactModelSink::new(request.model());
+    let cancellation = CancellationToken::new();
+    let budget = RunBudget::unlimited()
+        .with_max_events(u64::from(max_output_tokens) + 2)
+        .with_max_output_tokens(u64::from(max_output_tokens))
+        .with_max_duration(Duration::from_secs(1));
+    let run = run_provider(provider, request, &mut sink, &cancellation, budget)
+        .map_err(|_| runtime_failure())?;
+    if matches!(run.stop, StopReason::BudgetExhausted(_)) {
+        return Err(HandlerFailure::new(
+            "budget_exceeded",
+            "model inference exceeded its execution budget",
+        ));
+    }
+    if run.stop != StopReason::Completed
+        || run.output.truncated()
+        || run.text().len() > MAX_V3_MODEL_OUTPUT_BYTES
+        || !sink.valid()
+    {
+        return Err(runtime_failure());
+    }
+    Ok(run)
+}
+
 struct ExactModelSink<'a> {
     expected_model: &'a str,
     started: bool,
@@ -195,5 +205,41 @@ const fn device_name(device: V3ModelDevice) -> &'static str {
         V3ModelDevice::Cpu => "cpu",
         V3ModelDevice::Metal => "metal",
         V3ModelDevice::Cuda => "cuda",
+    }
+}
+
+#[cfg(test)]
+mod inference_boundary_tests {
+    use super::*;
+    use abi_agent_runtime::ScriptedProvider;
+
+    #[test]
+    fn inference_keeps_typed_token_and_event_budget_errors() {
+        let request = ModelRequest::new("fixture").with_user("hello");
+        let token_limited = ScriptedProvider::new("fixture")
+            .with_text("first")
+            .with_text("second")
+            .with_output_tokens_per_event(2);
+        let event_limited = ScriptedProvider::new("fixture")
+            .with_text("first")
+            .with_text("second")
+            .with_text("third")
+            .with_text("fourth");
+        for provider in [token_limited, event_limited] {
+            let error = run_exact_provider(&provider, &request, 1).unwrap_err();
+            assert_eq!(error.code(), "budget_exceeded");
+        }
+    }
+
+    #[test]
+    fn inference_accepts_a_completed_bounded_provider_run() {
+        let request = ModelRequest::new("fixture").with_user("hello");
+        let provider = ScriptedProvider::new("fixture")
+            .with_text("reply")
+            .with_input_tokens(1)
+            .with_output_tokens_per_event(1);
+        let result = run_exact_provider(&provider, &request, 4).unwrap();
+        assert_eq!(result.text(), "reply");
+        assert_eq!(result.stop, StopReason::Completed);
     }
 }

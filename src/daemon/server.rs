@@ -217,6 +217,14 @@ fn dispatch_authenticated<H: DaemonHandler>(
             "protocol version is unsupported",
         );
     }
+    if request.schema_version != RequestEnvelope::schema_for(request.version) {
+        return ResponseEnvelope::error_for(
+            request.version,
+            request.request_id,
+            "unsupported_version",
+            "application schema is unsupported",
+        );
+    }
     if request.command.minimum_protocol_version() > request.version {
         return ResponseEnvelope::error_for(
             request.version,
@@ -607,6 +615,7 @@ mod tests {
         for request_id in ["has space", "line\nbreak", "unicode-λ"] {
             let response = harness.request(RequestEnvelope {
                 version: PROTOCOL_VERSION,
+                schema_version: crate::daemon::RequestEnvelope::schema_for(PROTOCOL_VERSION),
                 request_id: request_id.into(),
                 bearer: TEST_BEARER.into(),
                 command: AppCommand::Status,
@@ -616,6 +625,7 @@ mod tests {
         }
         let response = harness.request(RequestEnvelope {
             version: PROTOCOL_VERSION,
+            schema_version: crate::daemon::RequestEnvelope::schema_for(PROTOCOL_VERSION),
             request_id: "x".repeat(MAX_REQUEST_ID_LEN + 1),
             bearer: TEST_BEARER.into(),
             command: AppCommand::Status,
@@ -662,6 +672,7 @@ mod tests {
     fn request(bearer: &str, version: u16) -> RequestEnvelope {
         RequestEnvelope {
             version,
+            schema_version: crate::daemon::RequestEnvelope::schema_for(version),
             request_id: "test-request".into(),
             bearer: bearer.into(),
             command: AppCommand::Status,
@@ -673,6 +684,7 @@ mod tests {
         let harness = Harness::start();
         let response = harness.request(RequestEnvelope {
             version: PROTOCOL_VERSION,
+            schema_version: crate::daemon::RequestEnvelope::schema_for(PROTOCOL_VERSION),
             request_id: "claims-request".into(),
             bearer: TEST_BEARER.into(),
             command: AppCommand::Claims(ClaimsQuery {
@@ -793,3 +805,6 @@ mod tests {
 
     include!("server/v4_socket_test.rs");
 }
+
+#[cfg(test)]
+mod schema_tests;

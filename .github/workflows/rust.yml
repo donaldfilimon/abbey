@@ -282,3 +282,91 @@ jobs:
               find "$path" -depth -delete
             fi
           done
+
+  # Infrastructure prerequisite: exclusive/ephemeral Windows 11 ARM64 runner,
+  # native pwsh/Rust, MSVC+SDK and Git Bash; administrator owns residual cleanup.
+  # Git Bash may be x64; only qualification PowerShell/Rust/Abbey must be ARM64.
+  qualify-windows-arm64:
+    name: qualification (Windows 11 ARM64 CLI)
+    if: >
+      vars.ABBEY_WINDOWS_ARM64_RUNNER == 'enabled' &&
+      github.repository == 'donaldfilimon/abbey' &&
+      (github.event_name == 'push' ||
+       github.event_name == 'workflow_dispatch' ||
+       (github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.full_name == github.repository))
+    runs-on: [self-hosted, Windows, ARM64, abbey]
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      # This must precede checkout: checkout itself may remove stale files.
+      - name: Refuse reparse points before checkout
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $workspace = [IO.Path]::GetFullPath($env:GITHUB_WORKSPACE)
+          $ancestor = $workspace
+          while ($ancestor) {
+            if ((Get-Item -Force -LiteralPath $ancestor).Attributes -band [IO.FileAttributes]::ReparsePoint) {
+              throw 'Untrusted workspace ancestor'
+            }
+            $ancestor = [IO.Path]::GetDirectoryName($ancestor)
+          }
+          $pending = [Collections.Generic.Stack[string]]::new()
+          foreach ($name in @('abbey', 'abi', 'wdbx')) {
+            $pending.Push((Join-Path $workspace $name))
+          }
+          while ($pending.Count) {
+            $path = $pending.Pop()
+            try { $item = Get-Item -Force -LiteralPath $path }
+            catch [System.Management.Automation.ItemNotFoundException] { continue }
+            if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+              throw 'Reparse checkout refused; runner administration required'
+            }
+            if ($item.PSIsContainer) {
+              foreach ($child in [IO.Directory]::GetFileSystemEntries($path)) { $pending.Push($child) }
+            }
+          }
+
+      - name: Check out Abbey
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: abbey
+          persist-credentials: false
+
+      - name: Refuse workspace reparse points and allocate scratch
+        run: '& ./abbey/tools/ci/windows-workspace.ps1 -Mode Preflight'
+
+      - name: Check out public dependencies using provisioned Git Bash
+        shell: bash
+        run: |
+          set -eu
+          command -v cygpath
+          bash --version
+          native_workspace="$GITHUB_WORKSPACE"
+          export GITHUB_WORKSPACE="$(cygpath -u "$GITHUB_WORKSPACE")"
+          test "$(cygpath -w "$GITHUB_WORKSPACE")" = "$native_workspace"
+          test -d "$GITHUB_WORKSPACE/abbey"
+          ./abbey/tools/ci/checkout-public-revision.sh donaldfilimon/abi "${ABI_REVISION}" abi
+          ./abbey/tools/ci/checkout-public-revision.sh donaldfilimon/wdbx "${WDBX_REVISION}" wdbx
+
+      - name: Install pinned ABI native ARM64 toolchain
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: 1.99.1-aarch64-pc-windows-msvc
+          components: rustfmt, clippy, rust-src
+
+      - name: Install pinned Abbey native ARM64 toolchain
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: 1.99.1-aarch64-pc-windows-msvc
+          components: rustfmt, clippy
+
+      - name: Native Windows 11 ARM64 CLI qualification
+        working-directory: abbey
+        run: '& ./tools/ci/qualify-windows.ps1'
+
+      - name: Clean runner workspace
+        if: always()
+        run: '& ./abbey/tools/ci/windows-workspace.ps1 -Mode Cleanup'

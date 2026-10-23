@@ -23,7 +23,8 @@ pub use context::AppContext;
 pub use contracts::{
     APP_PROTOCOL_V1, APP_PROTOCOL_VERSION, APP_SCHEMA_V1, APP_SCHEMA_VERSION, AppCapability,
     AppCommand, AppEvent, ApprovalKind, ApprovalRequest, CapabilitySet, ClaimRecord, ClaimStatus,
-    ClaimsQuery, ClaimsSnapshot, Edition, RuntimeState, RuntimeStatus, ValidationError,
+    ClaimsQuery, ClaimsSnapshot, Edition, MAX_APP_FRAME_BYTES, RuntimeState, RuntimeStatus,
+    ValidationError,
 };
 pub use guild_intelligence::{
     Alternative, AssertionMetadata, AuditCoverage, Coverage, DesiredPermissionState,

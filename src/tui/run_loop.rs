@@ -79,12 +79,7 @@ fn suspend_with<C: Control>(
     // The screen reset after a child uses the same repaint as the rest of
     // the loop: asking the terminal where the cursor is can block for two
     // seconds, and its failure must not end the app.
-    let resumed = take_the_terminal_back(guard, || repaint(term));
-    if let Err(error) = &resumed {
-        // The terminal is back in the app's hands; a reset that failed
-        // costs the redraw, not the session.
-        app.status = format!("screen refresh failed: {error:#}");
-    }
+    take_the_terminal_back(guard, app, || repaint(term))?;
     if let Err(error) = action {
         app.status = format!("suspended command: {error:#}");
         app.transcript.push_error(&app.status);
@@ -100,10 +95,12 @@ fn suspend_with<C: Control>(
 /// guard sequence without a real terminal.
 fn take_the_terminal_back<C: Control>(
     guard: &mut TerminalGuard<C>,
+    app: &mut App,
     clear: impl FnOnce() -> Result<()>,
 ) -> Result<()> {
     guard.enter()?;
-    clear()
+    repaint_quietly(app, clear);
+    Ok(())
 }
 
 fn edit_composer(app: &mut App) -> Result<()> {
@@ -275,6 +272,39 @@ mod tests {
         assert!(app.run.is_none());
     }
 
+    #[test]
+    fn review_suspend_propagates_terminal_reentry_failure() {
+        struct RefuseEntry;
+        impl Control for RefuseEntry {
+            fn set(&mut self, _mode: Mode, enabled: bool) -> Result<()> {
+                if enabled {
+                    anyhow::bail!("fixture reentry refused");
+                }
+                Ok(())
+            }
+        }
+        let mut app =
+            super::super::tests::scratch_app("review-reentry", crate::agent::AgentBackend::Ollama);
+        let mut term = Terminal::with_options(
+            CrosstermBackend::new(stdout()),
+            ratatui::TerminalOptions {
+                viewport: ratatui::Viewport::Fixed(Rect::new(0, 0, 10, 4)),
+            },
+        )
+        .unwrap();
+        let mut guard = TerminalGuard::new(RefuseEntry);
+        let result = suspend_with(
+            &mut term,
+            &mut guard,
+            &mut app,
+            Suspend::InteractiveSlash("/no-such-review-command".into()),
+        );
+        assert!(
+            result.is_err(),
+            "terminal entry failure must reach the event loop"
+        );
+    }
+
     /// A control that records every mode change it is asked for.
     struct Recorder {
         calls: std::sync::Arc<std::sync::Mutex<Vec<(Mode, bool)>>>,
@@ -305,7 +335,12 @@ mod tests {
         // The child gets a normal terminal: every mode is off.
         guard.restore().unwrap();
         // The app takes it back: every mode is on again.
-        take_the_terminal_back(&mut guard, || Ok(())).unwrap();
+        take_the_terminal_back(
+            &mut guard,
+            &mut super::super::tests::scratch_app("resume", crate::agent::AgentBackend::Ollama),
+            || Ok(()),
+        )
+        .unwrap();
 
         let recorded = calls.lock().unwrap().clone();
         let entered = |mode: Mode| recorded.contains(&(mode, true));
@@ -329,9 +364,13 @@ mod tests {
         guard.enter().unwrap();
         guard.restore().unwrap();
 
-        let outcome =
-            take_the_terminal_back(&mut guard, || anyhow::bail!("the screen reset failed"));
-        assert!(outcome.is_err(), "the reset failure must be reported");
+        let mut app =
+            super::super::tests::scratch_app("repaint", crate::agent::AgentBackend::Ollama);
+        let outcome = take_the_terminal_back(&mut guard, &mut app, || {
+            anyhow::bail!("the screen reset failed")
+        });
+        assert!(outcome.is_ok(), "repaint failure must remain nonfatal");
+        assert!(app.status.contains("the screen reset failed"));
 
         let recorded = calls.lock().unwrap().clone();
         for mode in [Mode::Raw, Mode::Screen, Mode::Mouse, Mode::Paste] {

@@ -365,7 +365,7 @@ fn real_daemon_runs_the_exact_fixture_on_metal_without_falling_back() {
         V3OperationState::Succeeded => {
             eprintln!(
                 "metal branch: native — a real Metal device was compiled in and initialized, so the \
-                 daemon loaded and executed the exact fixture on Metal"
+                 daemon loaded the exact fixture on Metal; native inference evidence is required next"
             );
             let readiness = session
                 .inference_status(V3ResourceQuery {
@@ -381,7 +381,9 @@ fn real_daemon_runs_the_exact_fixture_on_metal_without_falling_back() {
             // that ceiling once: the daemon then refuses to report the run
             // rather than substituting a device. Re-issue the identical request
             // a bounded number of times so a warm run can answer; every
-            // attempt that does answer must still carry native Metal evidence,
+            // budget refusals use the typed BudgetExceeded code; other daemon
+            // failures remain fatal. Every attempt that answers must carry
+            // native Metal evidence,
             // and a run that never answers fails the test rather than
             // downgrading the assertion.
             //
@@ -402,9 +404,9 @@ fn real_daemon_runs_the_exact_fixture_on_metal_without_falling_back() {
                         break;
                     }
                     Err(ClientError::DaemonV3 {
-                        code: V3ErrorCode::Internal,
+                        code: V3ErrorCode::BudgetExceeded,
                         message,
-                    }) => refusals.push(message),
+                    }) => refusals.push(format!("budget_exceeded: {message}")),
                     Err(ClientError::Read(source))
                         if matches!(
                             source.kind(),
@@ -423,6 +425,10 @@ fn real_daemon_runs_the_exact_fixture_on_metal_without_falling_back() {
                     "the daemon refused every bounded exact-model inference attempt: {refusals:?}"
                 )
             });
+            eprintln!(
+                "metal inference: {} bounded cold-start refusal(s)",
+                refusals.len()
+            );
             eprintln!(
                 "metal branch: output={:?} requested_device={:?} executed_device={:?} \
                  native_operations={} fallback_used={} mixed_execution={}",

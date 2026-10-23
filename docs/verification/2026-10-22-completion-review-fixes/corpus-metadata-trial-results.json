@@ -1,0 +1,166 @@
+[
+  {
+    "trial": 0,
+    "argv": [
+      "build",
+      "--locked",
+      "-p",
+      "abbey",
+      "--features",
+      "personal-edition",
+      "--bins"
+    ],
+    "exit_code": 0,
+    "seconds": 7.969604015350342
+  },
+  {
+    "trial": 1,
+    "argv": [
+      "test",
+      "--locked",
+      "-p",
+      "abbey",
+      "--features",
+      "personal-edition",
+      "--test",
+      "tui_metadata_pty"
+    ],
+    "exit_code": 0,
+    "seconds": 9.817591190338135
+  },
+  {
+    "trial": 2,
+    "argv": [
+      "test",
+      "--locked",
+      "-p",
+      "abbey",
+      "--features",
+      "personal-edition",
+      "--test",
+      "tui_metadata_pty"
+    ],
+    "exit_code": 0,
+    "seconds": 2.5505459308624268
+  },
+  {
+    "trial": 3,
+    "argv": [
+      "test",
+      "--locked",
+      "-p",
+      "abbey",
+      "--features",
+      "personal-edition",
+      "--test",
+      "tui_metadata_pty"
+    ],
+    "exit_code": 0,
+    "seconds": 2.4795329570770264
+  },
+  {
+    "trial": 4,
+    "argv": [
+      "test",
+      "--locked",
+      "-p",
+      "abbey",
+      "--features",
+      "personal-edition",
+      "--test",
+      "tui_metadata_pty"
+    ],
+    "exit_code": 0,
+    "seconds": 2.5007739067077637
+  },
+  {
+    "trial": 5,
+    "argv": [
+      "test",
+      "--locked",
+      "-p",
+      "abbey",
+      "--features",
+      "personal-edition",
+      "--test",
+      "tui_metadata_pty"
+    ],
+    "exit_code": 0,
+    "seconds": 2.473206043243408
+  },
+  {
+    "trial": 6,
+    "argv": [
+      "test",
+      "--locked",
+      "-p",
+      "abbey",
+      "--features",
+      "personal-edition",
+      "--test",
+      "tui_metadata_pty"
+    ],
+    "exit_code": 0,
+    "seconds": 2.4056413173675537
+  },
+  {
+    "trial": 7,
+    "argv": [
+      "test",
+      "--locked",
+      "-p",
+      "abbey",
+      "--features",
+      "personal-edition",
+      "--test",
+      "tui_metadata_pty"
+    ],
+    "exit_code": 0,
+    "seconds": 2.4754409790039062
+  },
+  {
+    "trial": 8,
+    "argv": [
+      "test",
+      "--locked",
+      "-p",
+      "abbey",
+      "--features",
+      "personal-edition",
+      "--test",
+      "tui_metadata_pty"
+    ],
+    "exit_code": 0,
+    "seconds": 2.45805287361145
+  },
+  {
+    "trial": 9,
+    "argv": [
+      "test",
+      "--locked",
+      "-p",
+      "abbey",
+      "--features",
+      "personal-edition",
+      "--test",
+      "tui_metadata_pty"
+    ],
+    "exit_code": 0,
+    "seconds": 2.8362298011779785
+  },
+  {
+    "trial": 10,
+    "argv": [
+      "test",
+      "--locked",
+      "-p",
+      "abbey",
+      "--features",
+      "personal-edition",
+      "--test",
+      "tui_metadata_pty"
+    ],
+    "exit_code": 0,
+    "seconds": 2.7376089096069336
+  }
+]

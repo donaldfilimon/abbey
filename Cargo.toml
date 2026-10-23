@@ -88,6 +88,8 @@ fs4 = "0.13"
 pulldown-cmark = { version = "0.13.4", default-features = false }
 
 [dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "time", "net"] }
+abi-control-plane = { path = "../abi/crates/abi-control-plane" }
 candle-core = { git = "https://github.com/huggingface/candle.git", rev = "70f72e9cfdbfc570846ca363ead2135394af3e9a", version = "0.11", default-features = false }
 tokenizers = { version = "0.22.2", default-features = false, features = ["fancy-regex"] }
 abi-sea = { path = "../abi/crates/abi-sea" }

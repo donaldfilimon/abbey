@@ -616,8 +616,7 @@ mod macos {
     /// full-frame surface: on a resize the material would have stopped
     /// covering the window.
     fn autoresizing_mask() -> NSAutoresizingMaskOptions {
-        NSAutoresizingMaskOptions::ViewWidthSizable
-            | NSAutoresizingMaskOptions::ViewHeightSizable
+        NSAutoresizingMaskOptions::ViewWidthSizable | NSAutoresizingMaskOptions::ViewHeightSizable
     }
 
     /// Convert an AppKit rectangle into the plain rectangle the pure helpers

@@ -1,0 +1,20 @@
+warning: unused import: `simulator::AdmissionSimulator`
+  --> /Users/donald/.codex/verification/abbey-completion-20261022/corpus-golden-qualified/wdbx/crates/abi-wdbx/src/v3/complete_episode/crypto/admission/mod.rs:11:16
+   |
+11 | pub(super) use simulator::AdmissionSimulator;
+   |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `abi-wdbx` (lib) generated 1 warning (run `cargo fix --lib -p abi-wdbx` to apply 1 suggestion)
+   Compiling abbey v2.6.0 (/Users/donald/.codex/verification/abbey-completion-20261022/corpus-golden-qualified/abbey)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 7.13s
+     Running tests/tui_metadata_pty.rs (/Users/donald/.codex/verification/abbey-completion-20261022/qualification-target/debug/deps/tui_metadata_pty-4c253c85b053998b)
+
+running 3 tests
+test doctor_metadata_control_executes_exact_selected_version_probe ... ok
+test doctor_metadata_cancel_joins_nested_probe_before_queue_reuse ... ok
+test doctor_metadata_quit_joins_nested_probe_before_terminal_restore ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.35s
+

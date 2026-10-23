@@ -21,9 +21,36 @@ pub const SUPPORTED_PROTOCOL_VERSIONS: &[u16] =
 #[serde(deny_unknown_fields)]
 pub struct RequestEnvelope {
     pub version: u16,
+    /// Required for v1 schema negotiation; omitted to preserve v2 wire bytes.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "declared_schema"
+    )]
+    pub schema_version: Option<u16>,
     pub request_id: String,
     pub bearer: String,
     pub command: AppCommand,
+}
+
+// An absent header preserves the v2 envelope; explicit null is not a declaration
+// and must not broaden v2's previously strict accepted wire shape.
+fn declared_schema<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<u16>, D::Error> {
+    u16::deserialize(deserializer).map(Some)
+}
+
+impl RequestEnvelope {
+    /// Schema declaration for legacy-envelope requests; v2 is unchanged.
+    #[must_use]
+    pub const fn schema_for(version: u16) -> Option<u16> {
+        if version == APP_PROTOCOL_V1 {
+            Some(crate::app_core::APP_SCHEMA_V1)
+        } else {
+            None
+        }
+    }
 }
 
 impl fmt::Debug for RequestEnvelope {
@@ -31,6 +58,7 @@ impl fmt::Debug for RequestEnvelope {
         formatter
             .debug_struct("RequestEnvelope")
             .field("version", &self.version)
+            .field("schema_version", &self.schema_version)
             .field("request_id", &self.request_id)
             .field("bearer", &"[REDACTED]")
             .field("command", &self.command)
@@ -41,7 +69,8 @@ impl fmt::Debug for RequestEnvelope {
 /// Authenticated envelope for the separate protocol-v3 command family.
 ///
 /// Keeping this type separate prevents a v3 command from being decoded as a
-/// legacy [`AppCommand`] and preserves the exact v1/v2 wire fixture.
+/// legacy [`AppCommand`]. V1 has explicit schema negotiation; v2 retains its
+/// unchanged wire fixture.
 #[derive(Clone, Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct V3RequestEnvelope {
@@ -270,6 +299,7 @@ mod tests {
     fn protocol_v1_envelope_fixture_and_secret_redaction_remain_exact() {
         let request = RequestEnvelope {
             version: PROTOCOL_VERSION,
+            schema_version: crate::daemon::RequestEnvelope::schema_for(PROTOCOL_VERSION),
             request_id: "r1".into(),
             bearer: "super-secret-bearer".into(),
             command: AppCommand::Status,
@@ -278,6 +308,7 @@ mod tests {
             serde_json::to_value(&request).unwrap(),
             serde_json::json!({
                 "version": 1,
+                "schema_version": 2,
                 "request_id": "r1",
                 "bearer": "super-secret-bearer",
                 "command": {"type": "status"}
@@ -305,7 +336,7 @@ mod tests {
             serde_json::to_value(&request).unwrap(),
             serde_json::json!({
                 "version": 3,
-                "schema_version": 3,
+                "schema_version": 4,
                 "request_id": "v3-models",
                 "bearer": "super-secret-bearer",
                 "grants": {"capabilities": ["read_models"]},

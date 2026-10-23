@@ -1,0 +1,252 @@
+{
+  "identity": {
+    "binary_sha256": "f219f31d27ff794368a7efadd3145c188d1e350ce8300c0f697f2b7ce6524e0b",
+    "source": {
+      "tools/tests/smoke_tui_metadata_pty.py": "914c35956d2dd306f8fe544c40c637b2c04ff30fbcc91da153c273d7d9d8a60c",
+      "tools/tests/test_metadata_fixture.py": "3ee01f0906988b943a92387d580a8a4787ca403c58ea6dc7b24e0079c8e82d16",
+      "tools/tests/metadata_probe_fixture.c": "acbeb50bbf3e6e390bfe622312b58596ebc13f79fc1e2fd99d101fcf00260473"
+    }
+  },
+  "trials": [
+    {
+      "trial": 1,
+      "mode": "control",
+      "exit_code": 0,
+      "seconds": 0.5404546669888077,
+      "stdout": "{\"failures\": [], \"mode\": \"control\", \"scenarios\": [{\"scenario\": \"doctor-metadata-control\", \"status\": \"passed\"}], \"setup\": {\"ordinary_readiness_attempts\": 1}, \"status\": \"passed\"}\n",
+      "stderr": ""
+    },
+    {
+      "trial": 1,
+      "mode": "cancel",
+      "exit_code": 0,
+      "seconds": 0.7911690839973744,
+      "stdout": "{\"failures\": [], \"mode\": \"cancel\", \"scenarios\": [{\"scenario\": \"doctor-metadata-cancel\", \"status\": \"passed\"}], \"status\": \"passed\"}\n",
+      "stderr": ""
+    },
+    {
+      "trial": 1,
+      "mode": "quit",
+      "exit_code": 0,
+      "seconds": 0.7316519590094686,
+      "stdout": "{\"failures\": [], \"mode\": \"quit\", \"scenarios\": [{\"scenario\": \"doctor-metadata-quit\", \"status\": \"passed\"}], \"status\": \"passed\"}\n",
+      "stderr": ""
+    },
+    {
+      "trial": 2,
+      "mode": "control",
+      "exit_code": 0,
+      "seconds": 0.30576524999924004,
+      "stdout": "{\"failures\": [], \"mode\": \"control\", \"scenarios\": [{\"scenario\": \"doctor-metadata-control\", \"status\": \"passed\"}], \"setup\": {\"ordinary_readiness_attempts\": 1}, \"status\": \"passed\"}\n",
+      "stderr": ""
+    },
+    {
+      "trial": 2,
+      "mode": "cancel",
+      "exit_code": 0,
+      "seconds": 0.8484239170065848,
+      "stdout": "{\"failures\": [], \"mode\": \"cancel\", \"scenarios\": [{\"scenario\": \"doctor-metadata-cancel\", \"status\": \"passed\"}], \"status\": \"passed\"}\n",
+      "stderr": ""
+    },
+    {
+      "trial": 2,
+      "mode": "quit",
+      "exit_code": 0,
+      "seconds": 0.7291172089899192,
+      "stdout": "{\"failures\": [], \"mode\": \"quit\", \"scenarios\": [{\"scenario\": \"doctor-metadata-quit\", \"status\": \"passed\"}], \"status\": \"passed\"}\n",
+      "stderr": ""
+    },
+    {
+      "trial": 3,
+      "mode": "control",
+      "exit_code": 0,
+      "seconds": 0.29984770900045987,
+      "stdout": "{\"failures\": [], \"mode\": \"control\", \"scenarios\": [{\"scenario\": \"doctor-metadata-control\", \"status\": \"passed\"}], \"setup\": {\"ordinary_readiness_attempts\": 1}, \"status\": \"passed\"}\n",
+      "stderr": ""
+    },
+    {
+      "trial": 3,
+      "mode": "cancel",
+      "exit_code": 0,
+      "seconds": 0.8318531249969965,
+      "stdout": "{\"failures\": [], \"mode\": \"cancel\", \"scenarios\": [{\"scenario\": \"doctor-metadata-cancel\", \"status\": \"passed\"}], \"status\": \"passed\"}\n",
+      "stderr": ""
+    },
+    {
+      "trial": 3,
+      "mode": "quit",
+      "exit_code": 0,
+      "seconds": 1.1488515840028413,
+      "stdout": "{\"failures\": [], \"mode\": \"quit\", \"scenarios\": [{\"scenario\": \"doctor-metadata-quit\", \"status\": \"passed\"}], \"status\": \"passed\"}\n",
+      "stderr": ""
+    },
+    {
+      "trial": 4,
+      "mode": "control",
+      "exit_code": 0,
+      "seconds": 0.33117979200324044,
+      "stdout": "{\"failures\": [], \"mode\": \"control\", \"scenarios\": [{\"scenario\": \"doctor-metadata-control\", \"status\": \"passed\"}], \"setup\": {\"ordinary_readiness_attempts\": 1}, \"status\": \"passed\"}\n",
+      "stderr": ""
+    },
+    {
+      "trial": 4,
+      "mode": "cancel",
+      "exit_code": 0,
+      "seconds": 0.8428591249976307,
+      "stdout": "{\"failures\": [], \"mode\": \"cancel\", \"scenarios\": [{\"scenario\": \"doctor-metadata-cancel\", \"status\": \"passed\"}], \"status\": \"passed\"}\n",
+      "stderr": ""
+    },
+    {
+      "trial": 4,
+      "mode": "quit",
+      "exit_code": 0,
+      "seconds": 0.7647003340098308,
+      "stdout": "{\"failures\": [], \"mode\": \"quit\", \"scenarios\": [{\"scenario\": \"doctor-metadata-quit\", \"status\": \"passed\"}], \"status\": \"passed\"}\n",
+      "stderr": ""
+    },
+    {
+      "trial": 5,
+      "mode": "control",
+      "exit_code": 0,
+      "seconds": 0.3856282079941593,
+      "stdout": "{\"failures\": [], \"mode\": \"control\", \"scenarios\": [{\"scenario\": \"doctor-metadata-control\", \"status\": \"passed\"}], \"setup\": {\"ordinary_readiness_attempts\": 1}, \"status\": \"passed\"}\n",
+      "stderr": ""
+    },
+    {
+      "trial": 5,
+      "mode": "cancel",
+      "exit_code": 0,
+      "seconds": 0.9420004160056124,
+      "stdout": "{\"failures\": [], \"mode\": \"cancel\", \"scenarios\": [{\"scenario\": \"doctor-metadata-cancel\", \"status\": \"passed\"}], \"status\": \"passed\"}\n",
+      "stderr": ""
+    },
+    {
+      "trial": 5,
+      "mode": "quit",
+      "exit_code": 0,
+      "seconds": 1.0037339999980759,
+      "stdout": "{\"failures\": [], \"mode\": \"quit\", \"scenarios\": [{\"scenario\": \"doctor-metadata-quit\", \"status\": \"passed\"}], \"status\": \"passed\"}\n",
+      "stderr": ""
+    },
+    {
+      "trial": 6,
+      "mode": "control",
+      "exit_code": 0,
+      "seconds": 0.6202687919867458,
+      "stdout": "{\"failures\": [], \"mode\": \"control\", \"scenarios\": [{\"scenario\": \"doctor-metadata-control\", \"status\": \"passed\"}], \"setup\": {\"ordinary_readiness_attempts\": 1}, \"status\": \"passed\"}\n",
+      "stderr": ""
+    },
+    {
+      "trial": 6,
+      "mode": "cancel",
+      "exit_code": 0,
+      "seconds": 1.092713707999792,
+      "stdout": "{\"failures\": [], \"mode\": \"cancel\", \"scenarios\": [{\"scenario\": \"doctor-metadata-cancel\", \"status\": \"passed\"}], \"status\": \"passed\"}\n",
+      "stderr": ""
+    },
+    {
+      "trial": 6,
+      "mode": "quit",
+      "exit_code": 0,
+      "seconds": 0.9366778750118101,
+      "stdout": "{\"failures\": [], \"mode\": \"quit\", \"scenarios\": [{\"scenario\": \"doctor-metadata-quit\", \"status\": \"passed\"}], \"status\": \"passed\"}\n",
+      "stderr": ""
+    },
+    {
+      "trial": 7,
+      "mode": "control",
+      "exit_code": 0,
+      "seconds": 0.5544906669965712,
+      "stdout": "{\"failures\": [], \"mode\": \"control\", \"scenarios\": [{\"scenario\": \"doctor-metadata-control\", \"status\": \"passed\"}], \"setup\": {\"ordinary_readiness_attempts\": 1}, \"status\": \"passed\"}\n",
+      "stderr": ""
+    },
+    {
+      "trial": 7,
+      "mode": "cancel",
+      "exit_code": 0,
+      "seconds": 0.8831182079884456,
+      "stdout": "{\"failures\": [], \"mode\": \"cancel\", \"scenarios\": [{\"scenario\": \"doctor-metadata-cancel\", \"status\": \"passed\"}], \"status\": \"passed\"}\n",
+      "stderr": ""
+    },
+    {
+      "trial": 7,
+      "mode": "quit",
+      "exit_code": 0,
+      "seconds": 0.9142238749918761,
+      "stdout": "{\"failures\": [], \"mode\": \"quit\", \"scenarios\": [{\"scenario\": \"doctor-metadata-quit\", \"status\": \"passed\"}], \"status\": \"passed\"}\n",
+      "stderr": ""
+    },
+    {
+      "trial": 8,
+      "mode": "control",
+      "exit_code": 0,
+      "seconds": 0.517482082999777,
+      "stdout": "{\"failures\": [], \"mode\": \"control\", \"scenarios\": [{\"scenario\": \"doctor-metadata-control\", \"status\": \"passed\"}], \"setup\": {\"ordinary_readiness_attempts\": 1}, \"status\": \"passed\"}\n",
+      "stderr": ""
+    },
+    {
+      "trial": 8,
+      "mode": "cancel",
+      "exit_code": 0,
+      "seconds": 0.9993064160080394,
+      "stdout": "{\"failures\": [], \"mode\": \"cancel\", \"scenarios\": [{\"scenario\": \"doctor-metadata-cancel\", \"status\": \"passed\"}], \"status\": \"passed\"}\n",
+      "stderr": ""
+    },
+    {
+      "trial": 8,
+      "mode": "quit",
+      "exit_code": 0,
+      "seconds": 0.8057455840025796,
+      "stdout": "{\"failures\": [], \"mode\": \"quit\", \"scenarios\": [{\"scenario\": \"doctor-metadata-quit\", \"status\": \"passed\"}], \"status\": \"passed\"}\n",
+      "stderr": ""
+    },
+    {
+      "trial": 9,
+      "mode": "control",
+      "exit_code": 0,
+      "seconds": 0.381498750008177,
+      "stdout": "{\"failures\": [], \"mode\": \"control\", \"scenarios\": [{\"scenario\": \"doctor-metadata-control\", \"status\": \"passed\"}], \"setup\": {\"ordinary_readiness_attempts\": 1}, \"status\": \"passed\"}\n",
+      "stderr": ""
+    },
+    {
+      "trial": 9,
+      "mode": "cancel",
+      "exit_code": 0,
+      "seconds": 0.8929529579909286,
+      "stdout": "{\"failures\": [], \"mode\": \"cancel\", \"scenarios\": [{\"scenario\": \"doctor-metadata-cancel\", \"status\": \"passed\"}], \"status\": \"passed\"}\n",
+      "stderr": ""
+    },
+    {
+      "trial": 9,
+      "mode": "quit",
+      "exit_code": 0,
+      "seconds": 0.770140500011621,
+      "stdout": "{\"failures\": [], \"mode\": \"quit\", \"scenarios\": [{\"scenario\": \"doctor-metadata-quit\", \"status\": \"passed\"}], \"status\": \"passed\"}\n",
+      "stderr": ""
+    },
+    {
+      "trial": 10,
+      "mode": "control",
+      "exit_code": 0,
+      "seconds": 0.5057582089939388,
+      "stdout": "{\"failures\": [], \"mode\": \"control\", \"scenarios\": [{\"scenario\": \"doctor-metadata-control\", \"status\": \"passed\"}], \"setup\": {\"ordinary_readiness_attempts\": 1}, \"status\": \"passed\"}\n",
+      "stderr": ""
+    },
+    {
+      "trial": 10,
+      "mode": "cancel",
+      "exit_code": 0,
+      "seconds": 0.931009041989455,
+      "stdout": "{\"failures\": [], \"mode\": \"cancel\", \"scenarios\": [{\"scenario\": \"doctor-metadata-cancel\", \"status\": \"passed\"}], \"status\": \"passed\"}\n",
+      "stderr": ""
+    },
+    {
+      "trial": 10,
+      "mode": "quit",
+      "exit_code": 0,
+      "seconds": 0.8104777920088964,
+      "stdout": "{\"failures\": [], \"mode\": \"quit\", \"scenarios\": [{\"scenario\": \"doctor-metadata-quit\", \"status\": \"passed\"}], \"status\": \"passed\"}\n",
+      "stderr": ""
+    }
+  ]
+}

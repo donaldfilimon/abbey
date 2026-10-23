@@ -1,0 +1,14 @@
+[
+  {
+    "gate": "root",
+    "exit_code": 0,
+    "seconds": 612.770938873291,
+    "source_drift": []
+  },
+  {
+    "gate": "desktop",
+    "exit_code": 0,
+    "seconds": 20.75964117050171,
+    "source_drift": []
+  }
+]

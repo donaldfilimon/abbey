@@ -234,7 +234,7 @@ class WorkflowGuards(unittest.TestCase):
         self.assertIn("name: gate (Linux ARM64)", body)
 
     def test_trusted_jobs_run_only_on_self_hosted_runners(self) -> None:
-        for name in ("gate-macos", "gate-linux"):
+        for name in ("gate-macos", "gate-linux", "qualify-windows-arm64"):
             body = self.jobs[name]
             self.assertIn(
                 "self-hosted",
@@ -243,7 +243,7 @@ class WorkflowGuards(unittest.TestCase):
             )
 
     def test_every_self_hosted_job_requires_same_repository(self) -> None:
-        for name in ("gate-macos", "gate-linux"):
+        for name in ("gate-macos", "gate-linux", "qualify-windows-arm64"):
             body = self.jobs[name]
             self.assertIn(
                 "github.repository == 'donaldfilimon/abbey'",
@@ -261,6 +261,7 @@ class WorkflowGuards(unittest.TestCase):
         expected = {
             "gate-macos": "vars.ABBEY_MACOS_ARM64_RUNNER == 'enabled'",
             "gate-linux": "vars.ABBEY_LINUX_ARM64_RUNNER == 'enabled'",
+            "qualify-windows-arm64": "vars.ABBEY_WINDOWS_ARM64_RUNNER == 'enabled'",
         }
         self.assertEqual(set(self.jobs), set(expected))
         for name, guard in expected.items():
@@ -324,7 +325,7 @@ class ForkSafety(unittest.TestCase):
         )
 
     def test_pull_request_jobs_require_a_same_repo_head(self) -> None:
-        for name in ("gate-macos", "gate-linux"):
+        for name in ("gate-macos", "gate-linux", "qualify-windows-arm64"):
             body = self.jobs[name]
             condition = job_field(body, "if")
             if "pull_request" not in condition:

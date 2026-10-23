@@ -3,10 +3,10 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use super::{ValidationError, v3::validate_digest, v3::validate_id};
+use super::{MAX_APP_FRAME_BYTES, ValidationError, v3::validate_digest, v3::validate_id};
 
-/// Maximum prompt bytes accepted by exact-model inference.
-pub const MAX_V3_MODEL_PROMPT_BYTES: usize = 32 * 1024;
+/// Raw prompt ceiling; serialized request/envelope overhead must fit the frame too.
+pub const MAX_V3_MODEL_PROMPT_BYTES: usize = MAX_APP_FRAME_BYTES;
 /// Maximum output bytes returned by exact-model inference.
 pub const MAX_V3_MODEL_OUTPUT_BYTES: usize = 32 * 1024;
 /// Maximum requested output tokens.
@@ -73,7 +73,10 @@ impl V3ModelInferenceRequest {
         validate_id(&self.revision)?;
         if self.prompt.trim().is_empty()
             || self.prompt.len() > MAX_V3_MODEL_PROMPT_BYTES
-            || self.prompt.chars().any(char::is_control)
+            || self
+                .prompt
+                .chars()
+                .any(|c| c.is_control() && !matches!(c, '\n' | '\r' | '\t'))
         {
             return Err(ValidationError::new("invalid v3 model prompt"));
         }
@@ -83,6 +86,13 @@ impl V3ModelInferenceRequest {
         validate_digest(&self.request_digest)?;
         if self.request_digest != self.computed_digest() {
             return Err(ValidationError::new("v3 model request digest mismatch"));
+        }
+        // JSON escaping counts against the same transport ceiling. The client
+        // additionally includes bearer/grants/correlation overhead before send.
+        let serialized = serde_json::to_vec(self)
+            .map_err(|_| ValidationError::new("invalid v3 model request"))?;
+        if serialized.len() > MAX_APP_FRAME_BYTES {
+            return Err(ValidationError::new("v3 model request exceeds frame limit"));
         }
         Ok(())
     }
