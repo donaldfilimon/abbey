@@ -73,3 +73,46 @@ Live voice V1–V8, 100-label human adjudication, text/ordinary-member journeys,
 up-to-three-recipient initiative pilot, independent moderation assessment and
 Activity host/TLS/Portal/two-participant witnesses remain open. No deployment,
 restart, live Discord message, moderation activation or Portal change occurred.
+
+## Local target and validation correction
+
+Donald selected this Mac as the managed deployment target. No repo `.env`,
+owner wrappers or Discord token in the process environment were present.
+Ollama responds on 11434; the documented `gemma4:12b` is absent, while
+`gemma4:latest` and `gpt-oss:20b` are available. The MLX speech/vision endpoints
+on 8181/8282 are unavailable. Availability is not provider qualification.
+An owner-only `~/.config/abbey-bot/env.pending` prepares inactive local settings;
+its token and exact model remain blank. It is not the service environment.
+No paid/cloud model was selected and no service was installed or started.
+
+GitHub reports the repository's only macOS runner offline; the documented local
+runner/fleet paths are absent. Exact-head CI remains blocked on runner restoration.
+
+The first repaired gate exited 101 at Clippy under Homebrew Rust 1.99.1, which
+bypassed the pinned toolchain. Two new needless-borrow lints were reported in
+`src/wdbx.rs`; no source workaround was applied before testing pinned Rust.
+Its 1,062 captured file inputs were unchanged, but this wrong-toolchain run
+does not qualify the pinned release. During that run the identical source
+was committed as `b7794a8226831491a14e4a7d1802bc73e28c8253`; the commit is preserved.
+Evidence is retained outside the repository under
+`/Users/donald/.codex/verification/abbey-bot-release-20261022/`.
+
+The next complete gate explicitly prepends the Rust 1.98.0 toolchain bin directory
+and pins RUSTC/RUSTDOC; version preflight confirms Cargo 1.98.0, Rustc 1.98.0 and
+Clippy 0.1.98. Independent review of both lock repairs and complete requirement
+coverage found no blocking issues. No full repaired source pass is yet claimed.
+
+## Pinned-run Pages correction
+
+The first pinned Rust 1.98.0 gate exited 1 at the maintained Pages inventory:
+after the release records became tracked, its explicit expected set lacked the
+two new documents. Added exactly those two paths; the existing 21 selector tests
+and Liquid scan pass. The frozen failed run kept all 1,062 inputs unchanged.
+No Clippy/build/test pass is claimed from this early exit. A complete pinned
+rerun follows this narrow correction.
+
+The independent human-learning worksheet is prepared outside the repository at
+`/Users/donald/.codex/verification/abbey-bot-release-20261022/human-learning-review.json`.
+All 100 human verdicts are null; agent labels are in a separate comparison file.
+The frozen corpus SHA-256 accompanies the worksheet. This preparation does not
+constitute independent adjudication or fixed-provider answer qualification.

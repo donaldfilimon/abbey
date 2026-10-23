@@ -491,6 +491,8 @@ class MarkdownFilesTests(unittest.TestCase):
             "docs/verification/2026-10-03-full-source-review.md",
             "docs/verification/2026-10-03-initiative-source.md",
             "docs/verification/2026-10-03-learning-quality-v1.md",
+            "docs/verification/2026-10-22-mlai-release-baseline.md",
+            "docs/verification/2026-10-22-mlai-release-matrix.md",
         }
         self.assertEqual(selected, expected)
 

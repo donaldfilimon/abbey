@@ -175,7 +175,7 @@ Owner: **Community maintainer / guild operator and independent assessor**. Contr
 
 | Dependency | Owner | Concrete next action |
 |---|---|---|
-| Managed host | Operator | Identify the intended production Mac; privately provision its owner-only environment or run this release qualification there. Do not copy credentials into the repository. |
+| Managed host | Operator | Donald selected this Mac. Fill the token and exact qualified model privately in `~/.config/abbey-bot/env.pending`; review and promote through the install preparation. Restore its offline CI runner. Do not copy credentials into the repository. |
 | Publication | Release maintainer | Keep MLX PR #190 separate; publish this release-baseline branch through a PR, then wait for exact final-main macOS Gate. |
 | Providers | Operator / provider maintainer | Confirm intended route on managed host; qualify exact candidate/model/OS; preserve route until an explicit change decision. |
 | Installation | Operator | Review candidate hash, readiness and rollback preparation; explicitly direct the transactional install only after source/CI/provider qualification. |
