@@ -1,6 +1,6 @@
 # Task009 verification — 2026-10-25
 
-Both authoritative gates pass on the final frozen executable sources and proc3 graph: `./check.sh` exit0 and `./desktop/check.sh` exit0. Host: aarch64-apple-darwin; rustc1.99.1 (`58cf8f9c35b355199727627d07ae34a4e2846d67`); Cargo1.99.1; GLib/GObject2.90.1. GTK3 SDK absent.
+At initial producer commit `e49ccbd`, both authoritative gates passed on its frozen sources and proc3 graph: `./check.sh` exit0 and `./desktop/check.sh` exit0. Host: aarch64-apple-darwin; rustc1.99.1 (`58cf8f9c35b355199727627d07ae34a4e2846d67`); Cargo1.99.1; GLib/GObject2.90.1. GTK3 SDK absent.
 
 | Receipt | Exit | Observed result | Log SHA256 |
 | --- | --- | --- | --- |
@@ -20,7 +20,7 @@ Both authoritative gates pass on the final frozen executable sources and proc3 g
 | `proc3-vendor-audit` | 1 | Retained upstream test tooling basic-toml warning | `ed42fdadfa6599965b821430d7d274b1ea952dcac48a53c21445a6a836f6f66c` |
 | `linux-runner-host-guard` | 2 | Linux GTK runner refuses unsupported Mac | `8406c4b606cbf223e092214a8c63f7b5ae054b9c169ab169b9a9f7a840b515fc` |
 
-The full gates share source inventory SHA256 `e7561210a0ff511677c1e947ec00ebdfad8774f19cce0f1c91c8ba51c268cdc5` before/after each command. The source remained frozen through both runs. This summary was updated afterward; executable sources, archives and locks were not. Controller-authorized focused builds in other tasks used isolated targets during the latter gate stages. These are functional checks with concurrent load, with no controlled-performance claim.
+The full gates share source inventory SHA256 `e7561210a0ff511677c1e947ec00ebdfad8774f19cce0f1c91c8ba51c268cdc5` before/after each command. The source remained frozen through both runs. The vendor/runtime sources, provenance verifier and locks remain unchanged. The later test-setup change is qualified by the targeted fix-round checks below. Controller-authorized focused builds in other tasks used isolated targets during the latter gate stages. These are functional checks with concurrent load, with no controlled-performance claim.
 
 Every Cargo command uses `tools/cargo.sh`. Exact commands, selected environment, stdinEOF, exits and unique source inventories are private under ignored `.work/gtk/receipts/`; this summary publishes portable receipt names and hashes. Environment: ABI_WDBX_PERSIST unset, ABI_WDBX_PATH=:memory:, CARGO_INCREMENTAL0, DEV/TEST debug info0. Separate consumer/vendor targets are under `.work/gtk/`; the consumer target is an independent APFS clone of the updater cache, not shared writable state or qualification by itself. Existing supported ABBEY_ZIP_OPENSSL/PYTHON overrides are resolved before the wrapper.
 
@@ -53,3 +53,35 @@ archive entries: trailing blank lines in the three supplied LICENSE files and
 one trailing space in an original glib-macros documentation line. Complete
 archive comparison proves these bytes unchanged; no license normalization,
 source cleanup or whitespace bypass was added.
+
+## Fix round1 — fresh-checkout controls scratch parent
+
+Review I1 found that mutation controls required `.work/gtk` before the gate's
+first vendor build. Shared `setUpModule()` now creates that parent with
+`parents=True, exist_ok=True` before either test class runs. No vendor/runtime,
+checker, gate, lock, license or original cache bytes changed.
+
+RED used a private tracked-source copy with an absent scratch parent;18 controls
+ran with9 FileNotFoundError errors. The actual task scratch/cache directories
+were never renamed, deleted or used as the absent-parent fixture. GREEN ran18
+controls under current Python and system Python3.9, plus the concrete gate section
+in independent absent-parent source copies for both interpreters: full verifier,
+18 controls, macro diagnostic harness, full verifier. Metadata left the scratch
+parent absent; shared test setup created it before Cargo diagnostics. All focused
+commands passed, with4 intended diagnostic cases per harness run. Separate private
+targets and jobs2 were used; these were functional concurrent-load checks.
+
+The earlier root/desktop success receipts retain their exact earlier source
+inventory. Those whole gates and installer suites were not repeated for this
+test-only fix. Existing warning, advisory and platform qualification limits above
+remain; no warning suppression or warning-free claim was added.
+
+| Fix-round receipt | Exit | Log SHA256 |
+| --- | --- | --- |
+| `fixround1-fresh-parent-red` | 1 | `560893cb2642e10b3c15f433ae0010ad8cb4540265e252b8bc589f6dd5e04372` |
+| `fixround1-controls-current` | 0 | `a200be47323d80c8828f3e945476c2f815ca04eb857321c860460b1796e9e7b4` |
+| `fixround1-controls-system` | 0 | `9f4197f4a52b0fa5754ea75c6a0a66c3e69f54282865a1ae16a4b89702a1931e` |
+| `fixround1-fresh-gate-current` | 0 | `6d0832540f3fbb64f4cf0d664f3234957e680d3b49c5d2cc1bb9256b2869f259` |
+| `fixround1-fresh-gate-system` | 0 | `e0e5e0cdbb50673383cb651de3da619134f85d1ca15110e51840ce6863256155` |
+
+Final test setup SHA256: `7d3c511b2d76258a42543832b6cef70ccaefe0e4da7eba78313e6202f55263d6`. The earlier digest table describes the initial producer snapshot.

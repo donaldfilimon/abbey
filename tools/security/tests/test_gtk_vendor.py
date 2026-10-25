@@ -9,6 +9,11 @@ import unittest
 ROOT = Path(__file__).resolve().parents[3]
 spec = importlib.util.spec_from_file_location('gtk_vendor', ROOT / 'tools/security/check_gtk_vendor.py')
 
+
+def setUpModule():
+    """Initialize scratch before either class runs, including before Cargo builds."""
+    (ROOT / '.work/gtk').mkdir(parents=True, exist_ok=True)
+
 class VendorTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
