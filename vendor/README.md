@@ -89,7 +89,9 @@ Maintained trybuild accepts file cases rather than the fork's inline API.
 `compat-tests/upstream-ui/clone/` retains the same 29 failing sources and four
 passing sources. Each test compares those bytes with the original upstream
 inline table before compilation. The original diagnostic expectations remain in
-that table; normalized strict stderr snapshots must contain those expectations
+that table; snapshots must preserve those expectations after normalizing only renderer
+location lines and numeric gutter labels (message, source and caret stay exact),
+and strict stderr snapshots
 and match the actual compiler output. Original GLib subclass snapshots remain
 unchanged. Missing snapshots fail closed; never use `TRYBUILD=overwrite` to
 accept observed output. Every new snapshot requires explicit diagnostic review.

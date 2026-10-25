@@ -1,0 +1,7 @@
+error: proc macro panicked
+ --> $WORKSPACE/compat-tests/upstream-ui/clone/test_2.rs
+  |
+  | fn main() { use glib::clone; let v = std::rc::Rc::new(1); clone!(|a, b| {}); }
+  |                                                           ^^^^^^^^^^^^^^^^^
+  |
+  = help: message: If you have nothing to clone, no need to use this macro!

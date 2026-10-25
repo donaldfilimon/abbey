@@ -255,6 +255,35 @@ const TESTS: &[(&str, &str)] = &[
     ),
 ];
 
+// Retain the original diagnostic text, source line and caret. Maintained
+// trybuild normalizes external fixture paths and omits numeric gutter labels.
+fn normalize_diagnostic(value: &str) -> String {
+    value.lines().filter_map(|line| {
+        if line.trim_start().starts_with("--> ") {
+            return None;
+        }
+        if let Some((gutter, text)) = line.split_once('|') {
+            let number = gutter.trim();
+            if !number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit()) {
+                return Some(format!("  |{text}"));
+            }
+        }
+        Some(line.to_owned())
+    }).collect::<Vec<_>>().join("\n")
+}
+
+#[test]
+fn harness_diagnostic_normalization_preserves_error_source_and_caret() {
+    let old = "error: exact message\n --> test_3.rs:1:86\n  |\n1 | source text\n  |    ^";
+    let current = "error: exact message\n --> $WORKSPACE/cases/test_3.rs\n  |\n  | source text\n  |    ^";
+    assert_eq!(normalize_diagnostic(old), normalize_diagnostic(current));
+    for changed in [current.replace("exact message", "wrong message"),
+                    current.replace("source text", "different source"),
+                    current.replace("   ^", "  ^")] {
+        assert_ne!(normalize_diagnostic(old), normalize_diagnostic(&changed));
+    }
+}
+
 #[test]
 fn clone_failures() {
     let t = trybuild::TestCases::new();
@@ -270,9 +299,8 @@ fn clone_failures() {
         // Missing snapshots still fail closed in trybuild; never overwrite them.
         if fixture.with_extension("stderr").exists() {
             let expected = std::fs::read_to_string(fixture.with_extension("stderr")).unwrap();
-            let normalized = expected.replace("$DIR/", "")
-                .replace("../compat-tests/upstream-ui/clone/", "");
-            assert!(normalized.contains(err), "upstream diagnostic changed: test_{index}");
+            assert!(normalize_diagnostic(&expected).contains(&normalize_diagnostic(err)),
+                    "upstream diagnostic changed: test_{index}");
         }
         t.compile_fail(fixture);
     }
