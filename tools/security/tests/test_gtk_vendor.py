@@ -49,6 +49,15 @@ class VendorTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 self.check.verify_sources(vendor)
 
+    def test_original_subclass_snapshot_drift_rejected(self):
+        with tempfile.TemporaryDirectory(dir=ROOT / '.work/gtk') as tmp:
+            vendor = Path(tmp) / 'vendor'
+            shutil.copytree(ROOT / 'vendor', vendor)
+            snapshot = vendor / 'compat-tests/upstream-ui/original-subclass-snapshots/02-no-auto-send-sync.stderr'
+            snapshot.write_bytes(snapshot.read_bytes() + b'changed')
+            with self.assertRaises(ValueError):
+                self.check.verify_sources(vendor)
+
     def test_license_drift(self):
         self.mutate('glib-0.18.5/LICENSE', lambda b: b + b'changed')
 

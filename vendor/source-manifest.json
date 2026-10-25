@@ -6,7 +6,11 @@
         "Cargo.toml",
         "Cargo.toml.orig",
         "src/variant_iter.rs",
-        "tests/subclass_compiletest.rs"
+        "tests/subclass_compiletest.rs",
+        "tests/subclass_compiletest/02-no-auto-send-sync.stderr",
+        "tests/subclass_compiletest/03-object-no-auto-send-sync.stderr",
+        "tests/subclass_compiletest/05-no-auto-send-sync-with-non-send-sync-parent.stderr",
+        "tests/subclass_compiletest/06-no-auto-send-sync-with-non-send-sync-ffi-parent.stderr"
       ],
       "license": "MIT",
       "original_files": {
@@ -245,14 +249,14 @@
         "tests/subclass_compiletest.rs": "4a27d85d072d9e3df5572561bdc15d151ebb5af570b5364db7ed1cf9b4128068",
         "tests/subclass_compiletest/01-auto-send-sync.rs": "8ff975b8f4b5c94c4cb823f27668446e3f8da5c0cf359e1bd8ac6a86334d1aa4",
         "tests/subclass_compiletest/02-no-auto-send-sync.rs": "39d1a1dd156bc2eaaf6a5ca57525b1f9c5b069ac6ee70ecea9455138c2eebe13",
-        "tests/subclass_compiletest/02-no-auto-send-sync.stderr": "064b2d5b0dceb949c288fe09cb056f870a34c0ae5a65a33ea2e827f6ef9725ad",
+        "tests/subclass_compiletest/02-no-auto-send-sync.stderr": "d29658340dcfa444727a651094a11daa54b162238c9b4ba48cdcb74f92d2a8bf",
         "tests/subclass_compiletest/03-object-no-auto-send-sync.rs": "f7d3ae563cbb02b07253b396bb9af5fa31394e4d64ee9b6d4ffa1641e1a50b52",
-        "tests/subclass_compiletest/03-object-no-auto-send-sync.stderr": "3e0ea73faa979d9ab9ddcc5c3a2824592378f53e4894d029572cddbf6e6f816f",
+        "tests/subclass_compiletest/03-object-no-auto-send-sync.stderr": "c1eff7fc60b92f90ff8567f24ab74eb086ee5390246a30297b018c97a75bc5ea",
         "tests/subclass_compiletest/04-auto-send-sync-with-send-sync-parent.rs": "6832dc8851d0fdabc906acc1af8234d8ae1143a1fe8f7d7f2134e706538b6dbe",
         "tests/subclass_compiletest/05-no-auto-send-sync-with-non-send-sync-parent.rs": "2b05fad36e3311bd1f6bef737431b96bbbb579b3071aef685debaaa16b95cbda",
-        "tests/subclass_compiletest/05-no-auto-send-sync-with-non-send-sync-parent.stderr": "9cff33355447a4c18610a211ad2ee58b87536720e0685e44c8212992ef687f77",
+        "tests/subclass_compiletest/05-no-auto-send-sync-with-non-send-sync-parent.stderr": "6c8aafdb6a6b2b7dbea019869563f84671a475cec006759eed6035fa16786b56",
         "tests/subclass_compiletest/06-no-auto-send-sync-with-non-send-sync-ffi-parent.rs": "a37119bff708de5c84e8a82affa6cc9abe73595b08c9e0539d9cbe33af5e9f7a",
-        "tests/subclass_compiletest/06-no-auto-send-sync-with-non-send-sync-ffi-parent.stderr": "808ac199325749e28e4c5ea6a459463d87c375443dc73c143a8fc1032575895f",
+        "tests/subclass_compiletest/06-no-auto-send-sync-with-non-send-sync-ffi-parent.stderr": "99352b381a8982f45761061791dd33e9a2495a912163f25f41ea07e57f3edeb0",
         "tests/value.rs": "c796ea2b30559e9c8ab6ebbb6c59c575d365a27b461c20f9ca0b1989dbe01d79"
       },
       "url": "https://static.crates.io/crates/glib/glib-0.18.5.crate"

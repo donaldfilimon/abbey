@@ -25,7 +25,7 @@ PINS = {
     'glib-0.18.5': (
         '233daaf6e83ae6a12a52055f568f9d7cf4671dabb78ff9560ab6da230ce00ee5',
         '5da7556cd83c4d07950e32b0bbc212fdf3bd1697f9b2751c3892a33cf25e6c6b',
-        '7ccca726775db3ad700271b3a887a7b272bbc024c89296c3e279072223debcf2'),
+        '6905f8a71579a7084411e155639400a0ed7a90af1f87a642ae26043948a9bab4'),
     'glib-macros-0.18.5': (
         '0bb0228f477c0900c880fd78c8759b95c7636dbd7842707f49e132378aa2acdc',
         'a6c4be94577afb29698c09c95cc17bc28ac87844071da20839150e92e2c4c841',
@@ -108,6 +108,19 @@ def verify_sources(vendor):
                 require('proc-macro-error' not in deps and 'proc-macro-error3' in deps, f'{crate}: old/aliased macro dependency')
                 dep = deps['proc-macro-error3']
                 require(dep == {'version': '=3.1.1', 'default-features': False, 'features': ['syn2-error']}, f'{crate}: replacement dependency/feature drift')
+    # Keep the supplied compile-fail snapshots byte-for-byte alongside the
+    # explicitly reviewed Rust 1.99.1 renderer-only patch in the vendored tree.
+    retained = vendor / 'compat-tests/upstream-ui/original-subclass-snapshots'
+    require(all(not parent.is_symlink() for parent in [retained, retained.parent, retained.parent.parent]),
+            'original snapshot custody symlink forbidden')
+    expected = {Path(path).name: digest
+                for path, digest in data['crates']['glib-0.18.5']['original_files'].items()
+                if path.startswith('tests/subclass_compiletest/') and path.endswith('.stderr')}
+    paths = list(retained.rglob('*'))
+    require(not any(path.is_symlink() for path in paths), 'original snapshot symlink forbidden')
+    actual = {path.relative_to(retained).as_posix(): sha(path.read_bytes())
+              for path in paths if path.is_file()}
+    require(actual == expected, 'original subclass snapshot custody drift')
     return data
 
 

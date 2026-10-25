@@ -91,9 +91,12 @@ passing sources. Each test compares those bytes with the original upstream
 inline table before compilation. The original diagnostic expectations remain in
 that table; snapshots must preserve those expectations after normalizing only renderer
 location lines and numeric gutter labels (message, source and caret stay exact),
-and strict stderr snapshots
-and match the actual compiler output. Original GLib subclass snapshots remain
-unchanged. Missing snapshots fail closed; never use `TRYBUILD=overwrite` to
+and strict stderr snapshots match the actual compiler output. Four GLib subclass
+snapshots have an explicit Rust 1.99.1 renderer patch: qualified internal type
+names, gutter alignment and long-line ellipsis width. Primary E0277 diagnostics
+and every source case remain unchanged. All four supplied snapshot byte streams
+are retained under `compat-tests/upstream-ui/original-subclass-snapshots/` and
+checked against the independently pinned pristine archive inventory. Missing snapshots fail closed; never use `TRYBUILD=overwrite` to
 accept observed output. Every new snapshot requires explicit diagnostic review.
 See the maintenance plan and dated verification evidence for executed outcomes;
 source migration and a clean audit alone do not qualify these tests.
