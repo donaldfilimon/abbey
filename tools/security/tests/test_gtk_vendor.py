@@ -171,8 +171,6 @@ class ResolutionTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 self.check.verify_lock(path)
 
-if __name__ == '__main__':
-    unittest.main()
 
 
 class HarnessLockTests(unittest.TestCase):
@@ -218,3 +216,7 @@ class HarnessLockTests(unittest.TestCase):
             package = self.package(); package[key] = value
             with self.subTest(key=key), self.assertRaises(ValueError):
                 self.check_lock([package])
+
+
+if __name__ == '__main__':
+    unittest.main()
