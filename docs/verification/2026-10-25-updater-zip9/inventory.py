@@ -6,12 +6,12 @@ import subprocess
 import tomllib
 
 out = Path('docs/verification/2026-10-25-updater-zip9')
-metadata_path = out / 'metadata-qualified.stdout'
+metadata_path = Path('.work/zip9/receipts/metadata-qualified.stdout')
 if metadata_path.exists():
     metadata = json.loads(metadata_path.read_text())
 else:
     import gzip
-    metadata = json.loads(gzip.decompress(metadata_path.with_suffix('.stdout.gz').read_bytes()))
+    metadata = json.loads(gzip.decompress(Path('.work/zip9/private-evidence/metadata-qualified.stdout.gz').read_bytes()))
 packages = metadata['packages']
 updater, = [p for p in packages if p['name'] == 'tauri-plugin-updater']
 zip9, = [p for p in packages if p['name'] == 'zip']

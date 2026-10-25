@@ -1,6 +1,6 @@
 import datetime,hashlib,json,os,pathlib,subprocess,sys,time
 root=pathlib.Path.cwd(); label=sys.argv[1]; argv=sys.argv[2:]
-out=root/'docs/verification/2026-10-25-updater-zip9'; out.mkdir(exist_ok=True)
+out=root/'.work/zip9/receipts'; out.mkdir(parents=True,exist_ok=True)
 env=os.environ.copy(); env.update(CARGO_TARGET_DIR=str(root/'.work/zip9/target'), CARGO_INCREMENTAL='0', CARGO_PROFILE_DEV_DEBUG='0', CARGO_PROFILE_TEST_DEBUG='0', ABI_WDBX_PATH=':memory:'); env.pop('ABI_WDBX_PERSIST',None)
 env.setdefault('ABBEY_ZIP_OPENSSL',__import__('shutil').which('openssl') or 'openssl')
 selected={k:env.get(k) for k in ('CARGO_TARGET_DIR','CARGO_INCREMENTAL','CARGO_PROFILE_DEV_DEBUG','CARGO_PROFILE_TEST_DEBUG','ABI_WDBX_PATH','ABI_WDBX_PERSIST','ABBEY_DEP_SCAN_REQUIRE','ABBEY_DESKTOP_UPDATE_ARTIFACT','ABBEY_ZIP_OPENSSL')}

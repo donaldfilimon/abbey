@@ -16,7 +16,9 @@ needed. Public plugin `Update::verify` tests independently validate this format.
 The unversioned signature covers the same valid bytes without a `version:` field.
 
 Committed fixtures were generated on 2026-10-25; the generator command, selected
-OpenSSL path, source hashes and outputs are in the dated verification receipts.
+OpenSSL identity, source hashes and results are in the dated portable verification
+summary; exact raw command/environment/output receipts remain privately under
+ignored `.work/zip9/private-evidence`.
 Regenerating gives identical ZIP bytes and new public keys/signatures:
 
 ```sh

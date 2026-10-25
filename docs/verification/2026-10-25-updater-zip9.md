@@ -31,13 +31,19 @@ are unchanged.
 
 ## Executed checks and boundaries
 
-Every recorded check has command arguments, selected environment, closed stdin,
-UTC start/end, exit status, source/lock SHA-256 values and disk availability in
-its same-named JSON receipt. Later checks also include adjacent repository
-identities/status and expanded root source hashes. stdout/stderr are retained;
-nonempty command output is archived losslessly as `.stdout.gz`/`.stderr.gz`
-to preserve exact whitespace without treating tool output as source formatting. The recording
-helper and inventory verifier are retained with the evidence.
+Every check's exact raw command/environment/time/exit/source receipt and command
+output is retained privately under ignored `.work/zip9/private-evidence` and
+`.work/zip9/raw-evidence`. [checks-summary.json](2026-10-25-updater-zip9/checks-summary.json)
+is an explicitly portable published summary: it retains arguments, selected
+setting labels, UTC times, exits, source/lock SHA-256 values, disk availability,
+raw receipt/output hashes and private relative references. `$REPO`,
+`$UPDATER_CHECKOUT` and `$RESOLVED_EXECUTABLE` are publication substitutions;
+they are not the raw runtime values or configured dependency paths. Originals
+were copied intact before publication and are not normalized or deleted.
+Later raw checks also record adjacent source identities/status and expanded root
+source hashes. The recording helper now writes fresh raw receipts only under
+ignored `.work/zip9/receipts`; the inventory verifier reads freshly recorded
+locked metadata there. No machine-specific cache/toolchain paths are published.
 
 | Check | Result | Interpretation |
 | --- | --- | --- |
