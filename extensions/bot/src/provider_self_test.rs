@@ -1,0 +1,625 @@
+//! No-Discord, no-state provider qualification with synthetic fixtures only.
+
+use crate::llm::{
+    self, Backend, ChatTurn, HttpTransport, StreamTransport as _, build_stream_request,
+};
+use crate::provider::{
+    CapabilityEvidence, CapabilityEvidenceSet, FIXTURE_VERSION, ProviderEvidence, ProviderIdentity,
+    QUALIFICATION_VERSION, QualificationReport, QualificationTarget, primary_identity, unix_now,
+};
+use crate::tools::{ToolResult, ToolSpec};
+use crate::vision::{
+    VisionConfig, VisionProviderChoice, VisionTask, VisionTransport as _, extract_vision_text,
+};
+
+use serde_json::json;
+
+pub(crate) mod benchmark;
+mod fm;
+
+const TEXT_MARKER: &str = "ABBEY_PROVIDER_TEXT_V1";
+const STREAM_MARKER: &str = "ABBEY_PROVIDER_STREAM_V1";
+const CONTINUATION_MARKER: &str = "ABBEY_PROVIDER_CONTINUATION_V1";
+const TOOL_NONCE: &str = "abbey-provider-probe-v1";
+const OCR_MARKER: &str = "ABBEY427";
+const SHAPE_MARKER: &str = "red square, blue circle";
+
+fn pass() -> CapabilityEvidence {
+    CapabilityEvidence::pass()
+}
+
+fn fail(category: &'static str) -> CapabilityEvidence {
+    CapabilityEvidence::fail(category)
+}
+
+fn unsupported() -> CapabilityEvidence {
+    CapabilityEvidence::unsupported()
+}
+
+fn evidence_failed(evidence: &ProviderEvidence) -> bool {
+    use crate::provider::ProbeStatus;
+    [
+        &evidence.capabilities.text,
+        &evidence.capabilities.streaming,
+        &evidence.capabilities.structured_output,
+        &evidence.capabilities.tools,
+        &evidence.capabilities.vision,
+        &evidence.capabilities.ocr,
+    ]
+    .into_iter()
+    .any(|item| matches!(item.status, ProbeStatus::Fail))
+}
+
+fn evidence_has_configuration_failure(evidence: &ProviderEvidence) -> bool {
+    [
+        &evidence.capabilities.text,
+        &evidence.capabilities.streaming,
+        &evidence.capabilities.structured_output,
+        &evidence.capabilities.tools,
+        &evidence.capabilities.vision,
+        &evidence.capabilities.ocr,
+    ]
+    .into_iter()
+    .any(|item| {
+        matches!(
+            item.category.as_deref(),
+            Some("invalid_configuration" | "invalid_vision_configuration" | "identity_unavailable")
+        )
+    })
+}
+
+fn passing_image_evidence_is_bound(evidence: &ProviderEvidence) -> bool {
+    !(evidence.capabilities.vision.passed() || evidence.capabilities.ocr.passed())
+        || evidence.vision_identity.is_some()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SelfTestExit {
+    Success,
+    ProbeFailure,
+    Configuration,
+}
+
+impl SelfTestExit {
+    pub const fn code(self) -> i32 {
+        match self {
+            Self::Success => 0,
+            Self::ProbeFailure => 1,
+            Self::Configuration => 2,
+        }
+    }
+}
+
+pub struct SelfTestOutcome {
+    pub report: QualificationReport,
+    pub exit: SelfTestExit,
+}
+
+fn unavailable(category: &'static str) -> ProviderEvidence {
+    ProviderEvidence {
+        configured: false,
+        identity: None,
+        vision_identity: None,
+        capabilities: CapabilityEvidenceSet {
+            text: fail(category),
+            streaming: CapabilityEvidence::skipped(),
+            structured_output: CapabilityEvidence::skipped(),
+            tools: CapabilityEvidence::skipped(),
+            vision: CapabilityEvidence::skipped(),
+            ocr: CapabilityEvidence::skipped(),
+        },
+    }
+}
+
+pub(crate) fn probe_tool() -> ToolSpec {
+    ToolSpec {
+        name: "probe_status",
+        description: "Return the exact synthetic qualification nonce. This probe has no side effects.",
+        parameters: json!({
+            "type": "object",
+            "properties": {
+                "nonce": {"type": "string", "enum": [TOOL_NONCE]}
+            },
+            "required": ["nonce"],
+            "additionalProperties": false
+        }),
+    }
+}
+
+fn exact(value: &str, expected: &str) -> bool {
+    value.trim() == expected
+}
+
+fn normalized_ocr(value: &str) -> String {
+    value
+        .chars()
+        .filter(|character| character.is_ascii_alphanumeric())
+        .flat_map(char::to_uppercase)
+        .collect()
+}
+
+fn remote_vision_identity(config: &VisionConfig) -> Result<ProviderIdentity, String> {
+    primary_identity(config.base_url.clone(), config.model.clone())
+}
+
+async fn probe_stream(backend: &Backend, expected: &str) -> bool {
+    if !matches!(backend, Backend::OpenAiCompatible { .. }) {
+        return false;
+    }
+    let request = build_stream_request(
+        backend,
+        "Return exactly the requested marker and nothing else.",
+        &[ChatTurn::user(format!("Return exactly {expected}"))],
+        &[],
+    );
+    let (sender, _) = crate::generation::stream_owner::channel();
+    let transport = HttpTransport::default();
+    let response = transport.post_stream(&request, sender).await;
+    response.is_ok_and(|turn| turn.calls.is_empty() && exact(&turn.text, expected))
+}
+
+async fn probe_primary() -> ProviderEvidence {
+    let Some(backend) = Backend::from_env() else {
+        return unavailable("not_configured");
+    };
+    if backend.validate().is_err() {
+        return unavailable("invalid_configuration");
+    }
+    let identity = match &backend {
+        Backend::OpenAiCompatible { endpoint, model } => {
+            primary_identity(endpoint.clone(), model.clone())
+        }
+        Backend::Anthropic { .. } => primary_identity(
+            "https://api.anthropic.com/v1/messages".into(),
+            "claude-sonnet-5".into(),
+        ),
+    }
+    .ok();
+    let transport = HttpTransport::default();
+    let text = llm::chat_backend(
+        &transport,
+        &backend,
+        "Return exactly the requested marker and nothing else.",
+        &[ChatTurn::user(format!("Return exactly {TEXT_MARKER}"))],
+    )
+    .await
+    .is_ok_and(|answer| exact(&answer, TEXT_MARKER));
+    let streaming = if matches!(backend, Backend::OpenAiCompatible { .. }) {
+        if probe_stream(&backend, STREAM_MARKER).await {
+            pass()
+        } else {
+            fail("stream_protocol")
+        }
+    } else {
+        unsupported()
+    };
+    let tool = probe_tool();
+    let mut tools_pass = false;
+    let first = llm::chat_turn(
+        &transport,
+        &backend,
+        "Call probe_status exactly once with the supplied nonce. Do not answer yet.",
+        &[ChatTurn::user(format!("Use nonce {TOOL_NONCE}"))],
+        std::slice::from_ref(&tool),
+    )
+    .await;
+    if let Ok(turn) = first
+        && turn.text.trim().is_empty()
+        && turn.calls.len() == 1
+        && turn.calls[0].name == "probe_status"
+        && turn.calls[0].arguments == json!({"nonce": TOOL_NONCE})
+    {
+        let mut turns = vec![
+            ChatTurn::user(format!("Use nonce {TOOL_NONCE}")),
+            ChatTurn::assistant_calls("", turn.calls.clone()),
+        ];
+        turns.push(ChatTurn::tool_result(&ToolResult {
+            call_id: turn.calls[0].id.clone(),
+            name: "probe_status".into(),
+            content: format!("synthetic probe succeeded; return exactly {CONTINUATION_MARKER}"),
+        }));
+        tools_pass = llm::chat_turn(
+            &transport,
+            &backend,
+            "After the synthetic tool result, return exactly the requested marker.",
+            &turns,
+            &[],
+        )
+        .await
+        .is_ok_and(|answer| answer.calls.is_empty() && exact(&answer.text, CONTINUATION_MARKER));
+    }
+
+    let (vision, ocr, vision_identity) = match VisionProviderChoice::from_env() {
+        Ok(VisionProviderChoice::Remote) => match VisionConfig::from_env() {
+            Some(config)
+                if crate::llm::validate_remote_endpoint(
+                    &config.base_url,
+                    "ABBEY_VISION_ENDPOINT",
+                )
+                .is_ok() =>
+            {
+                match remote_vision_identity(&config) {
+                    Ok(vision_identity) => {
+                        let transport = crate::runtime::HttpVisionTransport::default();
+                        let shape = crate::vision::image::data_url_unchecked(&shape_fixture());
+                        let vision = transport
+                            .post(&config.request(VisionTask::QualificationShapes, shape))
+                            .await
+                            .and_then(|raw| extract_vision_text(&raw))
+                            .is_ok_and(|answer| answer.trim().eq_ignore_ascii_case(SHAPE_MARKER));
+                        let text = crate::vision::image::data_url_unchecked(&ocr_fixture());
+                        let ocr = transport
+                            .post(&config.request(VisionTask::QualificationOcr, text))
+                            .await
+                            .and_then(|raw| extract_vision_text(&raw))
+                            .is_ok_and(|answer| normalized_ocr(&answer) == OCR_MARKER);
+                        (
+                            if vision {
+                                pass()
+                            } else {
+                                fail("semantic_vision")
+                            },
+                            if ocr { pass() } else { fail("semantic_ocr") },
+                            Some(vision_identity),
+                        )
+                    }
+                    Err(_) => (
+                        fail("identity_unavailable"),
+                        fail("identity_unavailable"),
+                        None,
+                    ),
+                }
+            }
+            Some(_) => (
+                fail("invalid_vision_configuration"),
+                fail("invalid_vision_configuration"),
+                None,
+            ),
+            None => (unsupported(), unsupported(), None),
+        },
+        Ok(VisionProviderChoice::Off | VisionProviderChoice::FoundationModels) => {
+            (unsupported(), unsupported(), None)
+        }
+        Err(_) => (
+            fail("invalid_vision_configuration"),
+            fail("invalid_vision_configuration"),
+            None,
+        ),
+    };
+
+    ProviderEvidence {
+        configured: true,
+        identity,
+        vision_identity,
+        capabilities: CapabilityEvidenceSet {
+            text: if text { pass() } else { fail("semantic_text") },
+            streaming,
+            structured_output: if tools_pass {
+                pass()
+            } else {
+                fail("structured_output")
+            },
+            tools: if tools_pass {
+                CapabilityEvidence::tools_pass(CONTINUATION_MARKER)
+            } else {
+                fail("tool_protocol")
+            },
+            vision,
+            ocr,
+        },
+    }
+}
+
+pub async fn run(target: QualificationTarget) -> SelfTestOutcome {
+    let vision_choice = VisionProviderChoice::from_env();
+    let configuration_error = vision_choice.is_err();
+    let primary = if target.includes_primary() {
+        probe_primary().await
+    } else {
+        ProviderEvidence::skipped()
+    };
+    let fm = if target.includes_fm() {
+        fm::probe().await
+    } else {
+        fm::FmProbe::skipped()
+    };
+    let fm_vision_required = matches!(vision_choice, Ok(VisionProviderChoice::FoundationModels));
+    let overall_pass = (!target.includes_primary()
+        || (primary.configured
+            && !evidence_failed(&primary)
+            && passing_image_evidence_is_bound(&primary)))
+        && (!target.includes_fm() || fm::route_passes(&fm.first, &fm.modes, fm_vision_required))
+        && (!fm.server.configured || !evidence_failed(&fm.server));
+    let report = QualificationReport {
+        version: QUALIFICATION_VERSION,
+        fixture_version: FIXTURE_VERSION.into(),
+        generated_unix_secs: unix_now(),
+        target,
+        overall_pass,
+        primary,
+        fm_server: fm.server,
+        fm_cli: fm.first,
+        fm_cli_modes: fm.modes,
+        fm_manifest_identity: fm.manifest_identity,
+    };
+    SelfTestOutcome {
+        exit: if configuration_error {
+            SelfTestExit::Configuration
+        } else {
+            classify_exit(&report)
+        },
+        report,
+    }
+}
+
+fn classify_exit(report: &QualificationReport) -> SelfTestExit {
+    let selected_routes_configured = (!report.target.includes_primary()
+        || (report.primary.configured && report.primary.identity.is_some()))
+        && (!report.target.includes_fm()
+            || (report.fm_cli.configured && report.fm_cli.identity.is_some()));
+    let selected_configuration_failed = (report.target.includes_primary()
+        && evidence_has_configuration_failure(&report.primary))
+        || (report.target.includes_fm()
+            && (evidence_has_configuration_failure(&report.fm_cli)
+                || (report.fm_server.configured
+                    && evidence_has_configuration_failure(&report.fm_server))));
+    let selected_image_identity_missing = (report.target.includes_primary()
+        && !passing_image_evidence_is_bound(&report.primary))
+        || (report.target.includes_fm() && !passing_image_evidence_is_bound(&report.fm_cli));
+    if !selected_routes_configured
+        || selected_configuration_failed
+        || selected_image_identity_missing
+    {
+        SelfTestExit::Configuration
+    } else if report.overall_pass {
+        SelfTestExit::Success
+    } else {
+        SelfTestExit::ProbeFailure
+    }
+}
+
+fn shape_fixture() -> Vec<u8> {
+    let mut image = image::RgbImage::from_pixel(256, 128, image::Rgb([255, 255, 255]));
+    for y in 24..104 {
+        for x in 24..104 {
+            image.put_pixel(x, y, image::Rgb([224, 20, 20]));
+        }
+    }
+    for y in 16_i32..112 {
+        for x in 144_i32..240 {
+            let dx = x - 192;
+            let dy = y - 64;
+            if dx * dx + dy * dy <= 40 * 40 {
+                image.put_pixel(x as u32, y as u32, image::Rgb([20, 70, 224]));
+            }
+        }
+    }
+    encode_png(image)
+}
+
+fn ocr_fixture() -> Vec<u8> {
+    let mut image = image::RgbImage::from_pixel(420, 100, image::Rgb([255, 255, 255]));
+    for (index, character) in OCR_MARKER.chars().enumerate() {
+        let glyph = glyph(character);
+        let origin_x = 12 + u32::try_from(index).unwrap_or(0) * 48;
+        for (row, bits) in glyph.iter().enumerate() {
+            for column in 0..5 {
+                if bits & (1 << (4 - column)) != 0 {
+                    for dy in 0..10 {
+                        for dx in 0..7 {
+                            image.put_pixel(
+                                origin_x + column * 7 + dx,
+                                12 + u32::try_from(row).unwrap_or(0) * 10 + dy,
+                                image::Rgb([0, 0, 0]),
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+    encode_png(image)
+}
+
+fn encode_png(image: image::RgbImage) -> Vec<u8> {
+    let mut cursor = std::io::Cursor::new(Vec::new());
+    image::DynamicImage::ImageRgb8(image)
+        .write_to(&mut cursor, image::ImageFormat::Png)
+        .expect("synthetic qualification image encodes");
+    cursor.into_inner()
+}
+
+fn glyph(character: char) -> [u8; 7] {
+    match character {
+        'A' => [
+            0b01110, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001,
+        ],
+        'B' => [
+            0b11110, 0b10001, 0b10001, 0b11110, 0b10001, 0b10001, 0b11110,
+        ],
+        'E' => [
+            0b11111, 0b10000, 0b10000, 0b11110, 0b10000, 0b10000, 0b11111,
+        ],
+        'Y' => [
+            0b10001, 0b10001, 0b01010, 0b00100, 0b00100, 0b00100, 0b00100,
+        ],
+        '4' => [
+            0b00110, 0b01010, 0b10010, 0b11111, 0b00010, 0b00010, 0b00010,
+        ],
+        '2' => [
+            0b01110, 0b10001, 0b00001, 0b00010, 0b00100, 0b01000, 0b11111,
+        ],
+        '7' => [
+            0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b01000, 0b01000,
+        ],
+        _ => [0; 7],
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fixtures_are_valid_provider_images() {
+        assert!(shape_fixture().starts_with(&[0x89, b'P', b'N', b'G']));
+        assert!(ocr_fixture().starts_with(&[0x89, b'P', b'N', b'G']));
+    }
+
+    #[test]
+    fn normalization_accepts_spacing_but_not_wrong_text() {
+        assert_eq!(normalized_ocr("Abbey 427\n"), OCR_MARKER);
+        assert_ne!(normalized_ocr("Abbey 472"), OCR_MARKER);
+    }
+
+    #[test]
+    fn unavailable_evidence_uses_only_fixed_category() {
+        let evidence = unavailable("not_configured");
+        let json = serde_json::to_string(&evidence).unwrap();
+        assert!(json.contains("not_configured"));
+        assert!(!json.contains("DISCORD_TOKEN"));
+    }
+
+    #[test]
+    fn tools_evidence_records_the_continuation_marker_only_on_pass() {
+        // Both probe_primary and fm::probe_cli build their `tools` evidence
+        // this way: a passing continuation carries the exact marker a
+        // manifest consumer (deploy/configure-mlx-primary.py,
+        // deploy/publish-provider-qualification.py) can require distinct
+        // from a bare `tools: pass`; a failure never does, even though it
+        // still uses the shared `fail("tool_protocol")` category.
+        let passing = CapabilityEvidence::tools_pass(CONTINUATION_MARKER);
+        assert!(passing.passed());
+        assert_eq!(
+            passing.tool_result_marker.as_deref(),
+            Some(CONTINUATION_MARKER)
+        );
+        let encoded = serde_json::to_value(&passing).unwrap();
+        assert_eq!(encoded["status"], "pass");
+        assert_eq!(encoded["tool_result_marker"], CONTINUATION_MARKER);
+
+        let failing = fail("tool_protocol");
+        assert!(!failing.passed());
+        assert_eq!(failing.tool_result_marker, None);
+        let encoded = serde_json::to_value(&failing).unwrap();
+        assert!(
+            encoded.get("tool_result_marker").is_none(),
+            "a failing probe must never carry a continuation marker: {encoded}"
+        );
+
+        let skipped_or_unsupported = [CapabilityEvidence::skipped(), unsupported()];
+        for evidence in skipped_or_unsupported {
+            assert_eq!(evidence.tool_result_marker, None);
+        }
+    }
+
+    #[test]
+    fn a_manifest_written_before_the_marker_field_existed_still_deserializes() {
+        // tests/fixtures/provider-legacy-v1.json predates this field; every
+        // capability there omits `tool_result_marker` entirely.
+        let report: QualificationReport =
+            serde_json::from_str(include_str!("../tests/fixtures/provider-legacy-v1.json"))
+                .expect("a manifest written before tool_result_marker existed must still parse");
+        assert_eq!(report.primary.capabilities.tools.tool_result_marker, None);
+        assert_eq!(
+            report.primary.capabilities.text.tool_result_marker, None,
+            "the field is tools-specific, but every capability must default safely"
+        );
+    }
+
+    #[test]
+    fn remote_vision_identity_is_distinct_and_exact() {
+        let text = primary_identity("http://127.0.0.1:8282".into(), "text-model".into()).unwrap();
+        let config = VisionConfig::from_values(
+            Some("https://vision.example.test/v1".into()),
+            Some("vision-model".into()),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        let vision = remote_vision_identity(&config).unwrap();
+        let evidence = ProviderEvidence {
+            configured: true,
+            identity: Some(text),
+            vision_identity: Some(vision),
+            capabilities: CapabilityEvidenceSet {
+                text: pass(),
+                streaming: pass(),
+                structured_output: pass(),
+                tools: pass(),
+                vision: pass(),
+                ocr: pass(),
+            },
+        };
+        assert!(passing_image_evidence_is_bound(&evidence));
+        let encoded = serde_json::to_value(&evidence).unwrap();
+        assert_eq!(encoded["identity"]["endpoint"], "http://127.0.0.1:8282");
+        assert_eq!(encoded["identity"]["model"], "text-model");
+        assert_eq!(
+            encoded["vision_identity"]["endpoint"],
+            "https://vision.example.test/v1"
+        );
+        assert_eq!(encoded["vision_identity"]["model"], "vision-model");
+    }
+
+    #[test]
+    fn exit_classification_separates_configuration_from_probe_failure() {
+        let mut report = QualificationReport {
+            version: QUALIFICATION_VERSION,
+            fixture_version: FIXTURE_VERSION.into(),
+            generated_unix_secs: 1,
+            target: QualificationTarget::Fm,
+            overall_pass: false,
+            primary: ProviderEvidence::skipped(),
+            fm_server: ProviderEvidence::skipped(),
+            fm_cli: unavailable("not_configured"),
+            fm_cli_modes: Vec::new(),
+            fm_manifest_identity: None,
+        };
+        assert_eq!(classify_exit(&report), SelfTestExit::Configuration);
+
+        report.fm_cli.configured = true;
+        report.fm_cli.identity = Some(ProviderIdentity {
+            endpoint: None,
+            model: None,
+            cli_path: Some("/usr/bin/fm".into()),
+            cli_sha256: Some("0".repeat(64)),
+            mode: Some("system".into()),
+            abbey_binary_sha256: "1".repeat(64),
+            os_build: "build".into(),
+            fixture_version: FIXTURE_VERSION.into(),
+        });
+        assert_eq!(classify_exit(&report), SelfTestExit::ProbeFailure);
+        report.target = QualificationTarget::Primary;
+        report.primary = ProviderEvidence {
+            configured: true,
+            identity: report.fm_cli.identity.clone(),
+            vision_identity: None,
+            capabilities: CapabilityEvidenceSet {
+                text: pass(),
+                streaming: pass(),
+                structured_output: pass(),
+                tools: pass(),
+                vision: fail("invalid_vision_configuration"),
+                ocr: fail("invalid_vision_configuration"),
+            },
+        };
+        assert_eq!(classify_exit(&report), SelfTestExit::Configuration);
+
+        report.primary.capabilities.vision = pass();
+        report.primary.capabilities.ocr = pass();
+        assert_eq!(classify_exit(&report), SelfTestExit::Configuration);
+
+        report.primary.vision_identity = report.primary.identity.clone();
+        report.overall_pass = true;
+        assert_eq!(classify_exit(&report), SelfTestExit::Success);
+
+        report.primary.capabilities.vision = fail("semantic_vision");
+        report.primary.capabilities.ocr = fail("semantic_ocr");
+        report.overall_pass = false;
+        assert_eq!(classify_exit(&report), SelfTestExit::ProbeFailure);
+        report.overall_pass = true;
+        assert_eq!(classify_exit(&report), SelfTestExit::Success);
+    }
+}
