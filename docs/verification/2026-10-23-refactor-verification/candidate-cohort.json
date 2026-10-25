@@ -1,0 +1,26 @@
+{
+  "abbey": {
+    "head": "ec324972a6f194546824298dcc38c38e268622ba",
+    "manifest": "verification-inputs.json (abbey entry)"
+  },
+  "abi": {
+    "head": "69910bf61205458dec27dd4b616201e0a5f3898a",
+    "manifest": "../2026-10-23-refactor-baseline/abi-manifest.json"
+  },
+  "wdbx": {
+    "head": "36bc99b699de60be6c07b2838d74580084fb5d4c",
+    "manifest": "../2026-10-23-refactor-baseline/wdbx-manifest.json"
+  },
+  "environment": {
+    "cwd": "isolated detached Abbey qualification clone with adjacent captured ABI/WDBX",
+    "CARGO_TARGET_DIR": "isolated frozen/target",
+    "CARGO_HOME": "host default",
+    "frontend_dependencies": "host installed node_modules cache symlink"
+  },
+  "limitations": [
+    "Captured dirty dependency snapshots, not immutable CI pins or evolving live siblings",
+    "Optional packaged GUI/native acceptance flags not enabled",
+    "No Linux or Windows native runtime or CI execution",
+    "Dependency audit remains failed"
+  ]
+}

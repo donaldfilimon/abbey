@@ -4,6 +4,18 @@ use super::super::Status;
 pub enum EvidenceState {
     Verified(&'static [&'static str]),
     Required(&'static [&'static str]),
+    /// An observed failure bound to this channel; other channels keep their proof.
+    #[allow(
+        dead_code,
+        reason = "schema 3 must admit a failed channel before the first failure"
+    )]
+    Failed(&'static [&'static str]),
+    /// Previously gathered evidence whose version/environment binding lapsed.
+    #[allow(
+        dead_code,
+        reason = "schema 3 must admit expired evidence before the first expiry"
+    )]
+    Expired(&'static [&'static str]),
     NotRequired(&'static str),
 }
 

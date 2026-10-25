@@ -1,0 +1,46 @@
+.F......EE...........................
+======================================================================
+ERROR: test_external_channel_failure_preserves_verified_local_proof (test_check_claims_sync.ClaimsSyncTests.test_external_channel_failure_preserves_verified_local_proof) (state='failed')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/donald/sources/repos/abbey/tools/tests/test_check_claims_sync.py", line 215, in test_external_channel_failure_preserves_verified_local_proof
+    claims_sync.normalize_manifest(manifest)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/Users/donald/sources/repos/abbey/tools/check_claims_sync.py", line 735, in normalize_manifest
+    validate_evidence_state(claim_id, state_key, evidence[state_key])
+    ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/donald/sources/repos/abbey/tools/check_claims_sync.py", line 748, in validate_evidence_state
+    raise ValueError(f"claim {claim_id} has invalid {field} state")
+ValueError: claim example-current has invalid external_required state
+
+======================================================================
+ERROR: test_external_channel_failure_preserves_verified_local_proof (test_check_claims_sync.ClaimsSyncTests.test_external_channel_failure_preserves_verified_local_proof) (state='expired')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/donald/sources/repos/abbey/tools/tests/test_check_claims_sync.py", line 215, in test_external_channel_failure_preserves_verified_local_proof
+    claims_sync.normalize_manifest(manifest)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/Users/donald/sources/repos/abbey/tools/check_claims_sync.py", line 735, in normalize_manifest
+    validate_evidence_state(claim_id, state_key, evidence[state_key])
+    ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/donald/sources/repos/abbey/tools/check_claims_sync.py", line 748, in validate_evidence_state
+    raise ValueError(f"claim {claim_id} has invalid {field} state")
+ValueError: claim example-current has invalid external_required state
+
+======================================================================
+FAIL: test_current_cannot_hide_failed_or_expired_channels (test_check_claims_sync.ClaimsSyncTests.test_current_cannot_hide_failed_or_expired_channels)
+----------------------------------------------------------------------
+ValueError: claim example-current has invalid external_required state
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/donald/sources/repos/abbey/tools/tests/test_check_claims_sync.py", line 223, in test_current_cannot_hide_failed_or_expired_channels
+    with self.assertRaisesRegex(ValueError, "cannot carry"):
+         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: "cannot carry" does not match "claim example-current has invalid external_required state"
+
+----------------------------------------------------------------------
+Ran 36 tests in 2.024s
+
+FAILED (failures=1, errors=2)

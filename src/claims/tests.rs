@@ -591,3 +591,6 @@ fn the_portable_host_claim_states_the_voice_dispatch_boundary() {
         "the claim still overstates macOS voice coverage"
     );
 }
+
+#[path = "tests/evidence_channels.rs"]
+mod evidence_channels;
