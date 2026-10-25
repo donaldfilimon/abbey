@@ -257,14 +257,24 @@ const TESTS: &[(&str, &str)] = &[
 
 #[test]
 fn clone_failures() {
-    let t = trybuild2::TestCases::new();
+    let t = trybuild::TestCases::new();
 
     for (index, (expr, err)) in TESTS.iter().enumerate() {
         let prefix = "fn main() { use glib::clone; let v = std::rc::Rc::new(1); ";
         let suffix = "; }";
         let output = format!("{prefix}{expr}{suffix}");
 
-        t.compile_fail_inline_check_sub(&format!("test_{index}"), &output, err);
+        let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join(format!("../compat-tests/upstream-ui/clone/test_{index}.rs"));
+        assert_eq!(std::fs::read_to_string(&fixture).unwrap(), output);
+        // Missing snapshots still fail closed in trybuild; never overwrite them.
+        if fixture.with_extension("stderr").exists() {
+            let expected = std::fs::read_to_string(fixture.with_extension("stderr")).unwrap();
+            let normalized = expected.replace("$DIR/", "")
+                .replace("../compat-tests/upstream-ui/clone/", "");
+            assert!(normalized.contains(err), "upstream diagnostic changed: test_{index}");
+        }
+        t.compile_fail(fixture);
     }
 }
 
@@ -278,13 +288,16 @@ const NO_WARNING: &[&str] = &[
 // Ensures that no warning are emitted if the default-return is a unit tuple.
 #[test]
 fn clone_unit_tuple_return() {
-    let t = trybuild2::TestCases::new();
+    let t = trybuild::TestCases::new();
 
     for (index, expr) in NO_WARNING.iter().enumerate() {
         let prefix = "fn main() { use glib::clone; let v = std::rc::Rc::new(1); ";
         let suffix = "; }";
         let output = format!("{prefix}{expr}{suffix}");
 
-        t.pass_inline(&format!("test_{index}"), &output);
+        let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join(format!("../compat-tests/upstream-ui/clone/pass_{index}.rs"));
+        assert_eq!(std::fs::read_to_string(&fixture).unwrap(), output);
+        t.pass(fixture);
     }
 }

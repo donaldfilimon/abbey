@@ -57,5 +57,5 @@ version = "0.18"
 [dev-dependencies.once_cell]
 version = "1.9.0"
 
-[dev-dependencies.trybuild2]
-version = "1.1"
+[dev-dependencies.trybuild]
+version = "=1.0.122"

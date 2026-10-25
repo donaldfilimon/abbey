@@ -25,11 +25,11 @@ PINS = {
     'glib-0.18.5': (
         '233daaf6e83ae6a12a52055f568f9d7cf4671dabb78ff9560ab6da230ce00ee5',
         '5da7556cd83c4d07950e32b0bbc212fdf3bd1697f9b2751c3892a33cf25e6c6b',
-        '2f7ef2019fd0cb8cb2b95f3a3a4d08b63c4ea546362eae332643a6a6de0e67bf'),
+        '7ccca726775db3ad700271b3a887a7b272bbc024c89296c3e279072223debcf2'),
     'glib-macros-0.18.5': (
         '0bb0228f477c0900c880fd78c8759b95c7636dbd7842707f49e132378aa2acdc',
         'a6c4be94577afb29698c09c95cc17bc28ac87844071da20839150e92e2c4c841',
-        '21a91d43aa54bf60f7b391487c0c4500165d018db2f4044502d8d8f68d058829'),
+        '61ed0a651fab6eb6ae0ee516e2086bcaaba7188a93ea7dbe57275f6ec7de98c5'),
     'gtk3-macros-0.18.2': (
         '52ff3c5b21f14f0736fed6dcfc0bfb4225ebf5725f3c0209edeec181e4d73e9d',
         '33b55ab68fe4ef313a22fe1d9d278c10c42fb03118d6356aa6945c4ba29d5e79',
@@ -49,6 +49,16 @@ REGISTRY_PROVENANCE = {'proc-macro-error-attr3-3.1.1': {'archive_sha256': '9e564
                                           'LICENSE-MIT': '4d6bf8cef395998be2de2da71eb023ca62603efbd8618b485bb3d1381d011d4b'},
                              'vcs': {'git': {'sha1': '0f0e21bb2a46509c923b87459c6be314bc0cabb5'},
                                      'path_in_vcs': ''}}}
+DEV_HARNESS = {'archive_sha256': '62db9c92d704393fbf2132041720cc80b689f2d3f28521015c2ac866223c11b8',
+ 'license': 'MIT OR Apache-2.0',
+ 'licenses': {'LICENSE-APACHE': '62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a',
+              'LICENSE-MIT': '23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3'},
+ 'package': 'trybuild',
+ 'rust_version': '1.88',
+ 'scope': 'Dev-only compile-test harness; no production dependency',
+ 'url': 'https://static.crates.io/crates/trybuild/trybuild-1.0.122.crate',
+ 'vcs': {'git': {'sha1': '3f6a32437cf608d28fb2eda2d8c3e9c0dfc06ff3'}, 'path_in_vcs': ''},
+ 'version': '1.0.122'}
 LICENSE = '8cf56d10131ce201cf69ab74b111d3ebac1acca3833d7efb39ae357224b70edb'
 
 
@@ -70,6 +80,7 @@ def verify_sources(vendor):
     data = json.loads((vendor / 'source-manifest.json').read_text())
     require(data.get('schema') == 1 and set(data['crates']) == set(PINS), 'manifest schema/crates drift')
     require(data.get('registry_replacements') == REGISTRY_PROVENANCE, 'replacement provenance drift')
+    require(data.get('dev_harness') == DEV_HARNESS, 'DEV harness provenance drift')
     for crate, (archive, original, patched) in PINS.items():
         entry = data['crates'][crate]
         require(entry['archive_sha256'] == archive, f'{crate}: archive pin drift')
@@ -112,6 +123,18 @@ def verify_lock(lock):
         require(len(matches) == 1 and 'source' not in matches[0] and 'checksum' not in matches[0], f'{lock.name}: {crate} is not local')
 
 
+def verify_harness_lock(lock):
+    """Pin the reviewed DEV harness and reject the retired vulnerable route."""
+    packages = tomllib.loads(lock.read_text()).get('package', [])
+    require(not any(p['name'] in ('trybuild2', 'basic-toml') for p in packages),
+            'vendor lock: retired compile-test harness route')
+    matches = [p for p in packages if p['name'] == 'trybuild']
+    require(len(matches) == 1 and matches[0]['version'] == '1.0.122'
+            and matches[0].get('source') == 'registry+https://github.com/rust-lang/crates.io-index'
+            and matches[0].get('checksum') == '62db9c92d704393fbf2132041720cc80b689f2d3f28521015c2ac866223c11b8',
+            'vendor lock: maintained compile-test harness pin drift')
+
+
 def verify_metadata(metadata, vendor):
     packages = metadata['packages']
     for crate in PINS:
@@ -146,6 +169,7 @@ def main():
     verify_sources(vendor)
     for lock in [root / 'Cargo.lock', vendor / 'Cargo.lock']:
         verify_lock(lock)
+    verify_harness_lock(vendor / 'Cargo.lock')
     if not args.sources_only:
         for manifest, target in [('Cargo.toml', 'consumer'), ('vendor/Cargo.toml', 'vendor')]:
             env = os.environ.copy()

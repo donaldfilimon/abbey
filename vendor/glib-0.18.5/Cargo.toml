@@ -122,8 +122,8 @@ version = "^0.1"
 [dev-dependencies.tempfile]
 version = "3"
 
-[dev-dependencies.trybuild2]
-version = "1"
+[dev-dependencies.trybuild]
+version = "=1.0.122"
 
 [features]
 compiletests = []
