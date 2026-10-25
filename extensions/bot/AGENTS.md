@@ -29,15 +29,20 @@ hand-edit the generated TOML. `check.sh` and `check.ps1` fail on drift.
 
 ## Shape and flow
 
-- `src/` is one Rust binary crate, with no library target or workspace.
-  `tests/` contains fixtures only; Rust tests are inline or in `src` test
-  modules. `deploy/`, `scripts/`, `contracts/`, `blueprints/`, `activity/`, and
+- `src/lib.rs` owns the Rust domain/transport crate; `main.rs` is a thin
+  standalone compatibility binary calling `standalone::run`. This explicit
+  compatibility entry owns process globals and must not construct an Abbey
+  extension. The parent workspace excludes this package; it retains its own
+  lockfile and root patches until the shared cohort is qualified.
+  `tests/` retains fixtures and a downstream library-link check; domain Rust
+  tests remain inline or in `src` test modules. `deploy/`, `scripts/`, `contracts/`, `blueprints/`, `activity/`, and
   `tools/` are support surfaces.
 - Rust is the sole active bot implementation. The retired rewrite is recoverable
   from `archive/abbey-bot-zig-before-rust-only-20260929`; preservation, extracted
   regression fixtures, and capability accounting are recorded in
   `docs/releases/2026-09-29-rust-only.md`. Keep the archival tag and bundle.
-- `main.rs` parses the CLI and starts `startup.rs`; the normal path builds
+- `standalone.rs` runs the CLI parsed in `lib.rs` and starts `startup.rs`;
+  the normal path builds
   `runtime::AppState`, then wires Discord, optional Telegram/Slack, voice, and
   persistence. `--server-plan`, `--provider-self-test`, and `--voice-self-test`
   are explicit non-gateway modes.
@@ -82,10 +87,11 @@ hand-edit the generated TOML. `check.sh` and `check.ps1` fail on drift.
 - On Windows use `./check.ps1`; its POSIX shell, plist, launchd, and Swift
   coverage is intentionally different. `scripts/check-audio-tap.sh` skips off
   macOS and uses synthetic PCM only.
-- Focus tests with `cargo test --locked <filter>`. This is a binary crate:
-  `--lib`, `-p`, and `--workspace` are meaningless, and a filter matching zero
-  tests can still exit 0. Use `.claude/skills/run-abbey-bot/smoke.sh test
-  <filter>` when a nonzero test count matters.
+- Focus tests with `cargo test --locked --lib <filter>`:
+  library tests use `--lib`; a filter matching zero tests can still exit 0.
+  The smoke drivers select the library and require nonzero selected tests.
+  Use the parent Abbey wrapper for the 1.99.1 candidate; the retained source
+  toolchain pin remains 1.98.0.
 - Strict cross-repository evidence is
   `ABBEY_REQUIRE_WDBX_CONFORMANCE=1 ./check.sh`; set `ABBEY_WDBX_REPO` when the
   sibling checkout is not `../wdbx`. Without the required flag, a missing

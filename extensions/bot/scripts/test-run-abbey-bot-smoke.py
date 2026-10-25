@@ -249,6 +249,36 @@ class SmokeDriverTests(unittest.TestCase):
                     with self.subTest(key=key):
                         self.assertEqual(observed[key], value, key)
 
+    def test_library_filter_requires_nonzero_selected_tests(self) -> None:
+        for driver in DRIVERS:
+            for count, expected in [(3, 0), (0, 1)]:
+                with self.subTest(driver=driver, count=count):
+                    with tempfile.TemporaryDirectory(prefix="abbey-lib-smoke-") as temporary:
+                        scratch = Path(temporary)
+                        repository = scratch / "repo"
+                        destination = repository / driver
+                        destination.parent.mkdir(parents=True)
+                        shutil.copyfile(ROOT / driver, destination)
+                        tools = scratch / "bin"
+                        tools.mkdir()
+                        cargo = tools / "cargo"
+                        cargo.write_text(
+                            '#!/bin/sh\n[ "$*" = "test --locked --lib selected" ] || exit 97\n'
+                            + f'echo "running {count} tests"\necho "test result: ok"\n',
+                            encoding="utf-8",
+                        )
+                        cargo.chmod(0o755)
+                        result = subprocess.run(
+                            [str(SHELL), str(destination), "test", "selected"],
+                            cwd=repository,
+                            env={"PATH": str(tools) + os.pathsep + os.defpath,
+                                 "HOME": str(scratch), "TMPDIR": str(scratch),
+                                 "RUN_ABBEY_BOT_OUT": str(scratch / "out")},
+                            stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                            timeout=15, check=False,
+                        )
+                        self.assertEqual(result.returncode, expected, result.stderr)
+
     def test_malformed_report_fails(self) -> None:
         for driver in DRIVERS:
             with self.subTest(driver=driver):

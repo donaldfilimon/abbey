@@ -415,13 +415,13 @@ do_plan() {
   return "$rc"
 }
 
-# Direct invocation for PR work: tests live in the binary. A filter that
+# Direct invocation for PR work: domain tests live in the library. A filter that
 # matches nothing still exits 0 ("running 0 tests"), so that is a failure here.
 do_test() {
   filter=${1:-}
   [ -n "$filter" ] || usage
-  say "cargo test --locked $filter"
-  clean_env cargo test --locked "$filter" > "$OUT/test.log" 2>&1 && rc=0 || rc=$?
+  say "cargo test --locked --lib $filter"
+  clean_env cargo test --locked --lib "$filter" > "$OUT/test.log" 2>&1 && rc=0 || rc=$?
   clean_env grep -E '^(running [0-9]+ tests|test result:)' "$OUT/test.log"
   if clean_env grep -q '^running 0 tests' "$OUT/test.log"; then
     echo "filter '$filter' selected no tests (see $OUT/test.log)" >&2

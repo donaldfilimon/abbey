@@ -1,0 +1,37 @@
+{
+  "schema": "abbey.bot-source-import.v1",
+  "requirement": "MOD-BOT-EXTENSION",
+  "abbey_base": "80187be345828ed966374c5cd6880eb40fe62bec",
+  "source_repository": "donaldfilimon/abbey-bot",
+  "source_commit": "6eb5cff114c22dd7a2d0f78f98c2a1c2df8bf215",
+  "source_tree": "7b3ed02b9f5e385afacbfc2e4f2abf1a39c34f8c",
+  "import_commit": "55896f88db2e7387a81a3a7ebec22f56cf199347",
+  "method": "unsquashed git subtree add extensions/bot",
+  "captured_ref_count": 30,
+  "bundle_sha256": "a5fed29fc59fc5a3359e4b59a05c638076eea8372e01667c1ef2dba11d8ec9d4",
+  "bundle_verified": true,
+  "all_captured_refs_restored": true,
+  "historical_contract_toolchain": "1.98.0",
+  "integration_candidate_toolchain": "1.99.1",
+  "runtime_qualification": false,
+  "root_feature_deferred_to": "M9.1b",
+  "root_cargo_lock_changed": false,
+  "bot_cargo_lock_changed": false,
+  "bot_workspace_excluded": true,
+  "optional_root_dependency_added": false,
+  "all_64_requirements_retained": true,
+  "source_overlay": "excluded; pinned Git object only",
+  "local_patches": "retained unchanged at Bot standalone root",
+  "security_debt": "inherited policy unchanged; no advisory suppression or shared graph qualification",
+  "source_baseline_gate": "preserved verbatim in separate source archive; not rerun by this packet",
+  "library_process_entry": "standalone::run requires unsafe pre-thread process-entry contract; main owns the call",
+  "follow_up": [
+    "M9.1b optional root feature/shared dependency security cohort",
+    "M9.2 injected host composition and removal of process-global integrated startup"
+  ],
+  "archive_ref": {
+    "name": "refs/tags/archive/abbey-bot-zig-before-rust-only-20260929",
+    "object": "86a9edb8bc9a415508dabc5aef800d08079b46c1",
+    "custody": "verified restored all-ref bundle; non-ancestor ref not merged into Abbey"
+  }
+}

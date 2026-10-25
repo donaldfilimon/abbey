@@ -12,7 +12,8 @@
 # other way round, and it brings no authority into the CLI.
 resolver = "3"
 members = ["desktop/codegen", "desktop/src-tauri"]
-exclude = ["vendor"]
+# Bot retains its own locked patch cohort until M9.1b qualifies shared deps.
+exclude = ["vendor", "extensions/bot"]
 # Without this, a bare `cargo build` / `cargo test` / `cargo clippy` in a
 # workspace whose root is also a package selects *only* that root package.
 # Naming every member as a default member is what makes the ordinary

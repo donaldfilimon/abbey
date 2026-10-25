@@ -1,5 +1,12 @@
 # Abbey Bot
 
+This attributed source is retained under Abbey as the M9.1a library prerequisite.
+The standalone executable still calls its explicit process-owned compatibility
+entry. Host lifecycle/service injection and the optional Abbey root feature are
+separate follow-up packets; no integrated gateway is enabled here. See the
+[import plan](../../docs/plans/2026-10-25-bot-source-import.md) and
+[source receipt](../../docs/verification/2026-10-25-bot-source-import.json).
+
 The active source release is Rust-only. See the [retirement and source acceptance record](docs/releases/2026-09-29-rust-only.md) for archival recovery, compatibility decisions, and the separate live operator acceptance boundary.
 
 
