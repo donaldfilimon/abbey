@@ -18,6 +18,13 @@ ABBEY_TOOLCHAIN_ROOT=$(pwd)
 . "$ABBEY_TOOLCHAIN_ROOT/tools/toolchain-env.sh"
 cargo check --quiet --locked
 
+echo "== GTK vendor provenance and macro compatibility =="
+"$ABBEY_PYTHON" tools/security/check_gtk_vendor.py
+"$ABBEY_PYTHON" -m unittest discover -s tools/security/tests -p 'test_*.py'
+# Excluded third-party workspace has its own graph, lock and writable target.
+CARGO_TARGET_DIR="$(pwd)/.work/gtk/target-vendor" ./tools/cargo.sh test --locked --manifest-path vendor/Cargo.toml -p gtk-compat-tests --no-default-features --test diagnostics < /dev/null
+"$ABBEY_PYTHON" tools/security/check_gtk_vendor.py
+
 echo "== rustfmt =="
 # Package-scoped on purpose. `cargo fmt --all` also formats the *path
 # dependencies* — the sibling ../abi and ../wdbx checkouts — so a sibling

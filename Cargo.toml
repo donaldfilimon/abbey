@@ -12,6 +12,7 @@
 # other way round, and it brings no authority into the CLI.
 resolver = "3"
 members = ["desktop/codegen", "desktop/src-tauri"]
+exclude = ["vendor"]
 # Without this, a bare `cargo build` / `cargo test` / `cargo clippy` in a
 # workspace whose root is also a package selects *only* that root package.
 # Naming every member as a default member is what makes the ordinary
@@ -136,3 +137,7 @@ strip = true
 # docs/verification/2026-10-25-updater-zip9.md.
 [patch.crates-io]
 tauri-plugin-updater = { git = "https://github.com/tauri-apps/plugins-workspace", rev = "ba98bfadc4c868c9a7e1a226c83af528e1f11b89" }
+
+glib = { path = "vendor/glib-0.18.5" }
+glib-macros = { path = "vendor/glib-macros-0.18.5" }
+gtk3-macros = { path = "vendor/gtk3-macros-0.18.2" }
