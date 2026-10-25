@@ -79,6 +79,29 @@ sentinels and exact ZIP extraction refusal required. The separately named
 symlink/junction behavior; it is not updater extraction evidence. No private
 plugin function or replacement extractor is copied or patched.
 
+## Review round 1: actual OS temp-directory guard
+
+The child now reads `std::env::temp_dir()` and `current_dir()` before constructing
+an updater. Its sole updater callback is guarded by canonical equality with the
+parent's `root/temp` and `root/outside`, an absolute private local-drive Windows
+path, direct-child layout, and directory/ancestor checks rejecting symlinks and
+Windows reparse points. TEMP/TMP environment settings alone are not trusted.
+A mismatch fails explicitly as UNEXECUTED before the callback; resolved requested
+and canonical paths are emitted in setup stderr or the successful child JSON.
+This also refuses OS-selected temp roots outside the sandbox, including the
+Windows SYSTEM case described by review, without pretending that case ran here.
+
+[round1-summary.json](2026-10-25-updater-zip9/round1-summary.json) records portable
+command/exit/source hashes and references exact private RED/GREEN receipts.
+On macOS, real temporary directories prove mismatched temp, cwd, missing/relative
+layout and symlinked root/temp/cwd refuse without invoking the callback; the
+valid private layout invokes it. RED was 1 pass/2 failures before the guard;
+GREEN is 3 guard tests, then 5 full harness tests per safe/personal cohort, with
+one standalone dispatcher ignored. Package rustfmt and existing inventory pass.
+Windows-only reparse/drive checks and native plugin execution remain untypechecked
+and unexecuted. This guard does not qualify concurrent filesystem mutation races.
+No lock, audit or broader product gate rerun was needed for this harness-only fix.
+
 ## Native Windows operation still required
 
 This is a macOS ARM64 host. The Rust x86_64-pc-windows-msvc standard-library

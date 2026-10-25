@@ -153,20 +153,32 @@ fn windows_zip_child() {
         ]
         .contains(&case.as_str())
     );
-    let fixtures = root.join("fixtures");
-    let bytes = fs::read(fixtures.join(format!("{case}.zip"))).unwrap();
-    let signature = fs::read_to_string(fixtures.join(format!("{case}.zip.sig"))).unwrap();
-    let key = fs::read_to_string(fixtures.join("updater.pubkey")).unwrap();
-    let update = api::update(&key, &signature, "99.0.0", &root.join("unused-app/Abbey"));
-    update
-        .verify(&bytes)
-        .expect("valid signature must reach extraction");
-    let result = update.install(&bytes);
-    let refused = matches!(result, Err(Error::Extract(_)));
-    fs::write(root.join(format!("{case}-result.json")), serde_json::to_vec_pretty(&serde_json::json!({
-        "case": case, "verified": true, "extraction_refused": refused, "result": format!("{result:?}")
-    })).unwrap()).unwrap();
-    assert!(refused, "expected ZIP extraction refusal, got {result:?}");
+    let actual_temp = std::env::temp_dir();
+    let cwd = std::env::current_dir().expect("UNEXECUTED: resolve child working directory");
+    let paths = confinement_paths(&root, &actual_temp, &cwd);
+    let guarded = with_confined_layout(&root, &actual_temp, &cwd, || {
+        let fixtures = root.join("fixtures");
+        let bytes = fs::read(fixtures.join(format!("{case}.zip"))).unwrap();
+        let signature = fs::read_to_string(fixtures.join(format!("{case}.zip.sig"))).unwrap();
+        let key = fs::read_to_string(fixtures.join("updater.pubkey")).unwrap();
+        let update = api::update(&key, &signature, "99.0.0", &root.join("unused-app/Abbey"));
+        update
+            .verify(&bytes)
+            .expect("valid signature must reach extraction");
+        let result = update.install(&bytes);
+        let refused = matches!(result, Err(Error::Extract(_)));
+        fs::write(root.join(format!("{case}-result.json")), serde_json::to_vec_pretty(&serde_json::json!({
+            "case": case, "verified": true, "extraction_refused": refused, "result": format!("{result:?}"), "resolved_paths": paths
+        })).unwrap()).unwrap();
+        assert!(refused, "expected ZIP extraction refusal, got {result:?}");
+    });
+    if let Err(reason) = guarded {
+        eprintln!(
+            "{}",
+            serde_json::json!({"case": case, "setup": "UNEXECUTED", "reason": reason, "resolved_paths": paths})
+        );
+        panic!("{reason}");
+    }
 }
 
 fn bounded_child(
@@ -271,4 +283,216 @@ fn portable_child_dispatcher() {
         .parse()
         .unwrap();
     thread::sleep(Duration::from_millis(delay));
+}
+
+// The callback is the sole entry to constructing the updater/installing bytes.
+fn with_confined_layout<T>(
+    root: &Path,
+    actual_temp: &Path,
+    cwd: &Path,
+    callback: impl FnOnce() -> T,
+) -> Result<T, String> {
+    let validate = || -> Result<(), String> {
+        if !root.is_absolute() || root.file_name().is_none() {
+            return Err("sandbox root must be an absolute private directory".into());
+        }
+        #[cfg(windows)]
+        if !matches!(root.components().next(), Some(std::path::Component::Prefix(prefix))
+            if matches!(prefix.kind(), std::path::Prefix::Disk(_) | std::path::Prefix::VerbatimDisk(_)))
+        {
+            return Err("sandbox root must be on a local drive, not UNC/device storage".into());
+        }
+        // Check the lexical directories before canonicalization can hide links.
+        // Windows junctions/other reparse tags must refuse as well as symlinks.
+        for path in [
+            root.to_path_buf(),
+            root.join("temp"),
+            root.join("outside"),
+            actual_temp.to_path_buf(),
+            cwd.to_path_buf(),
+        ] {
+            if !path.is_absolute()
+                || path.components().any(|part| {
+                    matches!(
+                        part,
+                        std::path::Component::ParentDir | std::path::Component::CurDir
+                    )
+                })
+            {
+                return Err("sandbox paths must be absolute without relative components".into());
+            }
+            for ancestor in path.ancestors() {
+                let metadata = fs::symlink_metadata(ancestor)
+                    .map_err(|e| format!("cannot inspect sandbox directory: {e}"))?;
+                let linked = metadata.file_type().is_symlink();
+                #[cfg(windows)]
+                {
+                    use std::os::windows::fs::MetadataExt;
+                    let linked = linked || metadata.file_attributes() & 0x400 != 0; // FILE_ATTRIBUTE_REPARSE_POINT
+                    if linked {
+                        return Err("sandbox layout contains a Windows reparse point".into());
+                    }
+                }
+                if linked || !metadata.is_dir() {
+                    return Err(
+                        "sandbox layout contains a link/reparse point or non-directory".into(),
+                    );
+                }
+            }
+        }
+        let root = root
+            .canonicalize()
+            .map_err(|e| format!("cannot resolve sandbox root: {e}"))?;
+        let expected_temp = root
+            .join("temp")
+            .canonicalize()
+            .map_err(|e| format!("cannot resolve private temp: {e}"))?;
+        let expected_cwd = root
+            .join("outside")
+            .canonicalize()
+            .map_err(|e| format!("cannot resolve private cwd: {e}"))?;
+        if expected_temp.parent() != Some(root.as_path())
+            || expected_cwd.parent() != Some(root.as_path())
+        {
+            return Err("private temp/cwd must be direct children of sandbox root".into());
+        }
+        let actual_temp = actual_temp
+            .canonicalize()
+            .map_err(|e| format!("cannot resolve OS temporary directory: {e}"))?;
+        let cwd = cwd
+            .canonicalize()
+            .map_err(|e| format!("cannot resolve actual working directory: {e}"))?;
+        if actual_temp != expected_temp {
+            return Err("OS temporary directory differs from sandbox root/temp".into());
+        }
+        if cwd != expected_cwd {
+            return Err("actual working directory differs from sandbox root/outside".into());
+        }
+        Ok(())
+    };
+    validate().map_err(|reason| format!("UNEXECUTED: {reason}"))?;
+    Ok(callback())
+}
+
+fn confinement_paths(root: &Path, actual_temp: &Path, cwd: &Path) -> serde_json::Value {
+    fn resolved(path: &Path) -> serde_json::Value {
+        serde_json::json!({
+            "requested": path,
+            "canonical": path.canonicalize().map(|p| p.to_string_lossy().into_owned()).map_err(|e| e.to_string()),
+        })
+    }
+    serde_json::json!({"root": resolved(root), "actual_temp": resolved(actual_temp), "cwd": resolved(cwd)})
+}
+
+fn private_layout() -> tempfile::TempDir {
+    let root = tempfile::tempdir().unwrap();
+    fs::create_dir(root.path().join("temp")).unwrap();
+    fs::create_dir(root.path().join("outside")).unwrap();
+    root
+}
+
+#[test]
+fn confinement_guard_refuses_temp_cwd_and_layout_mismatches_before_callback() {
+    let root = private_layout();
+    let root = root.path().canonicalize().unwrap();
+    let temp = root.join("temp");
+    let cwd = root.join("outside");
+    let unexpected = root.join("unexpected");
+    fs::create_dir(&unexpected).unwrap();
+    for (label, proposed_root, actual_temp, actual_cwd) in [
+        (
+            "OS temp outside private temp",
+            root.as_path(),
+            unexpected.as_path(),
+            cwd.as_path(),
+        ),
+        (
+            "cwd outside sentinels",
+            root.as_path(),
+            temp.as_path(),
+            unexpected.as_path(),
+        ),
+        (
+            "missing expected layout",
+            unexpected.as_path(),
+            temp.as_path(),
+            cwd.as_path(),
+        ),
+        (
+            "relative root",
+            Path::new("."),
+            temp.as_path(),
+            cwd.as_path(),
+        ),
+    ] {
+        let mut invoked = false;
+        let result =
+            with_confined_layout(proposed_root, actual_temp, actual_cwd, || invoked = true);
+        assert!(result.is_err(), "{label}: must refuse setup");
+        assert!(!invoked, "{label}: updater callback must not run");
+    }
+}
+
+#[test]
+fn confinement_guard_allows_only_the_actual_private_directories() {
+    let root = private_layout();
+    let root = root.path().canonicalize().unwrap();
+    let mut invoked = false;
+    with_confined_layout(&root, &root.join("temp"), &root.join("outside"), || {
+        invoked = true
+    })
+    .unwrap();
+    assert!(invoked);
+    let paths = confinement_paths(&root, &root.join("temp"), &root.join("outside"));
+    assert_eq!(
+        paths["actual_temp"]["canonical"]["Ok"],
+        root.join("temp").to_string_lossy().as_ref()
+    );
+}
+
+#[test]
+#[cfg(unix)]
+fn confinement_guard_refuses_real_directory_links_before_callback() {
+    let root = private_layout();
+    let parent = tempfile::tempdir().unwrap();
+    let root_path = root.path().canonicalize().unwrap();
+    let linked_root = parent.path().join("linked-root");
+    std::os::unix::fs::symlink(&root_path, &linked_root).unwrap();
+    let mut invoked = false;
+    assert!(
+        with_confined_layout(
+            &linked_root,
+            &root_path.join("temp"),
+            &root_path.join("outside"),
+            || invoked = true
+        )
+        .is_err()
+    );
+    assert!(!invoked);
+    fs::remove_dir(root_path.join("temp")).unwrap();
+    std::os::unix::fs::symlink(parent.path(), root_path.join("temp")).unwrap();
+    assert!(
+        with_confined_layout(
+            &root_path,
+            &root_path.join("temp"),
+            &root_path.join("outside"),
+            || invoked = true
+        )
+        .is_err()
+    );
+    assert!(!invoked);
+    fs::remove_file(root_path.join("temp")).unwrap();
+    fs::create_dir(root_path.join("temp")).unwrap();
+    fs::remove_dir(root_path.join("outside")).unwrap();
+    std::os::unix::fs::symlink(parent.path(), root_path.join("outside")).unwrap();
+    assert!(
+        with_confined_layout(
+            &root_path,
+            &root_path.join("temp"),
+            &root_path.join("outside"),
+            || invoked = true
+        )
+        .is_err()
+    );
+    assert!(!invoked);
 }

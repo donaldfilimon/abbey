@@ -44,7 +44,10 @@ absence/incompatibility fails the test rather than counting as a skip/pass.
 Native Windows tests generate absolute and drive-relative path bytes and fresh
 signatures inside the parent's disposable root. They refuse UNC/device sandbox
 roots. The child's cwd is `outside` on the same drive, and its TEMP/TMP is a
-private sibling beneath the parent root, so even a vulnerable reader's encoded
+private sibling beneath the parent root. Before constructing the updater, the
+child requires the OS-resolved canonical temp/cwd to equal those private
+directories and refuses linked/reparse layouts explicitly as UNEXECUTED; setting
+TEMP/TMP alone is insufficient. Thus even a vulnerable reader's encoded
 escape targets stay inside that root. Outside sentinels must remain identical;
 new files, directories or links there fail. Each actual-plugin child must finish
 within 30 seconds, verify its signature, and return the ZIP extraction error.
