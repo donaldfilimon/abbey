@@ -5,6 +5,22 @@
 **Specification:** Approved master milestone2 baseline security and code-first execution addendum. ABI C01/C35/C42 contribution; no whole-row qualification.
 **Technology:** Rust1.99.1, GLib0.18.5, glib-macros0.18.5, gtk3-macros0.18.2, proc-macro-error2 2.0.1.
 
+## Superseding advisory ruling: active macro target is version 3
+
+Actual scanner and RustSec RUSTSEC-2026-0173 show that proc-macro-error2 has no
+patched maintained release. The source contract below records the earlier
+candidate; its active replacement is now **proc-macro-error3 = 3.1.1**, with
+`default-features = false` and explicit `syn2-error`, subject to confirming the
+published manifest/API. Both macro parents use the real dependency/import path
+`proc_macro_error3`; do not alias it as version 1 or 2. Verify/pin the actual
+version-3 and attr3 archive/source/license/feature graph, update local provenance
+and locks, and repeat covering diagnostics/runtime checks and actual scans.
+Preserve rejected version-2 receipts and source attribution. No new ignore or
+version relabeling is permitted. This is the smallest compatibility update that
+satisfies the approved security goal; cost is explicit requalification on the new
+graph. Primary references: https://rustsec.org/advisories/RUSTSEC-2026-0173 and
+https://docs.rs/crate/proc-macro-error3/3.1.1 .
+
 ## Global Constraints
 
 - Only this task's Abbey checkout is writable. Adjacent ABI and WDBX are exact read-only inputs. Preserve original/untracked/ignored/unpushed work and all historical receipts.
