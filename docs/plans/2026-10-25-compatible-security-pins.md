@@ -15,7 +15,7 @@
 
 ## Task 1: Update all compatible vulnerable pins
 
-**Owned files:** This Abbey checkout `Cargo.lock`; adjacent WDBX `Cargo.lock`, `fuzz/Cargo.lock`, `specimen-studio/Cargo.lock`. No manifest, source, instruction, exception or vendor edits. Commit exact files separately in their owning repositories. The controller owns this plan.
+**Owned files:** This Abbey checkout `Cargo.lock`; adjacent WDBX `Cargo.lock`, `crates/abi-wdbx/fuzz/Cargo.lock`, `specimen-studio/Cargo.lock`. No manifest, source, instruction, exception or vendor edits. Commit exact files separately in their owning repositories. The controller owns this plan.
 
 **Exact updates:** Abbey and WDBX Studio Tokio `1.54.0` -> `1.54.1` (RUSTSEC-2026-0384). All four listed lockfiles ctutils `0.4.3` -> `0.4.4` (RUSTSEC-2026-0385). Existing ABI sibling already has both safe versions; Bot Tokio1.53.3 is outside the Interval advisory's affected range and is not changed. Current local advisory records are the source for patched version ranges; if a new scanner finding changes this, report to the controller instead of suppressing it.
 
