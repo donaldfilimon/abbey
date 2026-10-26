@@ -138,7 +138,9 @@ pub(crate) fn handle(
                 .map_err(map_store)?;
             V4Event::Deleted(query)
         }
-        V4Command::ListTasks(_)
+        V4Command::ReadTaskEvents(_)
+        | V4Command::ReadAction(_)
+        | V4Command::ListTasks(_)
         | V4Command::CreateTask(_)
         | V4Command::ListAutomations(_)
         | V4Command::UpsertAutomation(_)
@@ -148,6 +150,8 @@ pub(crate) fn handle(
         | V4Command::ReadTask(_)
         | V4Command::CancelTask(_)
         | V4Command::RetryTask(_)
+        | V4Command::PauseTask(_)
+        | V4Command::ResumeTask(_)
         | V4Command::SetAutomationEnabled(_)
         | V4Command::RunAutomationNow(_) => {
             return Err(HandlerFailure::new(

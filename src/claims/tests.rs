@@ -417,8 +417,6 @@ fn abi_backend_is_current() {
 
 #[test]
 fn approved_expansion_is_proposed() {
-    let hits = lookup("lora");
-    assert!(hits.iter().any(|c| c.status == Status::Proposed));
     for keyword in [
         "Tauri 2",
         "tool runtime",
@@ -591,3 +589,6 @@ fn the_portable_host_claim_states_the_voice_dispatch_boundary() {
         "the claim still overstates macOS voice coverage"
     );
 }
+
+#[path = "tests/evidence_channels.rs"]
+mod evidence_channels;

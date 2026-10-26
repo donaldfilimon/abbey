@@ -1,5 +1,5 @@
 use std::fs;
-use std::io::{self, Read as _, Write as _};
+use std::io;
 use std::os::unix::fs::{FileTypeExt as _, MetadataExt as _, PermissionsExt as _};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::thread;
@@ -81,8 +81,15 @@ fn handle_connection<H: DaemonHandler>(
         return;
     }
 
-    let response = match read_frame(&mut stream, config.max_frame_len) {
-        Ok(bytes) if is_federation_candidate(&bytes) => {
+    let (kind, body) = match super::super::framing::read_frame(&mut stream, config.max_frame_len) {
+        Ok((kind, bytes)) => (kind, Ok(bytes)),
+        Err(error) => (error.kind, Err(error.failure)),
+    };
+    let response = match body {
+        Ok(bytes)
+            if kind == super::super::framing::FrameKind::Legacy
+                && is_federation_candidate(&bytes) =>
+        {
             let request_id = federation_request_id(&bytes);
             match serde_json::from_slice::<serde_json::Value>(&bytes) {
                 Ok(value) if !super::super::federation::value_within_limits(&value, 1) => {
@@ -117,13 +124,21 @@ fn handle_connection<H: DaemonHandler>(
                 response_version,
                 request_id,
             } => {
-                if !limiter.admit() {
+                if kind == super::super::framing::FrameKind::Schema3
+                    && response_version != crate::app_core::APP_PROTOCOL_V4
+                {
+                    WireResponse::V4(V4ResponseEnvelope::error(
+                        request_id,
+                        crate::app_core::V4ErrorCode::UnsupportedVersion,
+                        "framing requires protocol-v4 schema3",
+                    ))
+                } else if !limiter.admit() {
                     WireResponse::rate_limited(response_version, request_id)
                 } else if response_version == crate::app_core::APP_PROTOCOL_V4 {
                     match serde_json::from_slice::<V4RequestEnvelope>(&bytes) {
-                        Ok(request) => {
-                            WireResponse::V4(super::v4::dispatch_authenticated_v4(request, handler))
-                        }
+                        Ok(request) => WireResponse::V4(
+                            super::v4::dispatch_authenticated_v4_framed(request, handler, kind),
+                        ),
                         Err(_) => WireResponse::V4(V4ResponseEnvelope::error(
                             "",
                             crate::app_core::V4ErrorCode::InvalidCommand,
@@ -164,19 +179,33 @@ fn handle_connection<H: DaemonHandler>(
                 "request is not valid JSON",
             )),
         },
-        Err(FrameError::Oversize) => WireResponse::Legacy(ResponseEnvelope::error(
-            "",
-            "frame_too_large",
-            "frame exceeds configured limit",
-        )),
-        Err(FrameError::Empty) => WireResponse::Legacy(ResponseEnvelope::error(
-            "",
-            "malformed_request",
-            "frame must not be empty",
-        )),
-        Err(FrameError::Io) => return,
+        Err(super::super::framing::FrameFailure::Oversize)
+            if kind == super::super::framing::FrameKind::Schema3 =>
+        {
+            WireResponse::V4(V4ResponseEnvelope::error(
+                "",
+                crate::app_core::V4ErrorCode::LimitExceeded,
+                "control frame exceeds its limit",
+            ))
+        }
+        Err(super::super::framing::FrameFailure::Empty)
+            if kind == super::super::framing::FrameKind::Schema3 =>
+        {
+            WireResponse::V4(V4ResponseEnvelope::error(
+                "",
+                crate::app_core::V4ErrorCode::InvalidCommand,
+                "control frame is empty",
+            ))
+        }
+        Err(super::super::framing::FrameFailure::Oversize) => WireResponse::Legacy(
+            ResponseEnvelope::error("", "frame_too_large", "frame exceeds configured limit"),
+        ),
+        Err(super::super::framing::FrameFailure::Empty) => WireResponse::Legacy(
+            ResponseEnvelope::error("", "malformed_request", "frame must not be empty"),
+        ),
+        Err(super::super::framing::FrameFailure::Io) => return,
     };
-    let _ = write_wire_response(&mut stream, response, config.max_frame_len);
+    let _ = write_wire_response_framed(&mut stream, response, config.max_frame_len, kind);
 }
 
 #[derive(serde::Serialize)]
@@ -335,35 +364,64 @@ fn authenticate_frame(bytes: &[u8], config: &DaemonConfig) -> FrameAuthenticatio
     }
 }
 
-fn read_frame(stream: &mut UnixStream, max: usize) -> Result<Vec<u8>, FrameError> {
-    let mut prefix = [0_u8; 4];
-    stream.read_exact(&mut prefix).map_err(|_| FrameError::Io)?;
-    let length = u32::from_be_bytes(prefix) as usize;
-    if length == 0 {
-        return Err(FrameError::Empty);
-    }
-    if length > max {
-        return Err(FrameError::Oversize);
-    }
-    let mut bytes = vec![0_u8; length];
-    stream.read_exact(&mut bytes).map_err(|_| FrameError::Io)?;
-    Ok(bytes)
-}
-
+#[cfg(test)]
 pub(super) fn write_wire_response(
     stream: &mut UnixStream,
     response: WireResponse,
     max: usize,
 ) -> io::Result<()> {
-    let mut bytes = serde_json::to_vec(&response).map_err(io::Error::other)?;
-    if bytes.len() > max {
-        bytes = serde_json::to_vec(&response.response_too_large()).map_err(io::Error::other)?;
+    write_wire_response_framed(
+        stream,
+        response,
+        max,
+        super::super::framing::FrameKind::Legacy,
+    )
+}
+fn write_wire_response_framed(
+    stream: &mut UnixStream,
+    mut response: WireResponse,
+    max: usize,
+    kind: super::super::framing::FrameKind,
+) -> io::Result<()> {
+    if kind == super::super::framing::FrameKind::Schema3 && !matches!(response, WireResponse::V4(_))
+    {
+        response = WireResponse::V4(V4ResponseEnvelope::error(
+            "",
+            crate::app_core::V4ErrorCode::InvalidCommand,
+            "invalid schema3 frame",
+        ));
     }
-    let length = u32::try_from(bytes.len())
-        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "response too large"))?;
-    stream.write_all(&length.to_be_bytes())?;
-    stream.write_all(&bytes)?;
-    stream.flush()
+    bind_v4_schema(&mut response, kind);
+    let limit = kind.limit(max);
+    let bytes = loop {
+        match super::super::framing::serialize_bounded(&response, limit) {
+            Ok(bytes) => break bytes,
+            Err(_) => {
+                if kind == super::super::framing::FrameKind::Schema3
+                    && let WireResponse::V4(value) = &mut response
+                    && super::v4_pages::trim_tail(value)
+                {
+                    continue;
+                }
+                let mut fallback = response.response_too_large();
+                bind_v4_schema(&mut fallback, kind);
+                break super::super::framing::serialize_bounded(&fallback, limit)?;
+            }
+        }
+    };
+    super::super::framing::write_frame(stream, kind, &bytes, max)
+}
+
+fn bind_v4_schema(response: &mut WireResponse, kind: super::super::framing::FrameKind) {
+    if let WireResponse::V4(value) = response {
+        value.schema_version = kind.schema();
+        if let super::super::protocol::V4ResponsePayload::Ok {
+            event: crate::app_core::V4Event::Negotiated(n),
+        } = &mut value.payload
+        {
+            n.schema_version = kind.schema();
+        }
+    }
 }
 
 fn prepare_private_directory(socket_path: &Path) -> Result<(), ServerError> {
@@ -433,10 +491,4 @@ impl Drop for SocketGuard {
     fn drop(&mut self) {
         let _ = fs::remove_file(&self.0);
     }
-}
-
-enum FrameError {
-    Empty,
-    Oversize,
-    Io,
 }

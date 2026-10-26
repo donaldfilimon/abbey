@@ -1,0 +1,5 @@
+error: Closure needs to be "moved" so please add `move` before closure
+ --> $WORKSPACE/compat-tests/upstream-ui/clone/test_13.rs
+  |
+  | fn main() { use glib::clone; let v = std::rc::Rc::new(1); clone!(@weak v => @default-return false, || {}); }
+  |                                                                                                    ^

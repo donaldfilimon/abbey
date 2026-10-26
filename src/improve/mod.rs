@@ -7,7 +7,7 @@
 //! **Not claimed:** multi-node mesh, unrestricted OS execute, auto-closing
 //! `tasks/goals.md` to `done` (goal-ledger iron rule: green ≠ done).
 
-mod gate;
+pub(crate) mod gate;
 mod ledger;
 mod report;
 
@@ -66,6 +66,9 @@ impl Default for ImproveOpts {
 }
 
 pub fn dispatch(cfg: &AgentConfig, state: &AbbeyState, args: &[String]) -> Result<i32> {
+    if args.first().map(String::as_str) == Some("ralph") {
+        return crate::ralph::dispatch(cfg, state, &args[1..]);
+    }
     let opts = parse_args(args)?;
     match opts.verb {
         Verb::Help => {

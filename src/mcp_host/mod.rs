@@ -123,11 +123,15 @@ pub fn dispatch(args: &[String]) -> Result<i32> {
     match args.first().map(String::as_str) {
         None | Some("stdio") => serve_stdio(),
         Some("http") => http::serve_http(&args[1..]),
+        Some("ralph") => {
+            let cwd = std::env::current_dir().unwrap_or_default();
+            crate::ralph::serve_mcp_stdio(&cwd, None)
+        }
         Some("tools") | Some("list") | Some("info") => print_registry(),
         Some("-h") | Some("--help") | Some("help") => print_registry(),
         Some(other) => {
             anyhow::bail!(
-                "unknown `abbey mcp serve` argument `{other}` — try: stdio|http|tools|--help"
+                "unknown `abbey mcp serve` argument `{other}` — try: stdio|http|ralph|tools|--help"
             )
         }
     }

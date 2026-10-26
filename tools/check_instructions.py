@@ -25,8 +25,9 @@ AGENTS = ROOT / "AGENTS.md"
 CLAUDE = ROOT / "CLAUDE.md"
 
 POINTER = """See [AGENTS.md](AGENTS.md) — canonical. This file keeps only the command table
-and the `src/` module map; every rule, trap, and gate description lives in
-AGENTS.md, and the execution-path diagram and docs map live in
+and the `src/` module map. AGENTS.md is the entrypoint; detailed rules,
+traps, and gate descriptions live in [docs/agent-guide.md](docs/agent-guide.md).
+The execution-path diagram and docs map live in
 [docs/architecture.md](docs/architecture.md). `tools/check_instructions.py`
 (a `./check.sh` step) fails if other content reappears here."""
 

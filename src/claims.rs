@@ -13,7 +13,7 @@ mod registry;
 
 use registry::{Claim, EvidenceState};
 pub const CLAIMS: &[Claim] = registry::CLAIMS;
-pub const CLAIMS_SCHEMA_VERSION: u16 = 2;
+pub const CLAIMS_SCHEMA_VERSION: u16 = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Status {
@@ -253,8 +253,8 @@ fn validate_claims(claims: &[Claim]) -> Result<()> {
         }
         match claim.status {
             Status::Current => {
-                if is_required(claim.evidence.local_live)
-                    || is_required(claim.evidence.external_required)
+                if is_unsatisfied(claim.evidence.local_live)
+                    || is_unsatisfied(claim.evidence.external_required)
                 {
                     bail!(
                         "Current claim `{}` cannot carry unsatisfied required evidence",
@@ -264,8 +264,8 @@ fn validate_claims(claims: &[Claim]) -> Result<()> {
                 require_no_blocker_owner(claim)?;
             }
             Status::Partial => {
-                if !is_required(claim.evidence.local_live)
-                    && !is_required(claim.evidence.external_required)
+                if !is_unsatisfied(claim.evidence.local_live)
+                    && !is_unsatisfied(claim.evidence.external_required)
                 {
                     bail!(
                         "Partial claim `{}` must identify its missing proof",
@@ -284,7 +284,7 @@ fn validate_claims(claims: &[Claim]) -> Result<()> {
                 require_no_blocker_owner(claim)?;
             }
             Status::Blocked => {
-                if !is_required(claim.evidence.external_required) {
+                if !is_unsatisfied(claim.evidence.external_required) {
                     bail!(
                         "Blocked claim `{}` must identify required external evidence",
                         claim.id
@@ -300,9 +300,12 @@ fn validate_claims(claims: &[Claim]) -> Result<()> {
             Status::Failed => {
                 // Something was built, or there would be nothing to fail:
                 // `built_evidence_requirement` required the references above.
-                // Decision 63: evidence never auto-promotes. A claim whose
-                // proof failed must not still present that proof as verified.
-                if matches!(claim.evidence.local_live, EvidenceState::Verified(_)) {
+                // A failed external channel must not erase independent local proof.
+                // Without an explicitly failed external channel, verified local
+                // evidence still cannot be presented as the failure itself.
+                if matches!(claim.evidence.local_live, EvidenceState::Verified(_))
+                    && !matches!(claim.evidence.external_required, EvidenceState::Failed(_))
+                {
                     bail!(
                         "Failed claim `{}` cannot present verified local evidence",
                         claim.id
@@ -346,7 +349,10 @@ fn validate_claims(claims: &[Claim]) -> Result<()> {
                 // It held once (decision 62 binds evidence to an exact
                 // version and environment), so implementation and tests
                 // exist — but the binding lapsed and re-proof is owed.
-                if !is_required(claim.evidence.local_live) {
+                if !is_required(claim.evidence.local_live)
+                    && !matches!(claim.evidence.local_live, EvidenceState::Expired(_))
+                    && !matches!(claim.evidence.external_required, EvidenceState::Expired(_))
+                {
                     bail!(
                         "Expired claim `{}` must require fresh local proof",
                         claim.id
@@ -386,7 +392,10 @@ fn validate_refs(claim_id: &str, field: &str, refs: &[&str]) -> Result<()> {
 
 fn validate_evidence_state(claim_id: &str, field: &str, state: EvidenceState) -> Result<()> {
     match state {
-        EvidenceState::Verified(refs) | EvidenceState::Required(refs) => {
+        EvidenceState::Verified(refs)
+        | EvidenceState::Required(refs)
+        | EvidenceState::Failed(refs)
+        | EvidenceState::Expired(refs) => {
             if refs.is_empty() {
                 bail!("claim `{claim_id}` has {field} state without references");
             }
@@ -431,6 +440,13 @@ fn is_required(state: EvidenceState) -> bool {
     matches!(state, EvidenceState::Required(_))
 }
 
+fn is_unsatisfied(state: EvidenceState) -> bool {
+    matches!(
+        state,
+        EvidenceState::Required(_) | EvidenceState::Failed(_) | EvidenceState::Expired(_)
+    )
+}
+
 fn evidence_state_json(state: EvidenceState) -> serde_json::Value {
     match state {
         EvidenceState::Verified(refs) => serde_json::json!({
@@ -439,6 +455,14 @@ fn evidence_state_json(state: EvidenceState) -> serde_json::Value {
         }),
         EvidenceState::Required(refs) => serde_json::json!({
             "state": "required",
+            "refs": refs,
+        }),
+        EvidenceState::Failed(refs) => serde_json::json!({
+            "state": "failed",
+            "refs": refs,
+        }),
+        EvidenceState::Expired(refs) => serde_json::json!({
+            "state": "expired",
             "refs": refs,
         }),
         EvidenceState::NotRequired(reason) => serde_json::json!({

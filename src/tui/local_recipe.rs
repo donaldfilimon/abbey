@@ -54,6 +54,12 @@ pub(super) fn owned_slash(input: &str) -> bool {
                 .iter()
                 .any(|arg| matches!(arg.as_str(), "-h" | "--help"))
         }
+        "ralph" | "ralph-loop" => {
+            matches!(first, Some("step" | "once" | "run" | "loop"))
+                && !args
+                    .iter()
+                    .any(|arg| matches!(arg.as_str(), "-h" | "--help"))
+        }
         "init" => crate::init::parse_init_args(rest).agent,
         "learn-review" | "train-review" | "learn-stats" | "train-stats" => true,
         _ => false,
@@ -69,6 +75,7 @@ fn finite_args(args: &[String]) -> bool {
         let subcommand = crate::slash::split_args(rest).first().cloned();
         if (name == "mcp" && matches!(subcommand.as_deref(), Some("serve" | "server" | "stdio")))
             || (name == "acp" && matches!(subcommand.as_deref(), Some("run" | "serve" | "server")))
+            || (name == "ralph" && matches!(subcommand.as_deref(), Some("mcp" | "serve-mcp")))
         {
             return false;
         }

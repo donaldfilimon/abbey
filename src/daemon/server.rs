@@ -392,6 +392,10 @@ impl AuthenticatedRateLimiter {
 mod v4;
 
 #[cfg(unix)]
+#[path = "server/v4_pages.rs"]
+mod v4_pages;
+
+#[cfg(unix)]
 #[path = "server/unix.rs"]
 mod unix;
 

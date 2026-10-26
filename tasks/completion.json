@@ -227,7 +227,7 @@
       "id": "baseline-record",
       "milestone": "baseline",
       "owner": "Abbey maintainer",
-      "status": "open",
+      "status": "implemented",
       "acceptance": [
         "Record exact revisions, clean/dirty manifests, locks, compiler, root/desktop exit status and limitations"
       ],
@@ -239,6 +239,22 @@
             "docs/verification/2026-10-22-completion-recovery/frozen-2-root.log",
             "docs/verification/2026-10-22-completion-recovery/frozen-2-desktop-retry.log",
             "docs/verification/2026-10-22-completion-recovery/frozen-2-source-manifest.json"
+          ]
+        },
+        "source": {
+          "status": "passed",
+          "refs": [
+            "docs/verification/2026-10-23-refactor-baseline.md",
+            "docs/verification/2026-10-23-refactor-baseline/abbey-manifest.json",
+            "docs/verification/2026-10-23-refactor-baseline/abi-manifest.json",
+            "docs/verification/2026-10-23-refactor-baseline/wdbx-manifest.json"
+          ]
+        },
+        "automated": {
+          "status": "passed",
+          "refs": [
+            "docs/verification/2026-10-23-refactor-baseline/baseline-root.log",
+            "docs/verification/2026-10-23-refactor-baseline/baseline-desktop.log"
           ]
         }
       },
@@ -362,7 +378,7 @@
       ],
       "todos": [
         "**Blocked on runner provisioning:** provision/register Linux ARM64 with labels",
-        "**Phase 2 — Self-hosted runners replace the broken hosted-CI assumption:**"
+        "**Phase 2 \u2014 Self-hosted runners replace the broken hosted-CI assumption:**"
       ],
       "evidence": {
         "source": {
@@ -433,15 +449,25 @@
       "id": "runtime-contracts",
       "milestone": "authority",
       "owner": "Abbey runtime maintainer",
-      "status": "open",
+      "status": "in_progress",
       "acceptance": [
         "Canonical compiled types, append-only migrations, real task/automation/profile/action stores and dispatch pass grant/recovery/contract fixtures"
       ],
       "todos": [
         "**1. Runtime contracts:** define provider-neutral executor, tool-call, permission,",
-        "**Phase 4 — Shared Abbey application core + durable `abbeyd` daemon:**"
+        "**Phase 4 \u2014 Shared Abbey application core + durable `abbeyd` daemon:**"
       ],
-      "evidence": {},
+      "evidence": {
+        "contract_extraction": {
+          "status": "passed",
+          "refs": [
+            "src/app_core/v4.rs",
+            "src/app_core/v4/conversation.rs",
+            "src/app_core/v4/admin.rs",
+            "tests/app_core_v4_contract.rs"
+          ]
+        }
+      },
       "required_evidence": [
         "source",
         "automated"
@@ -457,8 +483,8 @@
       ],
       "todos": [
         "**2. Owned tool host:** implement capability-scoped tool registry plus MCP/ACP host",
-        "**Phase 5 — Model and tool runtime ownership in ABI:**",
-        "**Phase 9 — MCP hosting without exposing the personal shell:**"
+        "**Phase 5 \u2014 Model and tool runtime ownership in ABI:**",
+        "**Phase 9 \u2014 MCP hosting without exposing the personal shell:**"
       ],
       "evidence": {},
       "required_evidence": [
@@ -476,7 +502,7 @@
       ],
       "todos": [
         "**3. Desktop GUI:** add a Tauri 2 + React/TypeScript frontend over shared",
-        "**Phase 7 — Tauri 2 React/TypeScript desktop product:**"
+        "**Phase 7 \u2014 Tauri 2 React/TypeScript desktop product:**"
       ],
       "evidence": {},
       "required_evidence": [
@@ -652,7 +678,7 @@
         "Reproduce or retain the exact historical recovery failure; serial/parallel and load fixtures discriminate journal ownership without attributing an unobserved cause"
       ],
       "todos": [
-        "**Flaky test observed 2026-08-09 in Phase 4B.5's own suite — not yet diagnosed:**"
+        "**Flaky test observed 2026-08-09 in Phase 4B.5's own suite \u2014 not yet diagnosed:**"
       ],
       "evidence": {},
       "required_evidence": [
@@ -686,7 +712,7 @@
         "Revise conflicting invariants explicitly, keep safe os_control behavior, implement local personal structured shell without per-command confirmation and verify isolation, bounds, audit and OS authorization"
       ],
       "todos": [
-        "**Phase 6 — Two deliberately separate runtime editions:**"
+        "**Phase 6 \u2014 Two deliberately separate runtime editions:**"
       ],
       "evidence": {},
       "required_evidence": [
@@ -703,7 +729,7 @@
         "Every inference, accelerator, training and media acceptance in milestone models-media passes independently"
       ],
       "todos": [
-        "**Phase 8 — Local model and media roadmap:**"
+        "**Phase 8 \u2014 Local model and media roadmap:**"
       ],
       "evidence": {},
       "required_evidence": [
@@ -720,7 +746,7 @@
         "Three independent Ubuntu ARM64 VM identities/state/IPs pass authenticated fault/recovery and upgrade scenarios with an independent membership control store"
       ],
       "todos": [
-        "**Phase 10 — Authenticated three-VM shared-compute proof:**"
+        "**Phase 10 \u2014 Authenticated three-VM shared-compute proof:**"
       ],
       "evidence": {},
       "required_evidence": [
@@ -739,7 +765,7 @@
         "Run coordinated ABI/WDBX gates, dependency/license/secret and external security reviews, native installed journeys and sustained-resource acceptance against exact frozen inputs; regenerate claims only from their independently reported evidence"
       ],
       "todos": [
-        "**Phase 11 — Verification and final ledger closure:**"
+        "**Phase 11 \u2014 Verification and final ledger closure:**"
       ],
       "evidence": {},
       "required_evidence": [
@@ -795,14 +821,38 @@
       "id": "evidence-channels",
       "milestone": "correctness",
       "owner": "Abbey claims maintainer",
-      "status": "open",
+      "status": "implemented",
       "acceptance": [
         "Channel-specific failed/expired evidence preserves independently verified local channels; registry schema and sync tests pin the representation"
       ],
       "todos": [
         "**The ledger cannot name which evidence channel lapsed or failed** (#94"
       ],
-      "evidence": {},
+      "evidence": {
+        "source": {
+          "status": "passed",
+          "refs": [
+            "src/claims/registry/types.rs",
+            "src/claims.rs",
+            "tools/check_claims_sync.py"
+          ]
+        },
+        "focused_tests": {
+          "status": "passed",
+          "refs": [
+            "src/claims/tests/evidence_channels.rs",
+            "tools/tests/test_check_claims_sync.py"
+          ]
+        },
+        "automated": {
+          "status": "passed",
+          "refs": [
+            "docs/verification/2026-10-23-refactor-verification/candidate-root.log",
+            "docs/verification/2026-10-23-refactor-verification/candidate-desktop.log",
+            "docs/verification/2026-10-23-refactor-progress.md"
+          ]
+        }
+      },
       "required_evidence": [
         "source",
         "automated"
@@ -938,14 +988,31 @@
       "id": "voice-claim-boundary",
       "milestone": "correctness",
       "owner": "Abbey claims maintainer",
-      "status": "open",
+      "status": "implemented",
       "acceptance": [
         "Revalidate corrected registry and generated docs against dispatch: portable adapters are non-macOS only; macOS failure has no portable fallback"
       ],
       "todos": [
         "**The `portable-primary-host-surfaces` claim overstates macOS voice"
       ],
-      "evidence": {},
+      "evidence": {
+        "source": {
+          "status": "passed",
+          "refs": [
+            "src/voice.rs",
+            "src/voice_portable.rs",
+            "src/claims/registry.rs",
+            "docs/verification/2026-10-23-refactor-progress.md"
+          ]
+        },
+        "automated": {
+          "status": "passed",
+          "refs": [
+            "docs/verification/2026-10-23-refactor-verification/candidate-root.log",
+            "src/claims/tests.rs::the_portable_host_claim_states_the_voice_dispatch_boundary"
+          ]
+        }
+      },
       "required_evidence": [
         "source",
         "automated"
@@ -989,7 +1056,7 @@
       "id": "corpus-golden-vectors",
       "milestone": "correctness",
       "owner": "Abbey and ABI corpus maintainers",
-      "status": "in_progress",
+      "status": "implemented",
       "acceptance": [
         "Compute and independently compare canonical bytes and expected corpus digests; altered expected values cannot return Valid"
       ],
@@ -1010,6 +1077,14 @@
             "docs/verification/2026-10-22-completion-review-fixes/corpus-corpus-green.log",
             "docs/verification/2026-10-22-completion-review-fixes/corpus-corpus-integration-focused.log",
             "docs/verification/2026-10-22-completion-review-fixes/corpus-red-provenance.json"
+          ]
+        },
+        "automated": {
+          "status": "passed",
+          "refs": [
+            "docs/verification/2026-10-23-refactor-verification/candidate-root.log",
+            "src/abbey_contracts/golden_tests.rs",
+            "docs/verification/2026-10-23-refactor-progress.md"
           ]
         }
       },

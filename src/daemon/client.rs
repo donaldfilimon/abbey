@@ -350,6 +350,28 @@ mod unix {
         read_response(&mut stream, config.max_frame_len)
     }
 
+    pub(super) fn round_trip_schema3<T: serde::Serialize>(
+        config: &DaemonConfig,
+        request: &T,
+    ) -> Result<Vec<u8>, ClientError> {
+        use super::super::framing::{self, FrameKind};
+        let max = config
+            .max_frame_len
+            .min(crate::app_core::MAX_V4_CONTROL_BYTES);
+        let bytes =
+            framing::serialize_bounded(request, max).map_err(|_| ClientError::RequestTooLarge)?;
+        let mut frame = Vec::new();
+        framing::write_frame(&mut frame, FrameKind::Schema3, &bytes, max)
+            .map_err(|_| ClientError::RequestTooLarge)?;
+        let mut stream = connect(config, frame)?;
+        let (kind, bytes) =
+            framing::read_frame(&mut stream, max).map_err(|_| ClientError::MalformedResponse)?;
+        if kind != FrameKind::Schema3 {
+            return Err(ClientError::MalformedResponse);
+        }
+        Ok(bytes)
+    }
+
     fn response_error(payload: ResponsePayload, config: &DaemonConfig) -> ClientError {
         let ResponsePayload::Error { code, message } = payload else {
             return ClientError::MalformedResponse;

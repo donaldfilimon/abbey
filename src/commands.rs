@@ -76,6 +76,7 @@ pub(crate) fn list_models(cfg: &AgentConfig) -> Result<i32> {
 
 pub fn run_cli(cli: Cli, state: AbbeyState, mut cfg: AgentConfig) -> Result<i32> {
     match cli.command {
+        Some(Commands::Knowledge { cmd }) => run_knowledge(cmd),
         None | Some(Commands::Tui) => {
             if cli.prompt.is_empty() {
                 return cmd_doctor(&state, &cfg);
@@ -352,6 +353,7 @@ pub fn run_cli(cli: Cli, state: AbbeyState, mut cfg: AgentConfig) -> Result<i32>
             subagents::dispatch(&cfg, &state, &args, &ac.roles.max, &ac.roles.gemma)
         }
         Some(Commands::Improve { args }) => improve::dispatch(&cfg, &state, &args),
+        Some(Commands::Ralph { args }) => crate::ralph::dispatch(&cfg, &state, &args),
         Some(Commands::Agents) => {
             inventory::print_agent_tools();
             for line in build_info::lines() {
@@ -470,6 +472,11 @@ pub fn run_cli(cli: Cli, state: AbbeyState, mut cfg: AgentConfig) -> Result<i32>
             run_resilient(&cfg, &state, false, &args)
         }
     }
+}
+
+/// Shared local dispatch also used before state/backend startup in `entry`.
+pub(crate) fn run_knowledge(cmd: crate::cli::KnowledgeCmd) -> Result<i32> {
+    crate::knowledge::dispatch(cmd)
 }
 
 fn run_daemon_command(command: DaemonCmd) -> Result<i32> {

@@ -11,12 +11,14 @@
 # The client is still a *client*: it depends on the `abbey` library, never the
 # other way round, and it brings no authority into the CLI.
 resolver = "3"
-members = ["desktop/codegen", "desktop/src-tauri"]
+members = ["desktop/codegen", "desktop/src-tauri", "crates/abbey-learning"]
+# Bot retains its own locked patch cohort until M9.1b qualifies shared deps.
+exclude = ["vendor", "extensions/bot"]
 # Without this, a bare `cargo build` / `cargo test` / `cargo clippy` in a
 # workspace whose root is also a package selects *only* that root package.
 # Naming every member as a default member is what makes the ordinary
 # commands cover the whole application, which is the point of the unification.
-default-members = [".", "desktop/codegen", "desktop/src-tauri"]
+default-members = [".", "desktop/codegen", "desktop/src-tauri", "crates/abbey-learning"]
 
 [package]
 name = "abbey"
@@ -45,6 +47,7 @@ path = "src/main.rs"
 unsafe_code = "deny"
 
 [dependencies]
+abbey-learning = { path = "crates/abbey-learning" }
 anyhow = "1"
 chrono-tz = { version = "=0.10.4", default-features = false, features = ["std"] }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
@@ -102,6 +105,7 @@ libc = "0.2"
 nix = { version = "0.30", features = ["process", "signal", "user", "fs"] }
 
 [features]
+native-training-metal = ["abbey-learning/metal"]
 default = []
 # In-process WDBX memory backend. Optional and off by default: uses the sibling
 # path crates (`../wdbx/crates/abi-wdbx` and, through it, `abi-compute`). Those
@@ -131,3 +135,12 @@ accel = ["dep:abi-gpu", "dep:abi-compute", "abi-model-runtime/metal"]
 lto = true
 codegen-units = 1
 strip = true
+
+# Exact upstream ZIP 9 repair; reviewed source/license receipt lives in
+# docs/verification/2026-10-25-updater-zip9.md.
+[patch.crates-io]
+tauri-plugin-updater = { git = "https://github.com/tauri-apps/plugins-workspace", rev = "ba98bfadc4c868c9a7e1a226c83af528e1f11b89" }
+
+glib = { path = "vendor/glib-0.18.5" }
+glib-macros = { path = "vendor/glib-macros-0.18.5" }
+gtk3-macros = { path = "vendor/gtk3-macros-0.18.2" }

@@ -1,0 +1,106 @@
+{
+  "schema_version": 3,
+  "cargo_audit_version": "0.22.2",
+  "audit_state": "not-clean",
+  "locked_dependency_paths": [
+    {
+      "scope": "all-resolved-targets",
+      "advisory_ids": [
+        "RUSTSEC-2026-0293"
+      ],
+      "rationale": "Accepted by Donald on 2026-09-22. songbird 0.6.0 (the voice driver) depends on ringbuf \"0.4\" (its Cargo.toml [dependencies.ringbuf] version = \"0.4\"), so the fixed ringbuf 0.5.2 is not semver-compatible and cannot be selected without a songbird release. The advisory's double free needs an element whose Drop panics inside Consumer::skip or Consumer::clear. songbird's only ring buffer is the async input adapter's SharedRb<Heap<u8>> (HeapProd<u8>/HeapCons<u8> in src/input/adapters/async_adapter.rs, which calls rb.skip on seek), and u8 has no Drop, so the precondition cannot occur in this build. abbey-bot itself does not use ringbuf.",
+      "review_triggers": [
+        "songbird releases a version that depends on ringbuf >=0.5.2, or the songbird -> ringbuf edge changes.",
+        "songbird's ring buffer element type stops being u8, or songbird adds another ringbuf consumer.",
+        "abbey-bot takes a direct ringbuf dependency.",
+        "The dependency topology, package source, version, or checksum changes.",
+        "Any accepted advisory fingerprint changes or a vulnerability appears or disappears."
+      ],
+      "nodes": [
+        {
+          "name": "songbird",
+          "version": "0.6.0",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "checksum": "5b9bf4ecb5083685b79a8fc60222f12e4f036e2817c5c341cd2b9ff2b429d237",
+          "replace": null,
+          "dependency_to_next": {
+            "name": "ringbuf",
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ]
+          }
+        },
+        {
+          "name": "ringbuf",
+          "version": "0.4.8",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "checksum": "fe47b720588c8702e34b5979cb3271a8b1842c7cb6f57408efa70c779363488c",
+          "replace": null,
+          "dependency_to_next": null
+        }
+      ]
+    }
+  ],
+  "accepted_vulnerability_count": 1,
+  "accepted_vulnerabilities": [
+    {
+      "id": "RUSTSEC-2026-0293",
+      "advisory": {
+        "package": "ringbuf",
+        "source": null,
+        "aliases": [],
+        "categories": [
+          "memory-corruption"
+        ],
+        "cvss": null,
+        "informational": null,
+        "withdrawn": null
+      },
+      "versions": {
+        "patched": [
+          ">=0.5.2"
+        ],
+        "unaffected": []
+      },
+      "affected": {
+        "arch": [],
+        "os": [],
+        "functions": {
+          "ringbuf::traits::consumer::Consumer::clear": [
+            "<0.5.2"
+          ],
+          "ringbuf::traits::consumer::Consumer::skip": [
+            "<0.5.2"
+          ]
+        }
+      },
+      "package": {
+        "name": "ringbuf",
+        "version": "0.4.8",
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "checksum": "fe47b720588c8702e34b5979cb3271a8b1842c7cb6f57408efa70c779363488c",
+        "dependencies": [
+          {
+            "name": "crossbeam-utils",
+            "version": "0.8.23",
+            "source": "registry+https://github.com/rust-lang/crates.io-index"
+          },
+          {
+            "name": "portable-atomic",
+            "version": "1.15.0",
+            "source": "registry+https://github.com/rust-lang/crates.io-index"
+          },
+          {
+            "name": "portable-atomic-util",
+            "version": "0.2.8",
+            "source": "registry+https://github.com/rust-lang/crates.io-index"
+          }
+        ],
+        "replace": null
+      }
+    }
+  ]
+}

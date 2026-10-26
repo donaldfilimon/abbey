@@ -1,0 +1,849 @@
+use super::*;
+use std::collections::HashSet;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpListener;
+use tokio::sync::oneshot;
+
+struct Fixture {
+    state: Arc<AppState>,
+    runtime: Arc<VoiceRuntime>,
+    input: mpsc::Sender<crate::offline_voice::VoiceFrame>,
+    events: mpsc::UnboundedReceiver<&'static str>,
+    release: Option<oneshot::Sender<()>>,
+    cancel: watch::Sender<bool>,
+    actor: tokio::task::JoinHandle<()>,
+    server: tokio::task::JoinHandle<()>,
+    sequence: u64,
+    playback: SharedPlayback,
+    // Retain the channels for the full session, just as the Discord shell does.
+    _driver: watch::Sender<bool>,
+    _lifecycle: mpsc::UnboundedSender<SessionEvent>,
+}
+
+impl Fixture {
+    async fn new(second_transcript: &'static str) -> Self {
+        Self::with_gate(second_transcript, "generation").await
+    }
+
+    async fn with_gate(second_transcript: &'static str, gate_stage: &'static str) -> Self {
+        Self::with_transcripts("Abby, say hello.", second_transcript, gate_stage, None).await
+    }
+
+    async fn with_transcripts(
+        first_transcript: &'static str,
+        second_transcript: &'static str,
+        gate_stage: &'static str,
+        transcription_permits: Option<Arc<tokio::sync::Semaphore>>,
+    ) -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        let (event_tx, events) = mpsc::unbounded_channel();
+        let (release, wait) = oneshot::channel();
+        let wait = Arc::new(Mutex::new(Some(wait)));
+        let server = tokio::spawn(async move {
+            let mut requests = JoinSet::new();
+            let mut transcriptions = 0;
+            loop {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut data = Vec::new();
+                let (header_end, length) = loop {
+                    let mut chunk = [0; 4096];
+                    let count = socket.read(&mut chunk).await.unwrap();
+                    assert_ne!(count, 0);
+                    data.extend_from_slice(&chunk[..count]);
+                    if let Some(end) = data.windows(4).position(|w| w == b"\r\n\r\n") {
+                        let header = String::from_utf8_lossy(&data[..end]);
+                        let length = header
+                            .lines()
+                            .find_map(|line| {
+                                let (key, value) = line.split_once(':')?;
+                                key.eq_ignore_ascii_case("content-length")
+                                    .then(|| value.trim().parse::<usize>().unwrap())
+                            })
+                            .unwrap_or(0);
+                        break (end + 4, length);
+                    }
+                };
+                while data.len() < header_end + length {
+                    let mut chunk = [0; 4096];
+                    let count = socket.read(&mut chunk).await.unwrap();
+                    assert_ne!(count, 0);
+                    data.extend_from_slice(&chunk[..count]);
+                }
+                let header = String::from_utf8_lossy(&data[..header_end]);
+                let route = header.split_whitespace().nth(1).unwrap().to_owned();
+                let transcript = if transcriptions == 0 {
+                    first_transcript
+                } else {
+                    second_transcript
+                };
+                if route == "/v1/audio/transcriptions" {
+                    transcriptions += 1;
+                }
+                let event_tx = event_tx.clone();
+                let wait = Arc::clone(&wait);
+                let transcription_permits = transcription_permits.clone();
+                requests.spawn(async move {
+                    let stage = match route.as_str() {
+                        "/v1/audio/transcriptions" => "transcription",
+                        "/v1/chat/completions" => "generation",
+                        "/v1/audio/speech" => "synthesis",
+                        other => panic!("unexpected test route: {other}"),
+                    };
+                    let gate = if stage == gate_stage { wait.lock().await.take() } else { None };
+                    let _ = event_tx.send(stage);
+                    if stage == "transcription" && let Some(permits) = transcription_permits {
+                        permits.acquire().await.unwrap().forget();
+                    }
+                    if let Some(gate) = gate { let _ = gate.await; }
+                    // Fixed synthetic responses only; this listener never
+                    // handles production speech or credentials.
+                    let (content_type, canned_reply) = match route.as_str() {
+                        "/v1/audio/transcriptions" => {
+                            ("application/json", serde_json::json!({"text": transcript}).to_string().into_bytes())
+                        }
+                        "/v1/chat/completions" => {
+                            ("application/json", br#"{"choices":[{"message":{"role":"assistant","content":"Hello there."},"finish_reason":"stop"}]}"#.to_vec())
+                        }
+                        "/v1/audio/speech" => {
+                            ("audio/wav", crate::offline_voice::encode_mono_pcm16_wav(&vec![1200; 24_000], 24_000).unwrap())
+                        }
+                        other => panic!("unexpected test route: {other}"),
+                    };
+                    let canned_reply = if gate_stage == "generation_failure" && stage == "generation" {
+                        br#"{"choices":[]}"#.to_vec()
+                    } else if gate_stage == "synthesis_failure" && stage == "synthesis" {
+                        b"INVALID_SYNTHETIC_WAV".to_vec()
+                    } else {
+                        canned_reply
+                    };
+                    let response = format!("HTTP/1.1 200 OK\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", canned_reply.len());
+                    // A deliberately superseded turn may close its HTTP request.
+                    let _ = socket.write_all(response.as_bytes()).await;
+                    let _ = socket.write_all(&canned_reply).await;
+                });
+            }
+        });
+        let config = crate::offline_voice::OfflineVoiceConfig::from_values(
+            Some(endpoint.clone()),
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        let mut runtime = VoiceRuntime::new(crate::voice::VoiceConfig::selected_only(
+            1,
+            2,
+            crate::voice::VoiceBackendConfig::Local(config.clone()),
+            true,
+        ));
+        runtime.consent = Arc::new(
+            crate::voice_consent_store::ConsentStore::acknowledged_fixture(
+                1,
+                &[1, 2],
+                crate::voice::VoiceMode::Local,
+            ),
+        );
+        let runtime = Arc::new(runtime);
+        let start = runtime.reserve_start();
+        let epoch = runtime.begin(HashSet::from([1, 2])).await;
+        assert!(runtime.activate(epoch, start, "test session active").await);
+        let (input, input_rx) = mpsc::channel(64);
+        let (lifecycle_tx, lifecycle) = mpsc::unbounded_channel();
+        let (driver, driver_disconnect) = watch::channel(false);
+        let (cancel, cancelled) = watch::channel(false);
+        let playback = Arc::new(Mutex::new(None));
+        let mut state = AppState::in_memory();
+        Arc::get_mut(&mut state)
+            .unwrap()
+            .providers
+            .set_primary(crate::llm::Backend::from_values(
+                None,
+                Some(endpoint),
+                Some("test".into()),
+            ));
+        let backend = state.providers.local_voice_route().unwrap();
+        let actor = tokio::spawn(run(LocalSession {
+            runtime: Arc::clone(&runtime),
+            state: Arc::clone(&state),
+            // Each fixture owns its scheduler. On songbird's process-global
+            // default scheduler, standalone drivers created and dropped by
+            // concurrent tests interfere: a freshly played track's command
+            // channel closed within ~100 µs (`stop()` -> `Err(Finished)`, no
+            // `End` event), so the speech-triggered stop counted nothing and
+            // the barge-in assertions timed out in about half of parallel
+            // runs. Serial runs and a private scheduler never reproduce it.
+            call: Arc::new(Mutex::new(songbird::Call::standalone_from_config(
+                std::num::NonZeroU64::new(1).unwrap(),
+                std::num::NonZeroU64::new(99).unwrap(),
+                songbird::Config::default().scheduler(songbird::driver::Scheduler::new(
+                    songbird::driver::SchedulerConfig::default(),
+                )),
+            ))),
+            client: MlxAudioClient::new(config).unwrap(),
+            epoch,
+            input: input_rx,
+            lifecycle,
+            events: lifecycle_tx.clone(),
+            driver_disconnect,
+            cancel: cancelled,
+            playback: Arc::clone(&playback),
+            backend,
+        }));
+        Self {
+            state,
+            runtime,
+            input,
+            events,
+            release: Some(release),
+            cancel,
+            actor,
+            server,
+            sequence: 0,
+            playback,
+            _driver: driver,
+            _lifecycle: lifecycle_tx,
+        }
+    }
+
+    async fn utterance(&mut self, speaker: u64) {
+        self.frames(speaker, 20, true).await;
+        self.frames(speaker, 25, false).await;
+    }
+
+    async fn frames(&mut self, speaker: u64, count: usize, voiced: bool) {
+        for _ in 0..count {
+            self.sequence += 1;
+            self.input
+                .send(crate::offline_voice::VoiceFrame {
+                    sequence: self.sequence,
+                    speaker_id: Some(speaker),
+                    samples: vec![if voiced { 2000 } else { 0 }; 480],
+                    overlap: false,
+                })
+                .await
+                .unwrap();
+        }
+    }
+
+    async fn expect(&mut self, expected: &'static str) {
+        tokio::time::timeout(Duration::from_secs(3), async {
+            while self.events.recv().await.unwrap() != expected {}
+        })
+        .await
+        .unwrap_or_else(|_| panic!("voice never reached {expected}"));
+    }
+
+    async fn expect_playback(&self, playing: bool) {
+        tokio::time::timeout(Duration::from_secs(3), async {
+            while self.playback.lock().await.is_some() != playing {
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+        })
+        .await
+        .expect("playback did not reach the expected state");
+    }
+
+    async fn expect_media_closed(&self) {
+        tokio::time::timeout(Duration::from_secs(3), async {
+            while self.runtime.media_enabled(self.runtime.current_epoch()) {
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+        })
+        .await
+        .expect("voice media gate stayed open");
+    }
+
+    async fn stop(self) {
+        let _ = self.cancel.send(true);
+        self.actor.await.unwrap();
+        self.server.abort();
+    }
+}
+
+#[tokio::test]
+async fn unrelated_speech_preserves_pending_reply() {
+    let mut fixture = Fixture::new("This is an ordinary aside.").await;
+    fixture.utterance(1).await;
+    fixture.expect("generation").await;
+    fixture.utterance(2).await;
+    fixture.expect("transcription").await;
+    fixture.release.take().unwrap().send(()).unwrap();
+    fixture.expect("synthesis").await;
+    assert_eq!(fixture.runtime.snapshot().await.barge_ins, 0);
+    fixture.stop().await;
+}
+
+#[tokio::test]
+async fn same_speaker_aside_does_not_replace_an_answer_before_playback() {
+    let mut fixture = Fixture::new("An ordinary aside while waiting.").await;
+    fixture.utterance(1).await;
+    fixture.expect("generation").await;
+    fixture.utterance(1).await;
+    fixture.expect("transcription").await;
+    fixture.release.take().unwrap().send(()).unwrap();
+    fixture.expect("synthesis").await;
+    assert_eq!(fixture.runtime.snapshot().await.barge_ins, 0);
+    fixture.stop().await;
+}
+
+#[tokio::test]
+async fn new_speech_does_not_discard_inflight_wake_recognition() {
+    let mut fixture = Fixture::with_gate("An unrelated aside.", "transcription").await;
+    fixture.utterance(1).await;
+    fixture.expect("transcription").await;
+    fixture.utterance(2).await;
+    fixture.release.take().unwrap().send(()).unwrap();
+    fixture.expect("generation").await;
+    fixture.expect("synthesis").await;
+    assert_eq!(fixture.runtime.snapshot().await.barge_ins, 0);
+    fixture.stop().await;
+}
+
+#[tokio::test]
+async fn prepared_reply_waits_for_a_short_noise_to_end() {
+    let mut fixture = Fixture::new("unused").await;
+    fixture.utterance(1).await;
+    fixture.expect("generation").await;
+    fixture.frames(2, 2, true).await;
+    fixture.release.take().unwrap().send(()).unwrap();
+    fixture.expect("synthesis").await;
+    // No complete utterance will be emitted for this 40 ms noise.
+    assert!(fixture.playback.lock().await.is_none());
+    fixture.frames(2, 25, false).await;
+    fixture.expect_playback(true).await;
+    assert_eq!(fixture.runtime.snapshot().await.barge_ins, 0);
+    fixture.stop().await;
+}
+
+#[tokio::test]
+async fn audible_playback_still_stops_on_sustained_speech() {
+    let mut fixture = Fixture::new("unused").await;
+    fixture.utterance(1).await;
+    fixture.expect("generation").await;
+    fixture.release.take().unwrap().send(()).unwrap();
+    fixture.expect("synthesis").await;
+    fixture.expect_playback(true).await;
+    fixture.frames(2, 15, true).await;
+    fixture.expect_playback(false).await;
+    // Taking the handle and recording the successful stop are separate
+    // actor steps; synchronize on the counter before asserting it.
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while fixture.runtime.snapshot().await.barge_ins == 0 {
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    })
+    .await
+    .expect("playback stop was not counted");
+    assert_eq!(fixture.runtime.snapshot().await.barge_ins, 1);
+    assert_eq!(fixture.runtime.snapshot().await.completed_turns, 0);
+    fixture.stop().await;
+}
+
+#[tokio::test]
+async fn spoken_withdrawal_closes_media_while_a_reply_is_pending() {
+    let mut fixture = Fixture::new("I do not consent.").await;
+    fixture.utterance(1).await;
+    fixture.expect("generation").await;
+    fixture.utterance(2).await;
+    fixture.expect("transcription").await;
+    fixture.expect_media_closed().await;
+    fixture.release.take().unwrap().send(()).unwrap();
+    assert_eq!(
+        fixture.runtime.snapshot().await.phase,
+        VoicePhase::AwaitingConsent
+    );
+    assert!(fixture.playback.lock().await.is_none());
+    fixture.stop().await;
+}
+
+#[tokio::test]
+async fn a_new_addressed_question_supersedes_the_old_answer() {
+    let mut fixture = Fixture::new("Abby, answer this instead.").await;
+    fixture.utterance(1).await;
+    fixture.expect("generation").await;
+    fixture.utterance(2).await;
+    fixture.expect("generation").await;
+    fixture.expect("synthesis").await;
+    fixture.expect_playback(true).await;
+    assert_eq!(fixture.runtime.snapshot().await.barge_ins, 1);
+    fixture.release.take().unwrap().send(()).unwrap();
+    fixture.stop().await;
+}
+
+#[tokio::test]
+async fn recognition_backlog_fails_closed_instead_of_dropping_withdrawals() {
+    let mut fixture = Fixture::with_gate("An aside.", "transcription").await;
+    fixture.utterance(1).await;
+    fixture.expect("transcription").await;
+    for _ in 0..MAX_PENDING_UTTERANCES {
+        fixture.utterance(2).await;
+    }
+    fixture.expect_media_closed().await;
+    assert_eq!(fixture.runtime.snapshot().await.phase, VoicePhase::Failed);
+    assert!(fixture.playback.lock().await.is_none());
+    fixture.stop().await;
+}
+
+#[tokio::test]
+async fn queued_recognition_keeps_transcribing_status_until_drained() {
+    let permits = Arc::new(tokio::sync::Semaphore::new(0));
+    let mut fixture = Fixture::with_transcripts(
+        "An ordinary aside.",
+        "Another ordinary aside.",
+        "none",
+        Some(Arc::clone(&permits)),
+    )
+    .await;
+    fixture.utterance(1).await;
+    fixture.expect("transcription").await;
+    fixture.utterance(2).await;
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while fixture.input.capacity() != 64 {
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    })
+    .await
+    .unwrap();
+    permits.add_permits(1);
+    fixture.expect("transcription").await;
+    let snapshot = fixture.runtime.snapshot().await;
+    assert_eq!(snapshot.phase, VoicePhase::Thinking);
+    assert_eq!(snapshot.status, "transcribing locally");
+    permits.add_permits(1);
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while fixture.runtime.snapshot().await.phase != VoicePhase::Listening {
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    })
+    .await
+    .unwrap();
+    fixture.stop().await;
+}
+
+async fn overrun_preserves_withdrawal(queued: bool) {
+    let mut fixture = Fixture::with_transcripts(
+        if queued {
+            "An ordinary aside."
+        } else {
+            "I do not consent."
+        },
+        "I do not consent.",
+        "transcription",
+        None,
+    )
+    .await;
+    fixture.utterance(1).await;
+    fixture.expect("transcription").await;
+    if queued {
+        fixture.utterance(2).await;
+    }
+    fixture.frames(2, 2, true).await;
+    fixture.sequence += 1;
+    fixture.frames(2, 1, false).await;
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while fixture.runtime.snapshot().await.aborted_overruns == 0 {
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    })
+    .await
+    .unwrap();
+    fixture.release.take().unwrap().send(()).unwrap();
+    fixture.expect_media_closed().await;
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while fixture.runtime.snapshot().await.phase != VoicePhase::AwaitingConsent {
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(
+        fixture.runtime.snapshot().await.phase,
+        VoicePhase::AwaitingConsent
+    );
+    fixture.stop().await;
+}
+
+#[tokio::test]
+async fn overrun_preserves_inflight_withdrawal_recognition() {
+    overrun_preserves_withdrawal(false).await;
+}
+
+#[tokio::test]
+async fn overrun_preserves_queued_withdrawal_recognition() {
+    overrun_preserves_withdrawal(true).await;
+}
+
+#[tokio::test]
+async fn invalid_stt_response_fails_closed_with_more_speech_queued() {
+    let permits = Arc::new(tokio::sync::Semaphore::new(0));
+    let mut fixture =
+        Fixture::with_transcripts("", "I do not consent.", "none", Some(Arc::clone(&permits)))
+            .await;
+    fixture.utterance(1).await;
+    fixture.expect("transcription").await;
+    fixture.utterance(2).await;
+    permits.add_permits(1);
+    fixture.expect_media_closed().await;
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while fixture.runtime.snapshot().await.phase != VoicePhase::Failed {
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(fixture.runtime.snapshot().await.phase, VoicePhase::Failed);
+    assert!(
+        fixture
+            .runtime
+            .snapshot()
+            .await
+            .status
+            .contains("speech recognition")
+    );
+    assert!(fixture.playback.lock().await.is_none());
+    fixture.stop().await;
+}
+
+async fn playing_reply_with_pending_recognition(
+    second_transcript: &'static str,
+) -> (Fixture, Arc<tokio::sync::Semaphore>) {
+    let permits = Arc::new(tokio::sync::Semaphore::new(0));
+    let mut fixture = Fixture::with_transcripts(
+        "Abby, say hello.",
+        second_transcript,
+        "generation",
+        Some(Arc::clone(&permits)),
+    )
+    .await;
+    fixture.utterance(1).await;
+    fixture.expect("transcription").await;
+    permits.add_permits(1);
+    fixture.expect("generation").await;
+    fixture.utterance(1).await;
+    fixture.expect("transcription").await;
+    fixture.release.take().unwrap().send(()).unwrap();
+    fixture.expect("synthesis").await;
+    fixture.expect_playback(true).await;
+    assert_eq!(fixture.runtime.snapshot().await.barge_ins, 0);
+    (fixture, permits)
+}
+
+#[tokio::test]
+async fn prepared_reply_starts_while_older_speech_recognition_is_pending() {
+    let (fixture, permits) = playing_reply_with_pending_recognition("An ordinary aside.").await;
+    permits.add_permits(1);
+    fixture.stop().await;
+}
+
+#[tokio::test]
+async fn playback_completion_preserves_pending_transcription_status() {
+    let (fixture, permits) = playing_reply_with_pending_recognition("An ordinary aside.").await;
+    fixture
+        ._lifecycle
+        .send(SessionEvent::PlaybackTerminated {
+            turn: 1,
+            termination: PlaybackTermination::Natural,
+        })
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            let snapshot = fixture.runtime.snapshot().await;
+            if snapshot.completed_turns == 1
+                && snapshot.phase == VoicePhase::Thinking
+                && snapshot.status == "transcribing locally"
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(fixture.runtime.snapshot().await.completed_turns, 1);
+    assert_eq!(fixture.runtime.snapshot().await.phase, VoicePhase::Thinking);
+    assert_eq!(
+        fixture.runtime.snapshot().await.status,
+        "transcribing locally"
+    );
+    permits.add_permits(1);
+    fixture.stop().await;
+}
+
+#[tokio::test]
+async fn queued_explicit_question_replaces_an_already_started_reply() {
+    let (mut fixture, permits) =
+        playing_reply_with_pending_recognition("Abby, answer this instead.").await;
+    permits.add_permits(1);
+    fixture.expect("generation").await;
+    fixture.expect("synthesis").await;
+    fixture.expect_playback(true).await;
+    assert_eq!(fixture.runtime.snapshot().await.barge_ins, 1);
+    fixture.stop().await;
+}
+
+#[tokio::test]
+async fn queued_withdrawal_stops_an_already_started_reply() {
+    let (fixture, permits) = playing_reply_with_pending_recognition("I do not consent.").await;
+    permits.add_permits(1);
+    fixture.expect_media_closed().await;
+    fixture.expect_playback(false).await;
+    assert_eq!(
+        fixture.runtime.snapshot().await.phase,
+        VoicePhase::AwaitingConsent
+    );
+    fixture.stop().await;
+}
+
+#[tokio::test]
+async fn stalled_recognition_fails_closed_with_a_withdrawal_queued() {
+    let mut fixture = Fixture::with_gate("I do not consent.", "transcription").await;
+    fixture.utterance(1).await;
+    fixture.expect("transcription").await;
+    fixture.utterance(2).await;
+    let release = fixture.release.take().unwrap();
+    let late_response = tokio::spawn(async move {
+        // Match the observed 13.3-second ready-output/STT-backlog delay. The
+        // session must fail visibly before this late response can arrive.
+        tokio::time::sleep(Duration::from_millis(13_300)).await;
+        let _ = release.send(());
+    });
+    tokio::time::timeout(Duration::from_secs(13), async {
+        loop {
+            let snapshot = fixture.runtime.snapshot().await;
+            if !fixture
+                .runtime
+                .media_enabled(fixture.runtime.current_epoch())
+                && snapshot.phase == VoicePhase::Failed
+                && fixture.playback.lock().await.is_none()
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("stalled recognition left a withdrawal queued behind the 300-second HTTP timeout");
+    let failed = fixture.runtime.snapshot().await;
+    assert_eq!(failed.phase, VoicePhase::Failed);
+    assert!(failed.status.contains("/voice resume consent:true"));
+    assert!(fixture.playback.lock().await.is_none());
+    late_response.await.unwrap();
+    assert!(
+        !fixture
+            .runtime
+            .media_enabled(fixture.runtime.current_epoch())
+    );
+    assert_eq!(fixture.runtime.snapshot().await.phase, VoicePhase::Failed);
+    assert!(
+        fixture.actor.is_finished(),
+        "late STT must not restart the actor"
+    );
+    fixture.stop().await;
+}
+
+#[tokio::test]
+async fn personal_memory_adapter_withdrawal_during_voice_synthesis_suppresses_playback() {
+    let mut fixture = Fixture::with_gate("unused", "synthesis").await;
+    fixture.utterance(1).await;
+    fixture.expect("generation").await;
+    fixture.expect("synthesis").await;
+    fixture
+        .state
+        .memory_service()
+        .remember("discord:1", "discord:2", "synthetic exposure cutoff", 2)
+        .unwrap();
+    fixture.release.take().unwrap().send(()).unwrap();
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while !fixture
+            .runtime
+            .snapshot()
+            .await
+            .status
+            .contains("personal context failed locally")
+        {
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert!(
+        fixture
+            .runtime
+            .media_enabled(fixture.runtime.current_epoch())
+    );
+    assert!(fixture.playback.lock().await.is_none());
+    assert_eq!(
+        AppState::lock(&fixture.state.engine).session_len("discord:voice:1:2:consent:1:speaker:1"),
+        0
+    );
+    fixture.stop().await;
+}
+
+#[tokio::test]
+async fn personal_memory_adapter_final_voice_play_rechecks_after_waiting_for_call_lock() {
+    let fixture = Fixture::new("unused").await;
+    let guard = generation::consent::GenerationGuard::fresh(&fixture.state);
+    let call = Arc::new(Mutex::new(songbird::Call::standalone_from_config(
+        std::num::NonZeroU64::new(1).unwrap(),
+        std::num::NonZeroU64::new(99).unwrap(),
+        songbird::Config::default().scheduler(songbird::driver::Scheduler::new(
+            songbird::driver::SchedulerConfig::default(),
+        )),
+    )));
+    let (events, mut event_rx) = mpsc::unbounded_channel();
+    {
+        let locked = call.lock().await;
+        let play = play_audio(
+            &call,
+            &fixture.playback,
+            &events,
+            &fixture.runtime,
+            &fixture.state,
+            &guard,
+            fixture.runtime.current_epoch(),
+            DecodedAudio {
+                sample_rate: 24_000,
+                channels: 1,
+                pcm_f32: vec![0; 9600],
+            },
+            1,
+        );
+        tokio::pin!(play);
+        tokio::select! {
+            biased;
+            _ = &mut play => panic!("playback did not wait for the owned call lock"),
+            _ = std::future::ready(()) => {}
+        }
+        fixture
+            .state
+            .memory_service()
+            .remember("discord:1", "discord:2", "synthetic cutoff while queued", 2)
+            .unwrap();
+        drop(locked);
+        assert!(!play.await.unwrap());
+    }
+    assert!(
+        fixture
+            .runtime
+            .media_enabled(fixture.runtime.current_epoch())
+    );
+    assert!(fixture.playback.lock().await.is_none());
+    assert!(event_rx.try_recv().is_err());
+    fixture.stop().await;
+}
+
+#[tokio::test]
+async fn personal_memory_adapter_completed_voice_never_retains_transcript() {
+    let mut fixture = Fixture::new("unused").await;
+    fixture.utterance(1).await;
+    fixture.expect("generation").await;
+    fixture.release.take().unwrap().send(()).unwrap();
+    fixture.expect("synthesis").await;
+    fixture.expect_playback(true).await;
+    fixture
+        ._lifecycle
+        .send(SessionEvent::PlaybackTerminated {
+            turn: 1,
+            termination: PlaybackTermination::Natural,
+        })
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while fixture.runtime.snapshot().await.completed_turns != 1 {
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    })
+    .await
+    .unwrap();
+    let scope = voice_scope(1, 2, fixture.runtime.current_epoch(), Some(1), 1, true);
+    assert_eq!(AppState::lock(&fixture.state.engine).session_len(&scope), 0);
+    assert!(
+        fixture
+            .state
+            .memory_service()
+            .facts("discord:1", "discord:1")
+            .is_empty()
+    );
+    fixture.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn personal_memory_adapter_final_voice_play_rechecks_after_activation_gate_wait() {
+    let fixture = Fixture::new("unused").await;
+    let guard = generation::consent::GenerationGuard::fresh(&fixture.state);
+    let call = Arc::new(Mutex::new(songbird::Call::standalone_from_config(
+        std::num::NonZeroU64::new(1).unwrap(),
+        std::num::NonZeroU64::new(99).unwrap(),
+        songbird::Config::default().scheduler(songbird::driver::Scheduler::new(
+            songbird::driver::SchedulerConfig::default(),
+        )),
+    )));
+    let runtime = fixture.runtime.clone();
+    let (held_tx, held_rx) = tokio::sync::oneshot::channel();
+    let (release_tx, release_rx) = std::sync::mpsc::channel();
+    let holder = tokio::task::spawn_blocking(move || {
+        runtime.hold_activation_gate_for_test(|| {
+            held_tx.send(()).unwrap();
+            release_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        });
+    });
+    held_rx.await.unwrap();
+    let reached = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    fixture
+        .runtime
+        .observe_next_media_gate_for_test(reached.clone());
+    let runtime = fixture.runtime.clone();
+    let state = fixture.state.clone();
+    let playback = fixture.playback.clone();
+    let epoch = runtime.current_epoch();
+    let (events, mut event_rx) = mpsc::unbounded_channel();
+    let play = tokio::spawn(async move {
+        play_audio(
+            &call,
+            &playback,
+            &events,
+            &runtime,
+            &state,
+            &guard,
+            epoch,
+            DecodedAudio {
+                sample_rate: 24_000,
+                channels: 1,
+                pcm_f32: vec![0; 9600],
+            },
+            1,
+        )
+        .await
+    });
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while !reached.load(std::sync::atomic::Ordering::Acquire) {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    fixture
+        .state
+        .memory_service()
+        .remember(
+            "discord:1",
+            "discord:2",
+            "synthetic cutoff behind activation gate",
+            2,
+        )
+        .unwrap();
+    release_tx.send(()).unwrap();
+    holder.await.unwrap();
+    assert!(!play.await.unwrap().unwrap());
+    assert_eq!(fixture.runtime.spoken_play_starts_for_test(), 0);
+    assert!(fixture.playback.lock().await.is_none());
+    assert!(event_rx.try_recv().is_err());
+    fixture.stop().await;
+}
+
+#[path = "timing_tests.rs"]
+mod timing_tests;
+
+#[path = "interruption_tests.rs"]
+mod interruption_tests;

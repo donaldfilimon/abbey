@@ -1,0 +1,208 @@
+{
+  "identity": "abbey-application-schema3-invalid-v1",
+  "commands": [
+    {
+      "command": "create_task",
+      "data": {
+        "operation_id": "create:1",
+        "conversation_id": "550e8400-e29b-41d4-a716-446655440000",
+        "goal": "finish this finite task",
+        "workspace_id": "workspace.one",
+        "route_id": "abi.local",
+        "permission_profile_id": "profile.one",
+        "profile_revision": 0,
+        "budget_tokens": 100,
+        "execution_kind": "read_only"
+      }
+    },
+    {
+      "command": "create_task",
+      "data": {
+        "operation_id": "create:1",
+        "conversation_id": "550e8400-e29b-41d4-a716-446655440000",
+        "goal": "finish this finite task",
+        "workspace_id": "workspace.one",
+        "route_id": "abi.local",
+        "permission_profile_id": "profile.one",
+        "profile_revision": 1,
+        "budget_tokens": 100001,
+        "execution_kind": "read_only"
+      }
+    },
+    {
+      "command": "create_task",
+      "data": {
+        "operation_id": "create:1",
+        "conversation_id": "550e8400-e29b-41d4-a716-446655440000",
+        "goal": "finish this finite task",
+        "workspace_id": "../escape",
+        "route_id": "abi.local",
+        "permission_profile_id": "profile.one",
+        "profile_revision": 1,
+        "budget_tokens": 100,
+        "execution_kind": "read_only"
+      }
+    },
+    {
+      "command": "create_task",
+      "data": {
+        "operation_id": "create:1",
+        "conversation_id": "550e8400-e29b-41d4-a716-446655440000",
+        "goal": "finish this finite task",
+        "workspace_id": "workspace.one",
+        "route_id": "abi.local",
+        "permission_profile_id": "profile.one",
+        "profile_revision": 1,
+        "budget_tokens": 100,
+        "execution_kind": "read_only",
+        "principal": "operator"
+      }
+    },
+    {
+      "command": "create_task",
+      "data": {
+        "operation_id": "create:1",
+        "conversation_id": "550e8400-e29b-41d4-a716-446655440000",
+        "goal": "finish this finite task",
+        "workspace_id": "workspace.one",
+        "route_id": "abi.local",
+        "permission_profile_id": "profile.one",
+        "profile_revision": 1,
+        "budget_tokens": 100,
+        "execution_kind": "read_only",
+        "edition": "personal"
+      }
+    },
+    {
+      "command": "create_task",
+      "data": {
+        "operation_id": "create:1",
+        "conversation_id": "550e8400-e29b-41d4-a716-446655440000",
+        "goal": "finish this finite task",
+        "workspace_id": "workspace.one",
+        "route_id": "abi.local",
+        "permission_profile_id": "profile.one",
+        "profile_revision": 1,
+        "budget_tokens": 100,
+        "execution_kind": "read_only",
+        "task_id": "forged"
+      }
+    },
+    {
+      "command": "create_task",
+      "data": {
+        "operation_id": "create:1",
+        "conversation_id": "550e8400-e29b-41d4-a716-446655440000",
+        "goal": "finish this finite task",
+        "workspace_id": "workspace.one",
+        "route_id": "abi.local",
+        "permission_profile_id": "profile.one",
+        "profile_revision": 1,
+        "budget_tokens": 100,
+        "execution_kind": "shell"
+      }
+    },
+    {
+      "command": "cancel_task",
+      "data": {
+        "task_id": "task.one",
+        "expected_revision": 9007199254740992,
+        "operation_id": "cancel:1"
+      }
+    },
+    {
+      "command": "retry_task",
+      "data": {
+        "task_id": "task.one",
+        "expected_revision": 1,
+        "operation_id": "retry:1",
+        "expected_attempt_id": ""
+      }
+    },
+    {
+      "command": "decide_action",
+      "data": {
+        "action_id": "action.one",
+        "task_id": "task.one",
+        "attempt_id": "attempt.one",
+        "expected_revision": 1,
+        "preview_digest": "ABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB",
+        "decision_id": "decide:1",
+        "kind": "approve"
+      }
+    },
+    {
+      "command": "upsert_automation",
+      "data": {
+        "operation_id": "auto:1",
+        "automation_id": "auto.one",
+        "expected_revision": null,
+        "instruction": "Read the approved source",
+        "schedule": {
+          "kind": "daily",
+          "data": {
+            "hour": 9,
+            "minute": 30
+          }
+        },
+        "timezone": "Mars/Olympus",
+        "workspace_id": "workspace.one",
+        "route_id": "abi.local",
+        "permission_profile_id": "profile.one",
+        "profile_revision": 1,
+        "budget_tokens": 100,
+        "enabled": false
+      }
+    },
+    {
+      "command": "upsert_automation",
+      "data": {
+        "operation_id": "auto:1",
+        "automation_id": "auto.one",
+        "expected_revision": null,
+        "instruction": "Read the approved source",
+        "schedule": {
+          "kind": "daily",
+          "data": {
+            "hour": 24,
+            "minute": 0
+          }
+        },
+        "timezone": "America/New_York",
+        "workspace_id": "workspace.one",
+        "route_id": "abi.local",
+        "permission_profile_id": "profile.one",
+        "profile_revision": 1,
+        "budget_tokens": 100,
+        "enabled": false
+      }
+    },
+    {
+      "command": "set_automation_enabled",
+      "data": {
+        "automation_id": "auto.one",
+        "expected_revision": 1,
+        "operation_id": "enable:1",
+        "enabled": "true"
+      }
+    },
+    {
+      "command": "create_task",
+      "data": {
+        "title": "old placeholder"
+      }
+    },
+    {
+      "command": "retry_task",
+      "data": {
+        "resource_id": "task.one"
+      }
+    },
+    {
+      "command": "set_automation_enabled",
+      "data": {
+        "resource_id": "auto.one"
+      }
+    }
+  ]
+}

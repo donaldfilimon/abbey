@@ -28,6 +28,30 @@ const SOURCES: &[(&str, &str)] = &[
         "src/app_core/v4.rs — protocol-v4 conversations",
     ),
     (
+        "src/app_core/v4/conversation.rs",
+        "src/app_core/v4/conversation.rs — canonical conversations, turns and routes",
+    ),
+    (
+        "src/app_core/v4/admin.rs",
+        "src/app_core/v4/admin.rs — reserved unserved administrative records",
+    ),
+    (
+        "src/app_core/v4/task.rs",
+        "src/app_core/v4/task.rs — schema3 bounded contracts",
+    ),
+    (
+        "src/app_core/v4/action.rs",
+        "src/app_core/v4/action.rs — schema3 bounded contracts",
+    ),
+    (
+        "src/app_core/v4/automation.rs",
+        "src/app_core/v4/automation.rs — schema3 bounded contracts",
+    ),
+    (
+        "src/app_core/v4/envelope.rs",
+        "src/app_core/v4/envelope.rs — schema3 bounded contracts",
+    ),
+    (
         "src/app_core/v4_permission.rs",
         "src/app_core/v4_permission.rs — validated internal permission profiles",
     ),

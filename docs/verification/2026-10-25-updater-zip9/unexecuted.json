@@ -1,0 +1,30 @@
+{
+  "observed_utc": "2026-10-25T09:28:22.504021+00:00",
+  "host": {
+    "system": "Darwin",
+    "machine": "arm64"
+  },
+  "windows_native_tests": {
+    "status": "UNEXECUTED",
+    "exit": null
+  },
+  "windows_only_rust_typecheck": {
+    "status": "UNEXECUTED",
+    "exit": null,
+    "reason": "x86_64-pc-windows-msvc standard-library target installed; controller deferred full cohort cross-build due packet disk budget; native Windows execution unavailable"
+  },
+  "powershell_parse_and_execution": {
+    "status": "UNEXECUTED",
+    "exit": null,
+    "reason": "pwsh parser not installed"
+  },
+  "positive_installer_acceptance": {
+    "status": "UNEXECUTED",
+    "exit": null
+  },
+  "integrated_root_and_desktop_gates": {
+    "status": "DEFERRED",
+    "exit": null,
+    "reason": "Controller ruling: later integrated GTK-repaired cohort"
+  }
+}

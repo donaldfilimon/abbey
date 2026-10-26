@@ -1,4 +1,9 @@
-//! `abbey train` — a bounded, consent-gated, auditable self-training pipeline.
+//! `abbey train` — legacy delegated training plus a native Rust model family.
+//!
+//! `abbey train family` enters `abbey-learning`: native collection, LoRA,
+//! evaluation and exports. The documentation below describes only the retained
+//! legacy verbs and their ABI demo artifact; its fidelity score is not used to
+//! qualify a native family release.
 //!
 //! ## What this is
 //!
@@ -67,6 +72,7 @@ use std::path::{Path, PathBuf};
 /// The usage text.
 pub const USAGE: &str = "usage: abbey train <verb> [options]\n\
      verbs:\n\
+     \x20  family <verb>              native Rust model family (family --help)\n\
      \x20  plan                       read-only preview; writes nothing\n\
      \x20  prepare --consent <path>   write dataset.jsonl + manifest.json\n\
      \x20  run --consent <path>       train, evaluate, decide, record\n\
@@ -122,6 +128,27 @@ impl Outcome {
 
 /// Run `abbey train` and print its output.
 pub fn run(state: &AbbeyState, args: &[String]) -> Result<i32> {
+    if args.first().is_some_and(|arg| arg == "family") {
+        let prefix = vec!["train".to_string(), "family".to_string()];
+        let value = match abbey_learning::run(&args[1..], &prefix) {
+            Ok(value) => value,
+            Err(error) => {
+                if let Some(help) = error.downcast_ref::<clap::Error>()
+                    && matches!(
+                        help.kind(),
+                        clap::error::ErrorKind::DisplayHelp
+                            | clap::error::ErrorKind::DisplayVersion
+                    )
+                {
+                    crate::output::println(help.to_string())?;
+                    return Ok(0);
+                }
+                return Err(error);
+            }
+        };
+        crate::output::println(&serde_json::to_string(&value)?)?;
+        return Ok(0);
+    }
     let outcome = dispatch(state, args)?;
     for line in &outcome.out {
         let _ = crate::output::println(line);

@@ -5,7 +5,14 @@ Abbey: it owns no agent or memory. The current shell exposes read-only `Status`,
 `GetRun`/`RunEvents`, protocol-v3 memory summaries/model inventory/exact claims,
 and connection/bundle identity. A separate model session exposes exact signed
 model details and confirmed download/load/unload with operation-status recovery.
-A separate v4 conversation session exposes metadata CRUD/title search, authorized paged text history, configured routes, one-shot turn submission and correlated assistant content (create/rename/archive/delete + window-session drafts + polling). Turns use the daemon's fixed startup-bound provider route; this is not a generic tool-execution or inference bridge. Cancel, computer control, external tools and automation remain unavailable.
+A separate v4 conversation session exposes metadata CRUD/title search, authorized paged text history, configured routes, one-shot turn submission and correlated assistant content (create/rename/archive/delete + window-session drafts + polling). Turns use the daemon's fixed startup-bound provider route; this is not a generic tool-execution or inference bridge. Exact-pair turn cancellation is supported. Computer control, external tools and automation remain unavailable.
+Conversation and route sessions explicitly retain [schema 2](../docs/contracts/application-schema3.md)
+until schema 3 has a complete chunk/artifact reader for large transcript items.
+The SDK also supports bounded `ABS3` schema 3; this is not the desktop's current
+conversation selection, and no automatic fallback or resend occurs.
+Generated administrative types remain unserved, and do not enable task/action or
+automation execution. Large artifact transfer remains a separate runtime packet.
+
 
 Ledger status: `desktop-tauri-react` is **Proposed**. Nothing here changes that.
 The client compiles, typechecks, and reads the linked application core when no
