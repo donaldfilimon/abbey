@@ -12,7 +12,7 @@ fn protocol_v4_socket_keeps_its_envelope_for_denial_and_unsupported_authority() 
 
     let unsupported = v4_frame(&harness, TEST_BEARER);
     assert_eq!(unsupported.version, 4);
-    assert_eq!(unsupported.schema_version, crate::app_core::APP_SCHEMA_V4);
+    assert_eq!(unsupported.schema_version, crate::app_core::APP_SCHEMA_V4_CONVERSATIONS);
     match unsupported.payload {
         crate::daemon::V4ResponsePayload::Error { error } => {
             assert_eq!(error.code, crate::app_core::V4ErrorCode::UnsupportedVersion);
@@ -25,7 +25,7 @@ fn protocol_v4_socket_keeps_its_envelope_for_denial_and_unsupported_authority() 
 fn v4_frame(harness: &Harness, bearer: &str) -> crate::daemon::V4ResponseEnvelope {
     let bytes = serde_json::to_vec(&serde_json::json!({
         "version": 4,
-        "schema_version": crate::app_core::APP_SCHEMA_V4,
+        "schema_version": crate::app_core::APP_SCHEMA_V4_CONVERSATIONS,
         "request_id": "v4-socket",
         "bearer": bearer,
         "grants": {"capabilities": []},
@@ -55,4 +55,25 @@ fn v4_frame(harness: &Harness, bearer: &str) -> crate::daemon::V4ResponseEnvelop
         "a v4 frame must not decode as a legacy envelope"
     );
     serde_json::from_slice(&response).unwrap()
+}
+
+#[test]
+fn schema2_oversize_response_fallback_keeps_legacy_schema_and_framing() {
+    let id=crate::app_core::ConversationId::new();
+    let event:crate::app_core::V4Event=serde_json::from_value(serde_json::json!({"event":"conversation","data":{
+        "conversation_id":id,"id":id.to_string(),"title":"x".repeat(256),"created_at_ms":1,"updated_at_ms":1,"archived":false,"pinned":false,"sequence":1,"message_count":0
+    }})).unwrap();
+    event.validate().unwrap();
+    for limit in [4096,400] {
+        let response=crate::daemon::V4ResponseEnvelope::ok("schema2-sized".into(),event.clone());
+        assert!(serde_json::to_vec(&response).unwrap().len()>400);
+        let (mut writer,mut reader)=UnixStream::pair().unwrap();
+        unix::write_wire_response(&mut writer,unix::WireResponse::V4(response),limit).unwrap();
+        let mut prefix=[0;4];reader.read_exact(&mut prefix).unwrap();let length=u32::from_be_bytes(prefix) as usize;
+        assert!(length<=limit);let mut bytes=vec![0;length];reader.read_exact(&mut bytes).unwrap();
+        let response:crate::daemon::V4ResponseEnvelope=serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(response.schema_version,2);
+        if limit==400 { assert!(matches!(response.payload,crate::daemon::V4ResponsePayload::Error{error} if error.code==crate::app_core::V4ErrorCode::ResponseTooLarge)); }
+        else { assert!(matches!(response.payload,crate::daemon::V4ResponsePayload::Ok{..})); }
+    }
 }

@@ -1,0 +1,8 @@
+{
+  "identity": "abbey-schema3-framing-v1",
+  "magic_hex": "41425333",
+  "length_encoding": "u32-big-endian",
+  "max_payload_bytes": 65536,
+  "empty_json_object_schema3_hex": "41425333000000027b7d",
+  "empty_json_object_legacy_hex": "000000027b7d"
+}

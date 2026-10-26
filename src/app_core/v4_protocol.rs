@@ -31,6 +31,8 @@ pub enum V4Command {
     ReadContent(V4ContentQuery),
     CancelTurn(ConversationId, RunId),
     LookupTurn(ConversationId, IdempotencyKey),
+    ReadTaskEvents(V4TaskEventQuery),
+    ReadAction(V4ActionQuery),
     ListRoutes,
     SearchConversations(V4SearchQuery),
     DeleteConversation(V4ResourceQuery),
@@ -41,13 +43,15 @@ pub enum V4Command {
     ListAutomations(V4PageQuery),
     UpsertAutomation(V4AutomationUpsert),
     ReadPermissionProfile(V4ResourceQuery),
-    PutPermissionProfile(V4PermissionProfile),
+    PutPermissionProfile(V4ProfilePut),
     DecideAction(V4ActionDecision),
     ReadTask(V4ResourceQuery),
-    CancelTask(V4ResourceQuery),
-    RetryTask(V4ResourceQuery),
-    SetAutomationEnabled(V4ResourceQuery),
-    RunAutomationNow(V4ResourceQuery),
+    CancelTask(V4TaskMutation),
+    RetryTask(V4TaskRetry),
+    PauseTask(V4TaskMutation),
+    ResumeTask(V4TaskMutation),
+    SetAutomationEnabled(V4AutomationToggle),
+    RunAutomationNow(V4AutomationRun),
 }
 impl V4Command {
     pub fn validate(&self) -> Result<(), ValidationError> {
@@ -63,29 +67,51 @@ impl V4Command {
             Self::SubmitTurn(request) => request.validate(),
             Self::PutPermissionProfile(profile) => profile.validate(),
             Self::ReadContent(query) => query.validate(),
+            Self::ListTasks(q) | Self::ListAutomations(q) => q.validate(),
+            Self::CreateTask(q) => q.validate(),
+            Self::UpsertAutomation(q) => q.validate(),
+            Self::DecideAction(q) => q.validate(),
+            Self::ReadTask(q) | Self::ReadPermissionProfile(q) => q.validate(),
+            Self::CancelTask(q) | Self::PauseTask(q) | Self::ResumeTask(q) => q.validate(),
+            Self::RetryTask(q) => q.validate(),
+            Self::SetAutomationEnabled(q) => q.validate(),
+            Self::RunAutomationNow(q) => q.validate(),
+            Self::ReadTaskEvents(q) => q.validate(),
+            Self::ReadAction(q) => q.validate(),
+            Self::ExportConversation(q)
+            | Self::ArchiveConversation(q)
+            | Self::DeleteConversation(q) => q.validate(),
+            Self::RenameConversation(q) => {
+                q.conversation_id
+                    .parse::<ConversationId>()
+                    .map_err(|_| ValidationError::new("invalid v4 contract"))?;
+                super::v4::label(&q.title)
+            }
+            Self::SearchConversations(q) => q.validate(),
+            Self::ListMessages(q) => q.validate(),
+            Self::ListContentEvents(q) => q.validate(),
             Self::ReadConversation(_)
-            | Self::ExportConversation(_)
-            | Self::ArchiveConversation(_)
-            | Self::RenameConversation(_)
             | Self::CancelTurn(_, _)
             | Self::LookupTurn(_, _)
-            | Self::ListRoutes
-            | Self::SearchConversations(_)
-            | Self::DeleteConversation(_)
-            | Self::ListMessages(_)
-            | Self::ListContentEvents(_)
-            | Self::ListTasks(_)
-            | Self::CreateTask(_)
-            | Self::ListAutomations(_)
-            | Self::UpsertAutomation(_)
-            | Self::ReadPermissionProfile(_)
-            | Self::DecideAction(_)
-            | Self::ReadTask(_)
-            | Self::CancelTask(_)
-            | Self::RetryTask(_)
-            | Self::SetAutomationEnabled(_)
-            | Self::RunAutomationNow(_) => Ok(()),
+            | Self::ListRoutes => Ok(()),
         }
+    }
+    pub fn validate_for_schema(&self, schema: u16) -> Result<(), ValidationError> {
+        super::v4::ensure(matches!(
+            schema,
+            APP_SCHEMA_V4_CONVERSATIONS | APP_SCHEMA_V4
+        ))?;
+        self.validate()?;
+        if schema == APP_SCHEMA_V4_CONVERSATIONS {
+            super::v4::ensure(
+                self.required_capability()
+                    .is_none_or(|c| c.is_conversation()),
+            )?;
+            if let Self::Negotiate(r) = self {
+                super::v4::ensure(r.requested.as_slice().iter().all(|c| c.is_conversation()))?;
+            }
+        }
+        Ok(())
     }
     pub const fn required_capability(&self) -> Option<V4Capability> {
         Some(match self {
@@ -107,10 +133,15 @@ impl V4Command {
             }
             Self::CancelTurn(_, _) => V4Capability::CancelTurns,
             Self::ListRoutes => V4Capability::ReadRoutes,
-            Self::ListTasks(_) | Self::ReadTask(_) => V4Capability::ReadTasks,
-            Self::CreateTask(_) | Self::CancelTask(_) | Self::RetryTask(_) => {
-                V4Capability::WriteTasks
-            }
+            Self::ReadTaskEvents(_)
+            | Self::ReadAction(_)
+            | Self::ListTasks(_)
+            | Self::ReadTask(_) => V4Capability::ReadTasks,
+            Self::CreateTask(_)
+            | Self::CancelTask(_)
+            | Self::RetryTask(_)
+            | Self::PauseTask(_)
+            | Self::ResumeTask(_) => V4Capability::WriteTasks,
             Self::ListAutomations(_) => V4Capability::ReadAutomations,
             Self::UpsertAutomation(_)
             | Self::SetAutomationEnabled(_)
@@ -148,11 +179,14 @@ pub enum V4Event {
     TurnAccepted(V4TurnSubmission),
     ContentEvents(V4ContentPage),
     Tasks(V4TaskPage),
-    Task(V4Task),
+    Task(Box<V4Task>),
     Automations(V4AutomationPage),
-    Automation(V4Automation),
-    PermissionProfile(V4PermissionProfile),
-    ActionDecision(V4ActionDecision),
+    Automation(Box<V4Automation>),
+    AutomationRun(V4AutomationOccurrence),
+    TaskEvents(V4TaskEventPage),
+    Action(Box<V4Action>),
+    PermissionProfile(V4ProfileRevision),
+    ActionDecision(V4ActionDecisionReceipt),
     Error(V4Error),
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -181,11 +215,43 @@ impl fmt::Debug for V4Event {
 }
 
 impl V4Event {
+    pub fn validate_for_schema(&self, schema: u16) -> Result<(), ValidationError> {
+        super::v4::ensure(matches!(
+            schema,
+            APP_SCHEMA_V4 | APP_SCHEMA_V4_CONVERSATIONS
+        ))?;
+        self.validate()?;
+        if let Self::Negotiated(n) = self {
+            super::v4::ensure(n.schema_version == schema)?;
+        }
+        if schema == APP_SCHEMA_V4_CONVERSATIONS {
+            super::v4::ensure(!matches!(
+                self,
+                Self::Tasks(_)
+                    | Self::Task(_)
+                    | Self::TaskEvents(_)
+                    | Self::Action(_)
+                    | Self::Automations(_)
+                    | Self::Automation(_)
+                    | Self::AutomationRun(_)
+                    | Self::PermissionProfile(_)
+                    | Self::ActionDecision(_)
+            ))?;
+            if let Self::Negotiated(n) = self {
+                super::v4::ensure(n.granted.as_slice().iter().all(|c| c.is_conversation()))?;
+            }
+        }
+        Ok(())
+    }
     pub fn validate(&self) -> Result<(), ValidationError> {
         match self {
             Self::Negotiated(n) => {
                 super::v4::ensure(
-                    n.protocol_version == APP_PROTOCOL_V4 && n.schema_version == APP_SCHEMA_V4,
+                    n.protocol_version == APP_PROTOCOL_V4
+                        && matches!(
+                            n.schema_version,
+                            APP_SCHEMA_V4 | APP_SCHEMA_V4_CONVERSATIONS
+                        ),
                 )?;
                 n.granted.validate()
             }
@@ -215,16 +281,17 @@ impl V4Event {
                 let mut ids = std::collections::BTreeSet::new();
                 super::v4::ensure(routes.iter().all(|r| ids.insert(&r.route_id)))
             }
-            Self::Deleted(_)
-            | Self::TurnAccepted(_)
-            | Self::ContentEvents(_)
-            | Self::Tasks(_)
-            | Self::Task(_)
-            | Self::Automations(_)
-            | Self::Automation(_)
-            | Self::PermissionProfile(_)
-            | Self::ActionDecision(_) => Ok(()),
-            Self::Error(_) => Ok(()),
+            Self::Tasks(q) => q.validate(),
+            Self::Task(q) => q.validate(),
+            Self::Automations(q) => q.validate(),
+            Self::Automation(q) => q.validate(),
+            Self::AutomationRun(q) => q.validate(),
+            Self::PermissionProfile(q) => q.validate(),
+            Self::ActionDecision(q) => q.validate(),
+            Self::TaskEvents(q) => q.validate(),
+            Self::Action(q) => q.validate(),
+            Self::Deleted(_) | Self::TurnAccepted(_) | Self::ContentEvents(_) => Ok(()),
+            Self::Error(e) => e.validate(),
         }
     }
 }
@@ -252,6 +319,8 @@ impl<'de> Deserialize<'de> for V4Command {
             ReadContent(V4ContentQuery),
             CancelTurn(ConversationId, RunId),
             LookupTurn(ConversationId, IdempotencyKey),
+            ReadTaskEvents(V4TaskEventQuery),
+            ReadAction(V4ActionQuery),
             ListRoutes,
             SearchConversations(V4SearchQuery),
             DeleteConversation(V4ResourceQuery),
@@ -262,13 +331,15 @@ impl<'de> Deserialize<'de> for V4Command {
             ListAutomations(V4PageQuery),
             UpsertAutomation(V4AutomationUpsert),
             ReadPermissionProfile(V4ResourceQuery),
-            PutPermissionProfile(V4PermissionProfile),
+            PutPermissionProfile(V4ProfilePut),
             DecideAction(V4ActionDecision),
             ReadTask(V4ResourceQuery),
-            CancelTask(V4ResourceQuery),
-            RetryTask(V4ResourceQuery),
-            SetAutomationEnabled(V4ResourceQuery),
-            RunAutomationNow(V4ResourceQuery),
+            CancelTask(V4TaskMutation),
+            RetryTask(V4TaskRetry),
+            PauseTask(V4TaskMutation),
+            ResumeTask(V4TaskMutation),
+            SetAutomationEnabled(V4AutomationToggle),
+            RunAutomationNow(V4AutomationRun),
         }
         let value = match Wire::deserialize(deserializer)
             .map_err(|_| serde::de::Error::custom("invalid v4 contract"))?
@@ -286,6 +357,8 @@ impl<'de> Deserialize<'de> for V4Command {
             Wire::ReadContent(query) => Self::ReadContent(query),
             Wire::CancelTurn(conversation_id, run_id) => Self::CancelTurn(conversation_id, run_id),
             Wire::LookupTurn(conversation, key) => Self::LookupTurn(conversation, key),
+            Wire::ReadTaskEvents(q) => Self::ReadTaskEvents(q),
+            Wire::ReadAction(q) => Self::ReadAction(q),
             Wire::ListRoutes => Self::ListRoutes,
             Wire::SearchConversations(query) => Self::SearchConversations(query),
             Wire::DeleteConversation(query) => Self::DeleteConversation(query),
@@ -301,6 +374,8 @@ impl<'de> Deserialize<'de> for V4Command {
             Wire::ReadTask(query) => Self::ReadTask(query),
             Wire::CancelTask(query) => Self::CancelTask(query),
             Wire::RetryTask(query) => Self::RetryTask(query),
+            Wire::PauseTask(query) => Self::PauseTask(query),
+            Wire::ResumeTask(query) => Self::ResumeTask(query),
             Wire::SetAutomationEnabled(query) => Self::SetAutomationEnabled(query),
             Wire::RunAutomationNow(query) => Self::RunAutomationNow(query),
         };
@@ -332,11 +407,14 @@ impl<'de> Deserialize<'de> for V4Event {
             TurnAccepted(V4TurnSubmission),
             ContentEvents(V4ContentPage),
             Tasks(V4TaskPage),
-            Task(V4Task),
+            Task(Box<V4Task>),
             Automations(V4AutomationPage),
-            Automation(V4Automation),
-            PermissionProfile(V4PermissionProfile),
-            ActionDecision(V4ActionDecision),
+            Automation(Box<V4Automation>),
+            AutomationRun(V4AutomationOccurrence),
+            TaskEvents(V4TaskEventPage),
+            Action(Box<V4Action>),
+            PermissionProfile(V4ProfileRevision),
+            ActionDecision(V4ActionDecisionReceipt),
             Error(V4Error),
         }
         let value = match Wire::deserialize(deserializer)
@@ -362,6 +440,9 @@ impl<'de> Deserialize<'de> for V4Event {
             Wire::Task(value) => Self::Task(value),
             Wire::Automations(value) => Self::Automations(value),
             Wire::Automation(value) => Self::Automation(value),
+            Wire::AutomationRun(value) => Self::AutomationRun(value),
+            Wire::TaskEvents(value) => Self::TaskEvents(value),
+            Wire::Action(value) => Self::Action(value),
             Wire::PermissionProfile(value) => Self::PermissionProfile(value),
             Wire::ActionDecision(value) => Self::ActionDecision(value),
             Wire::Error(error) => Self::Error(V4Error {

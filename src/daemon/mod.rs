@@ -24,6 +24,7 @@
 mod client;
 mod config;
 mod federation;
+pub(crate) mod framing;
 mod installed_service;
 mod protocol;
 mod runtime_config;

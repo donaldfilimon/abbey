@@ -25,6 +25,8 @@ use abbey::app_core::{
     V3OperationState, V3PageQuery, V3SearchRequest, V3ToolDescriptor, V3ToolEffect, V3ToolPage,
     V4Capability,
 };
+#[path = "schema3_samples.rs"]
+mod schema3;
 use anyhow::{Context, Result};
 use std::fmt::Write as _;
 
@@ -47,6 +49,10 @@ pub fn render() -> Result<String> {
 import type {
   AppCommand,
   AppEvent,
+  V4Command,
+  V4Event,
+  V4RequestEnvelope,
+  V4ResponseEnvelope,
   CapabilitySet,
   ConnectionInfo,
   ClaimRecord,
@@ -325,6 +331,8 @@ import type {
             ],
         },
     )?;
+
+    schema3::render(&mut out)?;
 
     let mut desktop_caps = Vec::new();
     for cap in [

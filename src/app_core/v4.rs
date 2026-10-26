@@ -2,18 +2,29 @@
 use super::{ConversationId, IdempotencyKey, RunId, RunState, V4Command, ValidationError};
 use serde::{Deserialize, Serialize};
 
+#[macro_use]
+mod admin_wire;
+mod action;
 mod admin;
+mod automation;
 mod conversation;
+mod correlation;
+mod envelope;
+mod envelope_decode;
+pub use envelope::*;
+mod task;
+pub use action::*;
 pub use admin::*;
+pub use automation::*;
 pub use conversation::*;
+pub use task::*;
 
 pub const APP_PROTOCOL_V4: u16 = 4;
-/// Schema 2 publishes each route's exact model id as its own field.
-///
-/// A daemon and a client that disagree on this version fail closed at
-/// negotiation instead of one side silently ignoring a field the other
-/// requires.
-pub const APP_SCHEMA_V4: u16 = 2;
+/// Current schema. Schema 2 remains conversation-only on its original framing.
+pub const APP_SCHEMA_V4: u16 = 3;
+pub const APP_SCHEMA_V4_CONVERSATIONS: u16 = 2;
+/// Schema 3 envelope payload bound (the 8-byte framing header is separate).
+pub const MAX_V4_CONTROL_BYTES: usize = 64 * 1024;
 pub const MAX_V4_INPUT_BYTES: usize = 32 * 1024;
 pub const MAX_V4_TITLE_BYTES: usize = 256;
 pub const MAX_V4_PAGE: u16 = 50;
@@ -70,6 +81,20 @@ pub enum V4Capability {
     ReadPermissions,
     WritePermissions,
     DecideActions,
+}
+
+impl V4Capability {
+    pub const fn is_conversation(self) -> bool {
+        matches!(
+            self,
+            Self::ReadConversations
+                | Self::WriteConversations
+                | Self::SubmitTurns
+                | Self::ReadTurns
+                | Self::CancelTurns
+                | Self::ReadRoutes
+        )
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -137,6 +162,13 @@ impl<'de> Deserialize<'de> for V4Capability {
         #[derive(Deserialize)]
         #[serde(rename_all = "snake_case")]
         enum Wire {
+            ReadTasks,
+            WriteTasks,
+            ReadAutomations,
+            WriteAutomations,
+            ReadPermissions,
+            WritePermissions,
+            DecideActions,
             ReadConversations,
             WriteConversations,
             SubmitTurns,
@@ -148,6 +180,13 @@ impl<'de> Deserialize<'de> for V4Capability {
             match Wire::deserialize(deserializer)
                 .map_err(|_| serde::de::Error::custom("invalid v4 contract"))?
             {
+                Wire::ReadTasks => Self::ReadTasks,
+                Wire::WriteTasks => Self::WriteTasks,
+                Wire::ReadAutomations => Self::ReadAutomations,
+                Wire::WriteAutomations => Self::WriteAutomations,
+                Wire::ReadPermissions => Self::ReadPermissions,
+                Wire::WritePermissions => Self::WritePermissions,
+                Wire::DecideActions => Self::DecideActions,
                 Wire::ReadConversations => Self::ReadConversations,
                 Wire::WriteConversations => Self::WriteConversations,
                 Wire::SubmitTurns => Self::SubmitTurns,
@@ -179,6 +218,7 @@ impl V4Error {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct V4GrantNegotiation {
     pub protocol_version: u16,
     pub schema_version: u16,
@@ -186,6 +226,7 @@ pub struct V4GrantNegotiation {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct V4GrantRequest {
     pub supported_versions: Vec<u16>,
     pub requested: V4CapabilitySet,

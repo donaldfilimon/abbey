@@ -236,6 +236,7 @@ application and the canceled Zig rewrite must not be resumed inadvertently.
 - [Identity](docs/identity.md) and [architecture](docs/architecture.md)
 - [Runtime](docs/runtime.md), [production guidance](docs/production.md), and [security](SECURITY.md)
 - [Desktop client](desktop/README.md)
+- [Application schemas](docs/contracts/application-schema3.md)
 - [Rust 1.99.1 qualification receipt](docs/verification/2026-10-20-rust-1991.md)
 - [Repository instructions](AGENTS.md)
 - [Detailed README snapshot](README-REFERENCE-2026-10-25.md): the previous README preserved byte-for-byte from commit `8e724a8`; its counts and status prose are historical, not an independently maintained current ledger.

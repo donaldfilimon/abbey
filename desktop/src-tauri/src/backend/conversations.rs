@@ -1,4 +1,6 @@
 //! Daemon-only conversation authority. Turns execute in abbeyd, never in this process.
+//! Existing conversation payloads explicitly retain schema2 until schema3 has
+//! an owned chunk/artifact reader for legal indivisible large text items.
 use super::{Route, route};
 use crate::ipc::{IpcError, IpcErrorKind};
 use abbey::app_core::*;
@@ -9,7 +11,7 @@ fn session() -> Result<V4DaemonSession, IpcError> {
 }
 fn session_for(route: Route) -> Result<V4DaemonSession, IpcError> {
     match route {
-        Route::Daemon(client) => client.negotiate_v4(requested()).map_err(error),
+        Route::Daemon(client) => client.negotiate_v4_schema2(requested()).map_err(error),
         Route::InProcess(_) => Err(IpcError::new(
             IpcErrorKind::Rejected,
             "conversations are daemon-only",
@@ -38,9 +40,12 @@ fn requested() -> V4CapabilitySet {
 /// capability. This session asks for exactly `ReadRoutes`, so a read is
 /// refused only when the route authority itself was withheld.
 fn routes_session() -> Result<V4DaemonSession, IpcError> {
-    match route()? {
+    routes_session_for(route()?)
+}
+fn routes_session_for(route: Route) -> Result<V4DaemonSession, IpcError> {
+    match route {
         Route::Daemon(client) => client
-            .negotiate_v4(
+            .negotiate_v4_schema2(
                 V4CapabilitySet::from_sorted(vec![V4Capability::ReadRoutes])
                     .expect("canonical route grant"),
             )
@@ -181,6 +186,83 @@ mod tests {
             archived: false,
         }
     }
+    #[cfg(unix)]
+    #[test]
+    fn desktop_sessions_explicitly_select_the_preserved_conversation_schema() {
+        use abbey::daemon::{BearerSecret, DaemonClient, DaemonConfig};
+        use std::io::{Read, Write};
+        use std::os::unix::{fs::PermissionsExt, net::UnixListener};
+        for routes_only in [false, true] {
+            let root = std::path::Path::new("/tmp").join(format!(
+                "abbey-desktop-schema2-{}-{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ));
+            std::fs::create_dir(&root).unwrap();
+            std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o700)).unwrap();
+            let socket = root.join("daemon.sock");
+            let listener = UnixListener::bind(&socket).unwrap();
+            let expected = if routes_only {
+                V4CapabilitySet::from_sorted(vec![V4Capability::ReadRoutes]).unwrap()
+            } else {
+                requested()
+            };
+            let peer_expected = expected.clone();
+            let peer = std::thread::spawn(move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                stream
+                    .set_read_timeout(Some(std::time::Duration::from_secs(3)))
+                    .unwrap();
+                let mut prefix = [0; 4];
+                stream.read_exact(&mut prefix).unwrap();
+                let length = u32::from_be_bytes(prefix) as usize;
+                assert!((1..=1024 * 1024).contains(&length));
+                let mut body = vec![0; length];
+                stream.read_exact(&mut body).unwrap();
+                let request: V4RequestEnvelope = serde_json::from_slice(&body).unwrap();
+                assert_eq!(request.schema_version, APP_SCHEMA_V4_CONVERSATIONS);
+                assert!(
+                    matches!(&request.command,V4Command::Negotiate(r) if r.requested==peer_expected)
+                );
+                let response = V4ResponseEnvelope {
+                    version: 4,
+                    schema_version: APP_SCHEMA_V4_CONVERSATIONS,
+                    request_id: request.request_id,
+                    payload: V4ResponsePayload::Ok {
+                        event: V4Event::Negotiated(V4GrantNegotiation {
+                            protocol_version: 4,
+                            schema_version: APP_SCHEMA_V4_CONVERSATIONS,
+                            granted: peer_expected,
+                        }),
+                    },
+                };
+                let bytes = serde_json::to_vec(&response).unwrap();
+                stream
+                    .write_all(&(bytes.len() as u32).to_be_bytes())
+                    .unwrap();
+                stream.write_all(&bytes).unwrap();
+            });
+            let route = Route::Daemon(Box::new(DaemonClient::new(DaemonConfig::local(
+                &socket,
+                BearerSecret::parse("desktop-schema2-inert-bearer-000000001").unwrap(),
+            ))));
+            let session = if routes_only {
+                routes_session_for(route)
+            } else {
+                session_for(route)
+            }
+            .unwrap();
+            assert_eq!(session.schema_version(), 2);
+            assert_eq!(APP_SCHEMA_V4, 3);
+            assert_eq!(session.grants(), &expected);
+            peer.join().unwrap();
+            std::fs::remove_dir_all(root).unwrap();
+        }
+    }
+
     #[test]
     fn conversation_authority_is_exact_and_never_executes() {
         assert_eq!(
