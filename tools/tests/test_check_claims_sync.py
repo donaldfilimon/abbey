@@ -27,7 +27,7 @@ def fixture_manifest() -> dict[str, object]:
         "external_required": {"state": "not_required", "reason": "not required"},
     }
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "claims": [
             {
                 "id": "example-current",
@@ -203,6 +203,33 @@ class ClaimsSyncTests(unittest.TestCase):
                 invalid["claims"][0]["instead"] = instead
                 with self.assertRaisesRegex(ValueError, "replacement|invalid instead"):
                     claims_sync.normalize_manifest(invalid)
+
+    def test_old_manifest_schema_is_rejected_before_new_channel_states(self) -> None:
+        manifest = fixture_manifest()
+        manifest["schema_version"] = 2
+        with self.assertRaisesRegex(ValueError, "schema_version must be 3"):
+            claims_sync.normalize_manifest(manifest)
+
+    def test_external_channel_failure_preserves_verified_local_proof(self) -> None:
+        for state in ("failed", "expired"):
+            with self.subTest(state=state):
+                manifest = fixture_manifest()
+                claim = manifest["claims"][0]
+                claim["status"] = state
+                claim["evidence"]["local_live"] = {"state": "verified", "refs": ["local.log"]}
+                claim["evidence"]["external_required"] = {"state": state, "refs": ["external.log"]}
+                claims_sync.normalize_manifest(manifest)
+                self.assertEqual(claim["evidence"]["local_live"]["state"], "verified")
+
+    def test_current_cannot_hide_failed_or_expired_channels(self) -> None:
+        for state in ("failed", "expired"):
+            manifest = fixture_manifest()
+            claim = manifest["claims"][0]
+            claim["evidence"]["external_required"] = {"state": state, "refs": ["external.log"]}
+            with self.assertRaisesRegex(ValueError, "cannot carry"):
+                claims_sync.normalize_manifest(manifest)
+            claim["status"] = "partial"
+            claims_sync.normalize_manifest(manifest)
 
     def test_evidence_state_shapes_are_exact(self) -> None:
         invalid_states = (

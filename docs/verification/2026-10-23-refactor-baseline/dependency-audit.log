@@ -1,0 +1,64 @@
+dependency-scan: RUN cargo-audit (cargo-audit 0.22.2)
+dependency-scan: scoped exception RUSTSEC-2025-0141 (bincode 1.3.3 via syntect's compiled syntax/theme data)
+dependency-scan: scoped exception RUSTSEC-2024-0436 (paste 1.0.15 via sibling ABI's current Candle/tokenizers graph)
+    Fetching advisory database from `https://github.com/RustSec/advisory-db.git`
+      Loaded 1349 security advisories (from /Users/donald/.cargo/advisory-db)
+    Updating crates.io index
+warning: directory /Users/donald/.cargo/advisory-db is locked, waiting for up to 300 seconds for it to become available
+    Scanning Cargo.lock for vulnerabilities (816 crate dependencies)
+Crate:     tokio
+Version:   1.54.0
+Title:     Race condition in `tokio::time::Interval` on Tokio v1.54.0
+Date:      2026-10-21
+ID:        RUSTSEC-2026-0384
+URL:       https://rustsec.org/advisories/RUSTSEC-2026-0384
+Solution:  Upgrade to >=1.54.1
+
+Crate:     zip
+Version:   4.6.1
+Title:      Insecure Preservation of SUID/SGID Bits during ZIP Extraction Leading to Potential Privilege Escalation
+Date:      2026-10-09
+ID:        RUSTSEC-2026-0367
+URL:       https://rustsec.org/advisories/RUSTSEC-2026-0367
+Severity:  7.3 (high)
+Solution:  Upgrade to >=9.0.0
+
+Crate:     zip
+Version:   4.6.1
+Title:     zip: `ZipArchive::extract` creates symbolic links whose attacker-controlled targets are outside the destination directory
+Date:      2026-10-09
+ID:        RUSTSEC-2026-0368
+URL:       https://rustsec.org/advisories/RUSTSEC-2026-0368
+Solution:  Upgrade to >=9.0.0
+
+Crate:     zip
+Version:   4.6.1
+Title:     ZipStreamReader::extract() and ZipArchive::extract() apply Unix permissions through symlinks without confining the target
+Date:      2026-10-10
+ID:        RUSTSEC-2026-0369
+URL:       https://rustsec.org/advisories/RUSTSEC-2026-0369
+Severity:  9.1 (critical)
+Solution:  Upgrade to >=9.0.0
+
+Crate:     proc-macro-error
+Version:   1.0.4
+Warning:   unmaintained
+Title:     proc-macro-error is unmaintained
+Date:      2024-09-01
+ID:        RUSTSEC-2024-0370
+URL:       https://rustsec.org/advisories/RUSTSEC-2024-0370
+
+Crate:     glib
+Version:   0.18.5
+Warning:   unsound
+Title:     Unsoundness in `Iterator` and `DoubleEndedIterator` impls for `glib::VariantStrIter`
+Date:      2024-03-30
+ID:        RUSTSEC-2024-0429
+URL:       https://rustsec.org/advisories/RUSTSEC-2024-0429
+
+Crate:     tokio
+Version:   1.54.0
+Warning:   yanked
+
+error: 4 vulnerabilities found!
+error: 3 denied warnings found!

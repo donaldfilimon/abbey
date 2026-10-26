@@ -31,6 +31,26 @@ export interface V4CapabilitySet {
   capabilities: Array<V4Capability>;
 }
 
+export interface V4Error {
+  code: V4ErrorCode;
+  message: string;
+}
+
+export interface V4GrantNegotiation {
+  protocol_version: number;
+  schema_version: number;
+  granted: V4CapabilitySet;
+}
+
+export interface V4GrantRequest {
+  supported_versions: Array<number>;
+  requested: V4CapabilitySet;
+}
+
+// ---------------------------------------------------------------------------
+// src/app_core/v4/conversation.rs — canonical conversations, turns and routes
+// ---------------------------------------------------------------------------
+
 export interface V4Conversation {
   conversation_id: ConversationId;
   id: string;
@@ -123,6 +143,19 @@ export interface V4MessagePage {
   next_after: number | null;
 }
 
+export interface V4ConversationCreate {
+  title: string;
+}
+
+export interface V4ConversationRename {
+  conversation_id: string;
+  title: string;
+}
+
+// ---------------------------------------------------------------------------
+// src/app_core/v4/admin.rs — reserved unserved administrative records
+// ---------------------------------------------------------------------------
+
 export interface V4PageQuery {
   after: number;
   through: number | null;
@@ -162,11 +195,6 @@ export interface V4AutomationPage {
   next_after: number | null;
 }
 
-export interface V4Error {
-  code: V4ErrorCode;
-  message: string;
-}
-
 export type V4ActionDecisionKind =
   | "Approve"
   | "Deny";
@@ -174,17 +202,6 @@ export type V4ActionDecisionKind =
 export interface V4Action {
   resource_id: string;
   operation_id: string;
-}
-
-export interface V4GrantNegotiation {
-  protocol_version: number;
-  schema_version: number;
-  granted: V4CapabilitySet;
-}
-
-export interface V4GrantRequest {
-  supported_versions: Array<number>;
-  requested: V4CapabilitySet;
 }
 
 export type V4TurnState =
@@ -211,15 +228,6 @@ export interface V4AutomationUpsert {
 
 export type V4ScheduleKind =
   | "Cron";
-
-export interface V4ConversationCreate {
-  title: string;
-}
-
-export interface V4ConversationRename {
-  conversation_id: string;
-  title: string;
-}
 
 export interface V4ActionDecision {
   action_id: string;

@@ -1,0 +1,10 @@
+[
+  {
+    "gate": "final-root",
+    "command": [
+      "./check.sh"
+    ],
+    "exit_code": 101,
+    "elapsed_seconds": 366.37
+  }
+]

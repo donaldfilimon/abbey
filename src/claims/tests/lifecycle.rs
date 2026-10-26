@@ -222,8 +222,8 @@ fn the_manifest_declares_the_schema_that_matches_its_vocabulary() {
         "manifest must declare its own schema version"
     );
     assert_eq!(
-        CLAIMS_SCHEMA_VERSION, 2,
-        "schema 2 is the version that admits the lifecycle status vocabulary"
+        CLAIMS_SCHEMA_VERSION, 3,
+        "schema 3 admits channel-specific failed and expired evidence"
     );
 }
 
