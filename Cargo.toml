@@ -131,3 +131,8 @@ accel = ["dep:abi-gpu", "dep:abi-compute", "abi-model-runtime/metal"]
 lto = true
 codegen-units = 1
 strip = true
+
+# Exact upstream ZIP 9 repair; reviewed source/license receipt lives in
+# docs/verification/2026-10-25-updater-zip9.md.
+[patch.crates-io]
+tauri-plugin-updater = { git = "https://github.com/tauri-apps/plugins-workspace", rev = "ba98bfadc4c868c9a7e1a226c83af528e1f11b89" }
