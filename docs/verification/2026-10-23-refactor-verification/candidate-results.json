@@ -1,0 +1,18 @@
+[
+  {
+    "gate": "candidate-root",
+    "command": [
+      "./check.sh"
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 944.86
+  },
+  {
+    "gate": "candidate-desktop",
+    "command": [
+      "./desktop/check.sh"
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 44.34
+  }
+]

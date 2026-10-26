@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parent.parent
 GENERATED_LEDGER = ROOT / "docs/claims.md"
 DESKTOP_SUMMARY = ROOT / "desktop/README.md"
 DOCUMENT_MODES = {
-    ROOT / "AGENTS.md": "table",
+    ROOT / "AGENTS.md": "summary",
     ROOT / "CLAUDE.md": "summary",
     ROOT / "README.md": "summary",
     ROOT / "tasks/goals.md": "summary",
@@ -96,6 +96,16 @@ TEST_SOURCE_DIRS = (
         ".rs",
         re.compile(r"\bfn\s+([A-Za-z_][A-Za-z0-9_]*)\s*\("),
     ),
+    (
+        "crates/abbey-learning/src",
+        ".rs",
+        re.compile(r"\bfn\s+([A-Za-z_][A-Za-z0-9_]*)\s*\("),
+    ),
+    (
+        "crates/abbey-learning/tests",
+        ".rs",
+        re.compile(r"\bfn\s+([A-Za-z_][A-Za-z0-9_]*)\s*\("),
+    ),
     ("tools/tests", ".py", re.compile(r"\bdef\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(")),
 )
 
@@ -107,7 +117,8 @@ def collect_test_names(root: Path) -> set[str]:
     against its own path segment: the registry's `path::mod::name` refs often
     nest through a `tests` module that is not part of the file's own path, so
     membership (not a path-plus-grep lookup) is what "resolves somewhere
-    under src/, tests/, desktop/src-tauri/src/, or tools/tests/" means.
+    under src/, tests/, desktop/src-tauri/src/, crates/abbey-learning/{src,tests}/,
+    or tools/tests/" means.
     """
     names: set[str] = set()
     for rel_dir, extension, pattern in TEST_SOURCE_DIRS:
@@ -650,11 +661,10 @@ def canonical_manifest() -> tuple[dict[str, Any], str]:
 def normalize_manifest(raw: object) -> dict[str, Any]:
     if not isinstance(raw, dict):
         raise ValueError("claims manifest must be a JSON object")
-    # Schema 2 added the terminal lifecycle statuses to the `status` value set.
-    # A schema-1 reader has a five-way allowlist and raises on the new values,
-    # which is why the vocabulary change is a schema change and not a silent one.
-    if raw.get("schema_version") != 2:
-        raise ValueError("claims manifest schema_version must be 2")
+    # Schema 3 adds failed/expired evidence channels while preserving independent
+    # verified channels. Older readers cannot interpret those states safely.
+    if raw.get("schema_version") != 3:
+        raise ValueError("claims manifest schema_version must be 3")
     claims = raw.get("claims")
     if not isinstance(claims, list) or not claims:
         raise ValueError("claims manifest must contain a non-empty claims array")
@@ -743,6 +753,8 @@ def validate_evidence_state(claim_id: str, field: str, value: object) -> str:
     if not isinstance(value, dict) or value.get("state") not in {
         "verified",
         "required",
+        "failed",
+        "expired",
         "not_required",
     }:
         raise ValueError(f"claim {claim_id} has invalid {field} state")
@@ -789,9 +801,10 @@ def validate_claim_semantics(claims: list[dict[str, Any]], claim_ids: set[str]) 
             raise ValueError(
                 f"{status} claim {claim_id} requires implementation and test evidence"
             )
-        if status == "current" and "required" in {local_state, external_state}:
+        unsatisfied = {"required", "failed", "expired"}
+        if status == "current" and unsatisfied.intersection({local_state, external_state}):
             raise ValueError(f"Current claim {claim_id} cannot carry required evidence")
-        if status == "partial" and "required" not in {local_state, external_state}:
+        if status == "partial" and not unsatisfied.intersection({local_state, external_state}):
             raise ValueError(f"Partial claim {claim_id} must identify missing proof")
         if status == "proposed":
             if implementation or tests:
@@ -801,7 +814,7 @@ def validate_claim_semantics(claims: list[dict[str, Any]], claim_ids: set[str]) 
             if local_state != "required":
                 raise ValueError(f"Proposed claim {claim_id} must require local proof")
         if status == "blocked":
-            if external_state != "required":
+            if external_state not in unsatisfied:
                 raise ValueError(
                     f"Blocked claim {claim_id} must require external evidence"
                 )
@@ -811,7 +824,7 @@ def validate_claim_semantics(claims: list[dict[str, Any]], claim_ids: set[str]) 
                 )
         elif blocker is not None:
             raise ValueError(f"{status} claim {claim_id} cannot carry a blocker owner")
-        if status == "failed" and local_state == "verified":
+        if status == "failed" and local_state == "verified" and external_state != "failed":
             raise ValueError(
                 f"Failed claim {claim_id} cannot retain verified local evidence"
             )
@@ -825,7 +838,7 @@ def validate_claim_semantics(claims: list[dict[str, Any]], claim_ids: set[str]) 
                 raise ValueError(
                     f"Superseded claim {claim_id} must name an existing replacement"
                 )
-        if status == "expired" and local_state != "required":
+        if status == "expired" and local_state not in {"required", "expired"} and external_state != "expired":
             raise ValueError(f"Expired claim {claim_id} must require fresh local proof")
         if status == "out_of_scope" and {
             local_state,
