@@ -33,14 +33,15 @@ abbey_gate_lock "$ABBEY_TOOLCHAIN_ROOT"
 
 # Cargo resolves the workspace from the repository root: `desktop/` has no
 # manifest of its own any more, so every cargo command below runs in the same
-# workspace — and against the same lockfile — as the root gate.
-cargo_manifest="--manifest-path $ABBEY_TOOLCHAIN_ROOT/Cargo.toml"
+# workspace — and against the same lockfile — as the root gate. The manifest
+# path is quoted inline at every call: this checkout may live under a path
+# with spaces, which an unquoted flag variable word-splits into garbage.
 
 echo "== native Routes acceptance assertion tests =="
 "$ABBEY_PYTHON" -m unittest discover -s scripts/tests -p 'test_*.py'
 
 echo "== codegen drift =="
-cargo run --quiet --locked $cargo_manifest -p abbey-desktop-codegen -- --check
+cargo run --quiet --locked --manifest-path "$ABBEY_TOOLCHAIN_ROOT/Cargo.toml" -p abbey-desktop-codegen -- --check
 
 echo "== shell script syntax =="
 sh -n scripts/release-macos.sh
@@ -63,15 +64,15 @@ bun run --silent verify:bundle
 echo "== clippy (warning denied, both desktop packages) =="
 # The root gate lints the whole workspace, so this is a second, faster
 # confirmation scoped to the client alone.
-cargo clippy --quiet --locked $cargo_manifest -p abbey-desktop -p abbey-desktop-codegen --all-targets -- -D warnings
+cargo clippy --quiet --locked --manifest-path "$ABBEY_TOOLCHAIN_ROOT/Cargo.toml" -p abbey-desktop -p abbey-desktop-codegen --all-targets -- -D warnings
 
 echo "== cargo test (default edition) =="
-cargo test --quiet --locked $cargo_manifest -p abbey-desktop
+cargo test --quiet --locked --manifest-path "$ABBEY_TOOLCHAIN_ROOT/Cargo.toml" -p abbey-desktop
 
 # The personal edition is a compile-time cfg and is invisible to the run above,
 # exactly as it is for the root gate. Gate it explicitly or it rots.
 echo "== cargo test (--features personal-edition) =="
-cargo test --quiet --locked $cargo_manifest -p abbey-desktop --features personal-edition
+cargo test --quiet --locked --manifest-path "$ABBEY_TOOLCHAIN_ROOT/Cargo.toml" -p abbey-desktop --features personal-edition
 
 # `a_configured_daemon_never_falls_back_to_the_in_process_core` early-returns
 # unless a bearer is exported, so the run above can never reach its assertions —
@@ -85,12 +86,12 @@ echo "== cargo test (live scratch abbeyd — desktop reads, no in-process fallba
 
 echo "== cargo test (bearer configured — proves no silent fallback) =="
 ABBEYD_BEARER_TOKEN="$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')" \
-  cargo test --quiet --locked $cargo_manifest -p abbey-desktop a_configured_daemon_never_falls_back
+  cargo test --quiet --locked --manifest-path "$ABBEY_TOOLCHAIN_ROOT/Cargo.toml" -p abbey-desktop a_configured_daemon_never_falls_back
 
 # `cargo check` does not link. A Tauri binary that type-checks can still fail to
 # link against the platform WebView frameworks, so build a real binary.
 echo "== cargo build (links a real binary) =="
-cargo build --quiet --locked $cargo_manifest -p abbey-desktop
+cargo build --quiet --locked --manifest-path "$ABBEY_TOOLCHAIN_ROOT/Cargo.toml" -p abbey-desktop
 
 # When a staging bundle is present, prove that its updater artifact verifies
 # against the key this client pins — the same check the release workflow runs
@@ -99,7 +100,7 @@ cargo build --quiet --locked $cargo_manifest -p abbey-desktop
 if [ -f "$ABBEY_TOOLCHAIN_ROOT/target/release/bundle/macos/Abbey.app.tar.gz" ]; then
   echo "== updater artifact verifies against the pinned key =="
   ABBEY_DESKTOP_UPDATE_ARTIFACT="$ABBEY_TOOLCHAIN_ROOT/target/release/bundle/macos/Abbey.app.tar.gz" \
-    cargo test --quiet --locked $cargo_manifest -p abbey-desktop --test updater_signature
+    cargo test --quiet --locked --manifest-path "$ABBEY_TOOLCHAIN_ROOT/Cargo.toml" -p abbey-desktop --test updater_signature
 fi
 
 if [ "${ABBEY_DESKTOP_ROUTES_ACCEPTANCE:-0}" = "1" ]; then
