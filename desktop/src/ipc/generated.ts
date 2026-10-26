@@ -171,69 +171,346 @@ export interface V4ResourceQuery {
   resource_id: string;
 }
 
+export interface V4ProfileRevision {
+  profile: V4PermissionProfile;
+  revision: number;
+  digest: string;
+  revocation_epoch: number;
+}
+
+export interface V4ProfilePut {
+  operation_id: string;
+  expected_revision: number | null;
+  profile: V4PermissionProfile;
+}
+
+export interface V4ArtifactReference {
+  artifact_id: string;
+  sha256: string;
+  byte_length: number;
+  media_type: string;
+}
+
+// ---------------------------------------------------------------------------
+// src/app_core/v4/task.rs — schema3 bounded contracts
+// ---------------------------------------------------------------------------
+
+export interface V4TaskCreate {
+  operation_id: string;
+  conversation_id: ConversationId;
+  goal: string;
+  workspace_id: string;
+  route_id: string;
+  permission_profile_id: string;
+  profile_revision: number;
+  budget_tokens: number;
+  execution_kind: V4TaskExecutionKind;
+}
+
+export interface V4TaskAttempt {
+  attempt_id: string;
+  run_id: RunId;
+  ordinal: number;
+  state: RunState;
+  admitted_at_ms: number;
+  finished_at_ms: number | null;
+}
+
 export interface V4Task {
-  id: string;
+  task_id: string;
+  revision: number;
+  sequence: number;
+  conversation_id: ConversationId;
+  goal: string;
+  workspace_id: string;
+  route_id: string;
+  permission_profile_id: string;
+  profile_revision: number;
+  budget_tokens: number;
+  execution_kind: V4TaskExecutionKind;
+  state: V4TaskState;
+  current_attempt: V4TaskAttempt;
+  created_at_ms: number;
+  updated_at_ms: number;
 }
 
 export interface V4TaskPage {
+  after: number;
+  through: number;
   tasks: Array<V4Task>;
-  next_after: number | null;
 }
 
-export interface V4TaskCreate {
-  title: string;
-}
-
-export interface V4TaskState {
-}
-
-export interface V4Automation {
-}
-
-export interface V4AutomationPage {
-  automations: Array<V4Automation>;
-  next_after: number | null;
-}
-
-export type V4ActionDecisionKind =
-  | "Approve"
-  | "Deny";
-
-export interface V4Action {
-  resource_id: string;
+export interface V4TaskMutation {
+  task_id: string;
+  expected_revision: number;
   operation_id: string;
 }
 
+export interface V4TaskRetry {
+  task_id: string;
+  expected_revision: number;
+  expected_attempt_id: string;
+  operation_id: string;
+}
+
+export interface V4TaskEventQuery {
+  task_id: string;
+  page: V4PageQuery;
+}
+
+export interface V4TaskEvent {
+  task_id: string;
+  revision: number;
+  sequence: number;
+  attempt_id: string;
+  run_id: RunId;
+  timestamp_ms: number;
+  kind: V4TaskEventKind;
+}
+
+export interface V4TaskEventPage {
+  task_id: string;
+  after: number;
+  through: number;
+  events: Array<V4TaskEvent>;
+}
+
+export type V4TaskExecutionKind =
+  | "read_only"
+  | "governed";
+
+export type V4TaskState =
+  | "queued"
+  | "starting"
+  | "running"
+  | "awaiting_approval"
+  | "paused"
+  | "succeeded"
+  | "failed"
+  | "cancelled"
+  | "cancel_requested"
+  | "interrupted";
+
 export type V4TurnState =
-  | "Queued"
-  | "Starting"
-  | "Running"
-  | "Succeeded"
-  | "Failed"
-  | "Cancelled"
-  | "CancelRequested"
-  | "Interrupted";
+  | "queued"
+  | "starting"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "cancelled"
+  | "cancel_requested"
+  | "interrupted";
+
+export type V4TaskEventKind =
+  | { kind: "state_changed"; data: {
+      state: V4TaskState;
+    } }
+  | { kind: "action_changed"; data: {
+      action_id: string;
+      state: V4ActionState;
+    } }
+  | { kind: "artifact_available"; data: {
+      artifact: V4ArtifactReference;
+    } };
+
+// ---------------------------------------------------------------------------
+// src/app_core/v4/action.rs — schema3 bounded contracts
+// ---------------------------------------------------------------------------
+
+export interface V4ActionQuery {
+  task_id: string;
+  attempt_id: string;
+  action_id: string;
+}
+
+export interface V4Action {
+  action_id: string;
+  task_id: string;
+  attempt_id: string;
+  run_id: RunId;
+  revision: number;
+  operation_id: string;
+  resource_label: string;
+  preview_digest: string;
+  input_digest: string;
+  target_digest: string;
+  binding_digest: string;
+  expires_at_ms: number;
+  state: V4ActionState;
+}
+
+export interface V4ActionDecision {
+  action_id: string;
+  task_id: string;
+  attempt_id: string;
+  expected_revision: number;
+  preview_digest: string;
+  decision_id: string;
+  kind: V4ActionDecisionKind;
+}
+
+export type V4ActionDecisionKind =
+  | "approve"
+  | "deny";
+
+/**
+ * Uncertain is distinct from failure/cancellation and never grants replay.
+ */
+export type V4ActionState =
+  | "awaiting_approval"
+  | "approved"
+  | "denied"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "interrupted"
+  | "uncertain";
+
+/**
+ * Durable decision acknowledgement; applying a decision is not executing an effect.
+ */
+export interface V4ActionDecisionReceipt {
+  decision: V4ActionDecision;
+  applied_revision: number;
+}
+
+// ---------------------------------------------------------------------------
+// src/app_core/v4/automation.rs — schema3 bounded contracts
+// ---------------------------------------------------------------------------
 
 export interface V4AutomationUpsert {
+  operation_id: string;
   automation_id: string;
+  expected_revision: number | null;
   instruction: string;
   schedule: V4ScheduleKind;
-  cron: string | null;
   timezone: string;
+  workspace_id: string;
   route_id: string;
   permission_profile_id: string;
+  profile_revision: number;
   budget_tokens: number;
   enabled: boolean;
 }
 
-export type V4ScheduleKind =
-  | "Cron";
-
-export interface V4ActionDecision {
-  action_id: string;
-  decision_id: string;
-  kind: V4ActionDecisionKind;
+export interface V4Automation {
+  revision: number;
+  sequence: number;
+  spec: V4AutomationUpsert;
+  created_at_ms: number;
+  updated_at_ms: number;
+  next_run_at_ms: number | null;
 }
+
+export interface V4AutomationPage {
+  after: number;
+  through: number;
+  automations: Array<V4Automation>;
+}
+
+export interface V4AutomationToggle {
+  automation_id: string;
+  expected_revision: number;
+  operation_id: string;
+  enabled: boolean;
+}
+
+export interface V4AutomationRun {
+  automation_id: string;
+  expected_revision: number;
+  operation_id: string;
+}
+
+export interface V4AutomationOccurrence {
+  automation_id: string;
+  revision: number;
+  occurrence_id: string;
+  source: V4OccurrenceSource;
+  task_id: string;
+  attempt_id: string;
+  run_id: RunId;
+  state: V4OccurrenceState;
+}
+
+export type V4ScheduleKind =
+  | { kind: "once"; data: {
+      at_ms: number;
+    } }
+  | { kind: "hourly"; data: {
+      minute: number;
+    } }
+  | { kind: "daily"; data: {
+      hour: number;
+      minute: number;
+    } }
+  | { kind: "weekly"; data: {
+      weekday: number;
+      hour: number;
+      minute: number;
+    } }
+  | { kind: "cron"; data: {
+      expression: string;
+    } };
+
+export type V4OccurrenceState =
+  | "reserved"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "cancelled"
+  | "interrupted"
+  | "reconciliation_required";
+
+/**
+ * Manual requests and scheduled occurrences have disjoint retry identities.
+ */
+export type V4OccurrenceSource =
+  | { kind: "scheduled"; data: {
+      scheduled_at_ms: number;
+    } }
+  | { kind: "manual"; data: {
+      operation_id: string;
+    } };
+
+// ---------------------------------------------------------------------------
+// src/app_core/v4/envelope.rs — schema3 bounded contracts
+// ---------------------------------------------------------------------------
+
+/**
+ * Authenticated envelope for the separate protocol-v4 command family.
+ *
+ * This is not a v1, v2, or v3 command. Decoding it as [`RequestEnvelope`]
+ * would either fail or, worse, accept a conversation body as a legacy event.
+ */
+export interface V4RequestEnvelope {
+  version: number;
+  schema_version: number;
+  request_id: string;
+  bearer: string;
+  grants: V4CapabilitySet;
+  command: V4Command;
+}
+
+/**
+ * Authenticated response envelope for protocol v4.
+ */
+export interface V4ResponseEnvelope {
+  version: number;
+  schema_version: number;
+  request_id: string;
+  payload: V4ResponsePayload;
+}
+
+/**
+ * Successful or stable bounded protocol-v4 response.
+ */
+export type V4ResponsePayload =
+  | { outcome: "ok";
+    event: V4Event;
+  }
+  | { outcome: "error";
+    error: V4Error;
+  };
 
 // ---------------------------------------------------------------------------
 // src/app_core/v4_permission.rs — validated internal permission profiles
@@ -328,6 +605,8 @@ export type V4Command =
   | { command: "read_content"; data: V4ContentQuery }
   | { command: "cancel_turn"; data: [ConversationId, RunId] }
   | { command: "lookup_turn"; data: [ConversationId, string] }
+  | { command: "read_task_events"; data: V4TaskEventQuery }
+  | { command: "read_action"; data: V4ActionQuery }
   | { command: "list_routes" }
   | { command: "search_conversations"; data: V4SearchQuery }
   | { command: "delete_conversation"; data: V4ResourceQuery }
@@ -338,13 +617,15 @@ export type V4Command =
   | { command: "list_automations"; data: V4PageQuery }
   | { command: "upsert_automation"; data: V4AutomationUpsert }
   | { command: "read_permission_profile"; data: V4ResourceQuery }
-  | { command: "put_permission_profile"; data: V4PermissionProfile }
+  | { command: "put_permission_profile"; data: V4ProfilePut }
   | { command: "decide_action"; data: V4ActionDecision }
   | { command: "read_task"; data: V4ResourceQuery }
-  | { command: "cancel_task"; data: V4ResourceQuery }
-  | { command: "retry_task"; data: V4ResourceQuery }
-  | { command: "set_automation_enabled"; data: V4ResourceQuery }
-  | { command: "run_automation_now"; data: V4ResourceQuery };
+  | { command: "cancel_task"; data: V4TaskMutation }
+  | { command: "retry_task"; data: V4TaskRetry }
+  | { command: "pause_task"; data: V4TaskMutation }
+  | { command: "resume_task"; data: V4TaskMutation }
+  | { command: "set_automation_enabled"; data: V4AutomationToggle }
+  | { command: "run_automation_now"; data: V4AutomationRun };
 
 export type V4Event =
   | { event: "negotiated"; data: V4GrantNegotiation }
@@ -363,8 +644,11 @@ export type V4Event =
   | { event: "task"; data: V4Task }
   | { event: "automations"; data: V4AutomationPage }
   | { event: "automation"; data: V4Automation }
-  | { event: "permission_profile"; data: V4PermissionProfile }
-  | { event: "action_decision"; data: V4ActionDecision }
+  | { event: "automation_run"; data: V4AutomationOccurrence }
+  | { event: "task_events"; data: V4TaskEventPage }
+  | { event: "action"; data: V4Action }
+  | { event: "permission_profile"; data: V4ProfileRevision }
+  | { event: "action_decision"; data: V4ActionDecisionReceipt }
   | { event: "error"; data: V4Error };
 
 export type V4ErrorCode =

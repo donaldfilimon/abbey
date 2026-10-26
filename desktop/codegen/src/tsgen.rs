@@ -309,6 +309,7 @@ fn ts_type(ty: &syn::Type, known: &BTreeSet<String>) -> Result<String> {
                     0,
                 ) => Ok("number".into()),
                 ("bool", 0) => Ok("boolean".into()),
+                ("Box", 1) => ts_type(args[0], known),
                 ("Option", 1) => Ok(format!("{} | null", ts_type(args[0], known)?)),
                 ("Vec" | "VecDeque" | "BTreeSet" | "HashSet", 1) => {
                     Ok(format!("Array<{}>", ts_type(args[0], known)?))
@@ -475,6 +476,44 @@ fn render_enum(item: &syn::ItemEnum, known: &BTreeSet<String>) -> Result<String>
         return Ok(out);
     }
 
+    if let (Some(tag), None) = (container.tag.as_deref(), container.content.as_deref()) {
+        let mut arms = Vec::new();
+        for variant in &item.variants {
+            let wire = variant_wire_name(variant, &container)?;
+            match &variant.fields {
+                syn::Fields::Unit => arms.push(format!("{{ {tag}: \"{wire}\" }}")),
+                syn::Fields::Named(fields) => {
+                    let attrs = serde_attrs(&variant.attrs)?;
+                    for field in &fields.named {
+                        let field_attrs = serde_attrs(&field.attrs)?;
+                        if field_attrs.skip {
+                            continue;
+                        }
+                        let ident = field
+                            .ident
+                            .as_ref()
+                            .context("missing named field")?
+                            .to_string();
+                        let name = match field_attrs.rename {
+                            Some(n) => n,
+                            None => apply_case(&ident, attrs.rename_all.as_deref())?,
+                        };
+                        if name == tag {
+                            bail!("internally tagged field collides with tag");
+                        }
+                    }
+                    let inner = render_named_fields(&fields.named, &attrs, known, "    ")?;
+                    arms.push(format!("{{ {tag}: \"{wire}\";\n{inner}  }}"));
+                }
+                syn::Fields::Unnamed(_) => {
+                    bail!("internally tagged tuple/newtype projection is unsupported")
+                }
+            }
+        }
+        write!(out, "export type {name} =\n  | {};\n", arms.join("\n  | "))?;
+        return Ok(out);
+    }
+
     let (Some(tag), Some(content)) = (container.tag.as_deref(), container.content.as_deref())
     else {
         bail!(
@@ -573,5 +612,43 @@ mod conversion_tests {
             let bad: syn::ItemStruct = syn::parse_str(&source).unwrap();
             assert!(render_struct(&bad, &known).is_err());
         }
+    }
+}
+
+#[cfg(test)]
+mod internal_tagged_tests {
+    use super::*;
+    #[test]
+    fn named_internal_tag_is_generated_as_actual_flat_serde_object() {
+        let item = syn::parse_quote! {
+            #[derive(Serialize)] #[serde(tag="outcome",rename_all="snake_case")]
+            enum Reply { Ok { event:String }, Error { code:u16 }, Empty }
+        };
+        let actual = render_enum(&item, &BTreeSet::new()).unwrap();
+        assert!(actual.contains("{ outcome: \"ok\";"));
+        assert!(actual.contains("event: string;"));
+        assert!(actual.contains("{ outcome: \"empty\" }"));
+        assert!(!actual.contains("data:"));
+    }
+    #[test]
+    fn internally_tagged_tuples_and_collision_refuse_instead_of_guessing() {
+        let tuple = syn::parse_quote! { #[derive(Serialize)] #[serde(tag="kind")] enum Bad { Pair(u8,u8) } };
+        let collision = syn::parse_quote! { #[derive(Serialize)] #[serde(tag="kind")] enum Bad { Value { kind:String } } };
+        assert!(render_enum(&tuple, &BTreeSet::new()).is_err());
+        assert!(render_enum(&collision, &BTreeSet::new()).is_err());
+    }
+}
+
+#[cfg(test)]
+mod boxed_tests {
+    use super::*;
+    #[test]
+    fn boxed_payload_is_serde_transparent_in_projection() {
+        let item = syn::parse_quote! {#[derive(Serialize)]struct Example{payload:Box<String>}};
+        assert!(
+            render_struct(&item, &BTreeSet::new())
+                .unwrap()
+                .contains("payload: string;")
+        );
     }
 }

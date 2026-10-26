@@ -1,19 +1,44 @@
 //! Protocol-v4 dispatch. Commands stay fail-closed until a handler opts in.
 
-use crate::app_core::{APP_PROTOCOL_V4, APP_SCHEMA_V4, V4Command, V4ErrorCode, V4Event};
+#[cfg(test)]
+use crate::app_core::APP_SCHEMA_V4;
+use crate::app_core::{APP_PROTOCOL_V4, V4Command, V4ErrorCode, V4Event};
 
 use super::super::protocol::{V4RequestEnvelope, V4ResponseEnvelope};
 use super::{DaemonHandler, HandlerFailure, valid_request_id};
 
+#[cfg(test)]
 pub(super) fn dispatch_authenticated_v4<H: DaemonHandler>(
     request: V4RequestEnvelope,
     handler: &H,
+) -> V4ResponseEnvelope {
+    dispatch_authenticated_v4_framed(request, handler, super::super::framing::FrameKind::Schema3)
+}
+pub(super) fn dispatch_authenticated_v4_framed<H: DaemonHandler>(
+    request: V4RequestEnvelope,
+    handler: &H,
+    kind: super::super::framing::FrameKind,
+) -> V4ResponseEnvelope {
+    let mut response = dispatch_inner(request, handler, kind);
+    response.schema_version = kind.schema();
+    if let super::super::protocol::V4ResponsePayload::Ok {
+        event: V4Event::Negotiated(n),
+    } = &mut response.payload
+    {
+        n.schema_version = kind.schema();
+    }
+    response
+}
+fn dispatch_inner<H: DaemonHandler>(
+    request: V4RequestEnvelope,
+    handler: &H,
+    kind: super::super::framing::FrameKind,
 ) -> V4ResponseEnvelope {
     if !valid_request_id(&request.request_id) {
         return V4ResponseEnvelope::error("", V4ErrorCode::InvalidCommand, "request_id is invalid");
     }
     if request.version != APP_PROTOCOL_V4
-        || request.schema_version != APP_SCHEMA_V4
+        || request.schema_version != kind.schema()
         || !handler.supports_v4()
     {
         return V4ResponseEnvelope::error(
@@ -22,7 +47,13 @@ pub(super) fn dispatch_authenticated_v4<H: DaemonHandler>(
             "protocol version is unsupported",
         );
     }
-    if request.grants.validate().is_err()
+    if (kind == super::super::framing::FrameKind::Legacy
+        && request
+            .grants
+            .as_slice()
+            .iter()
+            .any(|c| !c.is_conversation()))
+        || request.grants.validate().is_err()
         || (matches!(request.command, V4Command::Negotiate(_))
             && !request.grants.as_slice().is_empty())
     {
@@ -48,7 +79,11 @@ pub(super) fn dispatch_authenticated_v4<H: DaemonHandler>(
             "advertised grants exceed daemon authority",
         );
     }
-    if request.command.validate().is_err() {
+    if request
+        .command
+        .validate_for_schema(request.schema_version)
+        .is_err()
+    {
         return V4ResponseEnvelope::error(
             request.request_id,
             V4ErrorCode::InvalidCommand,
@@ -74,26 +109,7 @@ pub(super) fn dispatch_authenticated_v4<H: DaemonHandler>(
 }
 
 fn event_matches(command: &V4Command, event: &V4Event) -> bool {
-    match (command, event) {
-        (V4Command::Negotiate(request), V4Event::Negotiated(negotiation)) => {
-            negotiation.protocol_version == APP_PROTOCOL_V4
-                && negotiation.schema_version == APP_SCHEMA_V4
-                && request.supported_versions.contains(&APP_PROTOCOL_V4)
-                && negotiation.granted.validate().is_ok()
-                && negotiation
-                    .granted
-                    .as_slice()
-                    .iter()
-                    .all(|capability| request.requested.contains(*capability))
-                && event.validate().is_ok()
-        }
-        (V4Command::Negotiate(_), _) | (_, V4Event::Negotiated(_)) => false,
-        (V4Command::CancelTurn(conversation_id, run_id), V4Event::TurnCancelled(c, r, _)) => {
-            c == conversation_id && r == run_id && event.validate().is_ok()
-        }
-        (V4Command::CancelTurn(_, _), _) | (_, V4Event::TurnCancelled(_, _, _)) => false,
-        (_, other) => other.validate().is_ok(),
-    }
+    command.matches_event(event)
 }
 
 fn error_code(failure: HandlerFailure) -> V4ErrorCode {
@@ -299,5 +315,26 @@ mod tests {
             }
             V4ResponsePayload::Ok { .. } => panic!("default handler must not negotiate v4"),
         }
+    }
+}
+
+#[cfg(test)]
+mod correlation_regression {
+    use super::*;
+    #[test]
+    fn new_management_requests_cannot_accept_unrelated_valid_events() {
+        let command = V4Command::ReadTask(crate::app_core::V4ResourceQuery {
+            resource_id: "task.one".into(),
+        });
+        assert!(!event_matches(&command, &V4Event::Routes(vec![])));
+    }
+    #[test]
+    fn old_conversation_read_cannot_accept_a_different_valid_resource() {
+        let first = crate::app_core::ConversationId::new();
+        let second = crate::app_core::ConversationId::new();
+        let event:V4Event=serde_json::from_value(serde_json::json!({"event":"conversation","data":{
+            "conversation_id":second,"id":second.to_string(),"title":"fixture","created_at_ms":1,"updated_at_ms":1,"archived":false,"pinned":false,"sequence":1,"message_count":0
+        }})).unwrap();
+        assert!(!event_matches(&V4Command::ReadConversation(first), &event));
     }
 }

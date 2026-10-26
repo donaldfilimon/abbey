@@ -8,6 +8,10 @@
 import type {
   AppCommand,
   AppEvent,
+  V4Command,
+  V4Event,
+  V4RequestEnvelope,
+  V4ResponseEnvelope,
   CapabilitySet,
   ConnectionInfo,
   ClaimRecord,
@@ -283,6 +287,462 @@ export const v3ToolPageFixture = {
     }
   ]
 } as const satisfies V3ToolPage;
+
+export const schema3Command0 = {
+  "command": "create_task",
+  "data": {
+    "operation_id": "create:1",
+    "conversation_id": "550e8400-e29b-41d4-a716-446655440000",
+    "goal": "finish this finite task",
+    "workspace_id": "workspace.one",
+    "route_id": "abi.local",
+    "permission_profile_id": "profile.one",
+    "profile_revision": 1,
+    "budget_tokens": 100,
+    "execution_kind": "read_only"
+  }
+} as const satisfies V4Command;
+
+export const schema3Command1 = {
+  "command": "cancel_task",
+  "data": {
+    "task_id": "task.one",
+    "expected_revision": 1,
+    "operation_id": "cancel:1"
+  }
+} as const satisfies V4Command;
+
+export const schema3Command2 = {
+  "command": "retry_task",
+  "data": {
+    "task_id": "task.one",
+    "expected_revision": 1,
+    "expected_attempt_id": "attempt.one",
+    "operation_id": "retry:1"
+  }
+} as const satisfies V4Command;
+
+export const schema3Command3 = {
+  "command": "read_task",
+  "data": {
+    "resource_id": "task.one"
+  }
+} as const satisfies V4Command;
+
+export const schema3Command4 = {
+  "command": "read_task_events",
+  "data": {
+    "task_id": "task.one",
+    "page": {
+      "after": 0,
+      "through": null,
+      "limit": 50
+    }
+  }
+} as const satisfies V4Command;
+
+export const schema3Command5 = {
+  "command": "read_action",
+  "data": {
+    "task_id": "task.one",
+    "attempt_id": "attempt.one",
+    "action_id": "action.one"
+  }
+} as const satisfies V4Command;
+
+export const schema3Command6 = {
+  "command": "decide_action",
+  "data": {
+    "action_id": "action.one",
+    "task_id": "task.one",
+    "attempt_id": "attempt.one",
+    "expected_revision": 1,
+    "preview_digest": "abababababababababababababababababababababababababababababababab",
+    "decision_id": "decide:1",
+    "kind": "approve"
+  }
+} as const satisfies V4Command;
+
+export const schema3Command7 = {
+  "command": "upsert_automation",
+  "data": {
+    "operation_id": "auto:1",
+    "automation_id": "auto.one",
+    "expected_revision": null,
+    "instruction": "Read the approved source",
+    "schedule": {
+      "kind": "daily",
+      "data": {
+        "hour": 9,
+        "minute": 30
+      }
+    },
+    "timezone": "America/New_York",
+    "workspace_id": "workspace.one",
+    "route_id": "abi.local",
+    "permission_profile_id": "profile.one",
+    "profile_revision": 1,
+    "budget_tokens": 100,
+    "enabled": false
+  }
+} as const satisfies V4Command;
+
+export const schema3Command8 = {
+  "command": "set_automation_enabled",
+  "data": {
+    "automation_id": "auto.one",
+    "expected_revision": 1,
+    "operation_id": "enable:1",
+    "enabled": true
+  }
+} as const satisfies V4Command;
+
+export const schema3Command9 = {
+  "command": "run_automation_now",
+  "data": {
+    "automation_id": "auto.one",
+    "expected_revision": 1,
+    "operation_id": "run:1"
+  }
+} as const satisfies V4Command;
+
+export const schema3Command10 = {
+  "command": "put_permission_profile",
+  "data": {
+    "operation_id": "profile:1",
+    "expected_revision": null,
+    "profile": {
+      "profile_id": "profile.one",
+      "tool_ids": [
+        "read.file"
+      ],
+      "application_ids": [],
+      "filesystem_roots": [],
+      "browser_domains": [],
+      "max_runtime_ms": 1000,
+      "max_output_bytes": 1024
+    }
+  }
+} as const satisfies V4Command;
+
+export const schema3Command11 = {
+  "command": "pause_task",
+  "data": {
+    "task_id": "task.one",
+    "expected_revision": 1,
+    "operation_id": "pause_task:1"
+  }
+} as const satisfies V4Command;
+
+export const schema3Command12 = {
+  "command": "resume_task",
+  "data": {
+    "task_id": "task.one",
+    "expected_revision": 1,
+    "operation_id": "resume_task:1"
+  }
+} as const satisfies V4Command;
+
+export const schema3Event0 = {
+  "event": "task",
+  "data": {
+    "task_id": "task.one",
+    "revision": 1,
+    "sequence": 1,
+    "conversation_id": "550e8400-e29b-41d4-a716-446655440000",
+    "goal": "finish this finite task",
+    "workspace_id": "workspace.one",
+    "route_id": "abi.local",
+    "permission_profile_id": "profile.one",
+    "profile_revision": 1,
+    "budget_tokens": 100,
+    "execution_kind": "read_only",
+    "state": "queued",
+    "current_attempt": {
+      "attempt_id": "attempt.one",
+      "run_id": "550e8400-e29b-41d4-a716-446655440001",
+      "ordinal": 1,
+      "state": "queued",
+      "admitted_at_ms": 1,
+      "finished_at_ms": null
+    },
+    "created_at_ms": 1,
+    "updated_at_ms": 1
+  }
+} as const satisfies V4Event;
+
+export const schema3Event1 = {
+  "event": "tasks",
+  "data": {
+    "after": 0,
+    "through": 1,
+    "tasks": [
+      {
+        "task_id": "task.one",
+        "revision": 1,
+        "sequence": 1,
+        "conversation_id": "550e8400-e29b-41d4-a716-446655440000",
+        "goal": "finish this finite task",
+        "workspace_id": "workspace.one",
+        "route_id": "abi.local",
+        "permission_profile_id": "profile.one",
+        "profile_revision": 1,
+        "budget_tokens": 100,
+        "execution_kind": "read_only",
+        "state": "queued",
+        "current_attempt": {
+          "attempt_id": "attempt.one",
+          "run_id": "550e8400-e29b-41d4-a716-446655440001",
+          "ordinal": 1,
+          "state": "queued",
+          "admitted_at_ms": 1,
+          "finished_at_ms": null
+        },
+        "created_at_ms": 1,
+        "updated_at_ms": 1
+      }
+    ]
+  }
+} as const satisfies V4Event;
+
+export const schema3Event2 = {
+  "event": "task_events",
+  "data": {
+    "task_id": "task.one",
+    "after": 0,
+    "through": 1,
+    "events": [
+      {
+        "task_id": "task.one",
+        "revision": 1,
+        "sequence": 1,
+        "attempt_id": "attempt.one",
+        "run_id": "550e8400-e29b-41d4-a716-446655440001",
+        "timestamp_ms": 1,
+        "kind": {
+          "kind": "state_changed",
+          "data": {
+            "state": "queued"
+          }
+        }
+      }
+    ]
+  }
+} as const satisfies V4Event;
+
+export const schema3Event3 = {
+  "event": "action",
+  "data": {
+    "action_id": "action.one",
+    "task_id": "task.one",
+    "attempt_id": "attempt.one",
+    "run_id": "550e8400-e29b-41d4-a716-446655440001",
+    "revision": 1,
+    "operation_id": "read.file",
+    "resource_label": "approved source",
+    "preview_digest": "abababababababababababababababababababababababababababababababab",
+    "input_digest": "abababababababababababababababababababababababababababababababab",
+    "target_digest": "abababababababababababababababababababababababababababababababab",
+    "binding_digest": "abababababababababababababababababababababababababababababababab",
+    "expires_at_ms": 100,
+    "state": "awaiting_approval"
+  }
+} as const satisfies V4Event;
+
+export const schema3Event4 = {
+  "event": "action_decision",
+  "data": {
+    "decision": {
+      "action_id": "action.one",
+      "task_id": "task.one",
+      "attempt_id": "attempt.one",
+      "expected_revision": 1,
+      "preview_digest": "abababababababababababababababababababababababababababababababab",
+      "decision_id": "decide:1",
+      "kind": "approve"
+    },
+    "applied_revision": 2
+  }
+} as const satisfies V4Event;
+
+export const schema3Event5 = {
+  "event": "automation",
+  "data": {
+    "revision": 1,
+    "sequence": 1,
+    "spec": {
+      "operation_id": "auto:1",
+      "automation_id": "auto.one",
+      "expected_revision": null,
+      "instruction": "Read the approved source",
+      "schedule": {
+        "kind": "daily",
+        "data": {
+          "hour": 9,
+          "minute": 30
+        }
+      },
+      "timezone": "America/New_York",
+      "workspace_id": "workspace.one",
+      "route_id": "abi.local",
+      "permission_profile_id": "profile.one",
+      "profile_revision": 1,
+      "budget_tokens": 100,
+      "enabled": false
+    },
+    "created_at_ms": 1,
+    "updated_at_ms": 1,
+    "next_run_at_ms": null
+  }
+} as const satisfies V4Event;
+
+export const schema3Event6 = {
+  "event": "permission_profile",
+  "data": {
+    "profile": {
+      "profile_id": "profile.one",
+      "tool_ids": [
+        "read.file"
+      ],
+      "application_ids": [],
+      "filesystem_roots": [],
+      "browser_domains": [],
+      "max_runtime_ms": 1000,
+      "max_output_bytes": 1024
+    },
+    "revision": 1,
+    "digest": "abababababababababababababababababababababababababababababababab",
+    "revocation_epoch": 0
+  }
+} as const satisfies V4Event;
+
+export const schema3Event7 = {
+  "event": "automation_run",
+  "data": {
+    "automation_id": "auto.one",
+    "revision": 1,
+    "occurrence_id": "occurrence.one",
+    "source": {
+      "kind": "manual",
+      "data": {
+        "operation_id": "run:1"
+      }
+    },
+    "task_id": "task.one",
+    "attempt_id": "attempt.one",
+    "run_id": "550e8400-e29b-41d4-a716-446655440001",
+    "state": "reserved"
+  }
+} as const satisfies V4Event;
+
+export const schema2EnvelopeRequest = {
+  "version": 4,
+  "schema_version": 2,
+  "request_id": "old-conversation-client",
+  "bearer": "inert-fixture-bearer-0000000000001",
+  "grants": {
+    "capabilities": []
+  },
+  "command": {
+    "command": "negotiate",
+    "data": {
+      "supported_versions": [
+        4
+      ],
+      "requested": {
+        "capabilities": [
+          "read_conversations"
+        ]
+      }
+    }
+  }
+} as const satisfies V4RequestEnvelope;
+
+export const schema2EnvelopeResponse = {
+  "version": 4,
+  "schema_version": 2,
+  "request_id": "old-conversation-client",
+  "payload": {
+    "outcome": "ok",
+    "event": {
+      "event": "negotiated",
+      "data": {
+        "protocol_version": 4,
+        "schema_version": 2,
+        "granted": {
+          "capabilities": [
+            "read_conversations"
+          ]
+        }
+      }
+    }
+  }
+} as const satisfies V4ResponseEnvelope;
+
+export const schema3EnvelopeRequest = {
+  "version": 4,
+  "schema_version": 3,
+  "request_id": "old-conversation-client",
+  "bearer": "inert-fixture-bearer-0000000000001",
+  "grants": {
+    "capabilities": []
+  },
+  "command": {
+    "command": "create_task",
+    "data": {
+      "operation_id": "create:1",
+      "conversation_id": "550e8400-e29b-41d4-a716-446655440000",
+      "goal": "finish this finite task",
+      "workspace_id": "workspace.one",
+      "route_id": "abi.local",
+      "permission_profile_id": "profile.one",
+      "profile_revision": 1,
+      "budget_tokens": 100,
+      "execution_kind": "read_only"
+    }
+  }
+} as const satisfies V4RequestEnvelope;
+
+export const schema3EnvelopeResponse = {
+  "version": 4,
+  "schema_version": 3,
+  "request_id": "old-conversation-client",
+  "payload": {
+    "outcome": "ok",
+    "event": {
+      "event": "task",
+      "data": {
+        "task_id": "task.one",
+        "revision": 1,
+        "sequence": 1,
+        "conversation_id": "550e8400-e29b-41d4-a716-446655440000",
+        "goal": "finish this finite task",
+        "workspace_id": "workspace.one",
+        "route_id": "abi.local",
+        "permission_profile_id": "profile.one",
+        "profile_revision": 1,
+        "budget_tokens": 100,
+        "execution_kind": "read_only",
+        "state": "queued",
+        "current_attempt": {
+          "attempt_id": "attempt.one",
+          "run_id": "550e8400-e29b-41d4-a716-446655440001",
+          "ordinal": 1,
+          "state": "queued",
+          "admitted_at_ms": 1,
+          "finished_at_ms": null
+        },
+        "created_at_ms": 1,
+        "updated_at_ms": 1
+      }
+    }
+  }
+} as const satisfies V4ResponseEnvelope;
+
+/** Schema3 requires ABS3 framing; compatibility selection is explicit. */
+export const APPLICATION_SCHEMA = 3 as const;
+export const CONVERSATION_COMPATIBILITY_SCHEMA = 2 as const;
+export const MAX_CONTROL_PAYLOAD_BYTES = 65536 as const;
 
 /** Capabilities consumed by the desktop's read-only Tauri bridge. */
 export const DESKTOP_READ_CAPABILITIES = ["read_status","read_claims","read_routes","read_run","read_run_events","read_memory","read_models","read_claims_by_id","list_tools","read_conversations"] as const;

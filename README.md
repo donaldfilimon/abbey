@@ -16,7 +16,7 @@ abi is the runtime/WDBX; Abbey is the companion that will not claim what the led
 
 Personas · Max/Gemma · parallel · OS control · skills/plugins · self-learn · unique build stamp.
 
-Docs: [identity](docs/identity.md) · [architecture](docs/architecture.md) · [production](docs/production.md).
+Docs: [identity](docs/identity.md) · [architecture](docs/architecture.md) · [production](docs/production.md) · [application schemas](docs/contracts/application-schema3.md).
 
 Claude Code: load the [Abbey plugin](plugins/abbey/README.md) with
 `claude --plugin-dir ./plugins/abbey` for runtime status, claims, doctor, memory search, and bounded daemon runs.
