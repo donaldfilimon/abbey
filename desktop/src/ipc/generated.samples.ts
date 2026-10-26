@@ -740,8 +740,9 @@ export const schema3EnvelopeResponse = {
 } as const satisfies V4ResponseEnvelope;
 
 /** Schema3 requires ABS3 framing; compatibility selection is explicit. */
-export const APPLICATION_SCHEMA = 3 as const;
+export const SUPPORTED_APPLICATION_SCHEMA = 3 as const;
 export const CONVERSATION_COMPATIBILITY_SCHEMA = 2 as const;
+export const DESKTOP_CONVERSATION_SCHEMA = 2 as const;
 export const MAX_CONTROL_PAYLOAD_BYTES = 65536 as const;
 
 /** Capabilities consumed by the desktop's read-only Tauri bridge. */

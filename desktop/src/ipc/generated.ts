@@ -479,7 +479,7 @@ export type V4OccurrenceSource =
 /**
  * Authenticated envelope for the separate protocol-v4 command family.
  *
- * This is not a v1, v2, or v3 command. Decoding it as [`RequestEnvelope`]
+ * This is not a v1, v2, or v3 command. Decoding it as [`crate::daemon::RequestEnvelope`]
  * would either fail or, worse, accept a conversation body as a legacy event.
  */
 export interface V4RequestEnvelope {
