@@ -1,0 +1,2159 @@
+{
+  "schema": 1,
+  "publication": "Portable summary; exact original commands, inventories and logs retained in ignored raw paths. $REPO and $RESOLVED_OPENSSL are publication substitutions. Scan pass under existing policy exceptions is not a no-ignore consumer pass. Interrupted gates are not passes.",
+  "checks": [
+    {
+      "name": "audit",
+      "command": [
+        "env",
+        "ABBEY_DEP_SCAN_REQUIRE=1",
+        "./tools/security/run-dep-scan.sh"
+      ],
+      "environment": {
+        "CARGO_BUILD_JOBS": "1",
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_PROFILE_DEV_DEBUG": "0",
+        "CARGO_PROFILE_TEST_DEBUG": "0",
+        "ABI_WDBX_PATH": ":memory:"
+      },
+      "start_utc": "2026-10-26T12:00:03.938355+00:00",
+      "end_utc": "2026-10-26T12:00:07.373648+00:00",
+      "exit": 0,
+      "output_sha256": "4f341ee5c7a53ed215abcac1094380e4f639a4095ff91e471b616af8933e2923",
+      "raw_receipt": ".work/security-qualification-20261026/audit.json",
+      "raw_receipt_sha256": "f342a0dd05bc8409e503a7f4984cd359705b45a89034f4368978bbaf9e16373c",
+      "raw_output": ".work/security-qualification-20261026/audit.log",
+      "source_inventory_sha256_before": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "source_inventory_sha256_after": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "source_inventory_present": false,
+      "source_inventory_stable": true,
+      "locks_and_pins_before": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "locks_and_pins_after": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "repositories_before": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tools/tests/smoke_tui_slash_pty.py\n?? src/ralph/\n",
+        "diff_sha256": "b838967fe4c8d98c62ff0c58c881403bd5f058a74a3df4ba68db4b2e9ee6b0d5",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/spatial3d/mod.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n",
+          "diff_sha256": "0288d17db153893e8aafdf03767dc94350d841cc1330d4155d11ed653d395422"
+        }
+      },
+      "repositories_after": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tools/tests/smoke_tui_slash_pty.py\n?? src/ralph/\n",
+        "diff_sha256": "b838967fe4c8d98c62ff0c58c881403bd5f058a74a3df4ba68db4b2e9ee6b0d5",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/spatial3d/mod.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n",
+          "diff_sha256": "0288d17db153893e8aafdf03767dc94350d841cc1330d4155d11ed653d395422"
+        }
+      }
+    },
+    {
+      "name": "clone",
+      "command": [
+        "env",
+        "CARGO_TARGET_DIR=$REPO/.work/security-qualification-20261026/target-vendor",
+        "./tools/cargo.sh",
+        "test",
+        "--locked",
+        "--manifest-path",
+        "vendor/Cargo.toml",
+        "-p",
+        "glib-macros",
+        "--test",
+        "clone"
+      ],
+      "environment": {
+        "CARGO_BUILD_JOBS": "1",
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_PROFILE_DEV_DEBUG": "0",
+        "CARGO_PROFILE_TEST_DEBUG": "0",
+        "ABI_WDBX_PATH": ":memory:"
+      },
+      "start_utc": "2026-10-26T12:01:21.850928+00:00",
+      "end_utc": "2026-10-26T12:04:43.272498+00:00",
+      "exit": 0,
+      "output_sha256": "3a25dd3bfc2501ee1827c1dc819fa450384c26ec2b01485dab9490aa35b89159",
+      "raw_receipt": ".work/security-qualification-20261026/clone.json",
+      "raw_receipt_sha256": "7725d7612e03be42f8f593767247ba3f6df05f903720369a68e7b07fd7a98698",
+      "raw_output": ".work/security-qualification-20261026/clone.log",
+      "source_inventory_sha256_before": "e5debad37ccc3a01e96cddc3dc1694b13dda5febf6761d7fdf117141e8227ba6",
+      "source_inventory_sha256_after": "e5debad37ccc3a01e96cddc3dc1694b13dda5febf6761d7fdf117141e8227ba6",
+      "source_inventory_present": true,
+      "source_inventory_stable": true,
+      "locks_and_pins_before": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "locks_and_pins_after": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "repositories_before": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tools/tests/smoke_tui_slash_pty.py\n?? src/ralph/\n",
+        "diff_sha256": "7d03bc35cd1c42608500e0b7f195c13138bf3139f49e0b0f5f09d0833326d1ff",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/spatial3d/mod.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n",
+          "diff_sha256": "0288d17db153893e8aafdf03767dc94350d841cc1330d4155d11ed653d395422"
+        }
+      },
+      "repositories_after": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tools/tests/smoke_tui_slash_pty.py\n?? docs/verification/2026-10-26-dependency-security-qualification.md\n?? src/ralph/\n",
+        "diff_sha256": "7d03bc35cd1c42608500e0b7f195c13138bf3139f49e0b0f5f09d0833326d1ff",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/spatial3d/mod.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n",
+          "diff_sha256": "0288d17db153893e8aafdf03767dc94350d841cc1330d4155d11ed653d395422"
+        }
+      }
+    },
+    {
+      "name": "completion-coverage",
+      "command": [
+        "python3",
+        "tools/check_completion.py"
+      ],
+      "environment": {
+        "CARGO_BUILD_JOBS": "1",
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_PROFILE_DEV_DEBUG": "0",
+        "CARGO_PROFILE_TEST_DEBUG": "0",
+        "ABI_WDBX_PATH": ":memory:"
+      },
+      "start_utc": "2026-10-26T12:07:40.417731+00:00",
+      "end_utc": "2026-10-26T12:07:40.834675+00:00",
+      "exit": 0,
+      "output_sha256": "500c7ea50b9cf07dabc128d85d27778a38dd39d7815360486d66e1ef05078808",
+      "raw_receipt": ".work/security-qualification-20261026/completion-coverage.json",
+      "raw_receipt_sha256": "7200045174c791a6546ffca4f587a67c61446e75361bd3ef611a51f838b490eb",
+      "raw_output": ".work/security-qualification-20261026/completion-coverage.log",
+      "source_inventory_sha256_before": "e5debad37ccc3a01e96cddc3dc1694b13dda5febf6761d7fdf117141e8227ba6",
+      "source_inventory_sha256_after": "e5debad37ccc3a01e96cddc3dc1694b13dda5febf6761d7fdf117141e8227ba6",
+      "source_inventory_present": true,
+      "source_inventory_stable": true,
+      "locks_and_pins_before": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "locks_and_pins_after": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "repositories_before": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tasks/completion.json\n M tools/tests/smoke_tui_slash_pty.py\n?? docs/verification/2026-10-26-dependency-security-qualification.md\n?? src/ralph/\n",
+        "diff_sha256": "13b7b49f40ec5e22a82daf2cc4f79fcfb30678682b19d0249dcdac4315cfea37",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/spatial3d/mod.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n",
+          "diff_sha256": "0288d17db153893e8aafdf03767dc94350d841cc1330d4155d11ed653d395422"
+        }
+      },
+      "repositories_after": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tasks/completion.json\n M tools/tests/smoke_tui_slash_pty.py\n?? docs/verification/2026-10-26-dependency-security-qualification.md\n?? src/ralph/\n",
+        "diff_sha256": "13b7b49f40ec5e22a82daf2cc4f79fcfb30678682b19d0249dcdac4315cfea37",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/spatial3d/mod.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n",
+          "diff_sha256": "0288d17db153893e8aafdf03767dc94350d841cc1330d4155d11ed653d395422"
+        }
+      }
+    },
+    {
+      "name": "completion-final",
+      "command": [
+        "python3",
+        "tools/check_completion.py"
+      ],
+      "environment": {
+        "CARGO_BUILD_JOBS": "1",
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_PROFILE_DEV_DEBUG": "0",
+        "CARGO_PROFILE_TEST_DEBUG": "0",
+        "ABI_WDBX_PATH": ":memory:"
+      },
+      "start_utc": "2026-10-26T13:05:57.783380+00:00",
+      "end_utc": "2026-10-26T13:05:58.277936+00:00",
+      "exit": 0,
+      "output_sha256": "500c7ea50b9cf07dabc128d85d27778a38dd39d7815360486d66e1ef05078808",
+      "raw_receipt": ".work/security-qualification-20261026/completion-final.json",
+      "raw_receipt_sha256": "0a9f0aa1773b872d80cfc1d6d7746954c826ad8d2d9221540da36afda07f16ea",
+      "raw_output": ".work/security-qualification-20261026/completion-final.log",
+      "source_inventory_sha256_before": "babdadda91a6a5fabcd510225a28aec87e6fceda357e2e38de91aebd4c957ba6",
+      "source_inventory_sha256_after": "babdadda91a6a5fabcd510225a28aec87e6fceda357e2e38de91aebd4c957ba6",
+      "source_inventory_present": true,
+      "source_inventory_stable": true,
+      "locks_and_pins_before": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "locks_and_pins_after": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "repositories_before": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tasks/completion.json\n M tools/tests/smoke_tui_slash_pty.py\n?? docs/verification/2026-10-26-dependency-security-qualification.md\n?? docs/verification/2026-10-26-dependency-security-qualification/\n?? src/ralph/\n",
+        "diff_sha256": "61a8f2b9cfd5459a5db5bd8d06ea7a36cbeec5107b64af2800db6e0759c7d340",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/bin/wdbx/typed.rs\n M crates/abi-wdbx/src/spatial3d/mod.rs\n M crates/abi-wdbx/src/v2/types.rs\n M crates/abi-wdbx/tests/typed_cli.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/execution/2026-10-26-typed-history-validation.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-typed-history-validation.md\n",
+          "diff_sha256": "ea55f864cd929751291f918aede13fa77d7d8a368841a5c85bea8b5ea9659aeb"
+        }
+      },
+      "repositories_after": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tasks/completion.json\n M tools/tests/smoke_tui_slash_pty.py\n?? docs/verification/2026-10-26-dependency-security-qualification.md\n?? docs/verification/2026-10-26-dependency-security-qualification/\n?? src/ralph/\n",
+        "diff_sha256": "61a8f2b9cfd5459a5db5bd8d06ea7a36cbeec5107b64af2800db6e0759c7d340",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/bin/wdbx/typed.rs\n M crates/abi-wdbx/src/spatial3d/mod.rs\n M crates/abi-wdbx/src/v2/types.rs\n M crates/abi-wdbx/tests/typed_cli.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/execution/2026-10-26-typed-history-validation.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-typed-history-validation.md\n",
+          "diff_sha256": "ea55f864cd929751291f918aede13fa77d7d8a368841a5c85bea8b5ea9659aeb"
+        }
+      }
+    },
+    {
+      "name": "consumer-strict-audit",
+      "command": [
+        "cargo",
+        "audit",
+        "--deny",
+        "warnings",
+        "--no-fetch"
+      ],
+      "environment": {
+        "CARGO_BUILD_JOBS": "1",
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_PROFILE_DEV_DEBUG": "0",
+        "CARGO_PROFILE_TEST_DEBUG": "0",
+        "ABI_WDBX_PATH": ":memory:"
+      },
+      "start_utc": "2026-10-26T12:07:38.084501+00:00",
+      "end_utc": "2026-10-26T12:07:40.029891+00:00",
+      "exit": 1,
+      "output_sha256": "27f907128d46a94427090804f452feaabbaf4516a5baeab47f107892dca58535",
+      "raw_receipt": ".work/security-qualification-20261026/consumer-strict-audit.json",
+      "raw_receipt_sha256": "0fe6d5eb2f4ec2b2da58073bc8fb718f9cdc60c775e923377b51b8a8f4a3248a",
+      "raw_output": ".work/security-qualification-20261026/consumer-strict-audit.log",
+      "source_inventory_sha256_before": "e5debad37ccc3a01e96cddc3dc1694b13dda5febf6761d7fdf117141e8227ba6",
+      "source_inventory_sha256_after": "e5debad37ccc3a01e96cddc3dc1694b13dda5febf6761d7fdf117141e8227ba6",
+      "source_inventory_present": true,
+      "source_inventory_stable": true,
+      "locks_and_pins_before": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "locks_and_pins_after": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "repositories_before": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tasks/completion.json\n M tools/tests/smoke_tui_slash_pty.py\n?? docs/verification/2026-10-26-dependency-security-qualification.md\n?? src/ralph/\n",
+        "diff_sha256": "13b7b49f40ec5e22a82daf2cc4f79fcfb30678682b19d0249dcdac4315cfea37",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/spatial3d/mod.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n",
+          "diff_sha256": "0288d17db153893e8aafdf03767dc94350d841cc1330d4155d11ed653d395422"
+        }
+      },
+      "repositories_after": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tasks/completion.json\n M tools/tests/smoke_tui_slash_pty.py\n?? docs/verification/2026-10-26-dependency-security-qualification.md\n?? src/ralph/\n",
+        "diff_sha256": "13b7b49f40ec5e22a82daf2cc4f79fcfb30678682b19d0249dcdac4315cfea37",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/spatial3d/mod.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n",
+          "diff_sha256": "0288d17db153893e8aafdf03767dc94350d841cc1330d4155d11ed653d395422"
+        }
+      }
+    },
+    {
+      "name": "controls",
+      "command": [
+        "python3",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tools/security/tests",
+        "-p",
+        "test_gtk_vendor.py"
+      ],
+      "environment": {
+        "CARGO_BUILD_JOBS": "1",
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_PROFILE_DEV_DEBUG": "0",
+        "CARGO_PROFILE_TEST_DEBUG": "0",
+        "ABI_WDBX_PATH": ":memory:"
+      },
+      "start_utc": "2026-10-26T12:00:09.821165+00:00",
+      "end_utc": "2026-10-26T12:00:11.826193+00:00",
+      "exit": 0,
+      "output_sha256": "95ccb1d57408f8ef3e502d413036ad0fc6a9a00e80865ed231fec431796d22b4",
+      "raw_receipt": ".work/security-qualification-20261026/controls.json",
+      "raw_receipt_sha256": "efa023f52126bb95985a24446c5060e16d4e4831c6c2e0e4651b979d1c1a47ee",
+      "raw_output": ".work/security-qualification-20261026/controls.log",
+      "source_inventory_sha256_before": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "source_inventory_sha256_after": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "source_inventory_present": false,
+      "source_inventory_stable": true,
+      "locks_and_pins_before": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "locks_and_pins_after": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "repositories_before": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tools/tests/smoke_tui_slash_pty.py\n?? src/ralph/\n",
+        "diff_sha256": "b838967fe4c8d98c62ff0c58c881403bd5f058a74a3df4ba68db4b2e9ee6b0d5",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/spatial3d/mod.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n",
+          "diff_sha256": "0288d17db153893e8aafdf03767dc94350d841cc1330d4155d11ed653d395422"
+        }
+      },
+      "repositories_after": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tools/tests/smoke_tui_slash_pty.py\n?? src/ralph/\n",
+        "diff_sha256": "b838967fe4c8d98c62ff0c58c881403bd5f058a74a3df4ba68db4b2e9ee6b0d5",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/spatial3d/mod.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n",
+          "diff_sha256": "0288d17db153893e8aafdf03767dc94350d841cc1330d4155d11ed653d395422"
+        }
+      }
+    },
+    {
+      "name": "desktop-gate-released",
+      "command": [
+        "env",
+        "ABBEY_ZIP_OPENSSL=$RESOLVED_OPENSSL",
+        "./desktop/check.sh"
+      ],
+      "environment": {
+        "CARGO_BUILD_JOBS": "1",
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_PROFILE_DEV_DEBUG": "0",
+        "CARGO_PROFILE_TEST_DEBUG": "0",
+        "ABI_WDBX_PATH": ":memory:"
+      },
+      "start_utc": "2026-10-26T12:54:06.796525+00:00",
+      "end_utc": "2026-10-26T13:02:28.761123+00:00",
+      "exit": 143,
+      "output_sha256": "f13c31d26f5343b12bd45e0291e6a8410f1ab8e7b1fc17789d5a9a79ca5e8293",
+      "raw_receipt": ".work/security-qualification-20261026/desktop-gate-released.json",
+      "raw_receipt_sha256": "fb4f392f127868e69d2d5f66a646c4281b066822a6fa149f42452f3fb097d9ae",
+      "raw_output": ".work/security-qualification-20261026/desktop-gate-released.log",
+      "source_inventory_sha256_before": "a783a82cbda68d070aaee43573d62ab823749e911c208cc03c29ebb3d52533ed",
+      "source_inventory_sha256_after": "babdadda91a6a5fabcd510225a28aec87e6fceda357e2e38de91aebd4c957ba6",
+      "source_inventory_present": true,
+      "source_inventory_stable": false,
+      "locks_and_pins_before": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "locks_and_pins_after": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "repositories_before": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tasks/completion.json\n M tools/tests/smoke_tui_slash_pty.py\n?? docs/verification/2026-10-26-dependency-security-qualification.md\n?? src/ralph/\n",
+        "diff_sha256": "8f2d03fc6b74f5940a686a29f5e3c06e308cdacc4bcafdca3f2ea7a7ec354df4",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/bin/wdbx/typed.rs\n M crates/abi-wdbx/src/spatial3d/mod.rs\n M crates/abi-wdbx/src/v2/types.rs\n M crates/abi-wdbx/tests/typed_cli.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/execution/2026-10-26-typed-history-validation.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-typed-history-validation.md\n",
+          "diff_sha256": "ea55f864cd929751291f918aede13fa77d7d8a368841a5c85bea8b5ea9659aeb"
+        }
+      },
+      "repositories_after": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tasks/completion.json\n M tools/tests/smoke_tui_slash_pty.py\n?? docs/verification/2026-10-26-dependency-security-qualification.md\n?? src/ralph/\n",
+        "diff_sha256": "61a8f2b9cfd5459a5db5bd8d06ea7a36cbeec5107b64af2800db6e0759c7d340",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/bin/wdbx/typed.rs\n M crates/abi-wdbx/src/spatial3d/mod.rs\n M crates/abi-wdbx/src/v2/types.rs\n M crates/abi-wdbx/tests/typed_cli.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/execution/2026-10-26-typed-history-validation.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-typed-history-validation.md\n",
+          "diff_sha256": "ea55f864cd929751291f918aede13fa77d7d8a368841a5c85bea8b5ea9659aeb"
+        }
+      }
+    },
+    {
+      "name": "diagnostics-final",
+      "command": [
+        "env",
+        "CARGO_TARGET_DIR=$REPO/.work/security-qualification-20261026/target-vendor",
+        "./tools/cargo.sh",
+        "test",
+        "--locked",
+        "--manifest-path",
+        "vendor/Cargo.toml",
+        "-p",
+        "gtk-compat-tests",
+        "--no-default-features",
+        "--test",
+        "diagnostics"
+      ],
+      "environment": {
+        "CARGO_BUILD_JOBS": "1",
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_PROFILE_DEV_DEBUG": "0",
+        "CARGO_PROFILE_TEST_DEBUG": "0",
+        "ABI_WDBX_PATH": ":memory:"
+      },
+      "start_utc": "2026-10-26T12:38:50.617326+00:00",
+      "end_utc": "2026-10-26T12:38:54.165273+00:00",
+      "exit": 0,
+      "output_sha256": "c4a8c342a9687498bc0847a9efa665c1a9244e6afc89e7a81288c94345a788e8",
+      "raw_receipt": ".work/security-qualification-20261026/diagnostics-final.json",
+      "raw_receipt_sha256": "3d8bbefb04e706082d219de64a198b902d62514adc50ea69eb86672a4b1d8b24",
+      "raw_output": ".work/security-qualification-20261026/diagnostics-final.log",
+      "source_inventory_sha256_before": "07e50c038647986f74fa27413e98d59afddb2ba85bfd9d8aea23b47d31fdbe16",
+      "source_inventory_sha256_after": "07e50c038647986f74fa27413e98d59afddb2ba85bfd9d8aea23b47d31fdbe16",
+      "source_inventory_present": true,
+      "source_inventory_stable": true,
+      "locks_and_pins_before": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "locks_and_pins_after": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "repositories_before": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tasks/completion.json\n M tools/tests/smoke_tui_slash_pty.py\n?? docs/verification/2026-10-26-dependency-security-qualification.md\n?? src/ralph/\n",
+        "diff_sha256": "8523849e6a168222ff21216167ad287577a7a980ed899a71c907c50bc79fe4a7",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/bin/wdbx/typed.rs\n M crates/abi-wdbx/src/spatial3d/mod.rs\n M crates/abi-wdbx/src/v2/types.rs\n M crates/abi-wdbx/tests/typed_cli.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/execution/2026-10-26-typed-history-validation.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-typed-history-validation.md\n",
+          "diff_sha256": "cf9467471082bc172bfcf4f1c95dd96f1988c21a92f630e14e47ece9b9d03bf7"
+        }
+      },
+      "repositories_after": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tasks/completion.json\n M tools/tests/smoke_tui_slash_pty.py\n?? docs/verification/2026-10-26-dependency-security-qualification.md\n?? src/ralph/\n",
+        "diff_sha256": "8523849e6a168222ff21216167ad287577a7a980ed899a71c907c50bc79fe4a7",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/bin/wdbx/typed.rs\n M crates/abi-wdbx/src/spatial3d/mod.rs\n M crates/abi-wdbx/src/v2/types.rs\n M crates/abi-wdbx/tests/typed_cli.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/execution/2026-10-26-typed-history-validation.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-typed-history-validation.md\n",
+          "diff_sha256": "cf9467471082bc172bfcf4f1c95dd96f1988c21a92f630e14e47ece9b9d03bf7"
+        }
+      }
+    },
+    {
+      "name": "diagnostics",
+      "command": [
+        "env",
+        "CARGO_TARGET_DIR=$REPO/.work/security-qualification-20261026/target-vendor",
+        "./tools/cargo.sh",
+        "test",
+        "--locked",
+        "--manifest-path",
+        "vendor/Cargo.toml",
+        "-p",
+        "gtk-compat-tests",
+        "--no-default-features",
+        "--test",
+        "diagnostics"
+      ],
+      "environment": {
+        "CARGO_BUILD_JOBS": "1",
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_PROFILE_DEV_DEBUG": "0",
+        "CARGO_PROFILE_TEST_DEBUG": "0",
+        "ABI_WDBX_PATH": ":memory:"
+      },
+      "start_utc": "2026-10-26T12:00:29.252617+00:00",
+      "end_utc": "2026-10-26T12:01:21.512432+00:00",
+      "exit": 0,
+      "output_sha256": "400674655acad112ad770531e7064d19321f26a97d00faddd539b773dc86a017",
+      "raw_receipt": ".work/security-qualification-20261026/diagnostics.json",
+      "raw_receipt_sha256": "68b535a3e5140e2856edd6151ed67379773718751dbfa13123958beccd16b9cd",
+      "raw_output": ".work/security-qualification-20261026/diagnostics.log",
+      "source_inventory_sha256_before": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "source_inventory_sha256_after": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "source_inventory_present": false,
+      "source_inventory_stable": true,
+      "locks_and_pins_before": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "locks_and_pins_after": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "repositories_before": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tools/tests/smoke_tui_slash_pty.py\n?? src/ralph/\n",
+        "diff_sha256": "b838967fe4c8d98c62ff0c58c881403bd5f058a74a3df4ba68db4b2e9ee6b0d5",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/spatial3d/mod.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n",
+          "diff_sha256": "0288d17db153893e8aafdf03767dc94350d841cc1330d4155d11ed653d395422"
+        }
+      },
+      "repositories_after": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tools/tests/smoke_tui_slash_pty.py\n?? src/ralph/\n",
+        "diff_sha256": "7d03bc35cd1c42608500e0b7f195c13138bf3139f49e0b0f5f09d0833326d1ff",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/spatial3d/mod.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n",
+          "diff_sha256": "0288d17db153893e8aafdf03767dc94350d841cc1330d4155d11ed653d395422"
+        }
+      }
+    },
+    {
+      "name": "instructions-final",
+      "command": [
+        "python3",
+        "tools/check_instructions.py"
+      ],
+      "environment": {
+        "CARGO_BUILD_JOBS": "1",
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_PROFILE_DEV_DEBUG": "0",
+        "CARGO_PROFILE_TEST_DEBUG": "0",
+        "ABI_WDBX_PATH": ":memory:"
+      },
+      "start_utc": "2026-10-26T13:05:58.676432+00:00",
+      "end_utc": "2026-10-26T13:05:59.041582+00:00",
+      "exit": 0,
+      "output_sha256": "a278336106bd141cf3dba59a9fe49c0bfadef3d0daa5a40bc0e8a2d206a2c80a",
+      "raw_receipt": ".work/security-qualification-20261026/instructions-final.json",
+      "raw_receipt_sha256": "6714b69f5f317361cb17fac7f24b0ef12332b5e9bccc3942cf38a1d9cf3eb785",
+      "raw_output": ".work/security-qualification-20261026/instructions-final.log",
+      "source_inventory_sha256_before": "babdadda91a6a5fabcd510225a28aec87e6fceda357e2e38de91aebd4c957ba6",
+      "source_inventory_sha256_after": "babdadda91a6a5fabcd510225a28aec87e6fceda357e2e38de91aebd4c957ba6",
+      "source_inventory_present": true,
+      "source_inventory_stable": true,
+      "locks_and_pins_before": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "locks_and_pins_after": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "repositories_before": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tasks/completion.json\n M tools/tests/smoke_tui_slash_pty.py\n?? docs/verification/2026-10-26-dependency-security-qualification.md\n?? docs/verification/2026-10-26-dependency-security-qualification/\n?? src/ralph/\n",
+        "diff_sha256": "61a8f2b9cfd5459a5db5bd8d06ea7a36cbeec5107b64af2800db6e0759c7d340",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/bin/wdbx/typed.rs\n M crates/abi-wdbx/src/spatial3d/mod.rs\n M crates/abi-wdbx/src/v2/types.rs\n M crates/abi-wdbx/tests/typed_cli.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/execution/2026-10-26-typed-history-validation.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-typed-history-validation.md\n",
+          "diff_sha256": "ea55f864cd929751291f918aede13fa77d7d8a368841a5c85bea8b5ea9659aeb"
+        }
+      },
+      "repositories_after": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tasks/completion.json\n M tools/tests/smoke_tui_slash_pty.py\n?? docs/verification/2026-10-26-dependency-security-qualification.md\n?? docs/verification/2026-10-26-dependency-security-qualification/\n?? src/ralph/\n",
+        "diff_sha256": "61a8f2b9cfd5459a5db5bd8d06ea7a36cbeec5107b64af2800db6e0759c7d340",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/bin/wdbx/typed.rs\n M crates/abi-wdbx/src/spatial3d/mod.rs\n M crates/abi-wdbx/src/v2/types.rs\n M crates/abi-wdbx/tests/typed_cli.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/execution/2026-10-26-typed-history-validation.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-typed-history-validation.md\n",
+          "diff_sha256": "ea55f864cd929751291f918aede13fa77d7d8a368841a5c85bea8b5ea9659aeb"
+        }
+      }
+    },
+    {
+      "name": "inverse-trees",
+      "command": [
+        "./tools/cargo.sh",
+        "tree",
+        "--locked",
+        "--target",
+        "all",
+        "-i",
+        "tokio"
+      ],
+      "environment": {
+        "CARGO_BUILD_JOBS": "1",
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_PROFILE_DEV_DEBUG": "0",
+        "CARGO_PROFILE_TEST_DEBUG": "0",
+        "ABI_WDBX_PATH": ":memory:"
+      },
+      "start_utc": "2026-10-26T12:01:08.176473+00:00",
+      "end_utc": "2026-10-26T12:01:12.613959+00:00",
+      "exit": 0,
+      "output_sha256": "5abe2ce11303d045adca3a835300e5e66493cbd553cf14048f8c8bcf8de7ae1c",
+      "raw_receipt": ".work/security-qualification-20261026/inverse-trees.json",
+      "raw_receipt_sha256": "d1c120c1b229805bb45b206e3a77ddb783c5ec78d05c87cce270fd5575997e45",
+      "raw_output": ".work/security-qualification-20261026/inverse-trees.log",
+      "source_inventory_sha256_before": "e5debad37ccc3a01e96cddc3dc1694b13dda5febf6761d7fdf117141e8227ba6",
+      "source_inventory_sha256_after": "e5debad37ccc3a01e96cddc3dc1694b13dda5febf6761d7fdf117141e8227ba6",
+      "source_inventory_present": true,
+      "source_inventory_stable": true,
+      "locks_and_pins_before": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "locks_and_pins_after": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "repositories_before": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tools/tests/smoke_tui_slash_pty.py\n?? src/ralph/\n",
+        "diff_sha256": "7d03bc35cd1c42608500e0b7f195c13138bf3139f49e0b0f5f09d0833326d1ff",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/spatial3d/mod.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n",
+          "diff_sha256": "0288d17db153893e8aafdf03767dc94350d841cc1330d4155d11ed653d395422"
+        }
+      },
+      "repositories_after": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tools/tests/smoke_tui_slash_pty.py\n?? src/ralph/\n",
+        "diff_sha256": "7d03bc35cd1c42608500e0b7f195c13138bf3139f49e0b0f5f09d0833326d1ff",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/spatial3d/mod.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n",
+          "diff_sha256": "0288d17db153893e8aafdf03767dc94350d841cc1330d4155d11ed653d395422"
+        }
+      }
+    },
+    {
+      "name": "iterator-dev",
+      "command": [
+        "env",
+        "CARGO_TARGET_DIR=$REPO/.work/security-qualification-20261026/target-vendor",
+        "./tools/cargo.sh",
+        "test",
+        "--locked",
+        "--manifest-path",
+        "vendor/Cargo.toml",
+        "-p",
+        "glib",
+        "--lib",
+        "variant_iter"
+      ],
+      "environment": {
+        "CARGO_BUILD_JOBS": "1",
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_PROFILE_DEV_DEBUG": "0",
+        "CARGO_PROFILE_TEST_DEBUG": "0",
+        "ABI_WDBX_PATH": ":memory:"
+      },
+      "start_utc": "2026-10-26T12:06:07.793118+00:00",
+      "end_utc": "2026-10-26T12:06:55.196077+00:00",
+      "exit": 0,
+      "output_sha256": "84276efa027839b66af68460b9d13b34214178d88caa0659ef575a4d5de159a8",
+      "raw_receipt": ".work/security-qualification-20261026/iterator-dev.json",
+      "raw_receipt_sha256": "31ebddae177dbc33fbc412e173dab50f23f3eb51184b82ea332a000e98218620",
+      "raw_output": ".work/security-qualification-20261026/iterator-dev.log",
+      "source_inventory_sha256_before": "e5debad37ccc3a01e96cddc3dc1694b13dda5febf6761d7fdf117141e8227ba6",
+      "source_inventory_sha256_after": "e5debad37ccc3a01e96cddc3dc1694b13dda5febf6761d7fdf117141e8227ba6",
+      "source_inventory_present": true,
+      "source_inventory_stable": true,
+      "locks_and_pins_before": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "locks_and_pins_after": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "repositories_before": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tasks/completion.json\n M tools/tests/smoke_tui_slash_pty.py\n?? docs/verification/2026-10-26-dependency-security-qualification.md\n?? src/ralph/\n",
+        "diff_sha256": "13b7b49f40ec5e22a82daf2cc4f79fcfb30678682b19d0249dcdac4315cfea37",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/spatial3d/mod.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n",
+          "diff_sha256": "0288d17db153893e8aafdf03767dc94350d841cc1330d4155d11ed653d395422"
+        }
+      },
+      "repositories_after": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tasks/completion.json\n M tools/tests/smoke_tui_slash_pty.py\n?? docs/verification/2026-10-26-dependency-security-qualification.md\n?? src/ralph/\n",
+        "diff_sha256": "13b7b49f40ec5e22a82daf2cc4f79fcfb30678682b19d0249dcdac4315cfea37",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/spatial3d/mod.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n",
+          "diff_sha256": "0288d17db153893e8aafdf03767dc94350d841cc1330d4155d11ed653d395422"
+        }
+      }
+    },
+    {
+      "name": "iterator-release",
+      "command": [
+        "env",
+        "CARGO_TARGET_DIR=$REPO/.work/security-qualification-20261026/target-vendor",
+        "./tools/cargo.sh",
+        "test",
+        "--locked",
+        "--manifest-path",
+        "vendor/Cargo.toml",
+        "--release",
+        "-p",
+        "glib",
+        "--lib",
+        "variant_iter"
+      ],
+      "environment": {
+        "CARGO_BUILD_JOBS": "1",
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_PROFILE_DEV_DEBUG": "0",
+        "CARGO_PROFILE_TEST_DEBUG": "0",
+        "ABI_WDBX_PATH": ":memory:"
+      },
+      "start_utc": "2026-10-26T12:06:55.705373+00:00",
+      "end_utc": "2026-10-26T12:08:31.210677+00:00",
+      "exit": 0,
+      "output_sha256": "d109879886f7bb082eacb6b8972ddd182afcf1542da107586a50988aeb9058ba",
+      "raw_receipt": ".work/security-qualification-20261026/iterator-release.json",
+      "raw_receipt_sha256": "35a241ca8cec3319016b51b7d59184b905f9642978229977afb52e0b4817b6f2",
+      "raw_output": ".work/security-qualification-20261026/iterator-release.log",
+      "source_inventory_sha256_before": "e5debad37ccc3a01e96cddc3dc1694b13dda5febf6761d7fdf117141e8227ba6",
+      "source_inventory_sha256_after": "e5debad37ccc3a01e96cddc3dc1694b13dda5febf6761d7fdf117141e8227ba6",
+      "source_inventory_present": true,
+      "source_inventory_stable": true,
+      "locks_and_pins_before": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "locks_and_pins_after": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "repositories_before": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tasks/completion.json\n M tools/tests/smoke_tui_slash_pty.py\n?? docs/verification/2026-10-26-dependency-security-qualification.md\n?? src/ralph/\n",
+        "diff_sha256": "13b7b49f40ec5e22a82daf2cc4f79fcfb30678682b19d0249dcdac4315cfea37",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/spatial3d/mod.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n",
+          "diff_sha256": "0288d17db153893e8aafdf03767dc94350d841cc1330d4155d11ed653d395422"
+        }
+      },
+      "repositories_after": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tasks/completion.json\n M tools/tests/smoke_tui_slash_pty.py\n?? docs/verification/2026-10-26-dependency-security-qualification.md\n?? src/ralph/\n",
+        "diff_sha256": "13b7b49f40ec5e22a82daf2cc4f79fcfb30678682b19d0249dcdac4315cfea37",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/spatial3d/mod.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n",
+          "diff_sha256": "0288d17db153893e8aafdf03767dc94350d841cc1330d4155d11ed653d395422"
+        }
+      }
+    },
+    {
+      "name": "provenance-final",
+      "command": [
+        "python3",
+        "tools/security/check_gtk_vendor.py"
+      ],
+      "environment": {
+        "CARGO_BUILD_JOBS": "1",
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_PROFILE_DEV_DEBUG": "0",
+        "CARGO_PROFILE_TEST_DEBUG": "0",
+        "ABI_WDBX_PATH": ":memory:"
+      },
+      "start_utc": "2026-10-26T13:05:53.311255+00:00",
+      "end_utc": "2026-10-26T13:05:57.259104+00:00",
+      "exit": 0,
+      "output_sha256": "be2b31b3b35d4b984b850c2998065e67a032e8102ca7707fac12c3567ddcb9ae",
+      "raw_receipt": ".work/security-qualification-20261026/provenance-final.json",
+      "raw_receipt_sha256": "5c919ea911ea56f60410b3f964629ddf0734a3272930f0d622cfe6ae65954e17",
+      "raw_output": ".work/security-qualification-20261026/provenance-final.log",
+      "source_inventory_sha256_before": "babdadda91a6a5fabcd510225a28aec87e6fceda357e2e38de91aebd4c957ba6",
+      "source_inventory_sha256_after": "babdadda91a6a5fabcd510225a28aec87e6fceda357e2e38de91aebd4c957ba6",
+      "source_inventory_present": true,
+      "source_inventory_stable": true,
+      "locks_and_pins_before": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "locks_and_pins_after": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "repositories_before": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tasks/completion.json\n M tools/tests/smoke_tui_slash_pty.py\n?? docs/verification/2026-10-26-dependency-security-qualification.md\n?? docs/verification/2026-10-26-dependency-security-qualification/\n?? src/ralph/\n",
+        "diff_sha256": "61a8f2b9cfd5459a5db5bd8d06ea7a36cbeec5107b64af2800db6e0759c7d340",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/bin/wdbx/typed.rs\n M crates/abi-wdbx/src/spatial3d/mod.rs\n M crates/abi-wdbx/src/v2/types.rs\n M crates/abi-wdbx/tests/typed_cli.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/execution/2026-10-26-typed-history-validation.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-typed-history-validation.md\n",
+          "diff_sha256": "ea55f864cd929751291f918aede13fa77d7d8a368841a5c85bea8b5ea9659aeb"
+        }
+      },
+      "repositories_after": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tasks/completion.json\n M tools/tests/smoke_tui_slash_pty.py\n?? docs/verification/2026-10-26-dependency-security-qualification.md\n?? docs/verification/2026-10-26-dependency-security-qualification/\n?? src/ralph/\n",
+        "diff_sha256": "61a8f2b9cfd5459a5db5bd8d06ea7a36cbeec5107b64af2800db6e0759c7d340",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/bin/wdbx/typed.rs\n M crates/abi-wdbx/src/spatial3d/mod.rs\n M crates/abi-wdbx/src/v2/types.rs\n M crates/abi-wdbx/tests/typed_cli.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/execution/2026-10-26-typed-history-validation.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-typed-history-validation.md\n",
+          "diff_sha256": "ea55f864cd929751291f918aede13fa77d7d8a368841a5c85bea8b5ea9659aeb"
+        }
+      }
+    },
+    {
+      "name": "provenance",
+      "command": [
+        "python3",
+        "tools/security/check_gtk_vendor.py"
+      ],
+      "environment": {
+        "CARGO_BUILD_JOBS": "1",
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_PROFILE_DEV_DEBUG": "0",
+        "CARGO_PROFILE_TEST_DEBUG": "0",
+        "ABI_WDBX_PATH": ":memory:"
+      },
+      "start_utc": "2026-10-26T11:59:55.970473+00:00",
+      "end_utc": "2026-10-26T12:00:00.324957+00:00",
+      "exit": 0,
+      "output_sha256": "be2b31b3b35d4b984b850c2998065e67a032e8102ca7707fac12c3567ddcb9ae",
+      "raw_receipt": ".work/security-qualification-20261026/provenance.json",
+      "raw_receipt_sha256": "c90d8d187115a37b1670521e01aed7074bf5ff3cc8bc7e3a9997e8e4a63ae04f",
+      "raw_output": ".work/security-qualification-20261026/provenance.log",
+      "source_inventory_sha256_before": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "source_inventory_sha256_after": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "source_inventory_present": false,
+      "source_inventory_stable": true,
+      "locks_and_pins_before": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "locks_and_pins_after": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "repositories_before": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tools/tests/smoke_tui_slash_pty.py\n?? src/ralph/\n",
+        "diff_sha256": "b838967fe4c8d98c62ff0c58c881403bd5f058a74a3df4ba68db4b2e9ee6b0d5",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/spatial3d/mod.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n",
+          "diff_sha256": "0288d17db153893e8aafdf03767dc94350d841cc1330d4155d11ed653d395422"
+        }
+      },
+      "repositories_after": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tools/tests/smoke_tui_slash_pty.py\n?? src/ralph/\n",
+        "diff_sha256": "b838967fe4c8d98c62ff0c58c881403bd5f058a74a3df4ba68db4b2e9ee6b0d5",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/spatial3d/mod.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n",
+          "diff_sha256": "0288d17db153893e8aafdf03767dc94350d841cc1330d4155d11ed653d395422"
+        }
+      }
+    },
+    {
+      "name": "root-gate-final",
+      "command": [
+        "env",
+        "ABBEY_ZIP_OPENSSL=$RESOLVED_OPENSSL",
+        "./check.sh"
+      ],
+      "environment": {
+        "CARGO_BUILD_JOBS": "1",
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_PROFILE_DEV_DEBUG": "0",
+        "CARGO_PROFILE_TEST_DEBUG": "0",
+        "ABI_WDBX_PATH": ":memory:"
+      },
+      "start_utc": "2026-10-26T12:38:54.777188+00:00",
+      "end_utc": "2026-10-26T12:45:35.447034+00:00",
+      "exit": 143,
+      "output_sha256": "d0ea09a26d99cd43bbab8257b4c2e39a3a3b1c663753651b770c154bb6c4910f",
+      "raw_receipt": ".work/security-qualification-20261026/root-gate-final.json",
+      "raw_receipt_sha256": "fe008414dd837a47fdeef75dee8ca9e1649fb6dc4cb90cfa1634f92bf63504e8",
+      "raw_output": ".work/security-qualification-20261026/root-gate-final.log",
+      "source_inventory_sha256_before": "07e50c038647986f74fa27413e98d59afddb2ba85bfd9d8aea23b47d31fdbe16",
+      "source_inventory_sha256_after": "07e50c038647986f74fa27413e98d59afddb2ba85bfd9d8aea23b47d31fdbe16",
+      "source_inventory_present": true,
+      "source_inventory_stable": true,
+      "locks_and_pins_before": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "locks_and_pins_after": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "repositories_before": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tasks/completion.json\n M tools/tests/smoke_tui_slash_pty.py\n?? docs/verification/2026-10-26-dependency-security-qualification.md\n?? src/ralph/\n",
+        "diff_sha256": "8523849e6a168222ff21216167ad287577a7a980ed899a71c907c50bc79fe4a7",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/bin/wdbx/typed.rs\n M crates/abi-wdbx/src/spatial3d/mod.rs\n M crates/abi-wdbx/src/v2/types.rs\n M crates/abi-wdbx/tests/typed_cli.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/execution/2026-10-26-typed-history-validation.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-typed-history-validation.md\n",
+          "diff_sha256": "cf9467471082bc172bfcf4f1c95dd96f1988c21a92f630e14e47ece9b9d03bf7"
+        }
+      },
+      "repositories_after": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tasks/completion.json\n M tools/tests/smoke_tui_slash_pty.py\n?? docs/verification/2026-10-26-dependency-security-qualification.md\n?? src/ralph/\n",
+        "diff_sha256": "8523849e6a168222ff21216167ad287577a7a980ed899a71c907c50bc79fe4a7",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/bin/wdbx/typed.rs\n M crates/abi-wdbx/src/spatial3d/mod.rs\n M crates/abi-wdbx/src/v2/types.rs\n M crates/abi-wdbx/tests/typed_cli.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/execution/2026-10-26-typed-history-validation.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-typed-history-validation.md\n",
+          "diff_sha256": "ea55f864cd929751291f918aede13fa77d7d8a368841a5c85bea8b5ea9659aeb"
+        }
+      }
+    },
+    {
+      "name": "root-gate-released",
+      "command": [
+        "env",
+        "ABBEY_ZIP_OPENSSL=$RESOLVED_OPENSSL",
+        "./check.sh"
+      ],
+      "environment": {
+        "CARGO_BUILD_JOBS": "1",
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_PROFILE_DEV_DEBUG": "0",
+        "CARGO_PROFILE_TEST_DEBUG": "0",
+        "ABI_WDBX_PATH": ":memory:"
+      },
+      "start_utc": "2026-10-26T12:51:05.737425+00:00",
+      "end_utc": "2026-10-26T12:53:47.857111+00:00",
+      "exit": 101,
+      "output_sha256": "b0e8f10f5ced404ff6751373184d9a77bee34e7bcab6c67594d6a48294d0f3f9",
+      "raw_receipt": ".work/security-qualification-20261026/root-gate-released.json",
+      "raw_receipt_sha256": "060e241255c9be26a179e511272fbe79cd6124d240d0365259d76ae0ba150b02",
+      "raw_output": ".work/security-qualification-20261026/root-gate-released.log",
+      "source_inventory_sha256_before": "e5debad37ccc3a01e96cddc3dc1694b13dda5febf6761d7fdf117141e8227ba6",
+      "source_inventory_sha256_after": "a783a82cbda68d070aaee43573d62ab823749e911c208cc03c29ebb3d52533ed",
+      "source_inventory_present": true,
+      "source_inventory_stable": false,
+      "locks_and_pins_before": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "locks_and_pins_after": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "repositories_before": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tasks/completion.json\n M tools/tests/smoke_tui_slash_pty.py\n?? docs/verification/2026-10-26-dependency-security-qualification.md\n?? src/ralph/\n",
+        "diff_sha256": "ace47929656655ab6dec41e984e6026ccbc0e9004efc0aec7f0ebcd7bec21a6d",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/bin/wdbx/typed.rs\n M crates/abi-wdbx/src/spatial3d/mod.rs\n M crates/abi-wdbx/src/v2/types.rs\n M crates/abi-wdbx/tests/typed_cli.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/execution/2026-10-26-typed-history-validation.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-typed-history-validation.md\n",
+          "diff_sha256": "ea55f864cd929751291f918aede13fa77d7d8a368841a5c85bea8b5ea9659aeb"
+        }
+      },
+      "repositories_after": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tasks/completion.json\n M tools/tests/smoke_tui_slash_pty.py\n?? docs/verification/2026-10-26-dependency-security-qualification.md\n?? src/ralph/\n",
+        "diff_sha256": "8f2d03fc6b74f5940a686a29f5e3c06e308cdacc4bcafdca3f2ea7a7ec354df4",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/bin/wdbx/typed.rs\n M crates/abi-wdbx/src/spatial3d/mod.rs\n M crates/abi-wdbx/src/v2/types.rs\n M crates/abi-wdbx/tests/typed_cli.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/execution/2026-10-26-typed-history-validation.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-typed-history-validation.md\n",
+          "diff_sha256": "ea55f864cd929751291f918aede13fa77d7d8a368841a5c85bea8b5ea9659aeb"
+        }
+      }
+    },
+    {
+      "name": "root-gate",
+      "command": [
+        "env",
+        "ABBEY_ZIP_OPENSSL=$RESOLVED_OPENSSL",
+        "ABBEY_UPDATER_OPENSSL=$RESOLVED_OPENSSL",
+        "./check.sh"
+      ],
+      "environment": {
+        "CARGO_BUILD_JOBS": "1",
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_PROFILE_DEV_DEBUG": "0",
+        "CARGO_PROFILE_TEST_DEBUG": "0",
+        "ABI_WDBX_PATH": ":memory:"
+      },
+      "start_utc": "2026-10-26T12:21:38.466801+00:00",
+      "end_utc": "2026-10-26T12:33:15.475274+00:00",
+      "exit": 143,
+      "output_sha256": "7f05fd212b68404d87de6a2c4c54a5895e2511afbada55e79c76cd45dc0ed5eb",
+      "raw_receipt": ".work/security-qualification-20261026/root-gate.json",
+      "raw_receipt_sha256": "ffa5100e42616c8f69a7041f99ae63e15a0a39dc7afa378c7b7fc027ab66346b",
+      "raw_output": ".work/security-qualification-20261026/root-gate.log",
+      "source_inventory_sha256_before": "e5debad37ccc3a01e96cddc3dc1694b13dda5febf6761d7fdf117141e8227ba6",
+      "source_inventory_sha256_after": "e5debad37ccc3a01e96cddc3dc1694b13dda5febf6761d7fdf117141e8227ba6",
+      "source_inventory_present": true,
+      "source_inventory_stable": true,
+      "locks_and_pins_before": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "locks_and_pins_after": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "repositories_before": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tasks/completion.json\n M tools/tests/smoke_tui_slash_pty.py\n?? docs/verification/2026-10-26-dependency-security-qualification.md\n?? src/ralph/\n",
+        "diff_sha256": "ace47929656655ab6dec41e984e6026ccbc0e9004efc0aec7f0ebcd7bec21a6d",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/spatial3d/mod.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n",
+          "diff_sha256": "0288d17db153893e8aafdf03767dc94350d841cc1330d4155d11ed653d395422"
+        }
+      },
+      "repositories_after": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tasks/completion.json\n M tools/tests/smoke_tui_slash_pty.py\n?? docs/verification/2026-10-26-dependency-security-qualification.md\n?? src/ralph/\n",
+        "diff_sha256": "ace47929656655ab6dec41e984e6026ccbc0e9004efc0aec7f0ebcd7bec21a6d",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/spatial3d/mod.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n",
+          "diff_sha256": "0288d17db153893e8aafdf03767dc94350d841cc1330d4155d11ed653d395422"
+        }
+      }
+    },
+    {
+      "name": "runtime-dev",
+      "command": [
+        "env",
+        "CARGO_TARGET_DIR=$REPO/.work/security-qualification-20261026/target-vendor",
+        "./tools/cargo.sh",
+        "test",
+        "--locked",
+        "--manifest-path",
+        "vendor/Cargo.toml",
+        "-p",
+        "gtk-compat-tests",
+        "--features",
+        "glib-runtime",
+        "--test",
+        "glib_runtime"
+      ],
+      "environment": {
+        "CARGO_BUILD_JOBS": "1",
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_PROFILE_DEV_DEBUG": "0",
+        "CARGO_PROFILE_TEST_DEBUG": "0",
+        "ABI_WDBX_PATH": ":memory:"
+      },
+      "start_utc": "2026-10-26T12:04:45.084159+00:00",
+      "end_utc": "2026-10-26T12:05:19.960222+00:00",
+      "exit": 0,
+      "output_sha256": "f218cb9dcf4130c7df45ce94253cdac0a19676576fe46901c3e712e7460e1e9f",
+      "raw_receipt": ".work/security-qualification-20261026/runtime-dev.json",
+      "raw_receipt_sha256": "130f0c9ed07b1f3a497885bbaff30985aed96fe1d6ba29b8df7f032a2b28d35e",
+      "raw_output": ".work/security-qualification-20261026/runtime-dev.log",
+      "source_inventory_sha256_before": "e5debad37ccc3a01e96cddc3dc1694b13dda5febf6761d7fdf117141e8227ba6",
+      "source_inventory_sha256_after": "e5debad37ccc3a01e96cddc3dc1694b13dda5febf6761d7fdf117141e8227ba6",
+      "source_inventory_present": true,
+      "source_inventory_stable": true,
+      "locks_and_pins_before": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "locks_and_pins_after": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "repositories_before": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tools/tests/smoke_tui_slash_pty.py\n?? docs/verification/2026-10-26-dependency-security-qualification.md\n?? src/ralph/\n",
+        "diff_sha256": "7d03bc35cd1c42608500e0b7f195c13138bf3139f49e0b0f5f09d0833326d1ff",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/spatial3d/mod.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n",
+          "diff_sha256": "0288d17db153893e8aafdf03767dc94350d841cc1330d4155d11ed653d395422"
+        }
+      },
+      "repositories_after": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tools/tests/smoke_tui_slash_pty.py\n?? docs/verification/2026-10-26-dependency-security-qualification.md\n?? src/ralph/\n",
+        "diff_sha256": "7d03bc35cd1c42608500e0b7f195c13138bf3139f49e0b0f5f09d0833326d1ff",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/spatial3d/mod.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n",
+          "diff_sha256": "0288d17db153893e8aafdf03767dc94350d841cc1330d4155d11ed653d395422"
+        }
+      }
+    },
+    {
+      "name": "runtime-release",
+      "command": [
+        "env",
+        "CARGO_TARGET_DIR=$REPO/.work/security-qualification-20261026/target-vendor",
+        "./tools/cargo.sh",
+        "test",
+        "--locked",
+        "--manifest-path",
+        "vendor/Cargo.toml",
+        "--release",
+        "-p",
+        "gtk-compat-tests",
+        "--features",
+        "glib-runtime",
+        "--test",
+        "glib_runtime"
+      ],
+      "environment": {
+        "CARGO_BUILD_JOBS": "1",
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_PROFILE_DEV_DEBUG": "0",
+        "CARGO_PROFILE_TEST_DEBUG": "0",
+        "ABI_WDBX_PATH": ":memory:"
+      },
+      "start_utc": "2026-10-26T12:05:21.167402+00:00",
+      "end_utc": "2026-10-26T12:06:06.826801+00:00",
+      "exit": 0,
+      "output_sha256": "a0c9d39b6919fb8518b516e6d8a9f0bb8a12b3ed69cac022422d4d1681870438",
+      "raw_receipt": ".work/security-qualification-20261026/runtime-release.json",
+      "raw_receipt_sha256": "ead3a29c5654de320f0601f28533965e5e0a22f2822291928fceae704e4a8a10",
+      "raw_output": ".work/security-qualification-20261026/runtime-release.log",
+      "source_inventory_sha256_before": "e5debad37ccc3a01e96cddc3dc1694b13dda5febf6761d7fdf117141e8227ba6",
+      "source_inventory_sha256_after": "e5debad37ccc3a01e96cddc3dc1694b13dda5febf6761d7fdf117141e8227ba6",
+      "source_inventory_present": true,
+      "source_inventory_stable": true,
+      "locks_and_pins_before": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "locks_and_pins_after": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "repositories_before": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tools/tests/smoke_tui_slash_pty.py\n?? docs/verification/2026-10-26-dependency-security-qualification.md\n?? src/ralph/\n",
+        "diff_sha256": "7d03bc35cd1c42608500e0b7f195c13138bf3139f49e0b0f5f09d0833326d1ff",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/spatial3d/mod.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n",
+          "diff_sha256": "0288d17db153893e8aafdf03767dc94350d841cc1330d4155d11ed653d395422"
+        }
+      },
+      "repositories_after": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tasks/completion.json\n M tools/tests/smoke_tui_slash_pty.py\n?? docs/verification/2026-10-26-dependency-security-qualification.md\n?? src/ralph/\n",
+        "diff_sha256": "13b7b49f40ec5e22a82daf2cc4f79fcfb30678682b19d0249dcdac4315cfea37",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/spatial3d/mod.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n",
+          "diff_sha256": "0288d17db153893e8aafdf03767dc94350d841cc1330d4155d11ed653d395422"
+        }
+      }
+    },
+    {
+      "name": "sibling-pins-print",
+      "command": [
+        "./tools/ci/verify-pinned-siblings.sh",
+        "--print-pins"
+      ],
+      "environment": {
+        "CARGO_BUILD_JOBS": "1",
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_PROFILE_DEV_DEBUG": "0",
+        "CARGO_PROFILE_TEST_DEBUG": "0",
+        "ABI_WDBX_PATH": ":memory:"
+      },
+      "start_utc": "2026-10-26T12:00:28.523836+00:00",
+      "end_utc": "2026-10-26T12:00:28.874150+00:00",
+      "exit": 0,
+      "output_sha256": "9f9c7d9e6f87c10a58efe68465fc0abade14cad828df67b5db9a9c1f67e7180f",
+      "raw_receipt": ".work/security-qualification-20261026/sibling-pins-print.json",
+      "raw_receipt_sha256": "698d3f3b3a21df4f78fa7670fba069d02e84cda9d516db304b8c4a927d5fa6d7",
+      "raw_output": ".work/security-qualification-20261026/sibling-pins-print.log",
+      "source_inventory_sha256_before": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "source_inventory_sha256_after": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "source_inventory_present": false,
+      "source_inventory_stable": true,
+      "locks_and_pins_before": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "locks_and_pins_after": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "repositories_before": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tools/tests/smoke_tui_slash_pty.py\n?? src/ralph/\n",
+        "diff_sha256": "b838967fe4c8d98c62ff0c58c881403bd5f058a74a3df4ba68db4b2e9ee6b0d5",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/spatial3d/mod.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n",
+          "diff_sha256": "0288d17db153893e8aafdf03767dc94350d841cc1330d4155d11ed653d395422"
+        }
+      },
+      "repositories_after": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tools/tests/smoke_tui_slash_pty.py\n?? src/ralph/\n",
+        "diff_sha256": "b838967fe4c8d98c62ff0c58c881403bd5f058a74a3df4ba68db4b2e9ee6b0d5",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/spatial3d/mod.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n",
+          "diff_sha256": "0288d17db153893e8aafdf03767dc94350d841cc1330d4155d11ed653d395422"
+        }
+      }
+    },
+    {
+      "name": "sibling-pins",
+      "command": [
+        "./tools/ci/verify-pinned-siblings.sh",
+        "--help"
+      ],
+      "environment": {
+        "CARGO_BUILD_JOBS": "1",
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_PROFILE_DEV_DEBUG": "0",
+        "CARGO_PROFILE_TEST_DEBUG": "0",
+        "ABI_WDBX_PATH": ":memory:"
+      },
+      "start_utc": "2026-10-26T12:00:13.243477+00:00",
+      "end_utc": "2026-10-26T12:00:13.644604+00:00",
+      "exit": 2,
+      "output_sha256": "9bb44cfebd05a392ba237fa42b76d54e78ec82ca36159939dec740410ded2ede",
+      "raw_receipt": ".work/security-qualification-20261026/sibling-pins.json",
+      "raw_receipt_sha256": "5bb869b44d06bb27542fb5a36242eb736286aa077f2b073a3ea6b552090e7be7",
+      "raw_output": ".work/security-qualification-20261026/sibling-pins.log",
+      "source_inventory_sha256_before": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "source_inventory_sha256_after": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "source_inventory_present": false,
+      "source_inventory_stable": true,
+      "locks_and_pins_before": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "locks_and_pins_after": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "repositories_before": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tools/tests/smoke_tui_slash_pty.py\n?? src/ralph/\n",
+        "diff_sha256": "b838967fe4c8d98c62ff0c58c881403bd5f058a74a3df4ba68db4b2e9ee6b0d5",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/spatial3d/mod.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n",
+          "diff_sha256": "0288d17db153893e8aafdf03767dc94350d841cc1330d4155d11ed653d395422"
+        }
+      },
+      "repositories_after": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tools/tests/smoke_tui_slash_pty.py\n?? src/ralph/\n",
+        "diff_sha256": "b838967fe4c8d98c62ff0c58c881403bd5f058a74a3df4ba68db4b2e9ee6b0d5",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/spatial3d/mod.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n",
+          "diff_sha256": "0288d17db153893e8aafdf03767dc94350d841cc1330d4155d11ed653d395422"
+        }
+      }
+    },
+    {
+      "name": "subclass-corrected",
+      "command": [
+        "env",
+        "CARGO_TARGET_DIR=$REPO/.work/security-qualification-20261026/target-vendor",
+        "./tools/cargo.sh",
+        "test",
+        "--locked",
+        "--manifest-path",
+        "vendor/Cargo.toml",
+        "-p",
+        "glib",
+        "--features",
+        "compiletests",
+        "--test",
+        "subclass_compiletest"
+      ],
+      "environment": {
+        "CARGO_BUILD_JOBS": "1",
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_PROFILE_DEV_DEBUG": "0",
+        "CARGO_PROFILE_TEST_DEBUG": "0",
+        "ABI_WDBX_PATH": ":memory:"
+      },
+      "start_utc": "2026-10-26T12:33:28.401265+00:00",
+      "end_utc": "2026-10-26T12:38:48.986643+00:00",
+      "exit": 0,
+      "output_sha256": "d1f957a42b4d444b4cd4fb7e1e4bf25a0073b9c0d156d1a50bbec0842a3838f1",
+      "raw_receipt": ".work/security-qualification-20261026/subclass-corrected.json",
+      "raw_receipt_sha256": "98d15d09730f239cb9e27427f9a9b5ccce82a7b38493ae6a7f2492a8bd1def94",
+      "raw_output": ".work/security-qualification-20261026/subclass-corrected.log",
+      "source_inventory_sha256_before": "e5debad37ccc3a01e96cddc3dc1694b13dda5febf6761d7fdf117141e8227ba6",
+      "source_inventory_sha256_after": "07e50c038647986f74fa27413e98d59afddb2ba85bfd9d8aea23b47d31fdbe16",
+      "source_inventory_present": true,
+      "source_inventory_stable": false,
+      "locks_and_pins_before": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "locks_and_pins_after": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "repositories_before": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tasks/completion.json\n M tools/tests/smoke_tui_slash_pty.py\n?? docs/verification/2026-10-26-dependency-security-qualification.md\n?? src/ralph/\n",
+        "diff_sha256": "ace47929656655ab6dec41e984e6026ccbc0e9004efc0aec7f0ebcd7bec21a6d",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/spatial3d/mod.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n",
+          "diff_sha256": "0288d17db153893e8aafdf03767dc94350d841cc1330d4155d11ed653d395422"
+        }
+      },
+      "repositories_after": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tasks/completion.json\n M tools/tests/smoke_tui_slash_pty.py\n?? docs/verification/2026-10-26-dependency-security-qualification.md\n?? src/ralph/\n",
+        "diff_sha256": "8523849e6a168222ff21216167ad287577a7a980ed899a71c907c50bc79fe4a7",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/bin/wdbx/typed.rs\n M crates/abi-wdbx/src/spatial3d/mod.rs\n M crates/abi-wdbx/src/v2/types.rs\n M crates/abi-wdbx/tests/typed_cli.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/execution/2026-10-26-typed-history-validation.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-typed-history-validation.md\n",
+          "diff_sha256": "cf9467471082bc172bfcf4f1c95dd96f1988c21a92f630e14e47ece9b9d03bf7"
+        }
+      }
+    },
+    {
+      "name": "subclass",
+      "command": [
+        "env",
+        "CARGO_TARGET_DIR=$REPO/.work/security-qualification-20261026/target-vendor",
+        "./tools/cargo.sh",
+        "test",
+        "--locked",
+        "--manifest-path",
+        "vendor/Cargo.toml",
+        "-p",
+        "glib",
+        "--test",
+        "subclass_compiletest"
+      ],
+      "environment": {
+        "CARGO_BUILD_JOBS": "1",
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_PROFILE_DEV_DEBUG": "0",
+        "CARGO_PROFILE_TEST_DEBUG": "0",
+        "ABI_WDBX_PATH": ":memory:"
+      },
+      "start_utc": "2026-10-26T12:04:44.130721+00:00",
+      "end_utc": "2026-10-26T12:04:44.696008+00:00",
+      "exit": 101,
+      "output_sha256": "c3aff4084b8088e72241a37f69d05d0eda5c5e8839dad0bb46e59930d5f83e6f",
+      "raw_receipt": ".work/security-qualification-20261026/subclass.json",
+      "raw_receipt_sha256": "0c7013c68216d8c8dd03e54c881b5ef07ceeb9c5ff9e0f6270862be35918c52b",
+      "raw_output": ".work/security-qualification-20261026/subclass.log",
+      "source_inventory_sha256_before": "e5debad37ccc3a01e96cddc3dc1694b13dda5febf6761d7fdf117141e8227ba6",
+      "source_inventory_sha256_after": "e5debad37ccc3a01e96cddc3dc1694b13dda5febf6761d7fdf117141e8227ba6",
+      "source_inventory_present": true,
+      "source_inventory_stable": true,
+      "locks_and_pins_before": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "locks_and_pins_after": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "repositories_before": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tools/tests/smoke_tui_slash_pty.py\n?? docs/verification/2026-10-26-dependency-security-qualification.md\n?? src/ralph/\n",
+        "diff_sha256": "7d03bc35cd1c42608500e0b7f195c13138bf3139f49e0b0f5f09d0833326d1ff",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/spatial3d/mod.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n",
+          "diff_sha256": "0288d17db153893e8aafdf03767dc94350d841cc1330d4155d11ed653d395422"
+        }
+      },
+      "repositories_after": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tools/tests/smoke_tui_slash_pty.py\n?? docs/verification/2026-10-26-dependency-security-qualification.md\n?? src/ralph/\n",
+        "diff_sha256": "7d03bc35cd1c42608500e0b7f195c13138bf3139f49e0b0f5f09d0833326d1ff",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/spatial3d/mod.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n",
+          "diff_sha256": "0288d17db153893e8aafdf03767dc94350d841cc1330d4155d11ed653d395422"
+        }
+      }
+    },
+    {
+      "name": "toolchain",
+      "command": [
+        "./tools/cargo.sh",
+        "--abbey-qualify-toolchain"
+      ],
+      "environment": {
+        "CARGO_BUILD_JOBS": "1",
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_PROFILE_DEV_DEBUG": "0",
+        "CARGO_PROFILE_TEST_DEBUG": "0",
+        "ABI_WDBX_PATH": ":memory:"
+      },
+      "start_utc": "2026-10-26T12:00:12.197125+00:00",
+      "end_utc": "2026-10-26T12:00:12.901855+00:00",
+      "exit": 0,
+      "output_sha256": "a7b27e5e8a04195a414aa13549a20ee3f7b55ae432c2ddb1ec9b8e7d9e815448",
+      "raw_receipt": ".work/security-qualification-20261026/toolchain.json",
+      "raw_receipt_sha256": "c0db96cf402f44d8d53cb11900eae1c0d1d73e0b8d32d49164183546ee41ef97",
+      "raw_output": ".work/security-qualification-20261026/toolchain.log",
+      "source_inventory_sha256_before": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "source_inventory_sha256_after": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "source_inventory_present": false,
+      "source_inventory_stable": true,
+      "locks_and_pins_before": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "locks_and_pins_after": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "repositories_before": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tools/tests/smoke_tui_slash_pty.py\n?? src/ralph/\n",
+        "diff_sha256": "b838967fe4c8d98c62ff0c58c881403bd5f058a74a3df4ba68db4b2e9ee6b0d5",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/spatial3d/mod.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n",
+          "diff_sha256": "0288d17db153893e8aafdf03767dc94350d841cc1330d4155d11ed653d395422"
+        }
+      },
+      "repositories_after": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tools/tests/smoke_tui_slash_pty.py\n?? src/ralph/\n",
+        "diff_sha256": "b838967fe4c8d98c62ff0c58c881403bd5f058a74a3df4ba68db4b2e9ee6b0d5",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/spatial3d/mod.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n",
+          "diff_sha256": "0288d17db153893e8aafdf03767dc94350d841cc1330d4155d11ed653d395422"
+        }
+      }
+    },
+    {
+      "name": "updater-personal",
+      "command": [
+        "env",
+        "ABBEY_ZIP_OPENSSL=$RESOLVED_OPENSSL",
+        "ABBEY_UPDATER_OPENSSL=$RESOLVED_OPENSSL",
+        "./tools/cargo.sh",
+        "test",
+        "--locked",
+        "-p",
+        "abbey-desktop",
+        "--features",
+        "personal-edition",
+        "--test",
+        "updater_cached_verification",
+        "--test",
+        "updater_signature",
+        "--test",
+        "updater_windows_zip",
+        "--test",
+        "updater_zip_contract",
+        "--",
+        "--test-threads=1"
+      ],
+      "environment": {
+        "CARGO_BUILD_JOBS": "1",
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_PROFILE_DEV_DEBUG": "0",
+        "CARGO_PROFILE_TEST_DEBUG": "0",
+        "ABI_WDBX_PATH": ":memory:"
+      },
+      "start_utc": "2026-10-26T12:20:31.658329+00:00",
+      "end_utc": "2026-10-26T12:21:36.586927+00:00",
+      "exit": 0,
+      "output_sha256": "4884b09857fb98a620c8c8fe84bc8195b049d45cf1ffed459c5cd2eaf1c89cb0",
+      "raw_receipt": ".work/security-qualification-20261026/updater-personal.json",
+      "raw_receipt_sha256": "d967fb219907e265d17b5a093b82c8cc685cf3fe0805b5022f810c33d90773d9",
+      "raw_output": ".work/security-qualification-20261026/updater-personal.log",
+      "source_inventory_sha256_before": "e5debad37ccc3a01e96cddc3dc1694b13dda5febf6761d7fdf117141e8227ba6",
+      "source_inventory_sha256_after": "e5debad37ccc3a01e96cddc3dc1694b13dda5febf6761d7fdf117141e8227ba6",
+      "source_inventory_present": true,
+      "source_inventory_stable": true,
+      "locks_and_pins_before": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "locks_and_pins_after": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "repositories_before": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tasks/completion.json\n M tools/tests/smoke_tui_slash_pty.py\n?? docs/verification/2026-10-26-dependency-security-qualification.md\n?? src/ralph/\n",
+        "diff_sha256": "ace47929656655ab6dec41e984e6026ccbc0e9004efc0aec7f0ebcd7bec21a6d",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/spatial3d/mod.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n",
+          "diff_sha256": "0288d17db153893e8aafdf03767dc94350d841cc1330d4155d11ed653d395422"
+        }
+      },
+      "repositories_after": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tasks/completion.json\n M tools/tests/smoke_tui_slash_pty.py\n?? docs/verification/2026-10-26-dependency-security-qualification.md\n?? src/ralph/\n",
+        "diff_sha256": "ace47929656655ab6dec41e984e6026ccbc0e9004efc0aec7f0ebcd7bec21a6d",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/spatial3d/mod.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n",
+          "diff_sha256": "0288d17db153893e8aafdf03767dc94350d841cc1330d4155d11ed653d395422"
+        }
+      }
+    },
+    {
+      "name": "updater-safe",
+      "command": [
+        "env",
+        "ABBEY_ZIP_OPENSSL=$RESOLVED_OPENSSL",
+        "ABBEY_UPDATER_OPENSSL=$RESOLVED_OPENSSL",
+        "./tools/cargo.sh",
+        "test",
+        "--locked",
+        "-p",
+        "abbey-desktop",
+        "--test",
+        "updater_cached_verification",
+        "--test",
+        "updater_signature",
+        "--test",
+        "updater_windows_zip",
+        "--test",
+        "updater_zip_contract",
+        "--",
+        "--test-threads=1"
+      ],
+      "environment": {
+        "CARGO_BUILD_JOBS": "1",
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_PROFILE_DEV_DEBUG": "0",
+        "CARGO_PROFILE_TEST_DEBUG": "0",
+        "ABI_WDBX_PATH": ":memory:"
+      },
+      "start_utc": "2026-10-26T12:08:31.736538+00:00",
+      "end_utc": "2026-10-26T12:20:28.984653+00:00",
+      "exit": 0,
+      "output_sha256": "e60c4bb9d2a7001b1a8d7a5b6423e90144cd17ff8d916ada0708548f06bc43be",
+      "raw_receipt": ".work/security-qualification-20261026/updater-safe.json",
+      "raw_receipt_sha256": "950cc94fb5d0f737529fe888fb0e1b94612349b56ede3dbdceb27c026f927c45",
+      "raw_output": ".work/security-qualification-20261026/updater-safe.log",
+      "source_inventory_sha256_before": "e5debad37ccc3a01e96cddc3dc1694b13dda5febf6761d7fdf117141e8227ba6",
+      "source_inventory_sha256_after": "e5debad37ccc3a01e96cddc3dc1694b13dda5febf6761d7fdf117141e8227ba6",
+      "source_inventory_present": true,
+      "source_inventory_stable": true,
+      "locks_and_pins_before": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "locks_and_pins_after": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "repositories_before": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tasks/completion.json\n M tools/tests/smoke_tui_slash_pty.py\n?? docs/verification/2026-10-26-dependency-security-qualification.md\n?? src/ralph/\n",
+        "diff_sha256": "13b7b49f40ec5e22a82daf2cc4f79fcfb30678682b19d0249dcdac4315cfea37",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/spatial3d/mod.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n",
+          "diff_sha256": "0288d17db153893e8aafdf03767dc94350d841cc1330d4155d11ed653d395422"
+        }
+      },
+      "repositories_after": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tasks/completion.json\n M tools/tests/smoke_tui_slash_pty.py\n?? docs/verification/2026-10-26-dependency-security-qualification.md\n?? src/ralph/\n",
+        "diff_sha256": "ace47929656655ab6dec41e984e6026ccbc0e9004efc0aec7f0ebcd7bec21a6d",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/spatial3d/mod.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n",
+          "diff_sha256": "0288d17db153893e8aafdf03767dc94350d841cc1330d4155d11ed653d395422"
+        }
+      }
+    },
+    {
+      "name": "updater-source",
+      "command": [
+        "./tools/cargo.sh",
+        "metadata",
+        "--locked",
+        "--format-version",
+        "1"
+      ],
+      "environment": {
+        "CARGO_BUILD_JOBS": "1",
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_PROFILE_DEV_DEBUG": "0",
+        "CARGO_PROFILE_TEST_DEBUG": "0",
+        "ABI_WDBX_PATH": ":memory:"
+      },
+      "start_utc": "2026-10-26T12:01:13.012242+00:00",
+      "end_utc": "2026-10-26T12:01:13.917600+00:00",
+      "exit": 0,
+      "output_sha256": "c4377254acf8f40d17ef3b23e013b540d0dba6864f552f223f7139b136b439d4",
+      "raw_receipt": ".work/security-qualification-20261026/updater-source.json",
+      "raw_receipt_sha256": "1cb18b6ca59f85c60c10f3155904a33d260960431b84ff733e25adaab01c85b8",
+      "raw_output": ".work/security-qualification-20261026/updater-source.log",
+      "source_inventory_sha256_before": "e5debad37ccc3a01e96cddc3dc1694b13dda5febf6761d7fdf117141e8227ba6",
+      "source_inventory_sha256_after": "e5debad37ccc3a01e96cddc3dc1694b13dda5febf6761d7fdf117141e8227ba6",
+      "source_inventory_present": true,
+      "source_inventory_stable": true,
+      "locks_and_pins_before": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "locks_and_pins_after": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "repositories_before": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tools/tests/smoke_tui_slash_pty.py\n?? src/ralph/\n",
+        "diff_sha256": "7d03bc35cd1c42608500e0b7f195c13138bf3139f49e0b0f5f09d0833326d1ff",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/spatial3d/mod.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n",
+          "diff_sha256": "0288d17db153893e8aafdf03767dc94350d841cc1330d4155d11ed653d395422"
+        }
+      },
+      "repositories_after": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tools/tests/smoke_tui_slash_pty.py\n?? src/ralph/\n",
+        "diff_sha256": "7d03bc35cd1c42608500e0b7f195c13138bf3139f49e0b0f5f09d0833326d1ff",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/spatial3d/mod.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n",
+          "diff_sha256": "0288d17db153893e8aafdf03767dc94350d841cc1330d4155d11ed653d395422"
+        }
+      }
+    },
+    {
+      "name": "vendor-audit",
+      "command": [
+        "cargo",
+        "audit",
+        "--deny",
+        "warnings",
+        "--file",
+        "vendor/Cargo.lock"
+      ],
+      "environment": {
+        "CARGO_BUILD_JOBS": "1",
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_PROFILE_DEV_DEBUG": "0",
+        "CARGO_PROFILE_TEST_DEBUG": "0",
+        "ABI_WDBX_PATH": ":memory:"
+      },
+      "start_utc": "2026-10-26T12:00:07.772641+00:00",
+      "end_utc": "2026-10-26T12:00:09.476126+00:00",
+      "exit": 0,
+      "output_sha256": "182da5b65e0169f29a290ebaf10b079b2c1e13c278939d5b26f9441c1dd7746f",
+      "raw_receipt": ".work/security-qualification-20261026/vendor-audit.json",
+      "raw_receipt_sha256": "e4903b9b38f5b20bcebc0e6dab85aade98c83126814dec74edb2a19e5f22d742",
+      "raw_output": ".work/security-qualification-20261026/vendor-audit.log",
+      "source_inventory_sha256_before": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "source_inventory_sha256_after": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "source_inventory_present": false,
+      "source_inventory_stable": true,
+      "locks_and_pins_before": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "locks_and_pins_after": {
+        "Cargo.toml": "0937f60d04153a6f30e781d506a2b27673b2749943493802b182f79e04c91f84",
+        "Cargo.lock": "c51285b05cc7adf403577c016b39841d993ddea4511061fe0fb13e552aca6982",
+        "vendor/Cargo.lock": "90528d469fd7b2b87555288b6f63213627da5efeef399a984da2f4ff8450435e",
+        "vendor/source-manifest.json": "2604be0ad629068bd745c8f3526b06792f724d0353755de58bd6cc7914d47c8d",
+        "tools/security/check_gtk_vendor.py": "8b74571986f75b3b232dd90e265884c2a4881bd05d3118f37ec506c85a9ca015"
+      },
+      "repositories_before": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tools/tests/smoke_tui_slash_pty.py\n?? src/ralph/\n",
+        "diff_sha256": "b838967fe4c8d98c62ff0c58c881403bd5f058a74a3df4ba68db4b2e9ee6b0d5",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/spatial3d/mod.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n",
+          "diff_sha256": "0288d17db153893e8aafdf03767dc94350d841cc1330d4155d11ed653d395422"
+        }
+      },
+      "repositories_after": {
+        "head": "d34e25842bc5ef6299f3b94ffdd75f85d2cd7fb4",
+        "status": " M CLAUDE.md\n M src/ralph.rs\n M src/tui/predict.rs\n M src/tui/prediction_owner.rs\n M src/tui/tests/prediction_producer.rs\n M tools/tests/smoke_tui_slash_pty.py\n?? src/ralph/\n",
+        "diff_sha256": "b838967fe4c8d98c62ff0c58c881403bd5f058a74a3df4ba68db4b2e9ee6b0d5",
+        "abi": {
+          "head": "63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78",
+          "status": "",
+          "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wdbx": {
+          "head": "612d3570f9ab0d842519aa4dbc4cb977aa33c9e0",
+          "status": " M crates/abi-wdbx/src/spatial3d/mod.rs\n M docs/execution/2026-10-23-substrate-release.md\n?? crates/abi-wdbx/src/spatial3d/frames.rs\n?? crates/abi-wdbx/tests/wdbx_3d_frames.rs\n?? docs/execution/2026-10-26-task7-frame-conversion.md\n?? docs/plans/2026-10-26-task7-frame-conversion.md\n",
+          "diff_sha256": "0288d17db153893e8aafdf03767dc94350d841cc1330d4155d11ed653d395422"
+        }
+      }
+    }
+  ]
+}

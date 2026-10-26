@@ -1366,6 +1366,18 @@
       "todos": [],
       "evidence": {
         "dependency_audit": {
+          "status": "passed",
+          "refs": [
+            "docs/verification/2026-10-26-dependency-security-qualification.md"
+          ]
+        },
+        "consumer_strict_dependency_audit": {
+          "status": "failed",
+          "refs": [
+            "docs/verification/2026-10-26-dependency-security-qualification.md"
+          ]
+        },
+        "historical_dependency_audit": {
           "status": "failed",
           "refs": [
             "docs/verification/2026-10-22-completion-recovery/frozen-2-dependency-scan.log"
@@ -1378,7 +1390,7 @@
             "docs/verification/2026-10-22-completion-recovery.md"
           ]
         },
-        "candidate_dependency_audit": {
+        "historical_candidate_dependency_audit": {
           "status": "failed",
           "refs": [
             "docs/verification/2026-10-22-completion-recovery/security-candidate-dependency-scan.log"
