@@ -27,6 +27,11 @@ pub fn run_cli() -> ExitCode {
 
 fn real_main() -> Result<i32> {
     let cli = Cli::parse();
+    // Knowledge is an explicit local preview: no state opener, backend probing,
+    // TUI recipe, global-flag mutation, or transcript/route logging is needed.
+    if let Some(Commands::Knowledge { cmd }) = &cli.command {
+        return crate::commands::run_knowledge(cmd.clone());
+    }
     let (mut cfg, state) = if let Some(context) = crate::tui::local_recipe::from_environment()? {
         context
     } else {

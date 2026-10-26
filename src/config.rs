@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 // no caller names them today.
 #[allow(unused_imports)]
 pub use crate::config_snapshot::{ConfigField, ConfigSnapshot, ConfigSource, LiveSession};
+pub use crate::knowledge::KnowledgeConfig;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AbbeyConfig {
@@ -33,6 +34,9 @@ pub struct AbbeyConfig {
     /// Learned-memory embedding provider. API credentials are environment-only.
     #[serde(default)]
     pub embeddings: EmbeddingConfig,
+    /// Explicit local knowledge preview only; never injected into generation.
+    #[serde(default)]
+    pub knowledge: KnowledgeConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -94,6 +98,7 @@ impl Default for AbbeyConfig {
             abi_bin: None,
             backend: None,
             embeddings: EmbeddingConfig::default(),
+            knowledge: KnowledgeConfig::default(),
         }
     }
 }
@@ -108,6 +113,7 @@ impl AbbeyConfig {
             abi_bin: None,
             backend: None,
             embeddings: EmbeddingConfig::default(),
+            knowledge: KnowledgeConfig::default(),
         }
     }
 }
@@ -274,6 +280,13 @@ language = "en"
 [roles]
 max = "max"
 gemma = "gemma"
+
+# Explicit CLI retrieval only, not training or automatic chat context.
+[knowledge]
+source = "folder"
+# No folder is inferred. Select an absolute, non-hidden, symlink-free directory.
+# folder = "/selected/knowledge"
+# Alternatives: source = "synthetic"; "memory" is unavailable pending approval selection.
 "#
 }
 
@@ -290,6 +303,7 @@ pub(crate) fn parse_toml_lite_with_keys(text: &str) -> Result<(AbbeyConfig, Hash
         Root,
         Roles,
         Embeddings,
+        Knowledge,
         Unknown,
     }
     let mut section = Section::Root;
@@ -306,11 +320,19 @@ pub(crate) fn parse_toml_lite_with_keys(text: &str) -> Result<(AbbeyConfig, Hash
             section = Section::Embeddings;
             continue;
         }
+        if line == "[knowledge]" {
+            section = Section::Knowledge;
+            continue;
+        }
         if line.starts_with('[') {
             section = Section::Unknown;
             continue;
         }
         let Some((k, v)) = line.split_once('=') else {
+            anyhow::ensure!(
+                section != Section::Knowledge,
+                "invalid knowledge assignment"
+            );
             continue;
         };
         let k = k.trim();
@@ -329,6 +351,10 @@ pub(crate) fn parse_toml_lite_with_keys(text: &str) -> Result<(AbbeyConfig, Hash
                 )
             }
             Section::Unknown => false,
+            Section::Knowledge => {
+                anyhow::ensure!(matches!(k, "source" | "folder"), "unknown knowledge key");
+                true
+            }
         };
         if !known {
             continue;
@@ -336,6 +362,17 @@ pub(crate) fn parse_toml_lite_with_keys(text: &str) -> Result<(AbbeyConfig, Hash
         let v = strip_toml_str(v.trim())
             .with_context(|| format!("config line {}, key {k:?}", index + 1))?;
         match section {
+            Section::Knowledge => {
+                anyhow::ensure!(
+                    keys.insert(format!("knowledge.{k}")),
+                    "duplicate knowledge key"
+                );
+                match k {
+                    "source" => cfg.knowledge.source = v,
+                    "folder" => cfg.knowledge.folder = Some(PathBuf::from(v)),
+                    _ => unreachable!(),
+                }
+            }
             Section::Roles => match k {
                 "max" => {
                     cfg.roles.max = v;
@@ -695,6 +732,29 @@ dimension = 512 # integer comment
         // ollama-when-installed (code default), not a pinned executor.
         assert_eq!(cfg.backend, None);
         assert_eq!(cfg.abi_bin, None);
+        assert_eq!(cfg.knowledge, KnowledgeConfig::default());
+    }
+
+    #[test]
+    fn knowledge_configuration_is_explicit_and_tracks_file_keys_without_io() {
+        let (cfg, keys) = parse_toml_lite_with_keys(
+            "[knowledge]\nsource = 'folder'\nfolder = '/does/not/exist#selected'",
+        )
+        .unwrap();
+        assert_eq!(cfg.knowledge.source, "folder");
+        assert_eq!(
+            cfg.knowledge.folder,
+            Some(PathBuf::from("/does/not/exist#selected"))
+        );
+        assert!(keys.contains("knowledge.source"));
+        assert!(keys.contains("knowledge.folder"));
+        for text in [
+            "[knowledge]\nsouce = 'synthetic'",
+            "[knowledge]\nsource",
+            "[knowledge]\nsource = 'folder'\nsource = 'synthetic'",
+        ] {
+            assert!(parse_toml_lite(text).is_err());
+        }
     }
 
     /// No *commented* line may look like a real assignment for a different

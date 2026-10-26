@@ -82,6 +82,7 @@ dependencies = [
  "abi-agent-runtime",
  "abi-capability",
  "jsonschema 0.52.1",
+ "libc",
  "serde",
  "serde_json",
  "sha2 0.11.1",

@@ -33,6 +33,7 @@ mod hybrid_loop;
 mod improve;
 mod init;
 mod inventory;
+mod knowledge;
 mod learn;
 mod mcp_host;
 mod media;

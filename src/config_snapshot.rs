@@ -75,6 +75,7 @@ pub struct ConfigSnapshot {
     pub memory_backend: ConfigField,
     pub abi_bin: Option<ConfigField>,
     pub embeddings: HashMap<String, ConfigField>,
+    pub knowledge: HashMap<String, ConfigField>,
 }
 
 impl AbbeyConfig {
@@ -175,6 +176,28 @@ impl AbbeyConfig {
                 value: abi_value.unwrap_or_default(),
                 source: source(env_present("ABBEY_ABI_BIN"), file_present("abi_bin")),
             }),
+            knowledge: HashMap::from([
+                (
+                    "source".to_string(),
+                    ConfigField {
+                        value: self.knowledge.source.clone(),
+                        source: source(false, file_present("knowledge.source")),
+                    },
+                ),
+                (
+                    "folder".to_string(),
+                    ConfigField {
+                        // Do not publish private source paths in diagnostics.
+                        value: if self.knowledge.folder.is_some() {
+                            "(configured)"
+                        } else {
+                            "(not configured)"
+                        }
+                        .to_string(),
+                        source: source(false, file_present("knowledge.folder")),
+                    },
+                ),
+            ]),
             embeddings: HashMap::from([
                 (
                     "provider".to_string(),
