@@ -1,0 +1,16 @@
+[package]
+name = "gtk-compat-tests"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[features]
+default = []
+glib-runtime = ["dep:glib"]
+gtk-runtime = ["glib-runtime", "dep:gtk"]
+
+[dependencies]
+glib-macros = "=0.18.5"
+gtk3-macros = "=0.18.2"
+glib = { version = "=0.18.5", optional = true }
+gtk = { version = "=0.18.2", optional = true }
