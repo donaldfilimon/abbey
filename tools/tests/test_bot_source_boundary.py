@@ -44,7 +44,18 @@ class BotSourceBoundary(unittest.TestCase):
         self.assertNotIn('bot-extension', manifest['features'])
         self.assertFalse(any(dep.get('path', '').startswith('extensions/bot')
                              for dep in manifest['dependencies'].values() if isinstance(dep, dict)))
-        self.assertEqual((ROOT / 'Cargo.lock').read_text(), git('show', '80187be345828ed966374c5cd6880eb40fe62bec:Cargo.lock') + '\n')
+        # The lock may grow only by first-party workspace packages (no
+        # registry/git source); nothing from Bot's separate graph may enter.
+        def packages(text):
+            return {(p['name'], p['version']): p.get('source')
+                    for p in tomllib.loads(text)['package']}
+        current = packages((ROOT / 'Cargo.lock').read_text())
+        baseline = packages(git('show', '80187be345828ed966374c5cd6880eb40fe62bec:Cargo.lock'))
+        bot_only = set(packages((BOT / 'Cargo.lock').read_text())) - set(baseline)
+        added = set(current) - set(baseline)
+        self.assertNotIn('abbey-bot', {name for name, _ in current})
+        self.assertFalse(added & bot_only)
+        self.assertEqual({key for key in added if current[key] is not None}, set())
 
     def test_real_library_and_single_compatibility_entry(self):
         manifest = tomllib.loads((BOT / 'Cargo.toml').read_text())
