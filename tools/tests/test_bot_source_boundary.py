@@ -1,9 +1,25 @@
 """Bound the attributed import and isolated Cargo package without running Bot."""
+import importlib
 import json
 from pathlib import Path
 import subprocess
-import tomllib
 import unittest
+
+
+def resolve_toml_reader(importer=importlib.import_module):
+    """Use an available structural TOML parser, including Xcode Python's pip."""
+    for module_name in ('tomllib', 'tomli', 'pip._vendor.tomli'):
+        try:
+            return importer(module_name)
+        except ModuleNotFoundError:
+            continue
+    raise RuntimeError(
+        'the Bot boundary check requires Python 3.11+ or a managed Python '
+        'runtime providing tomli; no structural TOML reader is available'
+    )
+
+
+tomllib = resolve_toml_reader()
 
 ROOT = Path(__file__).resolve().parents[2]
 BOT = ROOT / 'extensions/bot'
