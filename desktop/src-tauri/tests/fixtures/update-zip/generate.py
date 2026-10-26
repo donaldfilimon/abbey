@@ -19,7 +19,22 @@ import tempfile
 import zipfile
 
 
-OPENSSL = os.environ.get('ABBEY_ZIP_OPENSSL', 'openssl')
+_openssl_candidates = [os.environ.get('ABBEY_ZIP_OPENSSL')]
+for _candidate in ('/opt/homebrew/bin/openssl', '/usr/local/bin/openssl', 'openssl'):
+    if _candidate not in _openssl_candidates:
+        _openssl_candidates.append(_candidate)
+OPENSSL = None
+for _candidate in _openssl_candidates:
+    if not _candidate:
+        continue
+    try:
+        subprocess.check_output([_candidate, 'version'], stderr=subprocess.DEVNULL)
+        OPENSSL = _candidate
+        break
+    except (OSError, subprocess.CalledProcessError):
+        continue
+if OPENSSL is None:
+    OPENSSL = 'openssl'
 
 
 def run(*args):

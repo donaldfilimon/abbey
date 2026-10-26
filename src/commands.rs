@@ -353,6 +353,7 @@ pub fn run_cli(cli: Cli, state: AbbeyState, mut cfg: AgentConfig) -> Result<i32>
             subagents::dispatch(&cfg, &state, &args, &ac.roles.max, &ac.roles.gemma)
         }
         Some(Commands::Improve { args }) => improve::dispatch(&cfg, &state, &args),
+        Some(Commands::Ralph { args }) => crate::ralph::dispatch(&cfg, &state, &args),
         Some(Commands::Agents) => {
             inventory::print_agent_tools();
             for line in build_info::lines() {

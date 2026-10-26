@@ -350,6 +350,10 @@ pub fn dispatch_slash(input: &str, state: &AbbeyState, cfg: &mut AgentConfig) ->
             let args = slash::split_args(rest);
             crate::improve::dispatch(cfg, state, &args)
         }
+        "ralph" | "ralph-loop" => {
+            let args = slash::split_args(rest);
+            crate::ralph::dispatch(cfg, state, &args)
+        }
         "permissions" => {
             print_permissions(cfg);
             Ok(0)

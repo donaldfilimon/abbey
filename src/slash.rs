@@ -322,6 +322,11 @@ pub const SLASH_CATALOG: &[SlashCmd] = &[
         kind: SlashKind::Local,
     },
     SlashCmd {
+        name: "ralph",
+        help: "Self-learning Rust Ralph loop: /ralph [status|init|plan|step|run|learn|mcp]",
+        kind: SlashKind::Local,
+    },
+    SlashCmd {
         name: "permissions",
         help: "Show trust/force/sandbox knobs",
         kind: SlashKind::Local,

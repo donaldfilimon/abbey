@@ -384,6 +384,12 @@ pub enum Commands {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
+    /// Self-learning Rust Ralph loop: fresh context + single task + Cargo gate + MCP
+    #[command(visible_alias = "ralph-loop")]
+    Ralph {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
     /// Discover peer agentic tools on PATH
     #[command(visible_alias = "tools")]
     Agents,
