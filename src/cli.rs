@@ -132,6 +132,11 @@ pub enum ExecMode {
 
 #[derive(Debug, Clone, Subcommand)]
 pub enum Commands {
+    /// Explicit local-only knowledge preview (not chat context or training)
+    Knowledge {
+        #[command(subcommand)]
+        cmd: KnowledgeCmd,
+    },
     /// Open the Abbey TUI (default with no args)
     Tui,
     /// Force a brand-new chat, then start
@@ -508,6 +513,20 @@ pub enum Commands {
     /// Pass-through to cursor-agent
     #[command(external_subcommand)]
     External(Vec<String>),
+}
+
+#[derive(Debug, Clone, Subcommand)]
+pub enum KnowledgeCmd {
+    /// Report configuration without inspecting sources or creating state
+    Status,
+    /// Search the explicitly configured source locally; prints private excerpts
+    Search {
+        /// Literal case-insensitive substring, at most 256 UTF-8 bytes
+        query: String,
+        /// Maximum returned excerpts (1..=10)
+        #[arg(long, default_value_t = 5, value_parser = clap::value_parser!(u8).range(1..=10))]
+        limit: u8,
+    },
 }
 
 #[cfg(test)]
