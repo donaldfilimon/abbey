@@ -1,4 +1,35 @@
-# AGENTS.md
+# Repository Guidelines
+
+## Project Structure & Module Organization
+
+`src/` holds the Rust library, CLI/TUI, and daemon; `tests/` holds process and library contracts. `desktop/` contains the Tauri/React client and code generation. `tools/`, `tasks/`, and `docs/` own checks, ledgers, and evidence. Required sibling checkouts are `../abi` and `../wdbx`.
+
+## Build, Test, and Development Commands
+
+`./check.sh` is the merge gate. `./tools/cargo.sh build --locked --bins` builds
+the executables; `./tools/cargo.sh test --locked --test cli_surface` focuses
+CLI contracts. `./tools/cargo.sh run --locked --bin abbey -- --help` shows local
+verbs. Use the checkout’s desktop guide for its separate client gate.
+
+## Coding Style & Naming Conventions
+
+Use rustfmt for Rust (four-space indentation), `snake_case` modules/functions, and
+`PascalCase` types. Follow local lint settings and preserve public contracts.
+Keep documentation paths relative to the project. Do not reformat unrelated code.
+
+## Testing Guidelines
+
+Rust uses `#[test]` unit tests and package integration suites; retain existing independent oracles and golden fixtures. Name tests after observable behavior and cover affected failure paths.
+Use isolated fixtures rather than live data. Report executed checks and skips;
+compilation alone does not establish runtime or platform qualification.
+
+## Commit & Pull Request Guidelines
+
+Recent history uses imperative subjects such as `Expand ABI model lifecycle and desktop model controls`. Use similarly focused, descriptive commits. PRs should describe the behavior and rationale, link relevant issues or
+plans, and list actual checks and remaining platform gaps. Include screenshots
+for visual changes. Preserve unrelated edits and existing generated-file rules.
+
+## Maintained Project Instructions
 
 <!-- BEGIN 2026-10-19 rewrite decision -->
 ## Current decision: Zig rewrite canceled (2026-10-19)

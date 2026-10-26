@@ -1,3 +1,9 @@
+# Keep nested Git worktrees independent of any ancestor Cargo workspace.
+# The desktop client retains its separate workspace and lockfile.
+[workspace]
+resolver = "3"
+exclude = ["desktop"]
+
 [package]
 name = "abbey"
 version = "2.6.0"
