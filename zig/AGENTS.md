@@ -1,4 +1,14 @@
-# AGENTS.md
+# Repository Guidelines
+
+## Contributor Scope
+
+The parent repository canceled the Zig rewrite on 2026-10-19. This directory
+is retained history: do not resume the implementation or run obsolete completion
+plans. Follow the parent `AGENTS.md` and rewrite decision for active Rust work.
+The historical rules below document the old boundary and do not authorize new
+Zig development. Preserve source, fixtures, and original history.
+
+## Maintained Project Instructions
 
 Canonical agent guidance for abbey-zig. `CLAUDE.md` points here.
 

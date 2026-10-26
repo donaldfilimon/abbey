@@ -1,0 +1,11 @@
+{
+  "abi-manifest.json": "36762ad6823ca22d74a7a01bd2faca58342d11b86f52e4da8d4329290086c3ea",
+  "plugin-validation.log": "271c1bb340ebfcfaa3ef3003a234c20746b91493ef93c78f5b057da76be8ab95",
+  "runners.json": "a6323fd2742532ff561fbab5fcc3407e6cf30877799d6d9ae27232ef9f051a25",
+  "baseline-desktop.log": "ccebb0349d0a1838e69529872321cccaa18562a2455fca096e778d915e122c00",
+  "baseline-root.log": "dc79ba472016988673e611e429eacebcb0cfc8fc2985a8c459c624deb85ad560",
+  "baseline-tools.log": "43fa0ca1dd2a905108cb65b8230b53cd3158cab76397b2839dbd66bd0c784367",
+  "wdbx-manifest.json": "f4586bad77e8f19e0a4171f9bb7f98f5826760cf7dd88f4f00aa6975970716a7",
+  "abbey-manifest.json": "d7eadb3a5c65153504f63dd9e6598ac02945d103a4266b41eecd363acff51afd",
+  "dependency-audit.log": "9efa2d2ef4e39133e2fb0d833ad6fb5f33dd2b489ed378fa16ba2ecd920602af"
+}

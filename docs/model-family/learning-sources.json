@@ -1,0 +1,9 @@
+{
+  "schema": "abbey.learning.sources.v1",
+  "private": true,
+  "sources": {
+    "abbey": ["tasks/lessons.md", "docs/**/*learn*.md", "docs/**/*train*.md", "docs/**/*knowledge*.md", "docs/agent-guide.md", "README.md"],
+    "abi": ["tasks/lessons.md", "docs/**/*learn*.md", "docs/**/*train*.md", "docs/**/*knowledge*.md", "docs/agent-guide.md", "README.md"],
+    "wdbx": ["tasks/lessons.md", "docs/**/*learn*.md", "docs/**/*train*.md", "docs/**/*knowledge*.md", "docs/agent-guide.md", "README.md"]
+  }
+}

@@ -27,7 +27,7 @@ def fixture_manifest() -> dict[str, object]:
         "external_required": {"state": "not_required", "reason": "not required"},
     }
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "claims": [
             {
                 "id": "example-current",
@@ -204,6 +204,33 @@ class ClaimsSyncTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "replacement|invalid instead"):
                     claims_sync.normalize_manifest(invalid)
 
+    def test_old_manifest_schema_is_rejected_before_new_channel_states(self) -> None:
+        manifest = fixture_manifest()
+        manifest["schema_version"] = 2
+        with self.assertRaisesRegex(ValueError, "schema_version must be 3"):
+            claims_sync.normalize_manifest(manifest)
+
+    def test_external_channel_failure_preserves_verified_local_proof(self) -> None:
+        for state in ("failed", "expired"):
+            with self.subTest(state=state):
+                manifest = fixture_manifest()
+                claim = manifest["claims"][0]
+                claim["status"] = state
+                claim["evidence"]["local_live"] = {"state": "verified", "refs": ["local.log"]}
+                claim["evidence"]["external_required"] = {"state": state, "refs": ["external.log"]}
+                claims_sync.normalize_manifest(manifest)
+                self.assertEqual(claim["evidence"]["local_live"]["state"], "verified")
+
+    def test_current_cannot_hide_failed_or_expired_channels(self) -> None:
+        for state in ("failed", "expired"):
+            manifest = fixture_manifest()
+            claim = manifest["claims"][0]
+            claim["evidence"]["external_required"] = {"state": state, "refs": ["external.log"]}
+            with self.assertRaisesRegex(ValueError, "cannot carry"):
+                claims_sync.normalize_manifest(manifest)
+            claim["status"] = "partial"
+            claims_sync.normalize_manifest(manifest)
+
     def test_evidence_state_shapes_are_exact(self) -> None:
         invalid_states = (
             {"state": "required"},
@@ -364,6 +391,32 @@ Body.
             self.assertEqual(
                 claims_sync.validate_test_references([claim], root=root), []
             )
+
+    def test_test_reference_native_workspace_declared_and_missing_names(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = self._test_ref_root(directory)
+            sources = {
+                "crates/abbey-learning/src/native/tests.rs": "native_tensor_update_test",
+                "crates/abbey-learning/tests/pipeline.rs": "native_pipeline_roundtrip_test",
+            }
+            for relative, name in sources.items():
+                path = root / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(f"#[test]\nfn {name}() {{}}\n", encoding="utf-8")
+            claim = fixture_manifest()["claims"][0]
+            claim["evidence"]["automated_test_refs"] = [
+                f"{relative}::{name}" for relative, name in sources.items()
+            ]
+            self.assertEqual(
+                claims_sync.validate_test_references([claim], root=root), []
+            )
+            claim["evidence"]["automated_test_refs"].append(
+                "crates/abbey-learning/tests/pipeline.rs::missing_native_test_function"
+            )
+            problems = claims_sync.validate_test_references([claim], root=root)
+            self.assertEqual(len(problems), 1)
+            self.assertIn("missing_native_test_function", problems[0])
+            self.assertIn("declared test", problems[0])
 
     def test_test_reference_with_missing_name_fails(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
