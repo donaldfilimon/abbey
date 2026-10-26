@@ -132,7 +132,7 @@ pub enum ExecMode {
 
 #[derive(Debug, Clone, Subcommand)]
 pub enum Commands {
-    /// Explicit local-only knowledge preview (not chat context or training)
+    /// Read-only knowledge previews and separately consented local project memory
     Knowledge {
         #[command(subcommand)]
         cmd: KnowledgeCmd,
@@ -362,7 +362,7 @@ pub enum Commands {
     /// Alias for `learn stats` (train_candidate counts + % + TUI/doctor)
     #[command(name = "learn-stats", visible_alias = "train-stats")]
     LearnStats,
-    /// Bounded, consent-gated self-training pipeline (external `abi` trainer)
+    /// Consented training: native Rust `family` or retained ABI demo verbs
     Train {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
@@ -527,6 +527,62 @@ pub enum KnowledgeCmd {
         #[arg(long, default_value_t = 5, value_parser = clap::value_parser!(u8).range(1..=10))]
         limit: u8,
     },
+    /// Explicitly approve project-scoped private memory (never training consent)
+    Remember {
+        text: String,
+        #[arg(long)]
+        source: String,
+        #[arg(long)]
+        owner: String,
+        #[arg(long, default_value_t = 30)]
+        days: u16,
+        #[command(flatten)]
+        scope: MemoryScope,
+    },
+    /// Replace an approved memory; old version becomes obsolete first
+    Correct {
+        id: String,
+        text: String,
+        #[command(flatten)]
+        scope: MemoryScope,
+    },
+    /// Logical deletion; retained storage is not physical erasure
+    Forget {
+        id: String,
+        #[command(flatten)]
+        scope: MemoryScope,
+    },
+    /// Recall active approved memories in exactly this project
+    Recall {
+        query: String,
+        #[command(flatten)]
+        scope: MemoryScope,
+    },
+    /// Print active approved project memories to stdout
+    Export {
+        #[command(flatten)]
+        scope: MemoryScope,
+    },
+    /// Generate using private recall and an explicit local Ollama model only
+    Ask {
+        query: String,
+        #[arg(long, default_value = "ollama")]
+        route: String,
+        #[arg(long)]
+        model: String,
+        #[command(flatten)]
+        scope: MemoryScope,
+    },
+}
+
+#[derive(Debug, Clone, clap::Args)]
+pub struct MemoryScope {
+    /// Exact existing project directory; canonical path scopes every operation
+    #[arg(long)]
+    pub project: PathBuf,
+    /// File containing `abbey-memory-consent: v1` on its own line
+    #[arg(long)]
+    pub consent: PathBuf,
 }
 
 #[cfg(test)]

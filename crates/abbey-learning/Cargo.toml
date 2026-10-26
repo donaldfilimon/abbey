@@ -1,0 +1,31 @@
+[package]
+name = "abbey-learning"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+license = "MIT"
+description = "Native Rust approved learning snapshots, LoRA training and model releases"
+
+[lints.rust]
+unsafe_code = "deny"
+
+[dependencies]
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+clap = { version = "4", features = ["derive"] }
+uuid = { version = "1", features = ["v4"] }
+regex = "1"
+fs4 = "0.13"
+safetensors = "0.8"
+half = "2"
+tokenizers = { version = "0.22.2", default-features = false, features = ["fancy-regex"] }
+candle-core = { git = "https://github.com/huggingface/candle.git", rev = "70f72e9cfdbfc570846ca363ead2135394af3e9a", version = "0.11", default-features = false }
+
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.30", features = ["fs", "dir", "signal", "process"] }
+
+[features]
+default = []
+metal = ["candle-core/metal"]

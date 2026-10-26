@@ -6,6 +6,7 @@ version = 4
 name = "abbey"
 version = "2.6.0"
 dependencies = [
+ "abbey-learning",
  "abi-agent-host",
  "abi-agent-runtime",
  "abi-ai",
@@ -76,6 +77,25 @@ dependencies = [
  "serde",
  "serde_json",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "abbey-learning"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "candle-core",
+ "clap",
+ "fs4",
+ "half",
+ "nix 0.30.1",
+ "regex",
+ "safetensors",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tokenizers 0.22.2",
+ "uuid",
 ]
 
 [[package]]

@@ -1,8 +1,9 @@
-//! Explicit, read-only local knowledge previews. No agent, training, memory
-//! opener, embedding provider, network client, or persistent index is used.
+//! Read-only previews plus separately consented project memory commands.
+//! Live memory is explicit and never injected into the global agent path.
 
 #[cfg(unix)]
 mod folder;
+mod live;
 
 use anyhow::{Result, bail, ensure};
 use serde::{Deserialize, Serialize};
@@ -155,6 +156,7 @@ pub(crate) fn dispatch(cmd: KnowledgeCmd) -> Result<i32> {
             "mode": "explicit local CLI preview only; not chat-RAG",
             "results": search(&cfg.knowledge, &query, limit)?
         }),
+        other => live::dispatch(other, &cfg)?,
     };
     println!("{}", serde_json::to_string(&value)?);
     Ok(0)
