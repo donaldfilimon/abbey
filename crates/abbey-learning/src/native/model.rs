@@ -63,12 +63,14 @@ impl Config {
             self.num_attention_heads > 0
                 && self.num_attention_heads <= 128
                 && self.num_key_value_heads > 0
-                && self.num_attention_heads % self.num_key_value_heads == 0,
+                && self
+                    .num_attention_heads
+                    .is_multiple_of(self.num_key_value_heads),
             "invalid grouped attention dimensions"
         );
         if self.head_dim == 0 {
             ensure!(
-                self.hidden_size % self.num_attention_heads == 0,
+                self.hidden_size.is_multiple_of(self.num_attention_heads),
                 "hidden size/head count mismatch"
             );
             self.head_dim = self.hidden_size / self.num_attention_heads;
@@ -76,7 +78,7 @@ impl Config {
         ensure!(
             self.head_dim > 0
                 && self.head_dim <= 512
-                && self.head_dim % 2 == 0
+                && self.head_dim.is_multiple_of(2)
                 && self.rope_theta.is_finite()
                 && self.rope_theta > 1.0
                 && self.rms_norm_eps.is_finite()

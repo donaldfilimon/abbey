@@ -122,7 +122,7 @@ fn quality_gates_reject_duplicate_cases_privacy_and_nll_regression() {
 fn tensor_file(path: &Path, value: f32) -> Value {
     let header = json!({"weight":{"dtype":"F32","shape":[1],"data_offsets":[0,4]}});
     let mut header = canonical(&header);
-    while header.len() % 8 != 0 {
+    while !header.len().is_multiple_of(8) {
         header.push(b' ');
     }
     let mut bytes = (header.len() as u64).to_le_bytes().to_vec();

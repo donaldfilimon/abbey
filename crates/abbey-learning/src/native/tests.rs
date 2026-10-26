@@ -78,19 +78,18 @@ fn native_lora_has_real_gradients_and_preserves_base() {
     let grad = loss.backward().unwrap();
     let mut changed = 0;
     for (_, var) in model.variables() {
-        if let Some(g) = grad.get(var.as_tensor()) {
-            if g.abs()
+        if let Some(g) = grad.get(var.as_tensor())
+            && g.abs()
                 .unwrap()
                 .max_all()
                 .unwrap()
                 .to_scalar::<f32>()
                 .unwrap()
                 > 0.0
-            {
-                var.set(&(var.as_tensor() - &(g * 0.01).unwrap()).unwrap())
-                    .unwrap();
-                changed += 1;
-            }
+        {
+            var.set(&(var.as_tensor() - &(g * 0.01).unwrap()).unwrap())
+                .unwrap();
+            changed += 1;
         }
     }
     assert!(changed > 0);

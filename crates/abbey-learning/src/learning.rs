@@ -297,33 +297,33 @@ fn sections(text: &str, markdown: bool) -> Result<Vec<(String, String)>> {
             body.push(line);
             continue;
         }
-        if fenced.is_none() {
-            if let Some(found) = heading.captures(line) {
-                if !body.is_empty() {
-                    let normalized = body
-                        .join(" ")
-                        .split_whitespace()
-                        .collect::<Vec<_>>()
-                        .join(" ");
-                    if !normalized.is_empty() {
-                        result.push((current.clone(), normalized));
-                    }
-                }
-                let depth = found[1].len();
-                stack.retain(|(n, _)| *n < depth);
-                stack.push((
-                    depth,
-                    found[2].split_whitespace().collect::<Vec<_>>().join(" "),
-                ));
-                current = stack
-                    .iter()
-                    .map(|(_, s)| s.as_str())
+        if fenced.is_none()
+            && let Some(found) = heading.captures(line)
+        {
+            if !body.is_empty() {
+                let normalized = body
+                    .join(" ")
+                    .split_whitespace()
                     .collect::<Vec<_>>()
-                    .join(" / ");
-                ensure!(current.len() <= 4096, "heading path bound exceeded");
-                body = vec![line];
-                continue;
+                    .join(" ");
+                if !normalized.is_empty() {
+                    result.push((current.clone(), normalized));
+                }
             }
+            let depth = found[1].len();
+            stack.retain(|(n, _)| *n < depth);
+            stack.push((
+                depth,
+                found[2].split_whitespace().collect::<Vec<_>>().join(" "),
+            ));
+            current = stack
+                .iter()
+                .map(|(_, s)| s.as_str())
+                .collect::<Vec<_>>()
+                .join(" / ");
+            ensure!(current.len() <= 4096, "heading path bound exceeded");
+            body = vec![line];
+            continue;
         }
         body.push(line);
     }
@@ -348,10 +348,10 @@ fn chunks(text: &str) -> Vec<String> {
             .unwrap_or(rest.len());
         if end < rest.len() {
             let midpoint = rest.char_indices().nth(200).map(|(i, _)| i).unwrap_or(0);
-            if let Some(index) = rest[..end].rfind(' ') {
-                if index >= midpoint {
-                    end = index;
-                }
+            if let Some(index) = rest[..end].rfind(' ')
+                && index >= midpoint
+            {
+                end = index;
             }
         }
         result.push(rest[..end].into());

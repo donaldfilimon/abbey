@@ -266,16 +266,22 @@ pub(crate) fn verify_tensors(file: &Path, evidence: &Value) -> Result<()> {
         let finite = match tensor.dtype() {
             Dtype::F32 => tensor
                 .data()
-                .chunks_exact(4)
-                .all(|b| f32::from_le_bytes(b.try_into().expect("f32 width")).is_finite()),
-            Dtype::F16 => tensor.data().chunks_exact(2).all(|b| {
-                half::f16::from_bits(u16::from_le_bytes(b.try_into().expect("f16 width")))
-                    .is_finite()
-            }),
-            Dtype::BF16 => tensor.data().chunks_exact(2).all(|b| {
-                half::bf16::from_bits(u16::from_le_bytes(b.try_into().expect("bf16 width")))
-                    .is_finite()
-            }),
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .all(|b| f32::from_le_bytes(*b).is_finite()),
+            Dtype::F16 => tensor
+                .data()
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .all(|b| half::f16::from_bits(u16::from_le_bytes(*b)).is_finite()),
+            Dtype::BF16 => tensor
+                .data()
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .all(|b| half::bf16::from_bits(u16::from_le_bytes(*b)).is_finite()),
             _ => bail!("unsupported adapter tensor dtype"),
         };
         ensure!(finite, "nonfinite actual adapter tensor");
