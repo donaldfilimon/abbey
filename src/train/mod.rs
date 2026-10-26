@@ -133,15 +133,15 @@ pub fn run(state: &AbbeyState, args: &[String]) -> Result<i32> {
         let value = match abbey_learning::run(&args[1..], &prefix) {
             Ok(value) => value,
             Err(error) => {
-                if let Some(help) = error.downcast_ref::<clap::Error>() {
-                    if matches!(
+                if let Some(help) = error.downcast_ref::<clap::Error>()
+                    && matches!(
                         help.kind(),
                         clap::error::ErrorKind::DisplayHelp
                             | clap::error::ErrorKind::DisplayVersion
-                    ) {
-                        crate::output::println(&help.to_string())?;
-                        return Ok(0);
-                    }
+                    )
+                {
+                    crate::output::println(help.to_string())?;
+                    return Ok(0);
                 }
                 return Err(error);
             }

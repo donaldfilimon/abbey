@@ -397,12 +397,11 @@ fn write_wire_response_framed(
         match super::super::framing::serialize_bounded(&response, limit) {
             Ok(bytes) => break bytes,
             Err(_) => {
-                if kind == super::super::framing::FrameKind::Schema3 {
-                    if let WireResponse::V4(value) = &mut response {
-                        if super::v4_pages::trim_tail(value) {
-                            continue;
-                        }
-                    }
+                if kind == super::super::framing::FrameKind::Schema3
+                    && let WireResponse::V4(value) = &mut response
+                    && super::v4_pages::trim_tail(value)
+                {
+                    continue;
                 }
                 let mut fallback = response.response_too_large();
                 bind_v4_schema(&mut fallback, kind);
