@@ -1,0 +1,941 @@
+//! Slash commands.
+//!
+//! Every command here defers before doing anything that touches the network.
+//! Discord invalidates an interaction token 3 seconds after it is issued, and a
+//! single REST round-trip on a cold connection can eat that budget on its own —
+//! so the deferral is unconditional rather than "when it looks slow". That rule
+//! has one non-obvious corollary: **never take `GuildChannel` as a command
+//! parameter.** poise resolves that type with a REST fetch *during argument
+//! parsing*, before the command body — and therefore the defer — ever runs.
+//! Take `ChannelId` (resolved fetch-free from interaction data) and fetch after
+//! deferring, as `/perms` does.
+//!
+//! The decision logic these commands render lives in the pure modules —
+//! [`crate::persona`], [`crate::profile`], [`crate::perms`],
+//! [`crate::moderation`], [`crate::server`], [`crate::webhook`], [`crate::roleplay_gate`] — which know
+//! nothing about Discord. That split is what lets
+//! the decision suite run without a gateway. This file is the only one that
+//! touches Discord types, and its job is translation: fetch over REST, build
+//! the plain struct, hand it to a pure function, post the string back.
+
+use serenity::all::{
+    ChannelId, ChannelType, GuildId, Member, PartialGuild, PermissionOverwriteType, Permissions,
+    User,
+};
+
+use crate::ask;
+use crate::generation;
+#[cfg(test)]
+use crate::llm;
+use crate::moderation::{self, History, Severity};
+mod contextual_moderation;
+mod modcase;
+pub use modcase::modcase;
+mod question;
+use crate::perms::{self, Overwrite, Scope, Subject};
+use crate::persona::Persona;
+use crate::pipeline;
+use crate::profile::{self, ProfileFacts};
+use crate::roleplay_gate::{self, RoleplayContext};
+use crate::routing_signals;
+use crate::runtime::{self, AppState};
+#[cfg(test)]
+use crate::server;
+use crate::server::Archetype;
+use crate::webhook;
+use crate::{Context, Error};
+pub use contextual_moderation::ContextAssessmentChoice;
+use question::answer_question_with_memory;
+
+// ---------------------------------------------------------------------------
+// Choice mirrors
+//
+// These exist so the pure modules never gain a poise dependency. One quirk is
+// load-bearing and verified in the derive macro's source: doc comments on the
+// variants NEVER reach Discord — the dropdown shows `#[name = "..."]` or the
+// bare variant ident. Guidance for the person choosing goes in `#[name]`.
+// ---------------------------------------------------------------------------
+
+/// Discord-facing mirror of [`Archetype`].
+#[derive(Debug, poise::ChoiceParameter)]
+pub enum ArchetypeChoice {
+    #[name = "community — public and open-join, rules gate, moderation depth"]
+    Community,
+    #[name = "gaming — voice-first group"]
+    Gaming,
+    #[name = "project — work server, structured and low noise"]
+    Project,
+    #[name = "friend group — small and deliberately flat"]
+    FriendGroup,
+}
+
+impl From<ArchetypeChoice> for Archetype {
+    fn from(choice: ArchetypeChoice) -> Self {
+        match choice {
+            ArchetypeChoice::Community => Self::Community,
+            ArchetypeChoice::Gaming => Self::Gaming,
+            ArchetypeChoice::Project => Self::Project,
+            ArchetypeChoice::FriendGroup => Self::FriendGroup,
+        }
+    }
+}
+
+/// Discord-facing mirror of [`Severity`].
+#[derive(Debug, poise::ChoiceParameter)]
+pub enum SeverityChoice {
+    #[name = "minor — rudeness, mild spam, derailing"]
+    Minor,
+    #[name = "serious — harassment, slurs, deliberate disruption"]
+    Serious,
+    #[name = "severe — threats, doxxing, raiding; bans on the first offence"]
+    Severe,
+}
+
+impl From<SeverityChoice> for Severity {
+    fn from(choice: SeverityChoice) -> Self {
+        match choice {
+            SeverityChoice::Minor => Self::Minor,
+            SeverityChoice::Serious => Self::Serious,
+            SeverityChoice::Severe => Self::Severe,
+        }
+    }
+}
+
+/// Discord-facing mirror of [`Persona`].
+///
+/// A dropdown, not a free-form string: the typo case ("no persona named
+/// `abbby`") is unrepresentable, which deleted both `Persona::parse` and the
+/// error branch that apologised for it.
+#[derive(Debug, poise::ChoiceParameter)]
+pub enum PersonaChoice {
+    #[name = "abbey — warm sharp friend and default"]
+    Abbey,
+    #[name = "aviva — concise direct expert"]
+    Aviva,
+    #[name = "abi — orchestration and governance"]
+    Abi,
+}
+
+impl From<PersonaChoice> for Persona {
+    fn from(choice: PersonaChoice) -> Self {
+        match choice {
+            PersonaChoice::Abbey => Self::Abbey,
+            PersonaChoice::Aviva => Self::Aviva,
+            PersonaChoice::Abi => Self::Abi,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Shared shell helpers
+// ---------------------------------------------------------------------------
+
+/// Render a permission bitfield as the names Discord's own UI uses.
+///
+/// Do not be tempted to derive these from `Debug`: serenity's `Permissions`
+/// prints as `Permissions(3072)`, a raw bitfield, so scraping it yields a number
+/// rather than flag names. `get_permission_names` is the supported accessor.
+fn permission_names(perms: Permissions) -> Vec<String> {
+    perms
+        .get_permission_names()
+        .into_iter()
+        .map(str::to_string)
+        .collect()
+}
+
+/// Fetch a member together with the guild, concurrently.
+///
+/// This is the whole preamble for every guild-reading command. `PartialGuild`
+/// already carries `roles` and `owner_id`, so the separate `guild_id.roles()`
+/// call the commands used to make was a third round-trip for data already in
+/// hand — and the two fetches that remain are independent, so they run in
+/// parallel rather than back to back inside the 3-second window.
+///
+/// Fetched over HTTP rather than read from cache: the cache is only as complete
+/// as the intents we hold, and a partial cache would silently produce a thinner
+/// answer rather than an error.
+async fn fetch_member_and_guild(
+    ctx: Context<'_>,
+    guild_id: GuildId,
+    user_id: serenity::all::UserId,
+) -> Result<(Member, PartialGuild), Error> {
+    let (member, guild) = tokio::try_join!(
+        guild_id.member(ctx.http(), user_id),
+        guild_id.to_partial_guild(ctx.http()),
+    )?;
+    if !member_facts_match(&member, &guild, guild_id, user_id) {
+        return Err("Discord could not confirm the requested member and guild facts.".into());
+    }
+    Ok((member, guild))
+}
+
+fn member_facts_match(
+    member: &Member,
+    guild: &PartialGuild,
+    guild_id: GuildId,
+    user_id: serenity::all::UserId,
+) -> bool {
+    guild_id.get() != 0
+        && user_id.get() != 0
+        && guild.id == guild_id
+        && member.guild_id == guild_id
+        && member.user.id == user_id
+        && guild
+            .roles
+            .contains_key(&serenity::all::RoleId::new(guild_id.get()))
+        && member
+            .roles
+            .iter()
+            .all(|role| role.get() != 0 && guild.roles.contains_key(role))
+}
+
+/// A member's highest role position; 0 when they hold only `@everyone`.
+fn top_role_position(member: &Member, guild: &PartialGuild) -> u16 {
+    member
+        .roles
+        .iter()
+        .filter_map(|id| guild.roles.get(id))
+        .map(|role| role.position)
+        .max()
+        .unwrap_or(0)
+}
+
+/// Discord's hard ceiling on message length, in codepoints.
+///
+/// Every command reply passes through here. Without it, a long-but-legitimate
+/// answer (a channel where two overwrites each carry dozens of flags measures
+/// over 2,000) fails the followup outright and the user gets a raw
+/// "Message too large." instead of their walkthrough.
+pub(crate) fn clamp_message(text: String) -> String {
+    crate::gateway::shared::clamp_message(text)
+}
+
+// ---------------------------------------------------------------------------
+// Commands
+// ---------------------------------------------------------------------------
+
+/// Abbey's persona surface: `/persona route` and `/persona ask`.
+///
+/// Discord never invokes the parent of a subcommand group — the client forces
+/// picking a subcommand — so this body is unreachable framework wiring.
+#[poise::command(slash_command, subcommands("route", "ask"))]
+pub async fn persona(_ctx: Context<'_>) -> Result<(), Error> {
+    Ok(())
+}
+
+/// Show which persona takes a request, and why.
+///
+/// Pure routing — no network call — but it still defers, because a command that
+/// sometimes defers and sometimes does not is a command that eventually races.
+/// This is the pre-split `/persona` behaviour, unchanged.
+#[poise::command(slash_command)]
+pub async fn route(
+    ctx: Context<'_>,
+    #[description = "What you want help with"] request: String,
+    #[description = "Force a persona instead of routing"] r#as: Option<PersonaChoice>,
+) -> Result<(), Error> {
+    ctx.defer().await?;
+
+    // Explains both layers — canonical weights and the signal layer — so the
+    // explanation matches how the same text would route. Guild defaults and
+    // session stickiness are not visible from a slash command, so a message
+    // neutral to both layers is still described by its prior here while the
+    // pipeline would hand it to the sticky or guild persona.
+    let route = routing_signals::route(&request, r#as.map(Into::into));
+    ctx.say(clamp_message(routing_signals::describe(&route)))
+        .await?;
+    Ok(())
+}
+
+/// Opening phrases for `/persona ask` — `IntentClassifier.suggestCompletions`
+/// from the spec, surfaced where Discord can show it.
+async fn autocomplete_question(_ctx: Context<'_>, partial: &str) -> Vec<String> {
+    crate::brain::intent::suggest_completions(partial)
+        .into_iter()
+        .map(str::to_string)
+        .collect()
+}
+
+/// Ask a question; the routed persona answers via the configured backend.
+///
+/// The answer comes from an external or local model selected by the
+/// environment ([`llm::Backend::from_env`]) — never from the bot itself, and
+/// with no backend configured the reply says exactly that instead of dressing
+/// a template echo up as AI. The defer is unconditional like everywhere else,
+/// and more load-bearing here: an LLM round-trip exceeds Discord's 3-second
+/// interaction token by design. Non-ephemeral on purpose — an answer is not an
+/// accusation, unlike `/modcall`'s recommendation.
+const ASK_COOLDOWN_SECONDS: u32 = 30;
+const ASK_COOLDOWN_REPLY: &str = "You can ask again 30 seconds after your last accepted question.";
+
+fn reserve_ask(state: &AppState, scoped_user: &str, now: u64) -> bool {
+    AppState::lock(&state.ask_cooldown).try_reserve(scoped_user, ASK_COOLDOWN_SECONDS, now)
+}
+
+#[poise::command(slash_command)]
+pub async fn ask(
+    ctx: Context<'_>,
+    #[description = "What you want to know"]
+    #[autocomplete = "autocomplete_question"]
+    #[max_length = 2000]
+    question: String,
+    #[description = "Force a persona instead of routing"] r#as: Option<PersonaChoice>,
+) -> Result<(), Error> {
+    ctx.defer().await?;
+
+    // Same override `route` offers, and it matters more here: `route` only
+    // explains a choice, while this one decides who actually answers. Hardcoding
+    // None made the override available on the explanation and unavailable on the
+    // answer, which is backwards.
+    let reply = answer_question(ctx, &question, r#as.map(Into::into), Commit::Yes).await;
+    let text = reply.public_delivery_text(&ctx.data().state).await;
+    let timing = reply.timing_for_delivery(&ctx.data().state);
+    let delivery = deliver_generated_reply(&ctx.data().state, reply.memory, async {
+        let receipt = ctx.say(clamp_message(text)).await?;
+        let message = receipt.message().await?;
+        observe_generated_receipt(timing.as_ref(), message.id.get())?;
+        Ok::<_, Error>(receipt)
+    })
+    .await;
+    if let Err(error) = &delivery {
+        if let Some(timing) = &timing {
+            timing.failed(crate::gateway::interaction_outcomes::category_of(error));
+        }
+        crate::gateway::interaction_outcomes::delivery_failed_from(&ctx.data().state, error);
+    }
+    let (_, memory) = delivery?;
+    crate::memory_gate::deliver_notices(
+        &ctx.data().state,
+        crate::observability::EventComponent::Discord,
+        memory,
+        |decision| async move { ctx.say(decision.message()).await.map(|_| ()) },
+    )
+    .await;
+    Ok(())
+}
+
+/// Roleplay as Aviva when the NSFW gate allows it (bot DM or NSFW guild channel).
+///
+/// Pure admission lives in [`roleplay_gate`]; this shell defers, resolves channel
+/// NSFW after defer, then either refuses or answers as Aviva.
+#[poise::command(slash_command)]
+pub async fn roleplay(
+    ctx: Context<'_>,
+    #[description = "What you want from Aviva"]
+    #[max_length = 2000]
+    prompt: Option<String>,
+) -> Result<(), Error> {
+    ctx.defer().await?;
+
+    let state = &ctx.data().state;
+    let scoped = match ctx.guild_id() {
+        Some(g) => format!("discord:{}", g.get()),
+        None => format!("discord:dm:{}", ctx.author().id.get()),
+    };
+    let enabled = {
+        let mut stores = AppState::lock(&state.stores);
+        AppState::lock(&state.guilds)
+            .config(&scoped, &mut *stores)
+            .nsfw_roleplay_enabled
+    };
+
+    let context = if let Some(guild_id) = ctx.guild_id() {
+        let channel_nsfw = match ctx.channel_id().to_channel(ctx.http()).await {
+            Ok(channel) => channel.guild().is_some_and(|guild_channel| {
+                guild_channel.id == ctx.channel_id()
+                    && guild_channel.guild_id == guild_id
+                    && guild_channel.nsfw
+            }),
+            // Fail closed: unknown channel shape is treated as SFW.
+            Err(_) => false,
+        };
+        RoleplayContext::Guild { channel_nsfw }
+    } else {
+        let proved_dm = match ctx.channel_id().to_channel(ctx.http()).await {
+            Ok(serenity::all::Channel::Private(channel)) => {
+                ctx.author().id.get() != 0
+                    && ctx.channel_id().get() != 0
+                    && !ctx.author().bot
+                    && channel.id == ctx.channel_id()
+                    && channel.kind == ChannelType::Private
+                    && channel.recipient.id == ctx.author().id
+                    && !channel.recipient.bot
+            }
+            _ => false,
+        };
+        if proved_dm {
+            RoleplayContext::BotDm
+        } else {
+            RoleplayContext::Unproved
+        }
+    };
+
+    let decision = roleplay_gate::decide(context, enabled);
+    // Both views must agree; any disagreement fails closed as a refusal.
+    let (true, Some(persona)) = (decision.allow(), decision.persona()) else {
+        ctx.say(clamp_message(decision.message().to_string()))
+            .await?;
+        return Ok(());
+    };
+
+    let Some(prompt) = prompt.filter(|p| !p.trim().is_empty()) else {
+        // Stick Aviva on this channel session so follow-up freeform can stay Aviva.
+        // Explicit persona stick — no transcript turn is recorded.
+        let scope = format!("discord:{}", ctx.channel_id().get());
+        let now = runtime::now();
+        AppState::lock(&state.engine).set_session_persona(&scope, persona, now);
+        ctx.say(clamp_message(decision.message().to_string()))
+            .await?;
+        return Ok(());
+    };
+
+    let reply = answer_question(ctx, &prompt, Some(persona), Commit::Yes).await;
+    let text = reply.public_delivery_text(&ctx.data().state).await;
+    let timing = reply.timing_for_delivery(&ctx.data().state);
+    let delivery = deliver_generated_reply(&ctx.data().state, reply.memory, async {
+        let receipt = ctx.say(clamp_message(text)).await?;
+        let message = receipt.message().await?;
+        observe_generated_receipt(timing.as_ref(), message.id.get())?;
+        Ok::<_, Error>(receipt)
+    })
+    .await;
+    if let Err(error) = &delivery {
+        if let Some(timing) = &timing {
+            timing.failed(crate::gateway::interaction_outcomes::category_of(error));
+        }
+        crate::gateway::interaction_outcomes::delivery_failed_from(&ctx.data().state, error);
+    }
+    let (_, memory) = delivery?;
+    crate::memory_gate::deliver_notices(
+        &ctx.data().state,
+        crate::observability::EventComponent::Discord,
+        memory,
+        |decision| async move { ctx.say(decision.message()).await.map(|_| ()) },
+    )
+    .await;
+    Ok(())
+}
+
+mod generation_delivery;
+pub(crate) use generation_delivery::{deliver_generated_reply, observe_generated_receipt};
+
+/// Whether an answered question joins the channel's running transcript.
+///
+/// Only a publicly posted answer may. The transcript is shared context for
+/// whoever speaks in that channel next, so committing an ephemeral exchange
+/// would let a private lookup steer a conversation nobody saw it enter. It also
+/// keeps the message context menu from pulling a third party's words into
+/// Abbey's context in a guild where Abbey holds no message-content access of
+/// its own.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum Commit {
+    Yes,
+    No,
+}
+
+/// Answer `question` on this interaction's channel and render the reply.
+///
+/// Shared by `/persona ask` and the "Ask Abbey" message context menu so the two
+/// never disagree about identical text: one routing decision, one cooldown, one
+/// transcript scope, one tool loop. The caller owns the defer and the post —
+/// this returns the message body, including the cooldown notice, because a
+/// context menu wants it ephemeral and a slash command does not. It also owns
+/// the [`Commit`] decision; see that type for why the two differ.
+///
+/// The cooldown is charged either way: reading an answer costs the same backend
+/// call whether or not it is remembered.
+async fn answer_question(
+    ctx: Context<'_>,
+    question: &str,
+    forced: Option<Persona>,
+    commit: Commit,
+) -> GeneratedReply {
+    answer_question_in_scope(
+        &ctx.data().state,
+        ctx.guild_id().map(|id| id.get()),
+        ctx.channel_id().get(),
+        ctx.author().id.get(),
+        question,
+        forced,
+        commit,
+    )
+    .await
+}
+
+/// Shared generation operation for genuine slash, context-menu and modal inputs.
+/// The adapter owns acknowledgement, authorization and delivery visibility.
+pub(crate) async fn answer_question_in_scope(
+    state: &AppState,
+    guild: Option<u64>,
+    channel: u64,
+    user: u64,
+    question: &str,
+    forced: Option<Persona>,
+    commit: Commit,
+) -> GeneratedReply {
+    let memory = crate::memory_gate::MemoryTurn::default();
+    let (text, guard, timing) = answer_question_with_memory(
+        state, guild, channel, user, question, forced, commit, &memory,
+    )
+    .await;
+    GeneratedReply {
+        text,
+        memory,
+        guard,
+        timing,
+    }
+}
+
+/// Only the native modal shell may request team continuity. Its response is
+/// ephemeral and generation never commits a shared transcript.
+pub(crate) async fn answer_private_question_in_scope(
+    state: &AppState,
+    guild: Option<u64>,
+    channel: u64,
+    user: u64,
+    question: &str,
+) -> GeneratedReply {
+    let memory = crate::memory_gate::MemoryTurn::default();
+    let (text, guard, timing) =
+        question::answer_private_with_memory(state, guild, channel, user, question, &memory).await;
+    GeneratedReply {
+        text,
+        memory,
+        guard,
+        timing,
+    }
+}
+
+pub(crate) struct GeneratedReply {
+    pub text: String,
+    pub memory: crate::memory_gate::MemoryTurn,
+    guard: Option<generation::consent::GenerationGuard>,
+    timing: Option<generation::DeliveryTiming>,
+}
+
+impl GeneratedReply {
+    pub(crate) fn timing_for_delivery(
+        &self,
+        state: &AppState,
+    ) -> Option<generation::DeliveryTiming> {
+        self.guard
+            .as_ref()
+            .filter(|guard| guard.check(state).is_ok())
+            .and(self.timing.as_ref())
+            .cloned()
+    }
+    pub(crate) fn delivery_text(&self, state: &AppState) -> String {
+        if self
+            .guard
+            .as_ref()
+            .is_some_and(|guard| !guard.permits_public() || guard.check(state).is_err())
+        {
+            generation::consent::WITHDRAWN_REPLY.into()
+        } else {
+            self.text.clone()
+        }
+    }
+
+    pub(crate) async fn public_delivery_text(&self, state: &AppState) -> String {
+        if let Some(guard) = &self.guard
+            && (!guard.permits_public() || guard.check_fresh(state).await.is_err())
+        {
+            return generation::consent::WITHDRAWN_REPLY.into();
+        }
+        self.delivery_text(state)
+    }
+
+    pub(crate) async fn private_delivery_text(
+        &self,
+        state: &AppState,
+        actor: u64,
+        channel: u64,
+    ) -> String {
+        if let Some(guard) = &self.guard
+            && (!guard.permits_private(actor, channel) || guard.check_fresh(state).await.is_err())
+        {
+            return generation::consent::WITHDRAWN_REPLY.into();
+        }
+        self.text.clone()
+    }
+}
+
+/// Read a member's profile.
+#[poise::command(slash_command, guild_only)]
+pub async fn whois(
+    ctx: Context<'_>,
+    #[description = "Who to read"] user: User,
+) -> Result<(), Error> {
+    ctx.defer().await?;
+
+    let Some(guild_id) = ctx.guild_id() else {
+        ctx.say("This one only works inside a server.").await?;
+        return Ok(());
+    };
+
+    let summary = member_profile(ctx, guild_id, &user).await?;
+    ctx.say(clamp_message(summary)).await?;
+    Ok(())
+}
+
+/// Render one member's profile summary.
+///
+/// Shared by `/whois` and the "Abbey: profile" user context menu so the right
+/// click and the slash command describe a member identically. Fetches over
+/// REST, so the caller must have deferred already.
+async fn member_profile(ctx: Context<'_>, guild_id: GuildId, user: &User) -> Result<String, Error> {
+    let (member, guild) = fetch_member_and_guild(ctx, guild_id, user.id).await?;
+
+    // Highest-first, so `roles.first()` is the top role the summary reports.
+    let mut named: Vec<(u16, String)> = member
+        .roles
+        .iter()
+        .filter_map(|id| guild.roles.get(id))
+        .map(|role| (role.position, role.name.to_string()))
+        .collect();
+    named.sort_by_key(|(position, _)| std::cmp::Reverse(*position));
+
+    let facts = ProfileFacts {
+        display_name: member.nick.clone().unwrap_or_else(|| {
+            user.global_name
+                .clone()
+                .unwrap_or_else(|| user.name.clone())
+        }),
+        handle: user.name.clone(),
+        is_bot: user.bot,
+        nickname: member.nick.clone(),
+        roles: named.into_iter().map(|(_, name)| name).collect(),
+        // Discord renders this in the reader's own timezone.
+        joined: member
+            .joined_at
+            .map(|ts| format!("<t:{}:D>", ts.unix_timestamp())),
+        is_owner: user.id == guild.owner_id,
+    };
+
+    Ok(profile::summarize(&facts))
+}
+
+/// Right-click a member -> Apps -> "Abbey: profile".
+///
+/// Same summary `/whois` renders, reached without typing a name. Ephemeral:
+/// reading someone's roles is a lookup, not an announcement about them.
+#[poise::command(context_menu_command = "Abbey: profile", guild_only, ephemeral)]
+pub async fn profile_context_menu(ctx: Context<'_>, user: User) -> Result<(), Error> {
+    ctx.defer_ephemeral().await?;
+
+    let Some(guild_id) = ctx.guild_id() else {
+        ctx.say("This one only works inside a server.").await?;
+        return Ok(());
+    };
+
+    let summary = member_profile(ctx, guild_id, &user).await?;
+    ctx.say(clamp_message(summary)).await?;
+    Ok(())
+}
+
+/// Right-click a message -> Apps -> "Ask Abbey".
+///
+/// Selected historical material requires a typed source authorization boundary.
+/// Until that producer is available, return private guidance before generation.
+#[poise::command(context_menu_command = "Ask Abbey", ephemeral)]
+pub async fn ask_context_menu(
+    ctx: Context<'_>,
+    message: serenity::all::Message,
+) -> Result<(), Error> {
+    ctx.defer_ephemeral().await?;
+
+    let _ = message;
+    ctx.send(poise::CreateReply::default()
+        .content("Selected messages are historical source material and are unavailable for generation until their source authorization is supported. Use `/persona ask` to type a fresh request; its answer is visible in the channel. For a private conversation, send Abbey a DM.")
+        .ephemeral(true)
+        .allowed_mentions(crate::gateway::no_mentions()))
+        .await?;
+    Ok(())
+}
+
+/// Walk through how a channel's permission overwrites resolve for a member.
+#[poise::command(slash_command, guild_only)]
+pub async fn perms(
+    ctx: Context<'_>,
+    #[description = "Which channel"] channel: ChannelId,
+    #[description = "Which member"] user: User,
+) -> Result<(), Error> {
+    // ChannelId on purpose — see the module doc. A GuildChannel parameter is
+    // fetched by poise before this body runs, i.e. before this defer.
+    ctx.defer().await?;
+
+    let Some(guild_id) = ctx.guild_id() else {
+        ctx.say("This one only works inside a server.").await?;
+        return Ok(());
+    };
+
+    let requested_channel = channel;
+    let (channel, (member, guild)) = tokio::try_join!(
+        async { channel.to_channel(ctx.http()).await.map_err(Error::from) },
+        fetch_member_and_guild(ctx, guild_id, user.id),
+    )?;
+    let Some(channel) = channel.guild() else {
+        ctx.say("That is not a server channel, so it has no overwrites to walk.")
+            .await?;
+        return Ok(());
+    };
+    if channel.id != requested_channel || channel.guild_id != guild_id {
+        return Err("Discord could not confirm the requested channel in this guild.".into());
+    }
+
+    // Threads carry no overwrites of their own — they inherit the parent's.
+    // Reading their empty list would produce "no overwrite touches them",
+    // which is confidently wrong rather than merely thin.
+    if matches!(
+        channel.kind,
+        ChannelType::PublicThread | ChannelType::PrivateThread | ChannelType::NewsThread
+    ) {
+        let parent = channel
+            .parent_id
+            .map(|id| format!(" Ask about <#{id}> instead."))
+            .unwrap_or_default();
+        ctx.say(format!(
+            "Threads don't carry their own permission overwrites — they inherit from the parent channel.{parent}"
+        ))
+        .await?;
+        return Ok(());
+    }
+
+    let channel_label = match channel.kind {
+        ChannelType::Voice | ChannelType::Stage => format!("🔊 {}", channel.name),
+        ChannelType::Category => format!("category \"{}\"", channel.name),
+        _ => format!("#{}", channel.name),
+    };
+
+    let overwrites: Vec<Overwrite> = channel
+        .permission_overwrites
+        .iter()
+        .map(|ow| {
+            let scope = match ow.kind {
+                // `@everyone` is the role whose id equals the guild id.
+                PermissionOverwriteType::Role(id) if id.get() == guild_id.get() => Scope::Everyone,
+                PermissionOverwriteType::Role(id) => Scope::Role {
+                    id: id.get(),
+                    name: guild
+                        .roles
+                        .get(&id)
+                        .map(|r| r.name.to_string())
+                        // A deleted role can still have a stale overwrite.
+                        .unwrap_or_else(|| format!("deleted role {id}")),
+                },
+                PermissionOverwriteType::Member(id) => Scope::Member {
+                    id: id.get(),
+                    name: if id == user.id {
+                        user.name.clone()
+                    } else {
+                        format!("<@{id}>")
+                    },
+                },
+                // Compiler-required: the enum is #[non_exhaustive]. Carried as
+                // its own scope because mapping unknowns onto Everyone once
+                // promoted them to the top of the chain under a name they do
+                // not have.
+                _ => Scope::Unrecognized,
+            };
+            Overwrite {
+                scope,
+                allow: permission_names(ow.allow),
+                deny: permission_names(ow.deny),
+            }
+        })
+        .collect();
+
+    let subject = Subject {
+        name: user.name.clone(),
+        user_id: user.id.get(),
+        role_ids: member.roles.iter().map(|id| id.get()).collect(),
+        // The canonical guild-level calculation — includes @everyone, returns
+        // all() for the owner. Hand-rolling this is how the @everyone bug
+        // happened; serenity already ships it on the guild we fetched.
+        is_admin: guild
+            .member_permissions(&member)
+            .contains(Permissions::ADMINISTRATOR),
+        is_owner: user.id == guild.owner_id,
+    };
+
+    ctx.say(clamp_message(perms::explain(
+        &channel_label,
+        &overwrites,
+        &subject,
+    )))
+    .await?;
+    Ok(())
+}
+
+/// Recommend a moderation action, and say whether you can actually take it.
+///
+/// Recommends only — this command never times out, kicks, or bans anyone. The
+/// decision stays with the moderator, which is also why it is ephemeral: a
+/// recommendation broadcast to the channel would be a public accusation.
+#[poise::command(
+    slash_command,
+    guild_only,
+    ephemeral,
+    default_member_permissions = "MODERATE_MEMBERS"
+)]
+pub async fn modcall(
+    ctx: Context<'_>,
+    #[description = "Who the incident is about"] user: User,
+    #[description = "How bad it is"] severity: SeverityChoice,
+    #[description = "Prior warnings on record (default 0)"] warnings: Option<u8>,
+    #[description = "Prior timeouts on record (default 0)"] timeouts: Option<u8>,
+    #[description = "Optional source message ID in this channel for the bounded contextual pilot"]
+    source_message: Option<String>,
+    #[description = "Your human assessment of the linked message in its surrounding context"]
+    context: Option<ContextAssessmentChoice>,
+) -> Result<(), Error> {
+    ctx.defer_ephemeral().await?;
+
+    let Some(guild_id) = ctx.guild_id() else {
+        ctx.say("This one only works inside a server.").await?;
+        return Ok(());
+    };
+
+    let (moderator, guild) = fetch_member_and_guild(ctx, guild_id, ctx.author().id).await?;
+    let held = guild.member_permissions(&moderator);
+    if !crate::commands_help::modcall_access_allowed(held) {
+        ctx.say("Discord must currently grant you Moderate Members to use this command.")
+            .await?;
+        return Ok(());
+    }
+    if let Some(source) = source_message {
+        return contextual_moderation::propose(
+            ctx,
+            &guild,
+            &moderator,
+            &user,
+            severity.into(),
+            &source,
+            context,
+        )
+        .await;
+    }
+    let history = History {
+        warnings: warnings.unwrap_or(0),
+        timeouts: timeouts.unwrap_or(0),
+    };
+    let recommendation = moderation::recommend(severity.into(), history);
+
+    // Whether *the moderator asking* can carry it out — not whether the bot
+    // can. Two independent ways Discord refuses: the permission bit, and role
+    // hierarchy. Report the first that applies.
+    let target = guild_id.member(ctx.http(), user.id).await?;
+    if !member_facts_match(&target, &guild, guild_id, user.id) {
+        return Err("Discord could not confirm the requested moderation target.".into());
+    }
+    let blocker = recommendation.action.required_permission().and_then(|required| {
+        if !held.get_permission_names().contains(&required) {
+            Some(format!("You do not have **{required}**, so you cannot carry this out — hand it to someone who does."))
+        } else {
+            moderation::hierarchy_blocker(
+                ctx.author().id == guild.owner_id,
+                top_role_position(&moderator, &guild),
+                user.id == guild.owner_id,
+                guild.member_permissions(&target).contains(Permissions::ADMINISTRATOR),
+                top_role_position(&target, &guild),
+                matches!(recommendation.action, moderation::Action::Timeout(_)),
+            ).map(str::to_string)
+        }
+    });
+    if !crate::commands_help::resolved_modcall_allowed(held, Some(blocker.is_none())) {
+        let refusal = blocker
+            .as_deref()
+            .unwrap_or("Discord must currently grant you Moderate Members to use this command.");
+        ctx.say(clamp_message(moderation::render(
+            &user.name,
+            &recommendation,
+            Some(refusal),
+        )))
+        .await?;
+        return Ok(());
+    }
+
+    ctx.say(clamp_message(moderation::render(
+        &user.name,
+        &recommendation,
+        blocker.as_deref(),
+    )))
+    .await?;
+    Ok(())
+}
+
+/// Emit the incoming-webhook setup guide for a channel.
+///
+/// Emit-only, like `/server`: creating the webhook is one click in a settings
+/// screen the user is already looking at, and a URL minted by the bot would be
+/// a credential the bot then knows. Ephemeral because it is setup chatter.
+#[poise::command(
+    slash_command,
+    guild_only,
+    ephemeral,
+    default_member_permissions = "MANAGE_WEBHOOKS"
+)]
+pub async fn webhook(
+    ctx: Context<'_>,
+    #[description = "Where the webhook should post"] channel: ChannelId,
+) -> Result<(), Error> {
+    // ChannelId, never GuildChannel — see the module doc.
+    ctx.defer_ephemeral().await?;
+
+    let guild_id = ctx.guild_id().ok_or("This command requires a server.")?;
+    let requested_channel = channel;
+    let channel = channel.to_channel(ctx.http()).await?;
+    let Some(channel) = channel.guild() else {
+        ctx.say("That is not a server channel.").await?;
+        return Ok(());
+    };
+    if channel.id != requested_channel || channel.guild_id != guild_id {
+        return Err(
+            "Discord could not confirm the requested webhook channel in this guild.".into(),
+        );
+    }
+
+    let target = match channel.kind {
+        ChannelType::Category => {
+            ctx.say("Webhooks attach to channels, not categories — pick a channel inside it.")
+                .await?;
+            return Ok(());
+        }
+        ChannelType::PublicThread | ChannelType::PrivateThread | ChannelType::NewsThread => {
+            webhook::Target::Thread {
+                label: format!("\"{}\"", channel.name),
+                parent_label: channel
+                    .parent_id
+                    .map(|id| format!("<#{id}>"))
+                    .unwrap_or_else(|| "the parent channel".to_string()),
+                // The curl in the guide carries this id, so it works as pasted
+                // instead of silently posting to the parent.
+                thread_id: channel.id.get(),
+            }
+        }
+        // A forum has no plain message stream: every execute must create a
+        // post (thread_name) or target one (?thread_id=). The plain-channel
+        // guide's curl is rejected outright there. Media channels (type 16)
+        // share forum execute semantics but postdate this serenity version's
+        // ChannelType, so they arrive as Unknown(16).
+        ChannelType::Forum | ChannelType::Unknown(16) => webhook::Target::Forum {
+            label: format!("#{}", channel.name),
+        },
+        ChannelType::Voice | ChannelType::Stage => webhook::Target::Channel {
+            label: format!("🔊 {}", channel.name),
+        },
+        _ => webhook::Target::Channel {
+            label: format!("#{}", channel.name),
+        },
+    };
+
+    ctx.say(clamp_message(webhook::guide(&target))).await?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests;
+
+#[cfg(test)]
+#[path = "commands/generation_consent_tests.rs"]
+mod generation_consent_tests;

@@ -1,0 +1,937 @@
+//! The ingest pipeline — the spec's `SocialRouter.handle` / `handleMessage`,
+//! written once for every network.
+//!
+//! A shell (Discord in [`crate::gateway`], Telegram in the same file) turns its
+//! native event into a [`SocialEvent`] and hands it here with an [`Outbound`]
+//! it can deliver through. Everything that decides — triage, intent, state
+//! encoding, the per-guild policy, cooldown, persona routing, reward
+//! bookkeeping — happens in this file against the pure modules, and nothing in
+//! here knows which network it is talking to. That is what keeps the learning
+//! loop identical across platforms, and what lets the whole decision path run
+//! in tests behind a recording `Outbound`.
+
+use std::future::Future;
+use std::sync::Mutex;
+
+use crate::ask;
+use crate::brain::budget::Budget;
+use crate::brain::intent;
+use crate::brain::reward::{FeedbackAttribution, ReactionKey, ReplyTurn};
+use crate::brain::state::{self, BotAction, StateInput};
+use crate::engine;
+use crate::generation::{Ask, Delivery, generate_read_only, generate_with_tools, with_typing};
+use crate::guild::{GuildSettings, ReplyCooldown};
+use crate::llm;
+use crate::memory::PersonaContext;
+use crate::outbound_failure::OutboundFailure;
+use crate::persona::Persona;
+use crate::platform::{OutboundMessage, RemoteAttachment, RouteDecision, SocialEvent, triage};
+use crate::routing_signals;
+use crate::runtime::{self, AppState};
+use crate::vision;
+
+/// Window for "channel heat" — messages in the last five minutes (spec).
+pub const HEAT_WINDOW_SECS: u64 = 300;
+/// How many WDBX recollections are folded into the persona context.
+pub const RECALL_K: usize = 3;
+/// The emoji Abbey uses for the `react` action.
+pub const REACT_EMOJI: &str = "👍";
+
+/// What a shell must be able to do for the pipeline. Returns the sent
+/// message's native id so rewards can be keyed to it.
+pub trait Outbound {
+    fn completed_exchange(
+        &self,
+        _state: &AppState,
+        _event: &SocialEvent,
+        _response: &str,
+    ) -> impl Future<Output = ()> + Send {
+        async {}
+    }
+
+    fn send(
+        &self,
+        native_channel_id: &str,
+        message: &OutboundMessage,
+    ) -> impl Future<Output = Result<String, OutboundFailure>> + Send;
+    fn typing(&self, native_channel_id: &str) -> impl Future<Output = ()> + Send;
+    fn react(
+        &self,
+        native_channel_id: &str,
+        native_message_id: &str,
+        emoji: &str,
+    ) -> impl Future<Output = Result<(), OutboundFailure>> + Send;
+    /// Fetch an attachment's bytes (capped by the caller's `max`).
+    fn fetch(&self, url: &str, max: usize) -> impl Future<Output = Result<Vec<u8>, String>> + Send;
+    /// Replace the text of a message this bot sent (progressive replies).
+    fn edit(
+        &self,
+        native_channel_id: &str,
+        native_message_id: &str,
+        text: &str,
+    ) -> impl Future<Output = Result<(), OutboundFailure>> + Send;
+}
+
+/// What the pipeline did with an event — for logs and tests.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Outcome {
+    Ignored(&'static str),
+    Rewarded,
+    Welcomed,
+    Stayed,
+    CooledDown,
+    /// The guild's hourly budget is spent; nothing sent, nothing learned.
+    OverBudget,
+    Reacted,
+    Replied,
+    ReplyFailed(String),
+}
+
+// ---------------------------------------------------------------------------
+// Guard-chain judo — ordered, unit-testable, no FakeOut required
+// ---------------------------------------------------------------------------
+
+macro_rules! ensure {
+    ($cond:expr, $err:expr) => {
+        if !$cond {
+            return Err($err);
+        }
+    };
+}
+
+/// Ordered context for the guard chain — everything a gate needs to decide
+/// without touching the network. Constructed once after triage / bookkeeping
+/// so each `ensure!` can be tested with a plain `Ctx` and an `AppState`
+/// (no `Outbound` fake required). Mirrors the waterfall at 109-501 but as
+/// data.
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub(crate) struct Ctx {
+    pub event: SocialEvent,
+    pub text: String,
+    pub attachments: Vec<RemoteAttachment>,
+    pub forced: bool,
+    pub settings: GuildSettings,
+    pub heat: u32,
+    pub scoped_user: String,
+    pub scoped_guild: String,
+    pub scoped_channel: String,
+}
+
+/// Shared unsolicited-speech gates — `quiet` then `act off`, in that order,
+/// each respecting `forced` (mention/DM bypass). This is the unification
+/// point for the duplication at 142-147 (Welcome) and 222-230 (normal flow):
+/// both paths call this ordered chain; learning controls adaptation separately.
+fn check_unsolicited(settings: &GuildSettings, quiet: bool, forced: bool) -> Result<(), Outcome> {
+    ensure!(forced || !quiet, Outcome::Ignored("quiet"));
+    ensure!(forced || settings.unsolicited, Outcome::Ignored("act off"));
+    Ok(())
+}
+
+/// Ordered guard chain for an unsolicited message — mirrors the waterfall
+/// but as `Result<(), Outcome>` so each gate is `ensure!` and unit-testable
+/// without `FakeOut`. Preserves exact order and `!forced` semantics.
+pub(crate) fn guards(ctx: &Ctx, state: &AppState) -> Result<(), Outcome> {
+    ensure!(
+        !state.is_self(&ctx.scoped_user),
+        Outcome::Ignored("own traffic")
+    );
+    ensure!(
+        !ctx.text.trim().is_empty() || !ctx.attachments.is_empty() || ctx.forced,
+        Outcome::Ignored("no content available")
+    );
+    ensure!(ctx.forced || !state.quiet, Outcome::Ignored("quiet"));
+    ensure!(
+        ctx.forced || ctx.settings.unsolicited,
+        Outcome::Ignored("act off")
+    );
+    ensure!(
+        ctx.forced
+            || ctx
+                .settings
+                .unsolicited_channel_allowed(&ctx.scoped_channel),
+        Outcome::Ignored("channel participation off")
+    );
+    Ok(())
+}
+
+/// Atomic rate-limit acquisition for unsolicited output — per-channel
+/// cooldown (burst guard) + per-guild hourly budget (volume guard) in one
+/// lock pair. `try_acquire` checks both, records both on success, and
+/// returns the same `OverBudget` / `CooledDown` the waterfall previously
+/// produced via three separate `try_take` / `try_reserve` sites.
+pub(crate) struct RateLimits<'a> {
+    pub cooldown: &'a Mutex<ReplyCooldown>,
+    pub budget: &'a Mutex<Budget>,
+}
+
+impl RateLimits<'_> {
+    pub fn try_acquire(
+        &self,
+        scoped_guild: &str,
+        scoped_channel: &str,
+        settings: &GuildSettings,
+        now: u64,
+    ) -> Result<(), Outcome> {
+        // AppState lock order is `cooldown` → `budget`; holding both
+        // together makes the check+record atomic for this guild/channel.
+        let mut cooldown = AppState::lock(self.cooldown);
+        let mut budget = AppState::lock(self.budget);
+        if budget.tokens_left(scoped_guild, settings.unsolicited_per_hour, now) < 1.0 {
+            return Err(Outcome::OverBudget);
+        }
+        if !cooldown.permitted(scoped_channel, settings.reply_cooldown_seconds, now) {
+            return Err(Outcome::CooledDown);
+        }
+        // Both gates passed — reserve atomically. `tokens_left` is a
+        // read-only view, so `try_take` does the real refill+deduct.
+        cooldown.record_reply(scoped_channel, now);
+        if !budget.try_take(scoped_guild, settings.unsolicited_per_hour, now) {
+            return Err(Outcome::OverBudget);
+        }
+        Ok(())
+    }
+}
+
+/// Canonical ABI text routing with the guild default retained only for neutral
+/// input. Explicit leading names and weighted ABI cues take precedence.
+pub fn persona_for(text: &str, settings: &GuildSettings) -> Persona {
+    persona_for_session(text, settings, None)
+}
+
+/// Explicit names and weighted ABI cues always win. A message the canonical
+/// keyword table is blind to but that carries distress, confusion, or terse
+/// urgency is decided by [`routing_signals`] — the message where routing
+/// matters most is exactly the one with no keyword in it. Only a message
+/// neutral to *both* layers keeps the persona already attached to this
+/// transcript, falling back to the guild default on a new session. This makes
+/// `switch_persona` a real conversational handoff instead of a one-response
+/// costume change, without letting stickiness answer a distress signal in
+/// Aviva's register.
+fn persona_for_session(
+    text: &str,
+    settings: &GuildSettings,
+    session_persona: Option<Persona>,
+) -> Persona {
+    let composed = routing_signals::route(text, None);
+    if composed.is_decisive() {
+        composed.persona
+    } else {
+        session_persona.unwrap_or(settings.default_persona)
+    }
+}
+
+/// Handle one inbound event. `mentions_bot` and `reply_to` are facts only the
+/// shell knows (they are platform-shaped), so they travel beside the event.
+pub async fn handle<O: Outbound + Sync>(
+    state: &AppState,
+    out: &O,
+    event: SocialEvent,
+    mentions_bot: bool,
+    reply_to: Option<&str>,
+) -> Outcome {
+    let now = runtime::now();
+    let scoped_guild = event.scoped_guild_id();
+    let scoped_channel = event.scoped_channel_id();
+    let scoped_user = event.scoped_user_id();
+
+    if state.is_self(&scoped_user) {
+        return Outcome::Ignored("own traffic");
+    }
+    let settings = {
+        let mut stores = AppState::lock(&state.stores);
+        AppState::lock(&state.guilds).config(&scoped_guild, &mut *stores)
+    };
+
+    let (text, attachments) = match triage(&event, settings.enabled) {
+        RouteDecision::Ignore(_) => {
+            if settings.learning_enabled
+                && matches!(event.kind, crate::platform::EventKind::Reaction { .. })
+            {
+                state.record_learning_attribution(
+                    &scoped_guild,
+                    FeedbackAttribution::Unsupported,
+                    now,
+                );
+            }
+            return Outcome::Ignored("triage");
+        }
+        RouteDecision::Reward {
+            emoji,
+            target_message_id,
+            added,
+        } => {
+            if !settings.learning_enabled || event.native_user_id.is_empty() {
+                if settings.learning_enabled {
+                    state.record_learning_attribution(
+                        &scoped_guild,
+                        FeedbackAttribution::Unsupported,
+                        now,
+                    );
+                }
+                return Outcome::Ignored("learning off or unknown reactor");
+            }
+            let attribution = AppState::lock(&state.rewards).reaction(
+                ReactionKey {
+                    scope: scoped_channel.clone(),
+                    message: target_message_id,
+                    reactor_hash: crate::brain::addenda::member_hash(&scoped_user),
+                    emoji,
+                },
+                added,
+                now,
+            );
+            state.record_learning_attribution(&scoped_guild, attribution, now);
+            tracing::debug!(?attribution, "reaction attribution");
+            return Outcome::Rewarded;
+        }
+        RouteDecision::Welcome { display_name } => {
+            // A welcome is unsolicited speech: unified with the normal-flow
+            // `quiet` → `act off` chain via `check_unsolicited`.
+            if let Err(outcome) = check_unsolicited(&settings, state.quiet, false) {
+                return outcome;
+            }
+            if !settings.unsolicited_channel_allowed(&scoped_channel) {
+                return Outcome::Ignored("channel participation off");
+            }
+            return welcome(state, out, &event.native_channel_id, &display_name).await;
+        }
+        RouteDecision::Consider { text, attachments } => (text, attachments),
+    };
+
+    // Bookkeeping that happens whether or not Abbey speaks.
+    //
+    // Two reward channels, deliberately separate. `human_replied` is the
+    // existing untyped heuristic — "a human bothered to reply", +0.5 whatever
+    // they said. `observe_*` feeds the delayed channel: *what* they said,
+    // typed. A Discord reply-to legitimately feeds both; that is the blend, not
+    // a double count. See `brain::reward`.
+    //
+    // Claim-honest: this is the only place real Discord observations reach the
+    // delayed channel today. It covers a reply-to and a same-channel follow-up.
+    // Reactions still land on the untyped path, and edits, threads, and voice
+    // are not observed at all.
+    let correction = AppState::lock(&state.rewards).correction_source(
+        &scoped_channel,
+        &scoped_guild,
+        &scoped_user,
+        reply_to,
+        &text,
+        now,
+        settings.learning_enabled && !event.native_user_id.is_empty(),
+    );
+    let session_mode = correction.as_ref().map_or(
+        crate::generation::SessionMode::Shared,
+        crate::generation::SessionMode::Repair,
+    );
+    let attributed = if settings.learning_enabled && !event.native_user_id.is_empty() {
+        let attribution = AppState::lock(&state.rewards).feedback(
+            &scoped_channel,
+            &scoped_user,
+            reply_to,
+            &text,
+            now,
+        );
+        state.record_learning_attribution(&scoped_guild, attribution, now);
+        tracing::debug!(?attribution, "feedback attribution");
+        matches!(
+            attribution,
+            FeedbackAttribution::ExactReply | FeedbackAttribution::UniqueScoped
+        )
+    } else {
+        if settings.learning_enabled {
+            state.record_learning_attribution(&scoped_guild, FeedbackAttribution::Unsupported, now);
+        }
+        false
+    };
+    // Style feedback ("too long", "less formal") counts only from a member's
+    // own message about Abbey (a reply to her turn, a follow-up to it, or a
+    // mention), and only while the guild has learning on. The signal is a
+    // closed enum; the words never leave this call (`brain::addenda`).
+    if settings.learning_enabled && (attributed || mentions_bot) {
+        state.observe_style(&scoped_guild, &scoped_user, &text, now);
+    }
+    let heat = {
+        let mut stores = AppState::lock(&state.stores);
+        stores
+            .memory
+            .record_message(&scoped_channel, &event.user_display_name, &text, now);
+        let ctx = stores.memory.channel_mut(&scoped_channel);
+        if ctx.guild.is_none() {
+            ctx.guild = Some(scoped_guild.clone());
+        }
+        u32::try_from(
+            ctx.recent
+                .iter()
+                .filter(|m| now.saturating_sub(m.at) <= HEAT_WINDOW_SECS)
+                .count(),
+        )
+        .unwrap_or(u32::MAX)
+    };
+
+    // Without MESSAGE_CONTENT Discord delivers an empty body for anything that
+    // is not a mention or a DM. There is nothing to learn from a blank, so the
+    // policy is not consulted — it would be training on noise.
+    let forced = mentions_bot || event.native_guild_id.is_none();
+    // Ordered guard chain — blank + unsolicited speech gates, unified with
+    // the welcome path. Each `ensure!` preserves exact `!forced` semantics
+    // and the string identity the tests pin.
+    let ctx = Ctx {
+        event: event.clone(),
+        text: text.clone(),
+        attachments: attachments.clone(),
+        forced,
+        settings: settings.clone(),
+        heat,
+        scoped_user: scoped_user.clone(),
+        scoped_guild: scoped_guild.clone(),
+        scoped_channel: scoped_channel.clone(),
+    };
+    if let Err(outcome) = guards(&ctx, state) {
+        return outcome;
+    }
+
+    let enriched = enrich_with_vision(state, out, &settings, &text, &attachments).await;
+    let intent = intent::classify(&enriched);
+    let reputation = state.reputation_snapshot(&scoped_guild, &scoped_user);
+    let encoded = state::encode(&StateInput {
+        text: &enriched,
+        intent,
+        reputation,
+        channel_heat: heat,
+        mentions_bot,
+        has_image: attachments.iter().any(RemoteAttachment::is_image),
+        hour_of_day: runtime::hour_of_day(now),
+    });
+
+    let action = {
+        // Load the guild's brain even on the forced path: the reward for a
+        // mention/DM reply settles 150 s later into `BrainRegistry::remember`,
+        // which drops experiences for guilds that are not loaded.
+        let stores = AppState::lock(&state.stores);
+        if stores
+            .reward_recovery
+            .erasure
+            .blocks(&scoped_guild, &scoped_user, now)
+        {
+            if forced {
+                BotAction::Reply
+            } else {
+                BotAction::Stay
+            }
+        } else {
+            let mut brains = AppState::lock(&state.brains);
+            let brain = brains.brain(&scoped_guild, &*stores, now);
+            if let Some(eps) = settings.epsilon_override {
+                brain.set_epsilon(eps);
+            }
+            if forced {
+                if let Some(stats) = brains.stats_mut(&scoped_guild) {
+                    stats.record_forced();
+                }
+                BotAction::Reply
+            } else {
+                let q = brain.q_values(&encoded);
+                let chosen = BotAction::from_index(brain.select_action(&encoded))
+                    .expect("DqnAgent::select_action returned out-of-range index");
+                if let Some(stats) = brains.stats_mut(&scoped_guild) {
+                    stats.record_decision(&encoded, &q, chosen);
+                }
+                tracing::info!(
+                    guild = %scoped_guild,
+                    action = crate::brain::telemetry::action_name(chosen),
+                    q = ?q,
+                    intent = ?intent,
+                    heat,
+                    "policy decision"
+                );
+                chosen
+            }
+        }
+    };
+
+    if action == BotAction::Stay {
+        let stores = AppState::lock(&state.stores);
+        if settings.learning_enabled
+            && !stores
+                .reward_recovery
+                .erasure
+                .blocks(&scoped_guild, &scoped_user, now)
+        {
+            AppState::lock(&state.brains).remember(
+                &scoped_guild,
+                crate::brain::reward::RewardCollector::silence_experience(encoded.to_vec()),
+            );
+        }
+        return Outcome::Stayed;
+    }
+
+    // ---- Action dispatch — React vs Reply, each with atomic RateLimits ----
+
+    if action == BotAction::React {
+        if !forced {
+            let limits = RateLimits {
+                budget: &state.budget,
+                cooldown: &state.cooldown,
+            };
+            if let Err(outcome) = limits.try_acquire(&scoped_guild, &scoped_channel, &settings, now)
+            {
+                return outcome;
+            }
+        }
+        if let Err(e) = out
+            .react(
+                &event.native_channel_id,
+                &event.native_message_id,
+                REACT_EMOJI,
+            )
+            .await
+        {
+            return Outcome::ReplyFailed(e.to_string());
+        }
+        // Learning-off participation does not enqueue training experiences.
+        if settings.learning_enabled {
+            // A reaction back lands on the user's own message, so that is the key.
+            AppState::lock(&state.rewards).register_turn(ReplyTurn {
+                state: encoded.to_vec(),
+                action: BotAction::React.index(),
+                sent_native_message_id: event.native_message_id.clone(),
+                scoped_guild_id: scoped_guild.clone(),
+                scope: scoped_channel.clone(),
+                asker: scoped_user.clone(),
+                ask: String::new(),
+                now,
+            });
+        }
+        return Outcome::Reacted;
+    }
+
+    // Reply.
+    let session_persona = AppState::lock(&state.engine).session_persona(&scoped_channel);
+    let initial_persona = session_persona.map_or_else(
+        || persona_for(&enriched, &settings),
+        |persona| persona_for_session(&enriched, &settings, Some(persona)),
+    );
+    let Some(backend_label) = state.generation_label() else {
+        if !forced {
+            // A policy that wants to speak with nothing to speak through is a
+            // policy we cannot follow; treat it as silence without learning.
+            return Outcome::Stayed;
+        }
+        let reply = OutboundMessage {
+            text: ask::degraded_reply(initial_persona),
+            reply_to_native_message_id: Some(event.native_message_id.clone()),
+            ..OutboundMessage::default()
+        };
+        return match out.send(&event.native_channel_id, &reply).await {
+            Ok(_) => Outcome::Replied,
+            Err(e) => Outcome::ReplyFailed(e.to_string()),
+        };
+    };
+
+    // Unsolicited reply — atomic cooldown+budget acquisition after the
+    // backend check so a missing backend costs nothing (the policy's choice
+    // was not acted on).
+    if !forced {
+        let limits = RateLimits {
+            budget: &state.budget,
+            cooldown: &state.cooldown,
+        };
+        if let Err(outcome) = limits.try_acquire(&scoped_guild, &scoped_channel, &settings, now) {
+            return outcome;
+        }
+    }
+    out.typing(&event.native_channel_id).await;
+    if correction
+        .as_ref()
+        .is_some_and(|source| !crate::generation::consent::correction_current(state, source))
+    {
+        return Outcome::ReplyFailed(crate::generation::consent::WITHDRAWN_REPLY.into());
+    }
+    let mut context = assemble_context(
+        state,
+        &scoped_guild,
+        &scoped_user,
+        &scoped_channel,
+        &enriched,
+        reputation,
+    );
+    if forced
+        && event.network == crate::platform::SocialNetwork::Discord
+        && event.native_guild_id.is_none()
+        && let (Ok(actor), Ok(channel)) = (
+            event.native_user_id.parse(),
+            event.native_channel_id.parse(),
+        )
+    {
+        context.continuity = state
+            .prepare_continuity_context(
+                crate::work::WorkScope::Personal { owner: actor },
+                actor,
+                channel,
+                crate::runtime::continuity_context::ContinuityAudience::OwnerDm,
+            )
+            .await;
+    }
+    let guard = match crate::generation::consent::GenerationGuard::capture(
+        state,
+        &Ask {
+            session_mode,
+            subject: Some((&scoped_guild, &scoped_user)),
+            scope: &scoped_channel,
+            context: &context,
+            user_input: &enriched,
+            now,
+        },
+    ) {
+        Ok(guard) => guard,
+        Err(error) => return Outcome::ReplyFailed(error.to_string()),
+    };
+    let reply_to = Some(event.native_message_id.clone());
+    let memory_turn = crate::memory_gate::MemoryTurn::default();
+    let generated = with_typing(out, &event.native_channel_id, async {
+        // One local generation at a time; the typing indicator keeps going
+        // while this turn waits for its slot. Tools are offered only when
+        // someone addressed Abbey — budgeted policy replies stay single-shot.
+        let ask = Ask {
+            subject: Some((&scoped_guild, &scoped_user)),
+            session_mode,
+            scope: &scoped_channel,
+            context: &context,
+            user_input: &enriched,
+            now,
+        };
+        let delivery = Some(Delivery {
+            out,
+            native_channel_id: &event.native_channel_id,
+            reply_to: reply_to.as_deref(),
+        });
+        if forced && correction.is_none() {
+            let mut host = crate::runtime::ToolScope {
+                memory_turn: Some(&memory_turn),
+                state,
+                network: event.network,
+                scoped_guild: scoped_guild.clone(),
+                scoped_user: scoped_user.clone(),
+                scoped_channel: scoped_channel.clone(),
+                now,
+                persona: initial_persona,
+            };
+            generate_with_tools(state, &mut host, &ask, delivery).await
+        } else {
+            generate_read_only(state, initial_persona, &ask, delivery).await
+        }
+    })
+    .await;
+    let (answer, already_sent, persona, _provider_label, delivery_timing) = match generated {
+        Ok(triple) => triple,
+        Err(e) => {
+            if e.outbound_failure().is_some() {
+                tracing::warn!(error = %e, "reply delivery failed");
+            } else {
+                tracing::warn!(error = %e, backend = backend_label, "reply generation failed");
+            }
+            if forced && e.outbound_failure().is_none() {
+                // Someone addressed Abbey and waited; dead air is worse than
+                // the same honest failure line `/persona ask` already posts.
+                let failure = OutboundMessage {
+                    text: ask::render_failure(initial_persona, backend_label, &e),
+                    reply_to_native_message_id: reply_to.clone(),
+                    ..OutboundMessage::default()
+                };
+                let delivered = out.send(&event.native_channel_id, &failure).await.is_ok();
+                finish_memory_turn(state, out, &event, memory_turn, delivered).await;
+            } else if forced {
+                // Finalize failed delivery ownership without a new send.
+                finish_memory_turn(state, out, &event, memory_turn, false).await;
+            }
+            return Outcome::ReplyFailed(e.to_string());
+        }
+    };
+    if let Err(error) = guard.check(state) {
+        return Outcome::ReplyFailed(error.to_string());
+    }
+    // A tool may have switched the persona; the transcript keeps its history
+    // and the next turn prepares with the new persona.
+    if persona != initial_persona {
+        AppState::lock(&state.engine).set_session_persona(&scoped_channel, persona, now);
+    }
+
+    let sent_id = match already_sent {
+        Some(id) => id,
+        None => {
+            let reply = OutboundMessage {
+                text: answer.clone(),
+                reply_to_native_message_id: reply_to,
+                title: None,
+                accent_color: None,
+            };
+            if let Err(error) = guard.check_fresh(state).await {
+                return Outcome::ReplyFailed(error.to_string());
+            }
+            let receipt = out
+                .send(&event.native_channel_id, &reply)
+                .await
+                .and_then(|id| {
+                    if id.trim().is_empty() {
+                        Err(OutboundFailure::new(
+                            crate::outbound_failure::OutboundFailureCategory::Internal,
+                            crate::outbound_failure::DeliveryCertainty::PossiblySent,
+                            None,
+                        ))
+                    } else {
+                        Ok(id)
+                    }
+                });
+            match receipt {
+                Ok(id) => {
+                    if let Some(timing) = &delivery_timing {
+                        timing.delivered();
+                    }
+                    id
+                }
+                Err(e) => {
+                    if let Some(timing) = &delivery_timing {
+                        timing.failed(crate::generation::timing::delivery_category(&e));
+                    }
+                    finish_memory_turn(state, out, &event, memory_turn, false).await;
+                    return Outcome::ReplyFailed(e.to_string());
+                }
+            }
+        }
+    };
+
+    if let Err(error) = guard.check(state) {
+        return Outcome::ReplyFailed(error.to_string());
+    }
+    // The delivered exchange remains inspection-only; preparation never imports it.
+    AppState::lock(&state.engine).commit(&scoped_channel, &enriched, &answer, now);
+
+    if forced {
+        out.completed_exchange(state, &event, &sent_id).await;
+    }
+
+    // The full turn: scope and ask travel with it so a later follow-up in this
+    // channel — one with no reply-to pointer — can still be attributed back to
+    // this exact action.
+    if forced || settings.learning_enabled {
+        AppState::lock(&state.rewards).register_turn(ReplyTurn {
+            state: encoded.to_vec(),
+            action: BotAction::Reply.index(),
+            sent_native_message_id: sent_id,
+            scope: scoped_channel.clone(),
+            scoped_guild_id: scoped_guild.clone(),
+            // The human's own words, not `enriched`: vision folds Abbey-written
+            // image descriptions into the prompt text, and padding the ask with
+            // them would depress every later topic-overlap ratio.
+            ask: text.clone(),
+            asker: scoped_user.clone(),
+            now,
+        });
+    }
+    {
+        let mut stores = AppState::lock(&state.stores);
+        if !stores
+            .reward_recovery
+            .erasure
+            .blocks(&scoped_guild, &scoped_user, now)
+        {
+            AppState::lock(&state.social).record_interaction(
+                &scoped_user,
+                &scoped_guild,
+                intent.quality(),
+                now,
+                &mut *stores,
+            );
+        }
+    }
+    finish_memory_turn(state, out, &event, memory_turn, true).await;
+    Outcome::Replied
+}
+
+async fn finish_memory_turn<O: Outbound + Sync>(
+    state: &AppState,
+    out: &O,
+    event: &SocialEvent,
+    memory: crate::memory_gate::MemoryTurn,
+    response_delivered: bool,
+) {
+    if !response_delivered {
+        crate::memory_gate::cancel_pending(state, &memory);
+        // An admitted background drain is already an independent managed
+        // owner. Await its bounded terminal result without cancelling or
+        // replaying it, then record the response failure without content.
+        let _ = memory.decisions().await;
+        crate::memory_gate::observe_delivery_failure(state, event_component(event.network));
+        return;
+    }
+    if state.episode_gate.is_some() {
+        crate::memory_gate::drain(state).await;
+    }
+    crate::memory_gate::deliver_notices(
+        state,
+        event_component(event.network),
+        memory,
+        |decision| async move {
+            let notice = OutboundMessage {
+                text: decision.message().into(),
+                reply_to_native_message_id: Some(event.native_message_id.clone()),
+                title: None,
+                accent_color: None,
+            };
+            out.send(&event.native_channel_id, &notice)
+                .await
+                .map(|_| ())
+        },
+    )
+    .await;
+}
+
+const fn event_component(
+    network: crate::platform::SocialNetwork,
+) -> crate::observability::EventComponent {
+    match network {
+        crate::platform::SocialNetwork::Discord => crate::observability::EventComponent::Discord,
+        crate::platform::SocialNetwork::Telegram => crate::observability::EventComponent::Telegram,
+        crate::platform::SocialNetwork::Slack => crate::observability::EventComponent::Slack,
+    }
+}
+
+/// Channel summary + remembered facts + WDBX recollections + standing.
+pub fn assemble_context(
+    state: &AppState,
+    scoped_guild: &str,
+    scoped_user: &str,
+    scoped_channel: &str,
+    query: &str,
+    reputation: f64,
+) -> PersonaContext {
+    let mut context = state.memory_service().context_for(
+        scoped_guild,
+        scoped_user,
+        scoped_channel,
+        query,
+        RECALL_K,
+        reputation,
+    );
+    context.addenda = state.style_addenda(scoped_guild, runtime::now());
+    context
+}
+
+/// Describe image attachments and fold the descriptions into the text (max 3),
+/// when vision is configured and the guild has it on. Failures degrade to the
+/// bare text — an image Abbey cannot read is not a reason to ignore the words.
+async fn enrich_with_vision<O: Outbound + Sync>(
+    state: &AppState,
+    out: &O,
+    settings: &GuildSettings,
+    text: &str,
+    attachments: &[RemoteAttachment],
+) -> String {
+    let Some(vision_client) = state.vision() else {
+        return text.to_string();
+    };
+    if !settings.vision_enabled {
+        return text.to_string();
+    }
+    let mut described = Vec::new();
+    for att in attachments
+        .iter()
+        .filter(|a| a.is_image())
+        .take(vision::MAX_DESCRIBED_IMAGES)
+    {
+        let Ok(bytes) = out.fetch(&att.url, vision::MAX_IMAGE_BYTES).await else {
+            continue;
+        };
+        if let Ok(desc) = vision_client.describe_source_only(bytes).await {
+            described.push((att.filename.clone(), desc));
+        }
+    }
+    vision::fold_descriptions(text, &described)
+}
+
+async fn welcome<O: Outbound + Sync>(
+    state: &AppState,
+    out: &O,
+    native_channel_id: &str,
+    display_name: &str,
+) -> Outcome {
+    // Welcomes are generated, never templated: with no backend there is
+    // nothing honest to say, so Abbey stays quiet.
+    let Some(_) = state.generation_label() else {
+        return Outcome::Ignored("welcome needs a backend");
+    };
+    if native_channel_id.is_empty() {
+        return Outcome::Ignored("welcome has no channel");
+    }
+    let system = engine::welcome_prompt(display_name);
+    let text = match state
+        .providers
+        .chat_source_only(&system, &[llm::ChatTurn::user("Say hello.")])
+        .await
+    {
+        Ok((t, _)) => ask::tidy_reply(Persona::Abi, &t),
+        Err(e) => return Outcome::ReplyFailed(e.to_string()),
+    };
+    match out
+        .send(
+            native_channel_id,
+            &OutboundMessage {
+                text,
+                ..OutboundMessage::default()
+            },
+        )
+        .await
+    {
+        Ok(_) => Outcome::Welcomed,
+        Err(e) => Outcome::ReplyFailed(e.to_string()),
+    }
+}
+
+/// Test doubles shared with [`crate::generation`]'s tests.
+#[cfg(test)]
+pub(crate) mod testing {
+    use super::*;
+    use std::sync::Mutex;
+
+    /// A recording [`Outbound`]: every send, react, and edit is kept.
+    #[derive(Default)]
+    pub(crate) struct FakeOut {
+        pub(crate) sent: Mutex<Vec<(String, OutboundMessage)>>,
+        pub(crate) reacted: Mutex<Vec<(String, String, String)>>,
+        pub(crate) edited: Mutex<Vec<(String, String, String)>>,
+    }
+
+    impl Outbound for FakeOut {
+        async fn send(&self, ch: &str, m: &OutboundMessage) -> Result<String, OutboundFailure> {
+            self.sent.lock().unwrap().push((ch.to_string(), m.clone()));
+            Ok(format!("sent-{}", self.sent.lock().unwrap().len()))
+        }
+        async fn typing(&self, _ch: &str) {}
+        async fn react(&self, ch: &str, id: &str, emoji: &str) -> Result<(), OutboundFailure> {
+            self.reacted
+                .lock()
+                .unwrap()
+                .push((ch.into(), id.into(), emoji.into()));
+            Ok(())
+        }
+        async fn fetch(&self, _url: &str, _max: usize) -> Result<Vec<u8>, String> {
+            Err("no network in tests".into())
+        }
+        async fn edit(&self, ch: &str, id: &str, text: &str) -> Result<(), OutboundFailure> {
+            self.edited
+                .lock()
+                .unwrap()
+                .push((ch.into(), id.into(), text.into()));
+            Ok(())
+        }
+    }
+}
+
+#[cfg(test)]
+#[path = "pipeline/tests.rs"]
+mod tests;
+
+#[cfg(test)]
+#[path = "pipeline/participation_tests.rs"]
+mod participation_tests;

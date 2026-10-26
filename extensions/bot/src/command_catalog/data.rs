@@ -1,0 +1,871 @@
+//! Ordered registered and planned command specifications and their static defaults.
+
+use super::{
+    AccessId, CommandKey, CommandKind, CommandSpec, ConditionId, DiscordPermission,
+    EligibilityRule, HelpSection, ImplementationStatus, InteractionContext, RegistrationPolicy,
+};
+
+pub(super) const BOTH: &[InteractionContext] =
+    &[InteractionContext::Guild, InteractionContext::BotDm];
+const GUILD: &[InteractionContext] = &[InteractionContext::Guild];
+#[macro_use]
+mod spec_macro;
+#[macro_use]
+mod engage_specs;
+#[macro_use]
+mod work_specs;
+
+pub(super) const REGISTERED: &[CommandSpec] = work_catalog![
+    spec!(
+        Help,
+        Slash,
+        "help",
+        BOTH,
+        A0,
+        C0,
+        Start,
+        true,
+        "Browse commands available to you privately."
+    ),
+    spec!(
+        PersonaRoute,
+        Slash,
+        "persona route",
+        BOTH,
+        A0,
+        C0,
+        Conversation,
+        false,
+        "Choose a persona and explain the routing."
+    ),
+    spec!(
+        PersonaAsk,
+        Slash,
+        "persona ask",
+        BOTH,
+        A0,
+        C8,
+        Conversation,
+        false,
+        "Ask a question through the configured generation backend."
+    ),
+    spec!(
+        Roleplay,
+        Slash,
+        "roleplay",
+        BOTH,
+        A0,
+        C8,
+        Conversation,
+        false,
+        "Roleplay as Aviva in a DM or NSFW channel when the nsfw gate is on."
+    ),
+    spec!(
+        Whois,
+        Slash,
+        "whois",
+        GUILD,
+        A0,
+        C0,
+        Server,
+        false,
+        "Read a member's profile and roles."
+    ),
+    spec!(
+        Profile,
+        UserContext,
+        "Abbey: profile",
+        GUILD,
+        A0,
+        C0,
+        Server,
+        true,
+        "Read the selected member's profile privately."
+    ),
+    spec!(
+        AskMessage,
+        MessageContext,
+        "Ask Abbey",
+        BOTH,
+        A0,
+        C8,
+        Conversation,
+        true,
+        "Ask about a selected message privately."
+    ),
+    spec!(
+        Perms,
+        Slash,
+        "perms",
+        GUILD,
+        A0,
+        C0,
+        Server,
+        false,
+        "Explain a member's channel permissions."
+    ),
+    spec!(
+        Modcall,
+        Slash,
+        "modcall",
+        GUILD,
+        A2,
+        C7,
+        Moderation,
+        true,
+        "Recommend a moderation action after permission and hierarchy checks."
+    ),
+    spec!(
+        ModcaseShow,
+        Slash,
+        "modcase show",
+        GUILD,
+        A0,
+        C0,
+        Moderation,
+        true,
+        "Show an exact operational case after current subject or staff authorization."
+    ),
+    spec!(
+        ModcaseReview,
+        Slash,
+        "modcase review",
+        GUILD,
+        A2,
+        C0,
+        Moderation,
+        true,
+        "Record an independent current staff review; no Discord action is taken."
+    ),
+    spec!(
+        ModcaseAppeal,
+        Slash,
+        "modcase appeal",
+        GUILD,
+        A0,
+        C0,
+        Moderation,
+        true,
+        "Appeal your own exact operational case in its original source channel."
+    ),
+    spec!(
+        ModcaseResolveAppeal,
+        Slash,
+        "modcase resolve_appeal",
+        GUILD,
+        A2,
+        C0,
+        Moderation,
+        true,
+        "Record an independent staff appeal decision; no Discord action is taken."
+    ),
+    spec!(
+        ServerBlueprint,
+        Slash,
+        "server blueprint",
+        BOTH,
+        A0,
+        C0,
+        Server,
+        true,
+        "Create a server blueprint without changing the server."
+    ),
+    spec!(
+        ServerCreateChannel,
+        Slash,
+        "server create-channel",
+        GUILD,
+        A8,
+        C0,
+        Server,
+        true,
+        "Create a text channel when you and Abbey both have Manage Channels."
+    ),
+    spec!(
+        ServerRenameChannel,
+        Slash,
+        "server rename-channel",
+        GUILD,
+        A8,
+        C0,
+        Server,
+        true,
+        "Rename a channel when you and Abbey both have Manage Channels."
+    ),
+    spec!(
+        ServerSlowmode,
+        Slash,
+        "server slowmode",
+        GUILD,
+        A8,
+        C0,
+        Server,
+        true,
+        "Set channel slowmode when you and Abbey both have Manage Channels."
+    ),
+    spec!(
+        ServerDeleteChannel,
+        Slash,
+        "server delete-channel",
+        GUILD,
+        A8,
+        C0,
+        Server,
+        true,
+        "Delete a channel with confirm:true when you and Abbey both have Manage Channels."
+    ),
+    spec!(
+        ServerAssignRole,
+        Slash,
+        "server assign-role",
+        GUILD,
+        A9,
+        C0,
+        Server,
+        true,
+        "Assign a role when you and Abbey both have Manage Roles."
+    ),
+    spec!(
+        ServerRemoveRole,
+        Slash,
+        "server remove-role",
+        GUILD,
+        A9,
+        C0,
+        Server,
+        true,
+        "Remove a role when you and Abbey both have Manage Roles."
+    ),
+    spec!(
+        ServerMoveMember,
+        Slash,
+        "server move-member",
+        GUILD,
+        A10,
+        C0,
+        Server,
+        true,
+        "Move a member in voice when you and Abbey both have Move Members."
+    ),
+    spec!(
+        ServerPurge,
+        Slash,
+        "server purge",
+        GUILD,
+        A11,
+        C0,
+        Server,
+        true,
+        "Purge recent messages with confirm:true when you and Abbey both have Manage Messages."
+    ),
+    spec!(
+        Webhook,
+        Slash,
+        "webhook",
+        GUILD,
+        A3,
+        C0,
+        Server,
+        true,
+        "Show a safe incoming-webhook setup guide."
+    ),
+    spec!(
+        ForumDraft,
+        Slash,
+        "forum draft",
+        GUILD,
+        A0,
+        C0,
+        Server,
+        true,
+        "Suggest #help tags and preview a first-post template."
+    ),
+    spec!(
+        ForumPost,
+        Slash,
+        "forum post",
+        GUILD,
+        A0,
+        C0,
+        Server,
+        true,
+        "Create a #help forum thread with a first-post template."
+    ),
+    spec!(
+        ForumResolve,
+        Slash,
+        "forum resolve",
+        GUILD,
+        A0,
+        C0,
+        Server,
+        true,
+        "Choose Solved/Unresolved for a forum post you own or manage."
+    ),
+    spec!(
+        ForumPerms,
+        Slash,
+        "forum perms",
+        GUILD,
+        A4,
+        C0,
+        Server,
+        true,
+        "Snapshot and gap-fill Abbey's #help forum overwrite bits."
+    ),
+    spec!(
+        MemoryUse,
+        Slash,
+        "memory_use",
+        BOTH,
+        A0,
+        C0,
+        Memory,
+        true,
+        "Privately review or change your generated-use consent; confirm an exact stored fact."
+    ),
+    spec!(
+        Remember,
+        Slash,
+        "remember",
+        BOTH,
+        A1,
+        C0,
+        Memory,
+        true,
+        "Store a fact about yourself; generated-use consent is a separate choice."
+    ),
+    spec!(
+        ForgetLearning,
+        Slash,
+        "forget_learning",
+        BOTH,
+        A1,
+        C0,
+        Memory,
+        true,
+        "Erase your linkable learning in this scope; aggregate influence needs a separate reset."
+    ),
+    spec!(
+        Forget,
+        Slash,
+        "forget",
+        BOTH,
+        A1,
+        C0,
+        Memory,
+        true,
+        "Remove one of your own stored facts."
+    ),
+    spec!(
+        PendingList,
+        Slash,
+        "pending list",
+        BOTH,
+        A1,
+        C0,
+        Memory,
+        true,
+        "Review proposed fact replacements."
+    ),
+    spec!(
+        PendingConfirm,
+        Slash,
+        "pending confirm",
+        BOTH,
+        A1,
+        C0,
+        Memory,
+        true,
+        "Apply an explicitly chosen replacement in your own memory."
+    ),
+    spec!(
+        PendingDismiss,
+        Slash,
+        "pending dismiss",
+        BOTH,
+        A1,
+        C0,
+        Memory,
+        true,
+        "Dismiss a proposed replacement and keep both facts."
+    ),
+    spec!(
+        Recall,
+        Slash,
+        "recall",
+        BOTH,
+        A1,
+        C0,
+        Memory,
+        true,
+        "Read your facts and standing, or an authorized member's."
+    ),
+    spec!(
+        Reputation,
+        Slash,
+        "reputation",
+        BOTH,
+        A1,
+        C0,
+        Memory,
+        true,
+        "Read your standing privately; moderators may choose a member."
+    ),
+    spec!(
+        MemoryMenu,
+        UserContext,
+        "Abbey: memory",
+        GUILD,
+        A1,
+        C0,
+        Memory,
+        true,
+        "Read the selected member's bounded memory card privately."
+    ),
+    spec!(
+        Summarize,
+        Slash,
+        "summarize",
+        BOTH,
+        A0,
+        C1,
+        Conversation,
+        false,
+        "Summarize the recent conversation through the backend."
+    ),
+    spec!(
+        See,
+        Slash,
+        "see",
+        BOTH,
+        A0,
+        C3,
+        Images,
+        false,
+        "Describe an image; an optional question also needs generation."
+    ),
+    spec!(
+        Ocr,
+        Slash,
+        "ocr",
+        BOTH,
+        A0,
+        C9,
+        Images,
+        false,
+        "Read the text in an image."
+    ),
+    spec!(
+        DescribeImage,
+        MessageContext,
+        "Abbey: describe image",
+        BOTH,
+        A0,
+        C2,
+        Images,
+        true,
+        "Describe the first supported attachment privately."
+    ),
+    spec!(
+        ReadImage,
+        MessageContext,
+        "Abbey: read image text",
+        BOTH,
+        A0,
+        C9,
+        Images,
+        true,
+        "Read text from the first supported attachment privately."
+    ),
+    spec!(
+        Stats,
+        Slash,
+        "stats",
+        BOTH,
+        A0,
+        C0,
+        Start,
+        true,
+        "Read this conversation’s learning and reply budget."
+    ),
+    spec!(
+        Nsfw,
+        Slash,
+        "nsfw",
+        BOTH,
+        A0,
+        C0,
+        Conversation,
+        true,
+        "Enable or disable Aviva roleplay in this DM (in a server use /admin nsfw)."
+    ),
+    spec!(
+        AdminShow,
+        Slash,
+        "admin show",
+        GUILD,
+        A4,
+        C0,
+        Administration,
+        true,
+        "Read this server's settings."
+    ),
+    spec!(
+        AdminPersona,
+        Slash,
+        "admin persona",
+        GUILD,
+        A4,
+        C0,
+        Administration,
+        true,
+        "Set the server's default persona."
+    ),
+    spec!(
+        AdminLearning,
+        Slash,
+        "admin learning",
+        GUILD,
+        A4,
+        C0,
+        Administration,
+        true,
+        "Control learning for this server."
+    ),
+    spec!(
+        AdminNsfw,
+        Slash,
+        "admin nsfw",
+        GUILD,
+        A4,
+        C0,
+        Administration,
+        true,
+        "Enable or disable Aviva roleplay for this server (NSFW channels only)."
+    ),
+    spec!(
+        AdminVision,
+        Slash,
+        "admin vision",
+        GUILD,
+        A4,
+        C0,
+        Administration,
+        true,
+        "Control image understanding for this server."
+    ),
+    spec!(
+        AdminCooldown,
+        Slash,
+        "admin cooldown",
+        GUILD,
+        A4,
+        C0,
+        Administration,
+        true,
+        "Set the unsolicited reply cooldown."
+    ),
+    spec!(
+        AdminAct,
+        Slash,
+        "admin act",
+        GUILD,
+        A4,
+        C0,
+        Administration,
+        true,
+        "Opt this server into unsolicited replies or turn them off."
+    ),
+    spec!(
+        AdminBudget,
+        Slash,
+        "admin budget",
+        GUILD,
+        A4,
+        C0,
+        Administration,
+        true,
+        "Set the hourly unsolicited reply budget."
+    ),
+    spec!(
+        AdminBrain,
+        Slash,
+        "admin brain",
+        GUILD,
+        A4,
+        C0,
+        Administration,
+        true,
+        "Inspect the learning policy and exploration setting."
+    ),
+    spec!(
+        AdminFlush,
+        Slash,
+        "admin flush",
+        GUILD,
+        A4,
+        C0,
+        Administration,
+        true,
+        "Persist current state and report each result."
+    ),
+    spec!(
+        AdminExport,
+        Slash,
+        "admin export",
+        GUILD,
+        A4,
+        C0,
+        Administration,
+        true,
+        "Export the server's brain snapshot privately."
+    ),
+    spec!(
+        AdminResetLearning,
+        Slash,
+        "admin reset_learning",
+        GUILD,
+        A4,
+        C0,
+        Administration,
+        true,
+        "Confirm learning reset."
+    ),
+    spec!(
+        AdminReset,
+        Slash,
+        "admin reset",
+        GUILD,
+        A4,
+        C0,
+        Administration,
+        true,
+        "Clear only this channel's transcript."
+    ),
+    spec!(
+        AdminDashboard,
+        Slash,
+        "admin dashboard",
+        GUILD,
+        A4,
+        C0,
+        Administration,
+        true,
+        "Open private administration controls."
+    ),
+    spec!(
+        AdminQuarantine,
+        Slash,
+        "admin quarantine",
+        GUILD,
+        A4,
+        C0,
+        Administration,
+        true,
+        "Mark a member's stored fact as suspect for review."
+    ),
+    spec!(
+        AdminContradict,
+        Slash,
+        "admin contradict",
+        GUILD,
+        A4,
+        C0,
+        Administration,
+        true,
+        "Record that two of a member's stored facts contradict each other."
+    ),
+    spec!(
+        AdminResolve,
+        Slash,
+        "admin resolve",
+        GUILD,
+        A4,
+        C0,
+        Administration,
+        true,
+        "Close a memory review with a verdict."
+    ),
+    admin_spec!(
+        AdminAddendaList,
+        "admin addenda list",
+        "List this server's style addenda and suppressions."
+    ),
+    admin_spec!(
+        AdminAddendaRevert,
+        "admin addenda revert",
+        "Revert one style addendum and suppress it for 14 days."
+    ),
+    admin_spec!(
+        AdminAddendaClear,
+        "admin addenda clear",
+        "Revert every style addendum and suppress all for 14 days."
+    ),
+    spec!(
+        VoiceConsent,
+        Slash,
+        "voice consent",
+        GUILD,
+        A0,
+        C4,
+        Voice,
+        true,
+        "Review, agree to, or withdraw your voice choice."
+    ),
+    spec!(
+        VoiceNotice,
+        Slash,
+        "voice notice",
+        GUILD,
+        A4,
+        C4,
+        Voice,
+        true,
+        "Publish the member voice consent controls."
+    ),
+    spec!(
+        VoicePlay,
+        Slash,
+        "voice play",
+        GUILD,
+        A5,
+        C4,
+        Voice,
+        true,
+        "Mirror Spotify/Music from this Mac into voice; manager + present in VC. Music ≠ listen consent."
+    ),
+    spec!(
+        VoicePause,
+        Slash,
+        "voice pause",
+        GUILD,
+        A5,
+        C4,
+        Voice,
+        true,
+        "Pause mirrored music and close tap capture; listen consent unchanged."
+    ),
+    spec!(
+        VoiceResumeMusic,
+        Slash,
+        "voice resume-music",
+        GUILD,
+        A5,
+        C4,
+        Voice,
+        true,
+        "Resume mirrored music only; never renews listen consent."
+    ),
+    spec!(
+        VoiceStopMusic,
+        Slash,
+        "voice stop-music",
+        GUILD,
+        A5,
+        C4,
+        Voice,
+        true,
+        "Stop tap capture and mirrored playback; listen consent unchanged."
+    ),
+    spec!(
+        VoiceVolume,
+        Slash,
+        "voice volume",
+        GUILD,
+        A5,
+        C4,
+        Voice,
+        true,
+        "Set mirror volume 0–100; Abbey speech ducks music to ¼."
+    ),
+    spec!(
+        VoiceJoin,
+        Slash,
+        "voice join",
+        GUILD,
+        A5,
+        C5,
+        Voice,
+        true,
+        "Start voice after every participant's saved agreement."
+    ),
+    spec!(
+        VoiceResume,
+        Slash,
+        "voice resume",
+        GUILD,
+        A5,
+        C5,
+        Voice,
+        true,
+        "Resume voice after current participant consent checks."
+    ),
+    spec!(
+        VoiceLeave,
+        Slash,
+        "voice leave",
+        GUILD,
+        A6,
+        C4,
+        Voice,
+        true,
+        "Stop the current call immediately without deleting consent."
+    ),
+    spec!(
+        VoiceStatus,
+        Slash,
+        "voice status",
+        GUILD,
+        A0,
+        C0,
+        Voice,
+        true,
+        "Read your privacy-bounded voice status."
+    ),
+    spec!(
+        VoiceDiagnostics,
+        Slash,
+        "voice diagnostics",
+        GUILD,
+        A4,
+        C4,
+        Voice,
+        true,
+        "Read private content-free operator voice diagnostics."
+    ),
+    spec!(
+        VoiceMode,
+        Slash,
+        "voice mode",
+        GUILD,
+        A4,
+        C4,
+        Voice,
+        true,
+        "Read or select local/off voice mode (OpenAI Realtime removed)."
+    ),
+    spec!(
+        VoiceVerifyStart,
+        Slash,
+        "voice verify start",
+        GUILD,
+        A7,
+        C6,
+        Voice,
+        true,
+        "Arm a local content-free voice acceptance run."
+    ),
+    spec!(
+        VoiceVerifyReport,
+        Slash,
+        "voice verify report",
+        GUILD,
+        A7,
+        C6,
+        Voice,
+        true,
+        "Read the private local voice acceptance report."
+    ),
+];
+pub(super) const PLANNED: &[CommandSpec] = &[];
