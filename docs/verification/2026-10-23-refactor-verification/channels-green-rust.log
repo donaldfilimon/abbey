@@ -1,0 +1,56 @@
+warning: unused import: `simulator::AdmissionSimulator`
+  --> /Users/donald/sources/repos/wdbx/crates/abi-wdbx/src/v3/complete_episode/crypto/admission/mod.rs:11:16
+   |
+11 | pub(super) use simulator::AdmissionSimulator;
+   |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `abi-wdbx` (lib) generated 1 warning (run `cargo fix --lib -p abi-wdbx` to apply 1 suggestion)
+   Compiling abbey v2.6.0 (/Users/donald/sources/repos/abbey)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.92s
+     Running unittests src/lib.rs (target/debug/deps/abbey-aac15bae15b225df)
+
+running 39 tests
+test claims::tests::abi_backend_is_current ... ok
+test claims::tests::conversation_identity_claim_includes_canonical_reads_and_stays_unix_local ... ok
+test claims::tests::app_core_daemon_claim_stays_narrower_than_owned_runtime ... ok
+test claims::tests::embeddings_are_current_and_explicitly_scoped ... ok
+test claims::tests::a_failed_claim_cannot_still_present_verified_local_evidence ... ok
+test claims::tests::a_revoked_claim_cannot_leave_evidence_outstanding ... ok
+test claims::tests::a_failed_claim_still_requires_the_evidence_that_failed ... ok
+test claims::tests::an_expired_claim_must_require_fresh_proof ... ok
+test claims::tests::every_status_has_a_distinct_label_and_key ... ok
+test claims::tests::a_superseded_claim_must_name_its_replacement ... ok
+test claims::tests::ci_proof_stays_blocked_without_linux_and_windows_execution ... ok
+test claims::tests::every_status_key_is_accepted_by_the_manifest_consumer ... ok
+test claims::tests::evidence_channels::current_claim_cannot_hide_failed_or_expired_evidence ... ok
+test claims::tests::exact_model_inference_claim_is_fixture_bounded_and_surface_narrow ... ok
+test claims::tests::every_claim_has_exact_structured_evidence_coverage ... ok
+test claims::tests::host_refusal_preserves_the_current_loopback_http_boundary ... ok
+test claims::tests::evidence_channels::failed_and_expired_channels_require_nonempty_unique_references ... ok
+test claims::tests::legacy_conversation_migration_claim_stays_metadata_only ... ok
+test claims::tests::every_status_is_reachable_through_its_own_filter_aliases ... ok
+test claims::tests::every_classifying_status_is_unique_and_carries_work ... ok
+test claims::tests::evidence_channels::expired_external_channel_preserves_verified_local_proof ... ok
+test claims::tests::no_lifecycle_state_may_carry_a_blocker_owner ... ok
+test claims::tests::program_1_host_claim_is_current_only_at_data_contract_level_c1 ... ok
+test claims::tests::protocol_v3_model_lifecycle_claim_keeps_selection_startup_owned_and_evidence_narrow ... ok
+test claims::tests::evidence_channels::failed_external_channel_preserves_verified_local_proof ... ok
+test claims::tests::protocol_v3_safe_inventory_keeps_mcp_read_only_and_approval_lifecycle_narrow ... ok
+test claims::tests::lookup_shared_compute_roadmap ... ok
+test claims::tests::lifecycle_states_are_separate_from_the_positional_partition ... ok
+test claims::tests::stable_ids_are_unique_and_well_formed ... ok
+test claims::tests::shell_refusal_surfaces_proposed_edition_and_oos_shipped_bypass ... ok
+test claims::tests::shipped_unrestricted_bypass_remains_out_of_scope ... ok
+test claims::tests::status_round_trips_through_its_wire_projection ... ok
+test claims::tests::the_doctor_summary_shows_an_occupied_lifecycle_bucket ... ok
+test claims::tests::the_portable_host_claim_states_the_voice_dispatch_boundary ... ok
+test claims::tests::registry_status_invariants_fail_closed ... ok
+test claims::tests::approved_expansion_is_proposed ... ok
+test claims::tests::refuse_only_rejects_proposed_or_out_of_scope_topics ... ok
+test claims::tests::the_manifest_declares_the_schema_that_matches_its_vocabulary ... ok
+test claims::tests::manifest_is_ordered_machine_readable_claims_source ... ok
+
+test result: ok. 39 passed; 0 failed; 0 ignored; 0 measured; 1254 filtered out; finished in 0.01s
+
