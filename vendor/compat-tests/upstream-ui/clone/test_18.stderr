@@ -1,0 +1,5 @@
+error: Expected `,` after `@default-return false`, found `move`
+ --> $WORKSPACE/compat-tests/upstream-ui/clone/test_18.rs
+  |
+  | fn main() { use glib::clone; let v = std::rc::Rc::new(1); clone!(@weak v => @default-return false move || {}); }
+  |                                                                                                   ^^^^

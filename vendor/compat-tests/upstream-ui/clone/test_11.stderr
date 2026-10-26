@@ -1,0 +1,5 @@
+error: Can't use `self` as variable name. Try storing it in a temporary variable or rename it using `as`.
+ --> $WORKSPACE/compat-tests/upstream-ui/clone/test_11.rs
+  |
+  | fn main() { use glib::clone; let v = std::rc::Rc::new(1); clone!(@strong self => move |x| {}); }
+  |                                                                          ^^^^

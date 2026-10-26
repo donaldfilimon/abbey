@@ -25,11 +25,11 @@ PINS = {
     'glib-0.18.5': (
         '233daaf6e83ae6a12a52055f568f9d7cf4671dabb78ff9560ab6da230ce00ee5',
         '5da7556cd83c4d07950e32b0bbc212fdf3bd1697f9b2751c3892a33cf25e6c6b',
-        '2f7ef2019fd0cb8cb2b95f3a3a4d08b63c4ea546362eae332643a6a6de0e67bf'),
+        '6905f8a71579a7084411e155639400a0ed7a90af1f87a642ae26043948a9bab4'),
     'glib-macros-0.18.5': (
         '0bb0228f477c0900c880fd78c8759b95c7636dbd7842707f49e132378aa2acdc',
         'a6c4be94577afb29698c09c95cc17bc28ac87844071da20839150e92e2c4c841',
-        '21a91d43aa54bf60f7b391487c0c4500165d018db2f4044502d8d8f68d058829'),
+        'b7c7d266c116fc696e3ce65e22959431e78b44b98c44400f125487fadfa3bb9e'),
     'gtk3-macros-0.18.2': (
         '52ff3c5b21f14f0736fed6dcfc0bfb4225ebf5725f3c0209edeec181e4d73e9d',
         '33b55ab68fe4ef313a22fe1d9d278c10c42fb03118d6356aa6945c4ba29d5e79',
@@ -49,6 +49,16 @@ REGISTRY_PROVENANCE = {'proc-macro-error-attr3-3.1.1': {'archive_sha256': '9e564
                                           'LICENSE-MIT': '4d6bf8cef395998be2de2da71eb023ca62603efbd8618b485bb3d1381d011d4b'},
                              'vcs': {'git': {'sha1': '0f0e21bb2a46509c923b87459c6be314bc0cabb5'},
                                      'path_in_vcs': ''}}}
+DEV_HARNESS = {'archive_sha256': '62db9c92d704393fbf2132041720cc80b689f2d3f28521015c2ac866223c11b8',
+ 'license': 'MIT OR Apache-2.0',
+ 'licenses': {'LICENSE-APACHE': '62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a',
+              'LICENSE-MIT': '23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3'},
+ 'package': 'trybuild',
+ 'rust_version': '1.88',
+ 'scope': 'Dev-only compile-test harness; no production dependency',
+ 'url': 'https://static.crates.io/crates/trybuild/trybuild-1.0.122.crate',
+ 'vcs': {'git': {'sha1': '3f6a32437cf608d28fb2eda2d8c3e9c0dfc06ff3'}, 'path_in_vcs': ''},
+ 'version': '1.0.122'}
 LICENSE = '8cf56d10131ce201cf69ab74b111d3ebac1acca3833d7efb39ae357224b70edb'
 
 
@@ -70,6 +80,7 @@ def verify_sources(vendor):
     data = json.loads((vendor / 'source-manifest.json').read_text())
     require(data.get('schema') == 1 and set(data['crates']) == set(PINS), 'manifest schema/crates drift')
     require(data.get('registry_replacements') == REGISTRY_PROVENANCE, 'replacement provenance drift')
+    require(data.get('dev_harness') == DEV_HARNESS, 'DEV harness provenance drift')
     for crate, (archive, original, patched) in PINS.items():
         entry = data['crates'][crate]
         require(entry['archive_sha256'] == archive, f'{crate}: archive pin drift')
@@ -97,6 +108,19 @@ def verify_sources(vendor):
                 require('proc-macro-error' not in deps and 'proc-macro-error3' in deps, f'{crate}: old/aliased macro dependency')
                 dep = deps['proc-macro-error3']
                 require(dep == {'version': '=3.1.1', 'default-features': False, 'features': ['syn2-error']}, f'{crate}: replacement dependency/feature drift')
+    # Keep the supplied compile-fail snapshots byte-for-byte alongside the
+    # explicitly reviewed Rust 1.99.1 renderer-only patch in the vendored tree.
+    retained = vendor / 'compat-tests/upstream-ui/original-subclass-snapshots'
+    require(all(not parent.is_symlink() for parent in [retained, retained.parent, retained.parent.parent]),
+            'original snapshot custody symlink forbidden')
+    expected = {Path(path).name: digest
+                for path, digest in data['crates']['glib-0.18.5']['original_files'].items()
+                if path.startswith('tests/subclass_compiletest/') and path.endswith('.stderr')}
+    paths = list(retained.rglob('*'))
+    require(not any(path.is_symlink() for path in paths), 'original snapshot symlink forbidden')
+    actual = {path.relative_to(retained).as_posix(): sha(path.read_bytes())
+              for path in paths if path.is_file()}
+    require(actual == expected, 'original subclass snapshot custody drift')
     return data
 
 
@@ -110,6 +134,18 @@ def verify_lock(lock):
         name, version = crate.rsplit('-', 1)
         matches = [p for p in packages if p['name'] == name and p['version'] == version]
         require(len(matches) == 1 and 'source' not in matches[0] and 'checksum' not in matches[0], f'{lock.name}: {crate} is not local')
+
+
+def verify_harness_lock(lock):
+    """Pin the reviewed DEV harness and reject the retired vulnerable route."""
+    packages = tomllib.loads(lock.read_text()).get('package', [])
+    require(not any(p['name'] in ('trybuild2', 'basic-toml') for p in packages),
+            'vendor lock: retired compile-test harness route')
+    matches = [p for p in packages if p['name'] == 'trybuild']
+    require(len(matches) == 1 and matches[0]['version'] == '1.0.122'
+            and matches[0].get('source') == 'registry+https://github.com/rust-lang/crates.io-index'
+            and matches[0].get('checksum') == '62db9c92d704393fbf2132041720cc80b689f2d3f28521015c2ac866223c11b8',
+            'vendor lock: maintained compile-test harness pin drift')
 
 
 def verify_metadata(metadata, vendor):
@@ -146,6 +182,7 @@ def main():
     verify_sources(vendor)
     for lock in [root / 'Cargo.lock', vendor / 'Cargo.lock']:
         verify_lock(lock)
+    verify_harness_lock(vendor / 'Cargo.lock')
     if not args.sources_only:
         for manifest, target in [('Cargo.toml', 'consumer'), ('vendor/Cargo.toml', 'vendor')]:
             env = os.environ.copy()

@@ -3,7 +3,14 @@
     "glib-0.18.5": {
       "archive_sha256": "233daaf6e83ae6a12a52055f568f9d7cf4671dabb78ff9560ab6da230ce00ee5",
       "changed_files": [
-        "src/variant_iter.rs"
+        "Cargo.toml",
+        "Cargo.toml.orig",
+        "src/variant_iter.rs",
+        "tests/subclass_compiletest.rs",
+        "tests/subclass_compiletest/02-no-auto-send-sync.stderr",
+        "tests/subclass_compiletest/03-object-no-auto-send-sync.stderr",
+        "tests/subclass_compiletest/05-no-auto-send-sync-with-non-send-sync-parent.stderr",
+        "tests/subclass_compiletest/06-no-auto-send-sync-with-non-send-sync-ffi-parent.stderr"
       ],
       "license": "MIT",
       "original_files": {
@@ -132,8 +139,8 @@
       "patched_files": {
         ".cargo_vcs_info.json": "b301b45387ec3b66f1eace44a21991aaeac83e3140dab4faa0f6b9f7f0ec445b",
         "COPYRIGHT": "dae402989de65164815b7e2b6bc2b9576285434c3785934c8b6ece0fa055960d",
-        "Cargo.toml": "bcd52d812b4c111864ae8e88ba6c0a8311eb0cf781b5e81634950b4619592132",
-        "Cargo.toml.orig": "677a6833293bfb48a855a5965aa2616e5a8a67cfe32b348454aa90c829a138f0",
+        "Cargo.toml": "92010536bb79b0ea25f712139b65606b1395cb7ce5a63b25355d886fcaff09a8",
+        "Cargo.toml.orig": "03fe9e2d7f4e95f2c0276b03d8e8c1d90b352a4e9841a12b920294dcf3633753",
         "Gir.toml": "c09a2a77e6b5872c356f158db02fb02a91d238acc2b3d74dac527ae113e9a9f3",
         "Gir_GObject.toml": "02eca96b8fc6fe0e7b36407b91e4e91a5e1662bcdef9b4bbe4ab34744182e8a7",
         "LICENSE": "8cf56d10131ce201cf69ab74b111d3ebac1acca3833d7efb39ae357224b70edb",
@@ -239,17 +246,17 @@
         "tests/log.rs": "04bb3d80acd39e8f58660ec590087e8a3f414794be97fcbe86535f6356182204",
         "tests/print.rs": "07baf16c95976c35723a9e0ba4fe1b5d1916f22887a358a76b1010ade6aa4d87",
         "tests/structured_log.rs": "023503c632375ce1f3196fa1249e1b7a79aedfa28b458036657ea0b389064b05",
-        "tests/subclass_compiletest.rs": "06fd13974d96c0a21ce9a906010f82db1fdf1b17c192716510cc93ed2ef79547",
+        "tests/subclass_compiletest.rs": "4a27d85d072d9e3df5572561bdc15d151ebb5af570b5364db7ed1cf9b4128068",
         "tests/subclass_compiletest/01-auto-send-sync.rs": "8ff975b8f4b5c94c4cb823f27668446e3f8da5c0cf359e1bd8ac6a86334d1aa4",
         "tests/subclass_compiletest/02-no-auto-send-sync.rs": "39d1a1dd156bc2eaaf6a5ca57525b1f9c5b069ac6ee70ecea9455138c2eebe13",
-        "tests/subclass_compiletest/02-no-auto-send-sync.stderr": "064b2d5b0dceb949c288fe09cb056f870a34c0ae5a65a33ea2e827f6ef9725ad",
+        "tests/subclass_compiletest/02-no-auto-send-sync.stderr": "d29658340dcfa444727a651094a11daa54b162238c9b4ba48cdcb74f92d2a8bf",
         "tests/subclass_compiletest/03-object-no-auto-send-sync.rs": "f7d3ae563cbb02b07253b396bb9af5fa31394e4d64ee9b6d4ffa1641e1a50b52",
-        "tests/subclass_compiletest/03-object-no-auto-send-sync.stderr": "3e0ea73faa979d9ab9ddcc5c3a2824592378f53e4894d029572cddbf6e6f816f",
+        "tests/subclass_compiletest/03-object-no-auto-send-sync.stderr": "c1eff7fc60b92f90ff8567f24ab74eb086ee5390246a30297b018c97a75bc5ea",
         "tests/subclass_compiletest/04-auto-send-sync-with-send-sync-parent.rs": "6832dc8851d0fdabc906acc1af8234d8ae1143a1fe8f7d7f2134e706538b6dbe",
         "tests/subclass_compiletest/05-no-auto-send-sync-with-non-send-sync-parent.rs": "2b05fad36e3311bd1f6bef737431b96bbbb579b3071aef685debaaa16b95cbda",
-        "tests/subclass_compiletest/05-no-auto-send-sync-with-non-send-sync-parent.stderr": "9cff33355447a4c18610a211ad2ee58b87536720e0685e44c8212992ef687f77",
+        "tests/subclass_compiletest/05-no-auto-send-sync-with-non-send-sync-parent.stderr": "6c8aafdb6a6b2b7dbea019869563f84671a475cec006759eed6035fa16786b56",
         "tests/subclass_compiletest/06-no-auto-send-sync-with-non-send-sync-ffi-parent.rs": "a37119bff708de5c84e8a82affa6cc9abe73595b08c9e0539d9cbe33af5e9f7a",
-        "tests/subclass_compiletest/06-no-auto-send-sync-with-non-send-sync-ffi-parent.stderr": "808ac199325749e28e4c5ea6a459463d87c375443dc73c143a8fc1032575895f",
+        "tests/subclass_compiletest/06-no-auto-send-sync-with-non-send-sync-ffi-parent.stderr": "99352b381a8982f45761061791dd33e9a2495a912163f25f41ea07e57f3edeb0",
         "tests/value.rs": "c796ea2b30559e9c8ab6ebbb6c59c575d365a27b461c20f9ca0b1989dbe01d79"
       },
       "url": "https://static.crates.io/crates/glib/glib-0.18.5.crate"
@@ -259,17 +266,18 @@
       "changed_files": [
         "Cargo.toml",
         "Cargo.toml.orig",
-        "src/object_subclass_attribute.rs",
         "src/boxed_derive.rs",
-        "src/variant_derive.rs",
-        "src/lib.rs",
-        "src/enum_derive.rs",
         "src/closure.rs",
+        "src/derived_properties_attribute.rs",
+        "src/enum_derive.rs",
         "src/error_domain_derive.rs",
-        "src/object_interface_attribute.rs",
         "src/flags_attribute.rs",
+        "src/lib.rs",
+        "src/object_interface_attribute.rs",
+        "src/object_subclass_attribute.rs",
         "src/shared_boxed_derive.rs",
-        "src/derived_properties_attribute.rs"
+        "src/variant_derive.rs",
+        "tests/clone.rs"
       ],
       "license": "MIT",
       "original_files": {
@@ -305,8 +313,8 @@
       "patched_files": {
         ".cargo_vcs_info.json": "5944e042d440f2f877f71f0858a3c9fdcb2f36ba403f7f58df79d9d0951f25cd",
         "COPYRIGHT": "dae402989de65164815b7e2b6bc2b9576285434c3785934c8b6ece0fa055960d",
-        "Cargo.toml": "d31716844575d55bc204a09c780a0b02e0e8f3d14ca81fd80e0cdce9d92ea6c3",
-        "Cargo.toml.orig": "acf6584fc78653c636ae060818cf891c0c5004eca2d9d80d987e874e7abd5715",
+        "Cargo.toml": "5c557e44fefaa1597998800c03957de426977e20157efb8b6a6cc65aaa7b7361",
+        "Cargo.toml.orig": "0438a615a1e2944d6e710b37cd622d504d149eae2baeac1d073e40b20177e19b",
         "LICENSE": "8cf56d10131ce201cf69ab74b111d3ebac1acca3833d7efb39ae357224b70edb",
         "src/boxed_derive.rs": "74cebb3a387e04cdcc289e092f8747f34f8936094d6b0761b4e0f3d57e79294e",
         "src/clone.rs": "5e1b1c5c4c38095733f0f643bce330ed481d65f4ab323abff5a65e830db04e65",
@@ -327,7 +335,7 @@
         "src/utils.rs": "a61024ae6643411569a285331bbe0d2dbce86f12e0f804869347945cb7bbb057",
         "src/value_delegate_derive.rs": "e265d82a2ea848c56a37a71cafd59050c6aa9461c3d113f54b46164a99de594d",
         "src/variant_derive.rs": "1a620f6582c4bb6f955e6501fc9364f9998f6779bd12238257ab8f1b24ad1643",
-        "tests/clone.rs": "001c141f8e392c905c82fad4b0ce8df8b2e982068e5a59d61ac476495502a550",
+        "tests/clone.rs": "9be56506b0ef1c6033649b6d33f1c6e5980fee20955b1f5fdcb0588debb757e0",
         "tests/properties.rs": "2eb551deb84525305e4f523b7185c28185e28bccb6cd93e34f107b85c3e830db",
         "tests/test.rs": "9326121fbc5b3de6bfa104c8c263bfbf1fa8fc62b39edef4ab090f2aa86b1cf4",
         "tests/value_delegate_derive.rs": "16b97a9d67230197bfa18f28382b30b21f118ea168e484f52b43b01e4a530935"
@@ -339,8 +347,8 @@
       "changed_files": [
         "Cargo.toml",
         "Cargo.toml.orig",
-        "src/lib.rs",
-        "src/composite_template_derive.rs"
+        "src/composite_template_derive.rs",
+        "src/lib.rs"
       ],
       "license": "MIT",
       "original_files": {
@@ -367,6 +375,25 @@
       },
       "url": "https://static.crates.io/crates/gtk3-macros/gtk3-macros-0.18.2.crate"
     }
+  },
+  "dev_harness": {
+    "archive_sha256": "62db9c92d704393fbf2132041720cc80b689f2d3f28521015c2ac866223c11b8",
+    "license": "MIT OR Apache-2.0",
+    "licenses": {
+      "LICENSE-APACHE": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a",
+      "LICENSE-MIT": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+    },
+    "package": "trybuild",
+    "rust_version": "1.88",
+    "scope": "Dev-only compile-test harness; no production dependency",
+    "url": "https://static.crates.io/crates/trybuild/trybuild-1.0.122.crate",
+    "vcs": {
+      "git": {
+        "sha1": "3f6a32437cf608d28fb2eda2d8c3e9c0dfc06ff3"
+      },
+      "path_in_vcs": ""
+    },
+    "version": "1.0.122"
   },
   "hash_format": "SHA256(sorted relative path + NUL + file SHA256 + newline)",
   "registry_replacements": {

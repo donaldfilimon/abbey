@@ -71,3 +71,32 @@ exit 2. No SDK is installed and no zero-test or skipped platform run qualifies
 GTK3. Windows and native Linux application acceptance remain separate gates.
 See `compat-tests/VERIFICATION.md` for executed
 host outcomes and remaining findings.
+
+## Maintained DEV compile-test harness
+
+The excluded vendor graph now selects `trybuild =1.0.122` in GLib and
+glib-macros' dev dependencies; the root production lock is unchanged. This
+removes the dev-only `trybuild2 -> basic-toml` route, including
+RUSTSEC-2026-0374. The reviewed registry archive has SHA256
+`62db9c92d704393fbf2132041720cc80b689f2d3f28521015c2ac866223c11b8`,
+MIT OR Apache-2.0 licenses, MSRV 1.88, and upstream commit
+`3f6a32437cf608d28fb2eda2d8c3e9c0dfc06ff3` in
+[dtolnay/trybuild](https://github.com/dtolnay/trybuild).
+`source-manifest.json` and the independent verifier pin its archive/license/VCS
+provenance. No production source or macro error behavior changes in this packet.
+
+Maintained trybuild accepts file cases rather than the fork's inline API.
+`compat-tests/upstream-ui/clone/` retains the same 29 failing sources and four
+passing sources. Each test compares those bytes with the original upstream
+inline table before compilation. The original diagnostic expectations remain in
+that table; snapshots must preserve those expectations after normalizing only renderer
+location lines and numeric gutter labels (message, source and caret stay exact),
+and strict stderr snapshots match the actual compiler output. Four GLib subclass
+snapshots have an explicit Rust 1.99.1 renderer patch: qualified internal type
+names, gutter alignment and long-line ellipsis width. Primary E0277 diagnostics
+and every source case remain unchanged. All four supplied snapshot byte streams
+are retained under `compat-tests/upstream-ui/original-subclass-snapshots/` and
+checked against the independently pinned pristine archive inventory. Missing snapshots fail closed; never use `TRYBUILD=overwrite` to
+accept observed output. Every new snapshot requires explicit diagnostic review.
+See the maintenance plan and dated verification evidence for executed outcomes;
+source migration and a clean audit alone do not qualify these tests.

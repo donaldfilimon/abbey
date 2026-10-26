@@ -85,3 +85,54 @@ remain; no warning suppression or warning-free claim was added.
 | `fixround1-fresh-gate-system` | 0 | `e0e5e0cdbb50673383cb651de3da619134f85d1ca15110e51840ce6863256155` |
 
 Final test setup SHA256: `7d3c511b2d76258a42543832b6cef70ccaefe0e4da7eba78313e6202f55263d6`. The earlier digest table describes the initial producer snapshot.
+
+## 2026-10-25 maintained DEV harness qualification
+
+The isolated maintenance packet replaces trybuild2/basic-toml with pinned
+trybuild1.0.122 in the excluded vendor DEV graph. Root lock, production macros,
+iterator implementation, runtime and Studio sources remain unchanged. Registry
+archive/license/VCS facts and source inventories are independently pinned.
+
+Rust1.99.1 through tools/cargo.sh, single build job, dev/test debug info0,
+incremental0, offline execution, stdinEOF and a private target: all four final
+receipts bind source3fe5fb9 before/after.
+
+| Check | Exit | Raw log SHA256 |
+| --- | --- | --- |
+| clone-final | 0 | `8676e7b77d2542604a2d9b8efcb7c878f86a39f788c5d2625be681ac8a61fc24` |
+| subclass-final | 0 | `d4490757a8fb3b6a9b4a4ed2593de4242f9398bc82fb69c2b0fce4ef789d1c1a` |
+| diagnostics-final | 0 | `815ae8a4eff7c06c1b2fb97ee45a07b0fd8798b82e5431d9e1f9201a0b2cf48a` |
+| glib-runtime-final | 0 | `a5be2a44378f7664f1427d2450f3186423d8f9a1d66c8188d25d0f431dfa970a` |
+
+Clone: four Rust tests, including all29compile-fail and4compile-pass cases.
+Subclass: one Rust test executes bothpass and all4compile-fail cases. Original
+macro diagnostics: one test with4negativecontrols. GLib runtime:2witnesses.
+No skips or zero-test acceptance in these selected suites. Existing upstream
+compiler warnings remain visible. Functional observations under concurrent
+machine activity provide no controlled-performance or native Linux/Windows claim.
+
+Clone full expectations, source and carets remain checked after removing only
+renderer location lines/numeric gutterlabels from the retained upstream string
+comparison. Maintained trybuild additionally checks complete current snapshots.
+A normalization regression rejects altered message, source and caret.
+Four subclass expectation changes are explicit renderer-only transformations
+(qualified internal type names, gutteralignment, long-lineellipsis); primary
+E0277 diagnostics and all originalsourcecases remain unchanged. The four supplied
+original snapshots are retained byte-exact in upstream-ui/original-subclass-snapshots
+and checked against immutable pristinearchive hashes. No overwrite mode was used.
+
+Final independent review found one Python test-entrypoint issue: its main guard
+preceded the new harness tests. Direct selection reproduced missingclass RED;
+moving the guard to the end gives5/5direct harnesscontrols,25/25direct full tests
+and25/25discovery tests. This finalfix changes no Rust source or lockedgraph.
+The standalone25test suite and normal discovery now exercise identical controls.
+
+Vendor strict audit --deny warnings --no-fetch exits0:142dependencies, zero
+advisories, zero warnings and empty ignorelist. Generated trybuild subproject
+locks also audit with zero findings/warnings/ignores; their exact hashes and
+reports are retained privately. Source/lock/both workspace metadata validation
+passes after execution. The earlier basic-toml failure remains in the historical
+section above and is superseded only for this reviewed DEV cohort.
+
+No Abbey root gate or overall platform/product/production qualification is
+claimed by this packet; the modernization owner retains integrated cohort gates.

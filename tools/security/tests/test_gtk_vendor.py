@@ -38,6 +38,26 @@ class VendorTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 self.check.verify_sources(vendor)
 
+    def test_dev_harness_provenance_substitution_rejected(self):
+        with tempfile.TemporaryDirectory(dir=ROOT / '.work/gtk') as tmp:
+            vendor = Path(tmp) / 'vendor'
+            shutil.copytree(ROOT / 'vendor', vendor)
+            manifest = vendor / 'source-manifest.json'
+            data = json.loads(manifest.read_text())
+            data['dev_harness'] = {'package': 'substitute'}
+            manifest.write_text(json.dumps(data))
+            with self.assertRaises(ValueError):
+                self.check.verify_sources(vendor)
+
+    def test_original_subclass_snapshot_drift_rejected(self):
+        with tempfile.TemporaryDirectory(dir=ROOT / '.work/gtk') as tmp:
+            vendor = Path(tmp) / 'vendor'
+            shutil.copytree(ROOT / 'vendor', vendor)
+            snapshot = vendor / 'compat-tests/upstream-ui/original-subclass-snapshots/02-no-auto-send-sync.stderr'
+            snapshot.write_bytes(snapshot.read_bytes() + b'changed')
+            with self.assertRaises(ValueError):
+                self.check.verify_sources(vendor)
+
     def test_license_drift(self):
         self.mutate('glib-0.18.5/LICENSE', lambda b: b + b'changed')
 
@@ -150,6 +170,53 @@ class ResolutionTests(unittest.TestCase):
             path.write_text(source)
             with self.assertRaises(ValueError):
                 self.check.verify_lock(path)
+
+
+
+class HarnessLockTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.check = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.check)
+
+    def check_lock(self, packages):
+        with tempfile.TemporaryDirectory() as tmp:
+            lock = Path(tmp) / 'Cargo.lock'
+            lines = ['version = 4']
+            for package in packages:
+                lines.append('[[package]]')
+                lines.extend(f'{key} = {json.dumps(value)}' for key, value in package.items())
+            lock.write_text('\n'.join(lines))
+            self.check.verify_harness_lock(lock)
+
+    def package(self):
+        return dict(name='trybuild', version='1.0.122',
+                    source='registry+https://github.com/rust-lang/crates.io-index',
+                    checksum='62db9c92d704393fbf2132041720cc80b689f2d3f28521015c2ac866223c11b8')
+
+    def test_maintained_harness_required(self):
+        self.check.verify_harness_lock(ROOT / 'vendor/Cargo.lock')
+
+    def test_expected_harness(self):
+        self.check_lock([self.package()])
+
+    def test_retired_routes_rejected(self):
+        for name in ['trybuild2', 'basic-toml']:
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                self.check_lock([self.package(), dict(name=name, version='1.0.0')])
+
+    def test_missing_or_duplicate_harness_rejected(self):
+        for packages in [[], [self.package(), self.package()]]:
+            with self.subTest(packages=packages), self.assertRaises(ValueError):
+                self.check_lock(packages)
+
+    def test_substitution_rejected(self):
+        for key, value in [('version', '1.0.121'), ('source', 'path+file:///replacement'),
+                           ('checksum', '0' * 64)]:
+            package = self.package(); package[key] = value
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                self.check_lock([package])
+
 
 if __name__ == '__main__':
     unittest.main()
