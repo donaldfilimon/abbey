@@ -1,0 +1,559 @@
+//! The conversation engine: per-scope multi-turn sessions and the prompts
+//! that feed a backend.
+//!
+//! This is the port of appleintelligence.md's `ABIEngine` seam, minus the
+//! model: one session per scope key (normally the scoped channel id), so
+//! multi-turn context is per-conversation rather than global; a `render`ed
+//! [`PersonaContext`] appended to the persona's system prompt; and a budget
+//! check standing in for `willOverflow`. Everything here is pure — the
+//! command layer owns the [`crate::llm::Backend`] and the transport, calls
+//! [`Engine::prepare`], posts the request, and hands the reply back through
+//! [`Engine::commit`]. No test needs a network, and neither does this module.
+//!
+//! Two behaviours are deliberate rather than incidental: a persona switch
+//! mid-conversation keeps the transcript (the spec's Dynamic Profiles point —
+//! history survives a switch; only the instructions change), and trimming
+//! always drops the *oldest* turns, by count and by character budget.
+
+use std::collections::{HashMap, VecDeque};
+
+use crate::grounding::Grounding;
+use crate::llm::{ChatTurn, Role};
+use crate::memory::PersonaContext;
+use crate::persona::Persona;
+
+/// Turns a session keeps before the oldest fall off.
+pub const MAX_TURNS: usize = 20;
+/// Characters of transcript a session keeps; older turns are dropped past it.
+pub const CONTEXT_BUDGET_CHARS: usize = 6000;
+
+/// One conversation's live state.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Session {
+    pub persona: Persona,
+    /// Oldest first, strictly alternating user/assistant.
+    pub turns: VecDeque<ChatTurn>,
+    pub last_used: u64,
+}
+
+impl Session {
+    fn new(persona: Persona, now: u64) -> Self {
+        Self {
+            persona,
+            turns: VecDeque::new(),
+            last_used: now,
+        }
+    }
+
+    fn chars(&self) -> usize {
+        self.turns.iter().map(|t| t.text.chars().count()).sum()
+    }
+
+    /// Drop the oldest turns until both caps hold. Turns are always removed
+    /// in pairs-or-better from the front, so the transcript never starts
+    /// with an assistant turn (which the Anthropic API rejects).
+    fn trim(&mut self) {
+        while self.turns.len() > MAX_TURNS || self.chars() > CONTEXT_BUDGET_CHARS {
+            if self.turns.pop_front().is_none() {
+                break;
+            }
+        }
+        while self
+            .turns
+            .front()
+            .is_some_and(|t| t.role == Role::Assistant)
+        {
+            self.turns.pop_front();
+        }
+    }
+}
+
+/// What the command layer sends: the system prompt and the full transcript
+/// ending in the new user input.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PreparedTurn {
+    /// `persona_core` and `context` joined by a blank line.
+    pub system_prompt: String,
+    /// The persona's static system prompt (template text only).
+    pub persona_core: String,
+    /// The persona context rendered for this message (per-request facts).
+    pub context: String,
+    /// The guild's style addenda (template text), carried to
+    /// `PromptParts::addenda`; deliberately not part of `system_prompt`.
+    pub addenda: String,
+    pub turns: Vec<ChatTurn>,
+    grounding: Grounding,
+    pub(crate) personal_memory_permits: crate::personal_memory::MemoryUsePermitSet,
+    pub(crate) continuity: Option<crate::runtime::continuity_context::AdmittedContinuity>,
+}
+
+impl PreparedTurn {
+    /// Characters across the system prompt and every turn.
+    pub fn chars(&self) -> usize {
+        self.system_prompt.chars().count()
+            + self
+                .turns
+                .iter()
+                .map(|t| t.text.chars().count())
+                .sum::<usize>()
+    }
+
+    /// Immutable snapshot of user-provided transcript facts and selected
+    /// factual context that existed before the backend produced its candidate
+    /// reply. Prior assistant output is deliberately not evidence.
+    pub fn grounding(&self) -> &Grounding {
+        &self.grounding
+    }
+}
+
+/// Per-scope sessions. One per bot process; the command layer holds it
+/// behind whatever lock it already uses for memory.
+#[derive(Debug, Default)]
+pub struct Engine {
+    sessions: HashMap<String, Session>,
+}
+
+impl Engine {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Create-or-update the session for `scope`: insert with `persona` on first
+    /// use, then switch the persona and refresh the timestamp. The transcript
+    /// is untouched — [`Engine::commit`] owns turn recording.
+    fn touch_session(&mut self, scope: &str, persona: Persona, now: u64) -> &mut Session {
+        let session = self
+            .sessions
+            .entry(scope.to_string())
+            .or_insert_with(|| Session::new(persona, now));
+        session.persona = persona;
+        session.last_used = now;
+        session
+    }
+
+    /// Assemble the next request for `scope`. Creates the session on first
+    /// use; on a persona change switches the persona and keeps the transcript.
+    /// The transcript is not mutated — [`Engine::commit`] does that once the
+    /// backend has answered, so a failed call leaves no dangling user turn.
+    pub fn prepare(
+        &mut self,
+        scope: &str,
+        persona: Persona,
+        context: &PersonaContext,
+        user_input: &str,
+        now: u64,
+    ) -> PreparedTurn {
+        self.touch_session(scope, persona, now);
+        self.prepare_ephemeral(scope, persona, context, user_input)
+    }
+
+    /// Read shared history for a private request without creating, changing,
+    /// or refreshing a shared session. Its persona applies only to this prompt.
+    pub fn prepare_ephemeral(
+        &self,
+        scope: &str,
+        persona: Persona,
+        context: &PersonaContext,
+        user_input: &str,
+    ) -> PreparedTurn {
+        let turns = self
+            .sessions
+            .get(scope)
+            .map(|session| session.turns.iter().cloned().collect())
+            .unwrap_or_default();
+        Self::prepare_turns(persona, context, user_input, turns)
+    }
+
+    /// Prepare only supplied authorized context, without reading any session.
+    /// Semantic scope and transport authorization remain the caller's authority.
+    pub fn prepare_source_only(
+        persona: Persona,
+        context: &PersonaContext,
+        user_input: &str,
+    ) -> PreparedTurn {
+        Self::prepare_turns(persona, context, user_input, Vec::new())
+    }
+
+    /// Correction text is a query, never evidence for its own replacement claim.
+    pub(crate) fn prepare_repair(
+        persona: Persona,
+        context: &PersonaContext,
+        user_input: &str,
+    ) -> PreparedTurn {
+        let mut prepared = Self::prepare_source_only(persona, context, user_input);
+        prepared.grounding = Grounding::from_sources(context.grounding_sources(user_input));
+        prepared
+    }
+
+    fn prepare_turns(
+        persona: Persona,
+        context: &PersonaContext,
+        user_input: &str,
+        mut turns: Vec<ChatTurn>,
+    ) -> PreparedTurn {
+        turns.push(ChatTurn::user(user_input));
+        let mut grounding = Grounding::from_sources(
+            turns
+                .iter()
+                .filter(|turn| turn.role == Role::User)
+                .map(|turn| turn.text.as_str()),
+        );
+        for source in context.grounding_sources(user_input) {
+            grounding.push_source(source);
+        }
+        let persona_core = crate::ask::system_prompt(persona);
+        let context_addenda = context.addenda.clone();
+        let context_permits = context.personal_memory_permits.clone();
+        let continuity = context.continuity.clone();
+        // The message being answered is the relevance query, so the facts
+        // shown are the ones that bear on it.
+        let context = context.render(user_input);
+        PreparedTurn {
+            system_prompt: format!("{persona_core}\n\n{context}"),
+            persona_core,
+            context,
+            addenda: context_addenda,
+            turns,
+            grounding,
+            personal_memory_permits: context_permits,
+            continuity,
+        }
+    }
+
+    /// Record one exchange and trim to the caps.
+    pub fn commit(&mut self, scope: &str, user_input: &str, assistant_reply: &str, now: u64) {
+        let session = self
+            .sessions
+            .entry(scope.to_string())
+            .or_insert_with(|| Session::new(Persona::Abbey, now));
+        session.turns.push_back(ChatTurn::user(user_input));
+        session
+            .turns
+            .push_back(ChatTurn::assistant(assistant_reply));
+        session.last_used = now;
+        session.trim();
+    }
+
+    /// Forget one scope's transcript entirely.
+    pub fn reset(&mut self, scope: &str) -> bool {
+        self.sessions.remove(scope).is_some()
+    }
+
+    /// Drop every session idle for longer than `max_idle_secs`. Returns how
+    /// many were dropped.
+    pub fn evict_idle(&mut self, now: u64, max_idle_secs: u64) -> usize {
+        let before = self.sessions.len();
+        self.sessions
+            .retain(|_, s| now.saturating_sub(s.last_used) <= max_idle_secs);
+        before - self.sessions.len()
+    }
+
+    /// Turns held for `scope` (0 when there is no session).
+    pub fn session_len(&self, scope: &str) -> usize {
+        self.sessions.get(scope).map_or(0, |s| s.turns.len())
+    }
+
+    /// Stick `persona` on `scope` without recording a transcript turn.
+    /// The empty `/roleplay` arm calls this (not `prepare` with a discarded
+    /// return): same create-or-update defaults and timestamp handling as
+    /// `prepare`, minus the prompt assembly.
+    pub fn set_session_persona(&mut self, scope: &str, persona: Persona, now: u64) {
+        self.touch_session(scope, persona, now);
+    }
+
+    pub fn session_persona(&self, scope: &str) -> Option<Persona> {
+        self.sessions.get(scope).map(|s| s.persona)
+    }
+
+    /// The `willOverflow` stand-in: would this prompt exceed a character
+    /// budget? Callers pass the budget their backend can take.
+    pub fn will_overflow(prepared: &PreparedTurn, budget_chars: usize) -> bool {
+        prepared.chars() > budget_chars
+    }
+}
+
+/// The `/summarize` prompt pair: the persona's system prompt, and a user
+/// message carrying the transcript to compress.
+pub fn summarize_prompt(persona: Persona, transcript: &str, count: usize) -> (String, String) {
+    let system = crate::ask::system_prompt(persona);
+    let user = format!(
+        "Summarize the last {count} messages from this channel in a few sentences, keeping who said what only where it matters. Messages are oldest first, one per line as `author: text`.\n\n{transcript}"
+    );
+    (system, user)
+}
+
+/// The member-joined welcome prompt. Always the Abi persona — platforms.md:
+/// "welcome is always warm".
+pub fn welcome_prompt(display_name: &str) -> String {
+    format!(
+        "{}\n\nA new member named {display_name} just joined the server. Write a short, warm welcome message addressed to them — two sentences at most, no questions about private details.",
+        crate::ask::system_prompt(Persona::Abi)
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::llm::{Backend, build_chat_request};
+    use serde_json::json;
+
+    fn ctx() -> PersonaContext {
+        PersonaContext::empty()
+    }
+
+    #[test]
+    fn prepare_appends_context_to_the_persona_prompt() {
+        let mut engine = Engine::new();
+        let context = PersonaContext {
+            channel_summary: "deploy talk".into(),
+            user_facts: vec!["likes rust".into()],
+            reputation: 0.5,
+            addenda: String::new(),
+            personal_memory_permits: Default::default(),
+            continuity: None,
+        };
+        let prepared = engine.prepare("c", Persona::Aviva, &context, "hi", 1);
+        // Compose from the canonical renderers rather than re-pinning their
+        // copy here: this test owns "prepare joins the persona prompt to the
+        // rendered context with a blank line", and memory/ask own their own
+        // wording. Duplicating the literal made an unrelated context-copy
+        // change fail in two places at once.
+        assert_eq!(
+            prepared.system_prompt,
+            format!(
+                "{}\n\n{}",
+                crate::ask::system_prompt(Persona::Aviva),
+                // prepare focuses the context on the message it is preparing,
+                // so the expectation must use the same query ("hi").
+                context.render("hi")
+            )
+        );
+        assert!(
+            prepared
+                .system_prompt
+                .contains("Recent channel context: deploy talk")
+        );
+        assert_eq!(prepared.turns, vec![ChatTurn::user("hi")]);
+        // prepare alone records nothing — a failed call leaves no orphan turn.
+        assert_eq!(engine.session_len("c"), 0);
+    }
+
+    #[test]
+    fn multi_turn_request_alternates_on_both_backends() {
+        let mut engine = Engine::new();
+        engine.commit("c", "q1", "a1", 1);
+        let prepared = engine.prepare("c", Persona::Abbey, &ctx(), "q2", 2);
+        assert_eq!(
+            prepared.turns,
+            vec![
+                ChatTurn::user("q1"),
+                ChatTurn::assistant("a1"),
+                ChatTurn::user("q2")
+            ]
+        );
+
+        let anthropic = Backend::Anthropic {
+            api_key: "k".into(),
+        };
+        let request = build_chat_request(&anthropic, &prepared.system_prompt, &prepared.turns);
+        assert_eq!(request.body["system"], prepared.system_prompt);
+        assert_eq!(
+            request.body["messages"],
+            json!([
+                {"role": "user", "content": "q1"},
+                {"role": "assistant", "content": "a1"},
+                {"role": "user", "content": "q2"},
+            ])
+        );
+
+        let local = Backend::OpenAiCompatible {
+            endpoint: "http://127.0.0.1:8080".into(),
+            model: "default".into(),
+        };
+        let request = build_chat_request(&local, &prepared.system_prompt, &prepared.turns);
+        let messages = request.body["messages"].as_array().expect("array");
+        assert_eq!(messages.len(), 4);
+        assert_eq!(messages[0]["role"], "system");
+        assert_eq!(messages[0]["content"], prepared.system_prompt);
+        assert_eq!(messages[1]["role"], "user");
+        assert_eq!(messages[2]["role"], "assistant");
+        assert_eq!(messages[3]["role"], "user");
+    }
+
+    #[test]
+    fn sessions_are_per_scope() {
+        let mut engine = Engine::new();
+        engine.commit("c1", "q", "a", 1);
+        assert_eq!(engine.session_len("c1"), 2);
+        assert_eq!(engine.session_len("c2"), 0);
+        let prepared = engine.prepare("c2", Persona::Abbey, &ctx(), "fresh", 2);
+        assert_eq!(prepared.turns.len(), 1);
+    }
+
+    #[test]
+    fn trimming_by_turn_count_keeps_the_most_recent() {
+        let mut engine = Engine::new();
+        for i in 0..15 {
+            engine.commit("c", &format!("q{i}"), &format!("a{i}"), i);
+        }
+        assert_eq!(engine.session_len("c"), MAX_TURNS);
+        let prepared = engine.prepare("c", Persona::Abbey, &ctx(), "next", 99);
+        assert_eq!(prepared.turns[0], ChatTurn::user("q5"));
+        assert_eq!(prepared.turns[MAX_TURNS - 1], ChatTurn::assistant("a14"));
+        assert_eq!(prepared.turns.last(), Some(&ChatTurn::user("next")));
+    }
+
+    #[test]
+    fn trimming_by_char_budget_keeps_the_most_recent_and_starts_on_a_user_turn() {
+        let mut engine = Engine::new();
+        let big = "x".repeat(2500);
+        engine.commit("c", "q0", &big, 1); // 2502 chars
+        engine.commit("c", "q1", &big, 2); // 5004
+        engine.commit("c", "q2", &big, 3); // 7506 → trim
+        let prepared = engine.prepare("c", Persona::Abbey, &ctx(), "next", 4);
+        // Oldest pair gone; transcript still opens on a user turn.
+        assert_eq!(prepared.turns[0], ChatTurn::user("q1"));
+        assert_eq!(prepared.turns.len(), 5);
+        let total: usize = engine.sessions["c"]
+            .turns
+            .iter()
+            .map(|t| t.text.chars().count())
+            .sum();
+        assert!(total <= CONTEXT_BUDGET_CHARS, "{total}");
+    }
+
+    #[test]
+    fn persona_switch_keeps_the_transcript() {
+        let mut engine = Engine::new();
+        engine.prepare("c", Persona::Abbey, &ctx(), "q1", 1);
+        engine.commit("c", "q1", "a1", 1);
+        let prepared = engine.prepare("c", Persona::Aviva, &ctx(), "q2", 2);
+        assert_eq!(engine.session_persona("c"), Some(Persona::Aviva));
+        assert!(prepared.system_prompt.starts_with("You are Aviva. "));
+        assert_eq!(prepared.turns.len(), 3, "history survived the switch");
+        assert_eq!(prepared.turns[0], ChatTurn::user("q1"));
+    }
+
+    #[test]
+    fn empty_roleplay_stick_sets_aviva_without_a_turn() {
+        // Wiring pin for the empty `/roleplay` arm in `commands.rs`: it calls
+        // `set_session_persona` (not `prepare` with a discarded return), so
+        // follow-up freeform reads Aviva via `session_persona` with no
+        // transcript turn recorded. `persona_switch_keeps_the_transcript`
+        // already covers `prepare`'s persona mutation — this owns the stick.
+        let mut engine = Engine::new();
+        engine.set_session_persona("discord:1", Persona::Aviva, 1);
+        assert_eq!(engine.session_persona("discord:1"), Some(Persona::Aviva));
+        assert_eq!(engine.session_len("discord:1"), 0);
+    }
+
+    #[test]
+    fn prepared_grounding_is_a_pre_candidate_snapshot() {
+        let mut engine = Engine::new();
+        engine.commit(
+            "c",
+            "The lockfile says 1.2.3. Which line should ship?",
+            "Ship 4.2.1.",
+            1,
+        );
+        let prepared = engine.prepare(
+            "c",
+            Persona::Abbey,
+            &PersonaContext::empty(),
+            "what should ship?",
+            2,
+        );
+        let candidate = "Ship 4.2.1 in 2019.";
+
+        assert!(
+            crate::grounding::check("Keep 1.2.3.", prepared.grounding()).is_grounded(),
+            "prior user input is part of the snapshot"
+        );
+        assert!(
+            crate::grounding::check("Keep 4.2.1.", prepared.grounding()).should_hedge(),
+            "prior assistant output is not factual authority"
+        );
+        assert!(
+            crate::grounding::check(candidate, prepared.grounding()).should_hedge(),
+            "the candidate must not ground itself"
+        );
+
+        // Delivery callers commit only after generation returns. Even if the
+        // engine advances afterward, this prepared boundary remains the same
+        // read-only pre-candidate snapshot; no second prepare is needed.
+        engine.commit("c", "what should ship?", candidate, 2);
+        assert!(
+            crate::grounding::check(candidate, prepared.grounding()).should_hedge(),
+            "committing later must not mutate the captured grounding"
+        );
+    }
+
+    #[test]
+    fn reset_forgets_one_scope_only() {
+        let mut engine = Engine::new();
+        engine.commit("c1", "q", "a", 1);
+        engine.commit("c2", "q", "a", 1);
+        assert!(engine.reset("c1"));
+        assert!(!engine.reset("c1"));
+        assert_eq!(engine.session_len("c1"), 0);
+        assert_eq!(engine.session_len("c2"), 2);
+    }
+
+    #[test]
+    fn evict_idle_drops_only_stale_sessions() {
+        let mut engine = Engine::new();
+        engine.commit("old", "q", "a", 100);
+        engine.commit("fresh", "q", "a", 900);
+        assert_eq!(engine.evict_idle(1000, 300), 1);
+        assert_eq!(engine.session_len("old"), 0);
+        assert_eq!(engine.session_len("fresh"), 2);
+        // Exactly at the boundary is kept.
+        assert_eq!(engine.evict_idle(1200, 300), 0);
+        assert_eq!(engine.evict_idle(1201, 300), 1);
+    }
+
+    #[test]
+    fn will_overflow_measures_prompt_plus_turns() {
+        let mut engine = Engine::new();
+        let prepared = engine.prepare("c", Persona::Abbey, &ctx(), "hello", 1);
+        let size = prepared.chars();
+        assert!(!Engine::will_overflow(&prepared, size));
+        assert!(Engine::will_overflow(&prepared, size - 1));
+    }
+
+    #[test]
+    fn summarize_prompt_carries_count_and_transcript() {
+        let (system, user) = summarize_prompt(Persona::Abbey, "a: hi\nb: yo", 2);
+        assert_eq!(system, crate::ask::system_prompt(Persona::Abbey));
+        assert!(user.starts_with("Summarize the last 2 messages"), "{user}");
+        assert!(user.ends_with("a: hi\nb: yo"), "{user}");
+    }
+
+    #[test]
+    fn welcome_prompt_is_always_abi() {
+        let prompt = welcome_prompt("Dana");
+        assert!(prompt.starts_with("You are Abi. "), "{prompt}");
+        assert!(prompt.contains("named Dana just joined"), "{prompt}");
+    }
+    #[test]
+    fn correction_query_is_not_factual_authority() {
+        let mut context = PersonaContext::empty();
+        context.user_facts = vec!["The current version is 1.2.3.".into()];
+        let prepared = Engine::prepare_repair(
+            Persona::Abbey,
+            &context,
+            "that's wrong; the version is 9.9.9",
+        );
+        assert!(
+            crate::grounding::check("The version is 1.2.3.", prepared.grounding()).is_grounded()
+        );
+        assert!(
+            crate::grounding::check("The version is 9.9.9.", prepared.grounding()).should_hedge()
+        );
+        assert_eq!(prepared.turns.len(), 1);
+        assert!(
+            prepared.turns[0].text.contains("9.9.9"),
+            "query remains transient input, not fact authority"
+        );
+    }
+}

@@ -1,6 +1,6 @@
 # Training qualification: supplied-result checks
 
-Abbey's existing `abbey train` pipeline delegates to the ABI demo trainer.
+Abbey's retained legacy `abbey train` verbs delegate to the ABI demo trainer.
 Its corpus-reproduction score is not held-out assistant quality, and its
 artifact is not an MLX adapter or an automatic update to the chat model.
 The active acceptance requirements remain in
@@ -86,3 +86,12 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tools/tests -p 'test_c
 
 These tests use synthetic results and establish checker behavior, not model
 quality. The authoritative repository merge gate remains `./check.sh`.
+
+## Native Rust model family
+
+`abbey train family` provides a separate native Rust/Candle pipeline. See
+[model-family.md](model-family.md). Its fixed-suite gates include the minimum
+conditions above plus strict task improvement, all-category non-regression and
+privacy cases. Rust tests exercise actual tensor updates, finite gradients,
+private/public consent, native exports and independent variant reloads. These
+are engineering-pilot checks, not a Gemma E4B/12B or production qualification.

@@ -1,0 +1,360 @@
+{
+  "publication": "Portable review-fix summary. Exact commands/environments/source snapshots/outputs remain privately under ignored .work/zip9/receipts. Published executable and target values are labels/relative paths, not raw runtime paths.",
+  "review_finding": "OS-resolved temp directory can differ from TEMP/TMP (including Windows SYSTEM); refuse before updater callback unless actual canonical temp/cwd match private layout.",
+  "observed_platform": "macOS ARM64; real filesystem paths and Unix links, not simulated Windows SYSTEM behavior",
+  "red": "round1-red: exit101, one pass/two failures; unexpected temp root and linked root admitted by prior passthrough callback",
+  "green": "round1-green: three guard regressions pass; round1-safe and round1-personal each five harness tests pass and one standalone dispatcher ignored",
+  "native_windows": "UNEXECUTED; Windows-only guard attributes/prefix and child plugin code remain untypechecked/unexecuted",
+  "checks": [
+    {
+      "label": "round1-fmt-check",
+      "command": [
+        "./tools/cargo.sh",
+        "fmt",
+        "--package",
+        "abbey-desktop",
+        "--",
+        "--check"
+      ],
+      "selected_environment": {
+        "CARGO_TARGET_DIR": ".work/zip9/target",
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_PROFILE_DEV_DEBUG": "0",
+        "CARGO_PROFILE_TEST_DEBUG": "0",
+        "ABI_WDBX_PATH": ":memory:",
+        "ABI_WDBX_PERSIST": null,
+        "ABBEY_ZIP_OPENSSL": "$RESOLVED_OPENSSL"
+      },
+      "start": "2026-10-25T09:53:53.630891+00:00",
+      "end": "2026-10-25T09:53:53.780611+00:00",
+      "exit": 0,
+      "raw_receipt": {
+        "path": ".work/zip9/receipts/round1-fmt-check.json",
+        "sha256": "d66432dd95b240701742a5a74fa8ba74eec3ca667b7b8bba7a5c942173622909"
+      },
+      "outputs": {
+        "round1-fmt-check.stdout": {
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "bytes": 0
+        },
+        "round1-fmt-check.stderr": {
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "bytes": 0
+        }
+      },
+      "source_before": {
+        "desktop/src-tauri/tests/updater_windows_zip.rs": "767535ac4f4eb9cdbaef5188ef4759856541e3e85058b568da6e36390176a908",
+        "Cargo.lock": "d043818b3c2ba8f9f4a879d73903c374286ce775be4762c51efa4a583b5be47e",
+        "desktop/src-tauri/tests/fixtures/update-zip/manifest.json": "be6cc342b49937388338392a74b8b4bf05ab403bad5b362f852623f712d50632"
+      },
+      "source_after": {
+        "desktop/src-tauri/tests/updater_windows_zip.rs": "767535ac4f4eb9cdbaef5188ef4759856541e3e85058b568da6e36390176a908",
+        "Cargo.lock": "d043818b3c2ba8f9f4a879d73903c374286ce775be4762c51efa4a583b5be47e",
+        "desktop/src-tauri/tests/fixtures/update-zip/manifest.json": "be6cc342b49937388338392a74b8b4bf05ab403bad5b362f852623f712d50632"
+      },
+      "free_bytes_before": 16852770816,
+      "free_bytes_after": 16847929344
+    },
+    {
+      "label": "round1-fmt",
+      "command": [
+        "./tools/cargo.sh",
+        "fmt",
+        "--package",
+        "abbey-desktop"
+      ],
+      "selected_environment": {
+        "CARGO_TARGET_DIR": ".work/zip9/target",
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_PROFILE_DEV_DEBUG": "0",
+        "CARGO_PROFILE_TEST_DEBUG": "0",
+        "ABI_WDBX_PATH": ":memory:",
+        "ABI_WDBX_PERSIST": null,
+        "ABBEY_ZIP_OPENSSL": "$RESOLVED_OPENSSL"
+      },
+      "start": "2026-10-25T09:52:57.902717+00:00",
+      "end": "2026-10-25T09:52:58.430631+00:00",
+      "exit": 0,
+      "raw_receipt": {
+        "path": ".work/zip9/receipts/round1-fmt.json",
+        "sha256": "9a7325ebc66cbb2923e4238fca1abf736117b0287d0b93a60f712cc79296f0de"
+      },
+      "outputs": {
+        "round1-fmt.stdout": {
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "bytes": 0
+        },
+        "round1-fmt.stderr": {
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "bytes": 0
+        }
+      },
+      "source_before": {
+        "desktop/src-tauri/tests/updater_windows_zip.rs": "e5c908bf8f033204f05f20aa16542eb7f8c07b926ac4e7e1149abd5a3e4a9694",
+        "Cargo.lock": "d043818b3c2ba8f9f4a879d73903c374286ce775be4762c51efa4a583b5be47e",
+        "desktop/src-tauri/tests/fixtures/update-zip/manifest.json": "be6cc342b49937388338392a74b8b4bf05ab403bad5b362f852623f712d50632"
+      },
+      "source_after": {
+        "desktop/src-tauri/tests/updater_windows_zip.rs": "767535ac4f4eb9cdbaef5188ef4759856541e3e85058b568da6e36390176a908",
+        "Cargo.lock": "d043818b3c2ba8f9f4a879d73903c374286ce775be4762c51efa4a583b5be47e",
+        "desktop/src-tauri/tests/fixtures/update-zip/manifest.json": "be6cc342b49937388338392a74b8b4bf05ab403bad5b362f852623f712d50632"
+      },
+      "free_bytes_before": 17095352320,
+      "free_bytes_after": 17093857280
+    },
+    {
+      "label": "round1-green",
+      "command": [
+        "./tools/cargo.sh",
+        "test",
+        "--locked",
+        "-p",
+        "abbey-desktop",
+        "--test",
+        "updater_windows_zip",
+        "confinement_guard"
+      ],
+      "selected_environment": {
+        "CARGO_TARGET_DIR": ".work/zip9/target",
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_PROFILE_DEV_DEBUG": "0",
+        "CARGO_PROFILE_TEST_DEBUG": "0",
+        "ABI_WDBX_PATH": ":memory:",
+        "ABI_WDBX_PERSIST": null,
+        "ABBEY_ZIP_OPENSSL": "$RESOLVED_OPENSSL"
+      },
+      "start": "2026-10-25T09:52:58.603802+00:00",
+      "end": "2026-10-25T09:53:03.896577+00:00",
+      "exit": 0,
+      "raw_receipt": {
+        "path": ".work/zip9/receipts/round1-green.json",
+        "sha256": "50a18243a862393936b05ca5a540cb7ba7b99a6161ed29471e156b82eadf238b"
+      },
+      "outputs": {
+        "round1-green.stdout": {
+          "sha256": "8767483f88a0a439ebcefb5ab5e0d5205c4b7f84cd7b819b2bac79a4f5e0f74c",
+          "bytes": 346
+        },
+        "round1-green.stderr": {
+          "sha256": "fcfb24547ec291dbcefd51d12274fff01f151991ecf266116e387e3571f751d7",
+          "bytes": 879
+        }
+      },
+      "source_before": {
+        "desktop/src-tauri/tests/updater_windows_zip.rs": "767535ac4f4eb9cdbaef5188ef4759856541e3e85058b568da6e36390176a908",
+        "Cargo.lock": "d043818b3c2ba8f9f4a879d73903c374286ce775be4762c51efa4a583b5be47e",
+        "desktop/src-tauri/tests/fixtures/update-zip/manifest.json": "be6cc342b49937388338392a74b8b4bf05ab403bad5b362f852623f712d50632"
+      },
+      "source_after": {
+        "desktop/src-tauri/tests/updater_windows_zip.rs": "767535ac4f4eb9cdbaef5188ef4759856541e3e85058b568da6e36390176a908",
+        "Cargo.lock": "d043818b3c2ba8f9f4a879d73903c374286ce775be4762c51efa4a583b5be47e",
+        "desktop/src-tauri/tests/fixtures/update-zip/manifest.json": "be6cc342b49937388338392a74b8b4bf05ab403bad5b362f852623f712d50632"
+      },
+      "free_bytes_before": 17093595136,
+      "free_bytes_after": 17083187200
+    },
+    {
+      "label": "round1-inventory",
+      "command": [
+        "python3",
+        "docs/verification/2026-10-25-updater-zip9/inventory.py"
+      ],
+      "selected_environment": {
+        "CARGO_TARGET_DIR": ".work/zip9/target",
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_PROFILE_DEV_DEBUG": "0",
+        "CARGO_PROFILE_TEST_DEBUG": "0",
+        "ABI_WDBX_PATH": ":memory:",
+        "ABI_WDBX_PERSIST": null,
+        "ABBEY_ZIP_OPENSSL": "$RESOLVED_OPENSSL"
+      },
+      "start": "2026-10-25T09:53:53.885470+00:00",
+      "end": "2026-10-25T09:53:54.038462+00:00",
+      "exit": 0,
+      "raw_receipt": {
+        "path": ".work/zip9/receipts/round1-inventory.json",
+        "sha256": "c180a61d2913cd2cb90288e795e548ec383973955b9d0d3d216b8c9c3f637cd0"
+      },
+      "outputs": {
+        "round1-inventory.stdout": {
+          "sha256": "20ad7587091ad52ec5233185d1cf7f8435dc33f4a235612e7ac2182df5976510",
+          "bytes": 199
+        },
+        "round1-inventory.stderr": {
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "bytes": 0
+        }
+      },
+      "source_before": {
+        "desktop/src-tauri/tests/updater_windows_zip.rs": "767535ac4f4eb9cdbaef5188ef4759856541e3e85058b568da6e36390176a908",
+        "Cargo.lock": "d043818b3c2ba8f9f4a879d73903c374286ce775be4762c51efa4a583b5be47e",
+        "desktop/src-tauri/tests/fixtures/update-zip/manifest.json": "be6cc342b49937388338392a74b8b4bf05ab403bad5b362f852623f712d50632"
+      },
+      "source_after": {
+        "desktop/src-tauri/tests/updater_windows_zip.rs": "767535ac4f4eb9cdbaef5188ef4759856541e3e85058b568da6e36390176a908",
+        "Cargo.lock": "d043818b3c2ba8f9f4a879d73903c374286ce775be4762c51efa4a583b5be47e",
+        "desktop/src-tauri/tests/fixtures/update-zip/manifest.json": "be6cc342b49937388338392a74b8b4bf05ab403bad5b362f852623f712d50632"
+      },
+      "free_bytes_before": 16846262272,
+      "free_bytes_after": 16842362880
+    },
+    {
+      "label": "round1-personal",
+      "command": [
+        "./tools/cargo.sh",
+        "test",
+        "--locked",
+        "-p",
+        "abbey-desktop",
+        "--features",
+        "personal-edition",
+        "--test",
+        "updater_windows_zip"
+      ],
+      "selected_environment": {
+        "CARGO_TARGET_DIR": ".work/zip9/target",
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_PROFILE_DEV_DEBUG": "0",
+        "CARGO_PROFILE_TEST_DEBUG": "0",
+        "ABI_WDBX_PATH": ":memory:",
+        "ABI_WDBX_PERSIST": null,
+        "ABBEY_ZIP_OPENSSL": "$RESOLVED_OPENSSL"
+      },
+      "start": "2026-10-25T09:53:40.507026+00:00",
+      "end": "2026-10-25T09:53:53.453526+00:00",
+      "exit": 0,
+      "raw_receipt": {
+        "path": ".work/zip9/receipts/round1-personal.json",
+        "sha256": "8d33517288e40f368c4689b93dc42baa1c1c09ed15a742539dde56d66e3f35b3"
+      },
+      "outputs": {
+        "round1-personal.stdout": {
+          "sha256": "0cc2b994346f71e3b5fb627fcf58b06ed190df6ca87df477f0ec5a1b79698ab9",
+          "bytes": 729
+        },
+        "round1-personal.stderr": {
+          "sha256": "a757ae60aa1742b9314c3337d989664fea05098dda6edac80d662b5964903c01",
+          "bytes": 1022
+        }
+      },
+      "source_before": {
+        "desktop/src-tauri/tests/updater_windows_zip.rs": "767535ac4f4eb9cdbaef5188ef4759856541e3e85058b568da6e36390176a908",
+        "Cargo.lock": "d043818b3c2ba8f9f4a879d73903c374286ce775be4762c51efa4a583b5be47e",
+        "desktop/src-tauri/tests/fixtures/update-zip/manifest.json": "be6cc342b49937388338392a74b8b4bf05ab403bad5b362f852623f712d50632"
+      },
+      "source_after": {
+        "desktop/src-tauri/tests/updater_windows_zip.rs": "767535ac4f4eb9cdbaef5188ef4759856541e3e85058b568da6e36390176a908",
+        "Cargo.lock": "d043818b3c2ba8f9f4a879d73903c374286ce775be4762c51efa4a583b5be47e",
+        "desktop/src-tauri/tests/fixtures/update-zip/manifest.json": "be6cc342b49937388338392a74b8b4bf05ab403bad5b362f852623f712d50632"
+      },
+      "free_bytes_before": 17065521152,
+      "free_bytes_after": 16856686592
+    },
+    {
+      "label": "round1-red",
+      "command": [
+        "./tools/cargo.sh",
+        "test",
+        "--locked",
+        "-p",
+        "abbey-desktop",
+        "--test",
+        "updater_windows_zip",
+        "confinement_guard"
+      ],
+      "selected_environment": {
+        "CARGO_TARGET_DIR": ".work/zip9/target",
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_PROFILE_DEV_DEBUG": "0",
+        "CARGO_PROFILE_TEST_DEBUG": "0",
+        "ABI_WDBX_PATH": ":memory:",
+        "ABI_WDBX_PERSIST": null,
+        "ABBEY_ZIP_OPENSSL": "$RESOLVED_OPENSSL"
+      },
+      "start": "2026-10-25T09:52:04.076411+00:00",
+      "end": "2026-10-25T09:52:16.580551+00:00",
+      "exit": 101,
+      "raw_receipt": {
+        "path": ".work/zip9/receipts/round1-red.json",
+        "sha256": "4adf3f7e7e296c5bdf66ac79b48707b78e195f079c49cec0cce8794bf0915864"
+      },
+      "outputs": {
+        "round1-red.stdout": {
+          "sha256": "883a31fc32bc793f3f54ded34d1073708a8213b14ba00d02f6df2b8b734f4b1f",
+          "bytes": 1275
+        },
+        "round1-red.stderr": {
+          "sha256": "d7aecb81c9fb64c19617e0940b937095e222120ec8e51e204c8ec52b8ecf32f4",
+          "bytes": 1102
+        }
+      },
+      "source_before": {
+        "desktop/src-tauri/tests/updater_windows_zip.rs": "64514f56572377b2a0c5b156a6a3f89e5c09bcd4e6ffea0ac0333573fc31b152",
+        "Cargo.lock": "d043818b3c2ba8f9f4a879d73903c374286ce775be4762c51efa4a583b5be47e",
+        "desktop/src-tauri/tests/fixtures/update-zip/manifest.json": "be6cc342b49937388338392a74b8b4bf05ab403bad5b362f852623f712d50632"
+      },
+      "source_after": {
+        "desktop/src-tauri/tests/updater_windows_zip.rs": "64514f56572377b2a0c5b156a6a3f89e5c09bcd4e6ffea0ac0333573fc31b152",
+        "Cargo.lock": "d043818b3c2ba8f9f4a879d73903c374286ce775be4762c51efa4a583b5be47e",
+        "desktop/src-tauri/tests/fixtures/update-zip/manifest.json": "be6cc342b49937388338392a74b8b4bf05ab403bad5b362f852623f712d50632"
+      },
+      "free_bytes_before": 18732568576,
+      "free_bytes_after": 18584334336
+    },
+    {
+      "label": "round1-safe",
+      "command": [
+        "./tools/cargo.sh",
+        "test",
+        "--locked",
+        "-p",
+        "abbey-desktop",
+        "--test",
+        "updater_windows_zip"
+      ],
+      "selected_environment": {
+        "CARGO_TARGET_DIR": ".work/zip9/target",
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_PROFILE_DEV_DEBUG": "0",
+        "CARGO_PROFILE_TEST_DEBUG": "0",
+        "ABI_WDBX_PATH": ":memory:",
+        "ABI_WDBX_PERSIST": null,
+        "ABBEY_ZIP_OPENSSL": "$RESOLVED_OPENSSL"
+      },
+      "start": "2026-10-25T09:53:39.504293+00:00",
+      "end": "2026-10-25T09:53:40.397485+00:00",
+      "exit": 0,
+      "raw_receipt": {
+        "path": ".work/zip9/receipts/round1-safe.json",
+        "sha256": "7701fe327ac24562822ba4f40fe59dee4556b581003a29735319ff1e9b95199f"
+      },
+      "outputs": {
+        "round1-safe.stdout": {
+          "sha256": "6f0e251aec7130c50938a6f0f0d16d7d863900ce1a7251d14a8e03f4a09b7def",
+          "bytes": 729
+        },
+        "round1-safe.stderr": {
+          "sha256": "cecc09e0784de69dd3d0af5f4a09a831cecad9bc4b33758efe106368097a1746",
+          "bytes": 711
+        }
+      },
+      "source_before": {
+        "desktop/src-tauri/tests/updater_windows_zip.rs": "767535ac4f4eb9cdbaef5188ef4759856541e3e85058b568da6e36390176a908",
+        "Cargo.lock": "d043818b3c2ba8f9f4a879d73903c374286ce775be4762c51efa4a583b5be47e",
+        "desktop/src-tauri/tests/fixtures/update-zip/manifest.json": "be6cc342b49937388338392a74b8b4bf05ab403bad5b362f852623f712d50632"
+      },
+      "source_after": {
+        "desktop/src-tauri/tests/updater_windows_zip.rs": "767535ac4f4eb9cdbaef5188ef4759856541e3e85058b568da6e36390176a908",
+        "Cargo.lock": "d043818b3c2ba8f9f4a879d73903c374286ce775be4762c51efa4a583b5be47e",
+        "desktop/src-tauri/tests/fixtures/update-zip/manifest.json": "be6cc342b49937388338392a74b8b4bf05ab403bad5b362f852623f712d50632"
+      },
+      "free_bytes_before": 17066254336,
+      "free_bytes_after": 17065631744
+    }
+  ],
+  "final_owned_sha256": {
+    "desktop/src-tauri/tests/updater_windows_zip.rs": "767535ac4f4eb9cdbaef5188ef4759856541e3e85058b568da6e36390176a908",
+    "Cargo.lock": "d043818b3c2ba8f9f4a879d73903c374286ce775be4762c51efa4a583b5be47e",
+    "desktop/src-tauri/tests/fixtures/update-zip/manifest.json": "be6cc342b49937388338392a74b8b4bf05ab403bad5b362f852623f712d50632"
+  }
+}

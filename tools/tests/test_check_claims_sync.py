@@ -392,6 +392,32 @@ Body.
                 claims_sync.validate_test_references([claim], root=root), []
             )
 
+    def test_test_reference_native_workspace_declared_and_missing_names(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = self._test_ref_root(directory)
+            sources = {
+                "crates/abbey-learning/src/native/tests.rs": "native_tensor_update_test",
+                "crates/abbey-learning/tests/pipeline.rs": "native_pipeline_roundtrip_test",
+            }
+            for relative, name in sources.items():
+                path = root / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(f"#[test]\nfn {name}() {{}}\n", encoding="utf-8")
+            claim = fixture_manifest()["claims"][0]
+            claim["evidence"]["automated_test_refs"] = [
+                f"{relative}::{name}" for relative, name in sources.items()
+            ]
+            self.assertEqual(
+                claims_sync.validate_test_references([claim], root=root), []
+            )
+            claim["evidence"]["automated_test_refs"].append(
+                "crates/abbey-learning/tests/pipeline.rs::missing_native_test_function"
+            )
+            problems = claims_sync.validate_test_references([claim], root=root)
+            self.assertEqual(len(problems), 1)
+            self.assertIn("missing_native_test_function", problems[0])
+            self.assertIn("declared test", problems[0])
+
     def test_test_reference_with_missing_name_fails(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = self._test_ref_root(directory)

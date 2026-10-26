@@ -1,0 +1,5 @@
+error: Unexpected ident `v`: you need to specify if this is a weak or a strong clone.
+ --> $WORKSPACE/compat-tests/upstream-ui/clone/test_20.rs
+  |
+  | fn main() { use glib::clone; let v = std::rc::Rc::new(1); clone!(v => move || {}); }
+  |                                                                  ^

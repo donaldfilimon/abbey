@@ -1,0 +1,44 @@
+{
+  "request": {
+    "version": 4,
+    "schema_version": 2,
+    "request_id": "old-conversation-client",
+    "bearer": "inert-fixture-bearer-0000000000001",
+    "grants": {
+      "capabilities": []
+    },
+    "command": {
+      "command": "negotiate",
+      "data": {
+        "supported_versions": [
+          4
+        ],
+        "requested": {
+          "capabilities": [
+            "read_conversations"
+          ]
+        }
+      }
+    }
+  },
+  "response": {
+    "version": 4,
+    "schema_version": 2,
+    "request_id": "old-conversation-client",
+    "payload": {
+      "outcome": "ok",
+      "event": {
+        "event": "negotiated",
+        "data": {
+          "protocol_version": 4,
+          "schema_version": 2,
+          "granted": {
+            "capabilities": [
+              "read_conversations"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

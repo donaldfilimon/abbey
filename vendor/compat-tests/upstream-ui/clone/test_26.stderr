@@ -1,0 +1,5 @@
+error: Expected `move` after `async`, found `{`
+ --> $WORKSPACE/compat-tests/upstream-ui/clone/test_26.rs
+  |
+  | fn main() { use glib::clone; let v = std::rc::Rc::new(1); clone!(@strong v => move || async {println!("foo");}); }
+  |                                                                                             ^^^^^^^^^^^^^^^^^^

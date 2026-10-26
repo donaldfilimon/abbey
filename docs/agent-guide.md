@@ -67,7 +67,7 @@ AI operations and does not inherit the tagline.
   reaches the shared model resolution through `src/effective_model.rs`.
 - `src/train/` — the consent-gated local training orchestration (`consent`,
   `dataset`, `split`, `redaction`, `trainer`, `evaluate`, `ledger`, `runs`).
-  It is the whole of `abbey train`; it owns no trainer, optimizer, or weights.
+  These are the retained legacy verbs; native `abbey train family` lives in `crates/abbey-learning/`.
 - `desktop/` — the Tauri 2 + React/TypeScript client, a **workspace member**
   (`desktop/codegen`, `desktop/src-tauri`). `desktop/Cargo.toml` and
   `desktop/Cargo.lock` are deleted on purpose; the root `Cargo.lock` is the
@@ -171,7 +171,16 @@ above instead of the whole gate.
 
 ## Training and learning
 
-Abbey owns **no** trainer, optimizer, loss, or weights. `abbey train` is a
+`abbey train family` is the native Rust collection, LoRA/Adam, evaluation and
+export pipeline described in `docs/model-family.md`. It has no Python runtime
+fallback. Exact supported architectures and qualification limits remain explicit;
+source text learning and synthetic tensors do not qualify an assistant release.
+Its writing/worker paths require the existing training consent-file contract,
+plus the separate private-training line when examples are private. Dynamic
+repository learning never implicitly opens personal memory databases.
+
+The following rules describe the **retained legacy** `abbey train` verbs. They
+own no neural trainer, optimizer, loss, or weights: their implementation is a
 curation-to-artifact pipeline that delegates the weight update across a process
 boundary to the sibling `abi` binary; `abbey learn` curates the corpus it
 trains on. Read the claims rows `training-local-consent-pipeline` (Partial)

@@ -417,8 +417,6 @@ fn abi_backend_is_current() {
 
 #[test]
 fn approved_expansion_is_proposed() {
-    let hits = lookup("lora");
-    assert!(hits.iter().any(|c| c.status == Status::Proposed));
     for keyword in [
         "Tauri 2",
         "tool runtime",

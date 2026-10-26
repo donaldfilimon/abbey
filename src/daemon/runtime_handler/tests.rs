@@ -785,7 +785,7 @@ fn v4_request(
 ) -> crate::daemon::V4RequestEnvelope {
     crate::daemon::V4RequestEnvelope {
         version: crate::app_core::APP_PROTOCOL_V4,
-        schema_version: crate::app_core::APP_SCHEMA_V4,
+        schema_version: crate::app_core::APP_SCHEMA_V4_CONVERSATIONS,
         request_id: request_id.into(),
         bearer: bearer.into(),
         grants,

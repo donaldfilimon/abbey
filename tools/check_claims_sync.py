@@ -96,6 +96,16 @@ TEST_SOURCE_DIRS = (
         ".rs",
         re.compile(r"\bfn\s+([A-Za-z_][A-Za-z0-9_]*)\s*\("),
     ),
+    (
+        "crates/abbey-learning/src",
+        ".rs",
+        re.compile(r"\bfn\s+([A-Za-z_][A-Za-z0-9_]*)\s*\("),
+    ),
+    (
+        "crates/abbey-learning/tests",
+        ".rs",
+        re.compile(r"\bfn\s+([A-Za-z_][A-Za-z0-9_]*)\s*\("),
+    ),
     ("tools/tests", ".py", re.compile(r"\bdef\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(")),
 )
 
@@ -107,7 +117,8 @@ def collect_test_names(root: Path) -> set[str]:
     against its own path segment: the registry's `path::mod::name` refs often
     nest through a `tests` module that is not part of the file's own path, so
     membership (not a path-plus-grep lookup) is what "resolves somewhere
-    under src/, tests/, desktop/src-tauri/src/, or tools/tests/" means.
+    under src/, tests/, desktop/src-tauri/src/, crates/abbey-learning/{src,tests}/,
+    or tools/tests/" means.
     """
     names: set[str] = set()
     for rel_dir, extension, pattern in TEST_SOURCE_DIRS:

@@ -119,6 +119,11 @@ pub const SLASH_ALIASES: &[SlashAlias] = &[
         target: "security-review",
         origin: "abbey",
     },
+    SlashAlias {
+        alias: "ralph-loop",
+        target: "ralph",
+        origin: "abbey",
+    },
 ];
 
 /// Resolve a typed token to a catalog name. `None` if it is neither a catalog

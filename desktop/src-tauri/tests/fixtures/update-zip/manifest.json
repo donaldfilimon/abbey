@@ -1,0 +1,61 @@
+{
+  "schema": 1,
+  "generator": "Python zipfile ZIP_STORED; OpenSSL Ed25519 over BLAKE2b-512 (minisign ED)",
+  "version": "99.0.0",
+  "cases": {
+    "plain": {
+      "sha256": "6b3d17fc80deb972e97ab797d8bfc7bb39a11bd87722fc3b3cc6da1cbd10d287",
+      "entries": [
+        "payload.txt"
+      ]
+    },
+    "parent": {
+      "sha256": "b02c3d153f4b39c44c43812aa18d93196c351b51252bd67d2c2f1d5e4ce86a9e",
+      "entries": [
+        "../../outside/parent.txt"
+      ]
+    },
+    "outward-link": {
+      "sha256": "2b7bca0ac622661c6ed27264afb95c9111536c23057eab207d11bf82226136f8",
+      "entries": [
+        "outward",
+        "outward/symlink.txt"
+      ]
+    },
+    "chained-link": {
+      "sha256": "f15603f14d5d004bc54401f9d5aef9643b2e4e4a3d3bc5597f24a79628df9376",
+      "entries": [
+        "first",
+        "second",
+        "second/chained.txt"
+      ]
+    },
+    "preexisting-link": {
+      "sha256": "30fecae8c1a5d02715ff419a13498224083f01f779634a067d196c9e35fd4cda",
+      "entries": [
+        "existing/sentinel.txt"
+      ]
+    },
+    "truncated": {
+      "sha256": "15fe46343478901c27a8d71976c0df481ab046d7c57c19dffa4c7c7eaa3cefa2",
+      "entries": [],
+      "construction": "first 40 bytes of plain ZIP, no central directory"
+    }
+  },
+  "files": {
+    "chained-link.zip": "f15603f14d5d004bc54401f9d5aef9643b2e4e4a3d3bc5597f24a79628df9376",
+    "chained-link.zip.sig": "a5178e98c48e9dae7cac355818e385a046ec820a7c3c5c92eabd4afc8ea89fe4",
+    "outward-link.zip": "2b7bca0ac622661c6ed27264afb95c9111536c23057eab207d11bf82226136f8",
+    "outward-link.zip.sig": "31a53c730324fcc431cdea410666380b739ab1742f9df47c8e438941cc82089c",
+    "parent.zip": "b02c3d153f4b39c44c43812aa18d93196c351b51252bd67d2c2f1d5e4ce86a9e",
+    "parent.zip.sig": "bad82d35b7165626f5f2090b06bf493235ad17c0a2268ffd44c63a6dac020491",
+    "plain-unversioned.zip.sig": "9112e77237dcc50928075cd964f01265bbaeb5f1bd64487ae47e53578f3350d4",
+    "plain.zip": "6b3d17fc80deb972e97ab797d8bfc7bb39a11bd87722fc3b3cc6da1cbd10d287",
+    "plain.zip.sig": "e6413d572aa220989b561a5b5bd84e0ea79e363ce1ae7408a263dbea7d22c479",
+    "preexisting-link.zip": "30fecae8c1a5d02715ff419a13498224083f01f779634a067d196c9e35fd4cda",
+    "preexisting-link.zip.sig": "a74ef235cbfed896915910dc86077b3d26ad4032c4c2bd70a2dc77bc48717f8d",
+    "truncated.zip": "15fe46343478901c27a8d71976c0df481ab046d7c57c19dffa4c7c7eaa3cefa2",
+    "truncated.zip.sig": "b28d904800b33144379b026b47cb5570d6e71ca8f3605b8f7ee6874eccf9b4db",
+    "updater.pubkey": "dc58d1880ac970c0257f790d49d6d6f0f8bc1a2009fffed1778b19fb9afddb74"
+  }
+}
