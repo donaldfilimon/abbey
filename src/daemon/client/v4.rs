@@ -32,11 +32,12 @@ pub enum V4ClientError {
     Rejected(V4ErrorCode),
 }
 
-/// Authority originates only from a validated negotiation.
+/// Validated surface grants; execution authority remains owned by the host.
 #[derive(Clone)]
 pub struct V4DaemonSession {
     client: DaemonClient,
     granted: V4CapabilitySet,
+    schema_version: u16,
 }
 
 impl fmt::Debug for V4DaemonSession {
@@ -51,19 +52,43 @@ impl DaemonClient {
         &self,
         requested: V4CapabilitySet,
     ) -> Result<V4DaemonSession, V4ClientError> {
+        self.negotiate_v4_schema(requested, APP_SCHEMA_V4)
+    }
+    /// Explicit conversation-only compatibility. Never selected as an automatic retry.
+    pub fn negotiate_v4_schema2(
+        &self,
+        requested: V4CapabilitySet,
+    ) -> Result<V4DaemonSession, V4ClientError> {
+        self.negotiate_v4_schema(requested, crate::app_core::APP_SCHEMA_V4_CONVERSATIONS)
+    }
+    fn negotiate_v4_schema(
+        &self,
+        requested: V4CapabilitySet,
+        schema_version: u16,
+    ) -> Result<V4DaemonSession, V4ClientError> {
+        if schema_version == crate::app_core::APP_SCHEMA_V4_CONVERSATIONS
+            && requested.as_slice().iter().any(|c| !c.is_conversation())
+        {
+            return Err(V4ClientError::InvalidRequest);
+        }
+        let command = V4Command::Negotiate(V4GrantRequest {
+            supported_versions: vec![APP_PROTOCOL_V4],
+            requested,
+        });
         let event = exchange(
             self,
+            schema_version,
             V4CapabilitySet::deny_all(),
-            V4Command::Negotiate(V4GrantRequest {
-                supported_versions: vec![APP_PROTOCOL_V4],
-                requested,
-            }),
+            command.clone(),
         )?;
+        if !command.matches_event(&event) {
+            return Err(V4ClientError::InvalidResponse);
+        }
         let V4Event::Negotiated(n) = event else {
             return Err(V4ClientError::InvalidResponse);
         };
         if n.protocol_version != APP_PROTOCOL_V4
-            || n.schema_version != APP_SCHEMA_V4
+            || n.schema_version != schema_version
             || n.granted.validate().is_err()
         {
             return Err(V4ClientError::InvalidResponse);
@@ -71,11 +96,18 @@ impl DaemonClient {
         Ok(V4DaemonSession {
             client: self.clone(),
             granted: n.granted,
+            schema_version,
         })
     }
 }
 
 impl V4DaemonSession {
+    /// Actual selected schema, distinct from the latest supported schema.
+    #[must_use]
+    pub const fn schema_version(&self) -> u16 {
+        self.schema_version
+    }
+
     /// Exact negotiated grant set.
     #[must_use]
     pub fn grants(&self) -> &V4CapabilitySet {
@@ -247,12 +279,20 @@ impl V4DaemonSession {
 
     fn request(&self, command: V4Command) -> Result<V4Event, V4ClientError> {
         command
-            .validate()
+            .validate_for_schema(self.schema_version)
             .map_err(|_| V4ClientError::InvalidRequest)?;
         if !self.granted.permits(&command) {
             return Err(V4ClientError::CapabilityDenied);
         }
-        let event = exchange(&self.client, self.granted.clone(), command)?;
+        let event = exchange(
+            &self.client,
+            self.schema_version,
+            self.granted.clone(),
+            command.clone(),
+        )?;
+        if !command.matches_event(&event) {
+            return Err(V4ClientError::InvalidResponse);
+        }
         event
             .validate()
             .map_err(|_| V4ClientError::InvalidResponse)?;
@@ -263,25 +303,38 @@ impl V4DaemonSession {
 #[cfg(unix)]
 fn exchange(
     client: &DaemonClient,
+    schema_version: u16,
     grants: V4CapabilitySet,
     command: V4Command,
 ) -> Result<V4Event, V4ClientError> {
     let request = V4RequestEnvelope {
         version: APP_PROTOCOL_V4,
-        schema_version: APP_SCHEMA_V4,
+        schema_version,
         request_id: uuid::Uuid::new_v4().to_string(),
         bearer: client.config.bearer.as_str().to_owned(),
         grants,
         command,
     };
     let mut config = client.config.clone();
-    config.max_frame_len = config.max_frame_len.min(1024 * 1024);
-    let bytes = super::unix::round_trip(&config, &request).map_err(|_| V4ClientError::Transport)?;
-    decode(&bytes, &request.request_id)
+    let bytes = if schema_version == APP_SCHEMA_V4 {
+        config.max_frame_len = config
+            .max_frame_len
+            .min(crate::app_core::MAX_V4_CONTROL_BYTES);
+        super::unix::round_trip_schema3(&config, &request)
+    } else {
+        super::unix::round_trip(&config, &request)
+    }
+    .map_err(|_| V4ClientError::Transport)?;
+    decode(&bytes, &request.request_id, schema_version)
 }
 
 #[cfg(not(unix))]
-fn exchange(_: &DaemonClient, _: V4CapabilitySet, _: V4Command) -> Result<V4Event, V4ClientError> {
+fn exchange(
+    _: &DaemonClient,
+    _: u16,
+    _: V4CapabilitySet,
+    _: V4Command,
+) -> Result<V4Event, V4ClientError> {
     // Stub for Windows named-pipe transport. Retain the exact error so that
     // desktop IPC and all callers can distinguish UnsupportedPlatform from
     // transient transport errors. Implementation of named pipes + JobObject
@@ -289,11 +342,11 @@ fn exchange(_: &DaemonClient, _: V4CapabilitySet, _: V4Command) -> Result<V4Even
     Err(V4ClientError::UnsupportedPlatform)
 }
 
-fn decode(bytes: &[u8], request_id: &str) -> Result<V4Event, V4ClientError> {
+fn decode(bytes: &[u8], request_id: &str, schema_version: u16) -> Result<V4Event, V4ClientError> {
     let response: V4ResponseEnvelope =
         serde_json::from_slice(bytes).map_err(|_| V4ClientError::InvalidResponse)?;
     if response.version != APP_PROTOCOL_V4
-        || response.schema_version != APP_SCHEMA_V4
+        || response.schema_version != schema_version
         || response.request_id != request_id
     {
         return Err(V4ClientError::InvalidResponse);
@@ -331,3 +384,11 @@ mod cancellation_tests;
 #[cfg(all(test, unix))]
 #[path = "v4/lookup_tests.rs"]
 mod lookup_tests;
+
+#[cfg(all(test, unix))]
+#[path = "v4/schema_tests.rs"]
+mod schema_tests;
+
+#[cfg(all(test, unix))]
+#[path = "v4/page_tests.rs"]
+mod page_tests;

@@ -28,14 +28,27 @@ fn v4_unavailable_admin_effects_refuse_without_mutation_or_input_disclosure() {
     let (root, store) = fixture();
     let changes = store.conn.lock().unwrap().total_changes();
     let task = V4TaskCreate {
-        title: "private task instruction".into(),
+        operation_id: "task:1".parse().unwrap(),
+        conversation_id: crate::app_core::ConversationId::new(),
+        goal: "private task instruction".into(),
+        workspace_id: "workspace.one".into(),
+        route_id: "abi.local".into(),
+        permission_profile_id: "desk.default".into(),
+        profile_revision: 1,
+        budget_tokens: 100,
+        execution_kind: crate::app_core::V4TaskExecutionKind::ReadOnly,
     };
     assert!(store.v4_create_task(&task, 1700000000000).is_err());
     let automation = V4AutomationUpsert {
         automation_id: "auto.private".into(),
         instruction: "private automation instruction".into(),
-        schedule: V4ScheduleKind::Cron,
-        cron: Some("0 * * * *".into()),
+        operation_id: "auto:1".parse().unwrap(),
+        expected_revision: None,
+        workspace_id: "workspace.one".into(),
+        profile_revision: 1,
+        schedule: V4ScheduleKind::Cron {
+            expression: "0 * * * *".into(),
+        },
         timezone: "UTC".into(),
         route_id: "abi.local".into(),
         permission_profile_id: "desk.default".into(),

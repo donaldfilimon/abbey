@@ -29,7 +29,8 @@ fn fixture(
         let request: V4RequestEnvelope = serde_json::from_slice(&bytes).unwrap();
         assert!(matches!(request.command, V4Command::CancelTurn(_, _)));
         if let Some(event) = reply(&request) {
-            let response = V4ResponseEnvelope::ok(request.request_id, event);
+            let mut response = V4ResponseEnvelope::ok(request.request_id, event);
+            response.schema_version = crate::app_core::APP_SCHEMA_V4_CONVERSATIONS;
             let bytes = serde_json::to_vec(&response).unwrap();
             stream
                 .write_all(&(bytes.len() as u32).to_be_bytes())
@@ -50,6 +51,7 @@ fn fixture(
     ));
     (
         V4DaemonSession {
+            schema_version: crate::app_core::APP_SCHEMA_V4_CONVERSATIONS,
             client,
             granted: V4CapabilitySet::from_sorted(vec![V4Capability::CancelTurns]).unwrap(),
         },
@@ -118,6 +120,7 @@ fn v4_cancel_client_missing_grant_never_connects() {
         BearerSecret::parse("cancel-client-fixture-bearer-00001").unwrap(),
     ));
     let session = V4DaemonSession {
+        schema_version: crate::app_core::APP_SCHEMA_V4_CONVERSATIONS,
         client,
         granted: V4CapabilitySet::deny_all(),
     };
