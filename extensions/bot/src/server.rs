@@ -1,0 +1,701 @@
+//! Server blueprints — role hierarchy, channel structure, permission matrix.
+//!
+//! The skill's output rule for a server setup is "role/channel hierarchy then
+//! numbered steps", which is what [`render`] produces.
+//!
+//! The reason this is a module rather than a block of prose is that a blueprint
+//! has *checkable* properties, and the checks catch the mistakes people actually
+//! make when hand-writing one:
+//!
+//! - **Text channel names are not free-form.** Discord lowercases them and
+//!   replaces whitespace with hyphens, so a blueprint saying `General Chat`
+//!   silently becomes `general-chat` and the setup steps no longer match the
+//!   server. Voice channels have no such rule, which is exactly the asymmetry
+//!   that trips people. [`normalize_text_name`] encodes it and a test asserts
+//!   every text channel here is already in its final form.
+//! - **Gating a channel to a role that the blueprint never creates** produces a
+//!   setup you cannot follow. A property test walks every archetype and asserts
+//!   referential integrity.
+//! - **`@everyone` must never carry a dangerous permission.** It is the one role
+//!   nobody can be removed from.
+//!
+//! The four archetypes below are `&'static` tables rendered by `/server`. The
+//! file-backed, owned form that the plan engine consumes lives in [`plan`];
+//! `plan::Plan: From<&Blueprint>` runs the archetypes through the same
+//! validator. [`observe`], [`diff`], and [`apply`] are the engine's pure
+//! halves; [`discord`] and [`run`] are the only parts that touch serenity.
+
+pub mod apply;
+pub mod diff;
+pub mod discord;
+pub mod observe;
+pub mod plan;
+pub mod run;
+
+/// The kind of server being built. Chosen by a human; this module does not infer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Archetype {
+    /// Public, open-join, needs moderation depth and a rules funnel.
+    Community,
+    /// Gaming group: voice-first, LFG, fewer text channels.
+    Gaming,
+    /// Work or project server: structured, low noise, no social channels.
+    Project,
+    /// Small friend group: flat, minimal roles.
+    FriendGroup,
+}
+
+impl Archetype {
+    /// Every archetype, so property tests cannot silently miss one that is added
+    /// later. Test-only: nothing in the running bot iterates archetypes.
+    #[cfg(test)]
+    pub const ALL: [Self; 4] = [
+        Self::Community,
+        Self::Gaming,
+        Self::Project,
+        Self::FriendGroup,
+    ];
+}
+
+/// A role, with the permissions that justify it existing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RoleSpec {
+    pub name: &'static str,
+    /// Highest first; index 0 sits at the top of the hierarchy.
+    pub permissions: &'static [&'static str],
+    pub note: &'static str,
+}
+
+/// Channel kinds a plan can ask for. Discord stores text, announcement, and
+/// forum names in normalized form (see [`normalize_text_name`]); voice and
+/// stage names are kept as written.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ChannelKind {
+    Text,
+    Voice,
+    Forum,
+    /// Discord's "News" channel type: followable, staff-posted.
+    Announcement,
+    /// One-to-many voice with a request-to-speak queue.
+    Stage,
+}
+
+impl ChannelKind {
+    /// Whether Discord rewrites this kind's name (lowercase, hyphenated).
+    #[must_use]
+    pub const fn normalizes_name(self) -> bool {
+        matches!(self, Self::Text | Self::Forum | Self::Announcement)
+    }
+
+    /// Whether the kind carries a topic in Discord's channel resource.
+    #[must_use]
+    pub const fn has_topic(self) -> bool {
+        matches!(self, Self::Text | Self::Forum | Self::Announcement)
+    }
+
+    /// Kinds that Discord only allows on a guild with the `COMMUNITY` feature.
+    #[must_use]
+    pub const fn needs_community(self) -> bool {
+        matches!(self, Self::Forum | Self::Announcement | Self::Stage)
+    }
+
+    /// Lowercase label, matching the TOML spelling.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Text => "text",
+            Self::Voice => "voice",
+            Self::Forum => "forum",
+            Self::Announcement => "announcement",
+            Self::Stage => "stage",
+        }
+    }
+}
+
+/// A channel, and the role it is gated to if any.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChannelSpec {
+    pub name: &'static str,
+    pub kind: ChannelKind,
+    /// When set, `@everyone` is denied View Channel here and this role is
+    /// allowed it. Must name a role the same blueprint creates.
+    pub gated_to: Option<&'static str>,
+    /// Channel overwrites denied to @everyone, including members with guild grants.
+    pub deny_everyone: &'static [&'static str],
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Category {
+    pub name: &'static str,
+    pub channels: &'static [ChannelSpec],
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Blueprint {
+    pub roles: &'static [RoleSpec],
+    pub categories: &'static [Category],
+    /// What `@everyone` is set to. Data, not a hardcoded render line: the
+    /// baseline differs per archetype — a gated community strips it to
+    /// view-only, while a flat friend server *is* its `@everyone` grants —
+    /// and making it data is what lets the dangerous-permission property test
+    /// check something that can actually vary.
+    pub everyone: &'static [&'static str],
+}
+
+/// Discord caps a category at 50 channels. Enforced by the property test below
+/// and by `plan::Plan::validate` for file-backed plans.
+pub const MAX_CHANNELS_PER_CATEGORY: usize = 50;
+
+/// Permissions `@everyone` must never hold. Each one lets any member escalate or
+/// wreck the server, and `@everyone` is the one role membership is not optional.
+/// Load-bearing: `plan::Plan::validate` refuses a plan that grants any of them.
+pub const NEVER_FOR_EVERYONE: &[&str] = &[
+    "Administrator",
+    // serenity emits "Manage Guild"; the Discord client labels it
+    // "Manage Server". Match what get_permission_names actually returns,
+    // or the entry can never fire.
+    "Manage Guild",
+    "Manage Roles",
+    "Manage Channels",
+    "Manage Webhooks",
+    "Ban Members",
+    "Kick Members",
+    // serenity's exact string. The earlier entry, "Mention Everyone", was a
+    // name serenity never emits, so that check was structurally incapable of
+    // firing; `server::discord` now tests every entry here against serenity.
+    "Mention @everyone, @here, and All Roles",
+];
+
+/// The gated archetypes strip `@everyone` to read-only; roles grant the rest.
+const EVERYONE_READ_ONLY: &[&str] = &["View Channel", "Read Message History"];
+
+/// Apply Discord's text-channel naming rule: lowercase, whitespace to hyphens.
+///
+/// Discord does this server-side whether you like it or not, so a blueprint that
+/// does not already satisfy it describes a server you will not get.
+pub fn normalize_text_name(raw: &str) -> String {
+    raw.trim()
+        .to_lowercase()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join("-")
+}
+
+const fn text(name: &'static str, gated_to: Option<&'static str>) -> ChannelSpec {
+    ChannelSpec {
+        name,
+        kind: ChannelKind::Text,
+        gated_to,
+        deny_everyone: &[],
+    }
+}
+
+const fn voice(name: &'static str, gated_to: Option<&'static str>) -> ChannelSpec {
+    ChannelSpec {
+        name,
+        kind: ChannelKind::Voice,
+        gated_to,
+        deny_everyone: &[],
+    }
+}
+
+const fn forum(name: &'static str, gated_to: Option<&'static str>) -> ChannelSpec {
+    ChannelSpec {
+        name,
+        kind: ChannelKind::Forum,
+        gated_to,
+        deny_everyone: &[],
+    }
+}
+
+/// Prevent both top-level posting and thread creation/replies. Guild role grants
+/// do not override these channel denies; explicit channel role allows do.
+const READ_ONLY_POSTING: &[&str] = &[
+    "Send Messages",
+    "Create Public Threads",
+    "Create Private Threads",
+    "Send Messages in Threads",
+];
+
+const fn read_only(name: &'static str) -> ChannelSpec {
+    ChannelSpec {
+        name,
+        kind: ChannelKind::Text,
+        gated_to: None,
+        deny_everyone: READ_ONLY_POSTING,
+    }
+}
+
+const COMMUNITY_ROLES: &[RoleSpec] = &[
+    RoleSpec {
+        name: "Admin",
+        permissions: &["Administrator"],
+        note: "Owner's deputies only. Administrator bypasses every channel overwrite, so keep this list short.",
+    },
+    RoleSpec {
+        name: "Moderator",
+        permissions: &["Manage Messages", "Moderate Members", "Kick Members"],
+        note: "Deliberately no Ban Members — banning is an Admin call.",
+    },
+    RoleSpec {
+        name: "Member",
+        permissions: &["Send Messages", "Connect", "Speak"],
+        note: "Granted after the rules gate. This is what makes the gate mean something.",
+    },
+];
+
+const COMMUNITY_CATEGORIES: &[Category] = &[
+    Category {
+        name: "Start Here",
+        channels: &[read_only("rules"), read_only("announcements")],
+    },
+    Category {
+        name: "Community",
+        channels: &[
+            text("general", Some("Member")),
+            text("introductions", Some("Member")),
+            forum("help", Some("Member")),
+        ],
+    },
+    Category {
+        name: "Staff",
+        channels: &[
+            text("mod-log", Some("Moderator")),
+            text("mod-chat", Some("Moderator")),
+        ],
+    },
+];
+
+const GAMING_ROLES: &[RoleSpec] = &[
+    RoleSpec {
+        name: "Admin",
+        permissions: &["Administrator"],
+        note: "Server owner and one backup.",
+    },
+    RoleSpec {
+        name: "Moderator",
+        permissions: &["Manage Messages", "Moderate Members", "Move Members"],
+        note: "Move Members matters here — most incidents happen in voice.",
+    },
+    RoleSpec {
+        name: "Member",
+        permissions: &["Send Messages", "Connect", "Speak", "Stream"],
+        note: "Stream is the point of a gaming server; grant it at the base role.",
+    },
+];
+
+const GAMING_CATEGORIES: &[Category] = &[
+    Category {
+        name: "Text",
+        channels: &[
+            // Ungated on purpose: the landing channel. Without one, a new
+            // joiner holding only @everyone sees an empty server and has no
+            // way to find out how Member is granted.
+            text("welcome", None),
+            text("general", Some("Member")),
+            text("lfg", Some("Member")),
+            text("clips", Some("Member")),
+        ],
+    },
+    Category {
+        name: "Voice",
+        channels: &[
+            voice("Lobby", Some("Member")),
+            voice("Squad 1", Some("Member")),
+            voice("Squad 2", Some("Member")),
+            voice("AFK", Some("Member")),
+        ],
+    },
+    Category {
+        name: "Staff",
+        channels: &[text("mod-chat", Some("Moderator"))],
+    },
+];
+
+const PROJECT_ROLES: &[RoleSpec] = &[
+    RoleSpec {
+        name: "Admin",
+        permissions: &["Administrator"],
+        note: "Project lead.",
+    },
+    RoleSpec {
+        name: "Contributor",
+        permissions: &["Send Messages", "Connect", "Speak", "Create Public Threads"],
+        note: "Threads keep long discussions out of the main channel.",
+    },
+];
+
+const PROJECT_CATEGORIES: &[Category] = &[
+    Category {
+        name: "Project",
+        channels: &[
+            read_only("announcements"),
+            text("general", Some("Contributor")),
+            forum("decisions", Some("Contributor")),
+        ],
+    },
+    Category {
+        name: "Work",
+        channels: &[
+            text("standup", Some("Contributor")),
+            text("ci", Some("Contributor")),
+            voice("Pairing", Some("Contributor")),
+        ],
+    },
+];
+
+const FRIEND_ROLES: &[RoleSpec] = &[RoleSpec {
+    name: "Admin",
+    permissions: &["Administrator"],
+    note: "Whoever made the server. A friend group does not need a hierarchy.",
+}];
+
+const FRIEND_CATEGORIES: &[Category] = &[Category {
+    name: "Hangout",
+    channels: &[
+        text("general", None),
+        text("media", None),
+        voice("Voice", None),
+    ],
+}];
+
+/// The blueprint for an archetype.
+pub const fn blueprint(archetype: Archetype) -> Blueprint {
+    match archetype {
+        Archetype::Community => Blueprint {
+            roles: COMMUNITY_ROLES,
+            categories: COMMUNITY_CATEGORIES,
+            everyone: EVERYONE_READ_ONLY,
+        },
+        Archetype::Gaming => Blueprint {
+            roles: GAMING_ROLES,
+            categories: GAMING_CATEGORIES,
+            everyone: EVERYONE_READ_ONLY,
+        },
+        Archetype::Project => Blueprint {
+            roles: PROJECT_ROLES,
+            categories: PROJECT_CATEGORIES,
+            everyone: EVERYONE_READ_ONLY,
+        },
+        Archetype::FriendGroup => Blueprint {
+            roles: FRIEND_ROLES,
+            categories: FRIEND_CATEGORIES,
+            // Flat is the design: nothing is gated, so members must be able to
+            // talk on the base role alone. Stripping @everyone to read-only
+            // here — the old hardcoded render line — described a server where
+            // every friend could see the channels and nobody could speak.
+            everyone: &[
+                "View Channel",
+                "Read Message History",
+                "Send Messages",
+                "Connect",
+                "Speak",
+            ],
+        },
+    }
+}
+
+/// The prefix a channel is shown with. `#` is Discord's own text convention and
+/// reads correctly flush against the name; the emoji markers need a space or the
+/// name collides with the glyph.
+fn kind_marker(kind: ChannelKind) -> &'static str {
+    match kind {
+        ChannelKind::Text => "#",
+        ChannelKind::Voice => "🔊 ",
+        ChannelKind::Forum => "🗂 ",
+        ChannelKind::Announcement => "📣 ",
+        ChannelKind::Stage => "🎙 ",
+    }
+}
+
+/// Render a blueprint: hierarchy, structure, then numbered steps.
+pub fn render(archetype: Archetype) -> String {
+    let bp = blueprint(archetype);
+    let mut out = String::new();
+
+    out.push_str("**Role hierarchy** (highest first)\n");
+    for role in bp.roles {
+        out.push_str(&format!(
+            "- **{}**: {}. {}\n",
+            role.name,
+            role.permissions.join(", "),
+            role.note
+        ));
+    }
+    out.push_str(&format!("- **@everyone**: {}\n", bp.everyone.join(", ")));
+
+    out.push_str("\n**Channels**\n");
+    for category in bp.categories {
+        out.push_str(&format!("- {}\n", category.name));
+        for channel in category.channels {
+            let gate = match channel.gated_to {
+                Some(role) => format!(" [{role}]"),
+                None => String::new(),
+            };
+            // Text and forum names go out in the form Discord will actually
+            // store, so the steps below always match the resulting server even
+            // if a blueprint table drifts.
+            let name = if channel.kind.normalizes_name() {
+                normalize_text_name(channel.name)
+            } else {
+                channel.name.to_string()
+            };
+            out.push_str(&format!(
+                "  - {}{}{}\n",
+                kind_marker(channel.kind),
+                name,
+                if channel.deny_everyone.is_empty() {
+                    gate
+                } else {
+                    format!("{gate} [read-only]")
+                }
+            ));
+        }
+    }
+
+    out.push_str("\n**Steps**\n");
+    out.push_str("1. Create roles in the order above; grant only listed permissions. Assign the named access roles to staff too: position does not inherit access.\n");
+    out.push_str("2. Create categories/channels. For [Role], deny @everyone View Channel and allow that role View Channel. Share category overwrites only when all children match.\n");
+    if let Some(channel) = bp
+        .categories
+        .iter()
+        .flat_map(|c| c.channels)
+        .find(|ch| !ch.deny_everyone.is_empty())
+    {
+        out.push_str(&format!("3. For [read-only], deny @everyone: {}. Keep other channel role/member posting allows unset; only Admin publishes (Administrator bypasses denies).\n", channel.deny_everyone.join(", ")));
+    } else {
+        out.push_str(
+            "3. Keep Administrator limited to the listed Admins; it bypasses channel denies.\n",
+        );
+    }
+    out.push_str("4. ");
+    if bp.roles.iter().any(|role| role.name == "Member") {
+        out.push_str("Set up Member assignment after the rules gate. ");
+    }
+    out.push_str(
+        "Verify access and posting with `/perms` and a non-admin test account before inviting.\n",
+    );
+
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_gated_channel_names_a_role_the_blueprint_creates() {
+        for archetype in Archetype::ALL {
+            let bp = blueprint(archetype);
+            for category in bp.categories {
+                for channel in category.channels {
+                    if let Some(gate) = channel.gated_to {
+                        assert!(
+                            bp.roles.iter().any(|r| r.name == gate),
+                            "{archetype:?}: {} is gated to {gate:?}, which the blueprint never creates",
+                            channel.name
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn text_channel_names_are_already_in_discords_final_form() {
+        // A blueprint saying "General Chat" describes a server you do not get:
+        // Discord stores it as "general-chat" and the steps stop matching.
+        for archetype in Archetype::ALL {
+            for category in blueprint(archetype).categories {
+                for channel in category.channels {
+                    if channel.kind.normalizes_name() {
+                        assert_eq!(
+                            normalize_text_name(channel.name),
+                            channel.name,
+                            "{archetype:?}: Discord would rewrite this name"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn voice_channels_are_exempt_from_the_text_naming_rule() {
+        // Asserted through render(), not the blueprint tables. A mutation check
+        // showed the old version — which only compared table entries against
+        // their own normalized form — stayed green when render's voice arm was
+        // changed to normalize, i.e. when the exemption was actually broken.
+        let out = render(Archetype::Gaming);
+        assert!(out.contains("Squad 1"), "voice name was rewritten: {out}");
+        assert!(!out.contains("squad-1"), "voice name was normalized: {out}");
+        // The text rule still applies in the same render, so this pins the
+        // asymmetry rather than just one half of it.
+        assert!(out.contains("#general"), "{out}");
+    }
+
+    #[test]
+    fn no_blueprint_hands_everyone_a_dangerous_permission() {
+        // Checks the blueprint DATA, not a rendered literal. The old version
+        // read a hardcoded render line that was byte-identical across all four
+        // archetypes, so no blueprint edit could ever trip it.
+        for archetype in Archetype::ALL {
+            for granted in blueprint(archetype).everyone {
+                assert!(
+                    !NEVER_FOR_EVERYONE.contains(granted),
+                    "{archetype:?} grants @everyone {granted}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn every_blueprint_gives_a_roleless_joiner_somewhere_to_land() {
+        // A member holding only @everyone must be able to see at least one
+        // channel, or the setup steps produce a server that looks empty to
+        // every new joiner. Gaming shipped exactly that until this test.
+        for archetype in Archetype::ALL {
+            let ungated = blueprint(archetype)
+                .categories
+                .iter()
+                .flat_map(|c| c.channels)
+                .any(|ch| ch.gated_to.is_none());
+            assert!(ungated, "{archetype:?} gates every channel");
+        }
+    }
+
+    #[test]
+    fn a_flat_blueprint_lets_the_base_role_speak() {
+        // FriendGroup gates nothing and creates no granting role, so if
+        // @everyone cannot send, nobody but the Admin can talk at all.
+        let bp = blueprint(Archetype::FriendGroup);
+        assert!(bp.everyone.contains(&"Send Messages"), "{:?}", bp.everyone);
+        let no_gates = bp
+            .categories
+            .iter()
+            .flat_map(|c| c.channels)
+            .all(|ch| ch.gated_to.is_none());
+        assert!(
+            no_gates,
+            "a gate would need a granting role this blueprint lacks"
+        );
+    }
+
+    #[test]
+    fn role_names_are_unique_within_a_blueprint() {
+        for archetype in Archetype::ALL {
+            let roles = blueprint(archetype).roles;
+            for (i, role) in roles.iter().enumerate() {
+                assert!(
+                    !roles[..i].iter().any(|r| r.name == role.name),
+                    "{archetype:?} defines {} twice",
+                    role.name
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn no_category_exceeds_discords_channel_limit() {
+        for archetype in Archetype::ALL {
+            for category in blueprint(archetype).categories {
+                assert!(
+                    category.channels.len() <= MAX_CHANNELS_PER_CATEGORY,
+                    "{archetype:?}/{} has {} channels",
+                    category.name,
+                    category.channels.len()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn every_archetype_renders_hierarchy_structure_and_steps() {
+        for archetype in Archetype::ALL {
+            let out = render(archetype);
+            for section in ["Role hierarchy", "Channels", "Steps"] {
+                assert!(out.contains(section), "{archetype:?} missing {section}");
+            }
+        }
+    }
+
+    #[test]
+    fn complete_blueprints_fit_one_discord_message() {
+        for archetype in Archetype::ALL {
+            let out = render(archetype);
+            assert!(
+                out.chars().count() <= 2000,
+                "{archetype:?}: {} characters",
+                out.chars().count()
+            );
+            assert!(out.contains("`/perms`"), "missing verification step: {out}");
+        }
+    }
+
+    #[test]
+    fn gate_instructions_do_not_imply_role_inheritance() {
+        let out = render(Archetype::Community);
+        assert!(!out.contains("Member+"), "{out}");
+        assert!(
+            out.contains("Assign the named access roles to staff too"),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn information_channels_block_member_posts_and_thread_bypasses() {
+        for archetype in [Archetype::Community, Archetype::Project] {
+            let bp = blueprint(archetype);
+            for channel in bp.categories.iter().flat_map(|c| c.channels) {
+                if matches!(channel.name, "rules" | "announcements") {
+                    // Even if a member's guild roles grant every posting permission,
+                    // channel @everyone denies must remove each path to posting.
+                    for permission in [
+                        "Send Messages",
+                        "Create Public Threads",
+                        "Create Private Threads",
+                        "Send Messages in Threads",
+                    ] {
+                        assert!(
+                            channel.deny_everyone.contains(&permission),
+                            "{archetype:?}/{} leaves {permission} open",
+                            channel.name
+                        );
+                    }
+                    assert!(
+                        channel.gated_to.is_none(),
+                        "newcomers must see {}",
+                        channel.name
+                    );
+                } else {
+                    assert!(
+                        channel.deny_everyone.is_empty(),
+                        "discussion channel {} became read-only",
+                        channel.name
+                    );
+                }
+            }
+            let out = render(archetype);
+            assert!(out.contains("#announcements [read-only]"), "{out}");
+            assert!(
+                out.contains("Keep other channel role/member posting allows unset"),
+                "{out}"
+            );
+        }
+    }
+
+    #[test]
+    fn normalization_matches_discords_rule() {
+        assert_eq!(normalize_text_name("General Chat"), "general-chat");
+        assert_eq!(normalize_text_name("  Mod   Log  "), "mod-log");
+        assert_eq!(normalize_text_name("already-fine"), "already-fine");
+    }
+
+    #[test]
+    fn a_friend_group_stays_flat() {
+        // The archetype exists to *not* impose a hierarchy; if this grows roles,
+        // it has stopped being the thing it is for.
+        assert_eq!(blueprint(Archetype::FriendGroup).roles.len(), 1);
+    }
+}

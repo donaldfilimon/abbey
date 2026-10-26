@@ -77,3 +77,10 @@ personal-edition = ["abbey/personal-edition"]
 [dev-dependencies]
 base64 = "0.22"
 minisign-verify = "0.3"
+# Public updater API tests use a mock runtime and disposable filesystem roots.
+tauri = { version = "2", features = ["test"] }
+tempfile = "3"
+
+# Dependency-contract/fixture parsing only; actual plugin extraction is separate.
+zip = { version = "=9.0.5", default-features = false }
+sha2 = "0.10"

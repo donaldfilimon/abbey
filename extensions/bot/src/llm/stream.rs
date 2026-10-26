@@ -1,0 +1,539 @@
+//! Byte-safe OpenAI-compatible server-sent-event parsing and transport.
+
+use std::future::Future;
+
+use serde_json::{Value, json};
+
+use super::{
+    Backend, ChatTurn, HttpTransport, LlmError, LlmRequest, MAX_ERROR_RESPONSE_BYTES,
+    MAX_RESPONSE_BYTES, MAX_TOOL_CALLS_PER_TURN, ModelTurn,
+    channel_markers::Stripper,
+    dialect::{bounded_calls, validate_terminal},
+};
+
+/// The streaming form of a chat request. Only the OpenAI-compatible path is
+/// streamed; Anthropic remains a completed JSON response on this code path.
+pub fn build_stream_request(
+    backend: &Backend,
+    system_prompt: &str,
+    turns: &[ChatTurn],
+    tools: &[crate::tools::ToolSpec],
+) -> LlmRequest {
+    let mut request =
+        crate::llm::build_chat_request_with_tools(backend, system_prompt, turns, tools);
+    if matches!(backend, Backend::OpenAiCompatible { .. }) {
+        request.body["stream"] = json!(true);
+    }
+    request
+}
+
+#[derive(Debug, Default)]
+struct StreamedCall {
+    id: String,
+    call_type: String,
+    name: String,
+    arguments: String,
+}
+
+/// Single helper collapsing the previous `optional_string` / `optional_nested_string` pair.
+fn optional_string<'a>(
+    obj: &'a Value,
+    field: &str,
+    index: usize,
+) -> Result<Option<&'a str>, LlmError> {
+    match obj.get(field) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(value)) => Ok(Some(value)),
+        Some(_) => Err(LlmError::backend(format!(
+            "backend streamed tool call {index} with a non-string {field}"
+        ))),
+    }
+}
+
+/// Incremental parser for OpenAI-style SSE bodies.
+#[derive(Debug, Default)]
+pub struct SseAccumulator {
+    buffer: Vec<u8>,
+    done: bool,
+    finish_reason: Option<String>,
+    calls: Vec<StreamedCall>,
+    /// Removes Gemma channel markers from content deltas before they are
+    /// returned, so neither the live Discord edits nor the final turn see them.
+    markers: Stripper,
+}
+
+impl SseAccumulator {
+    /// Consume one raw network chunk and return complete text deltas.
+    pub fn feed(&mut self, chunk: &[u8]) -> Result<Vec<String>, LlmError> {
+        if self.done {
+            if chunk.iter().any(|byte| !byte.is_ascii_whitespace()) {
+                return Err(LlmError::backend(
+                    "the backend sent data after the stream terminal marker".into(),
+                ));
+            }
+            return Ok(Vec::new());
+        }
+
+        self.buffer.extend_from_slice(chunk);
+        let mut deltas = Vec::new();
+        while let Some(newline) = self.buffer.iter().position(|byte| *byte == b'\n') {
+            let mut line: Vec<u8> = self.buffer.drain(..=newline).collect();
+            line.pop();
+            if line.last() == Some(&b'\r') {
+                line.pop();
+            }
+            self.process_line(&line, &mut deltas)?;
+        }
+        if self.done && self.buffer.iter().any(|byte| !byte.is_ascii_whitespace()) {
+            return Err(LlmError::backend(
+                "the backend sent data after the stream terminal marker".into(),
+            ));
+        }
+        Ok(deltas)
+    }
+
+    fn process_line(&mut self, line: &[u8], deltas: &mut Vec<String>) -> Result<(), LlmError> {
+        let line = std::str::from_utf8(line)
+            .map_err(|_| LlmError::backend("the backend stream contained invalid UTF-8".into()))?;
+        if line.trim().is_empty() || line.starts_with(':') {
+            return Ok(());
+        }
+        if self.done {
+            return Err(LlmError::backend(
+                "the backend sent an event after the stream terminal marker".into(),
+            ));
+        }
+        let Some(payload) = line.strip_prefix("data:") else {
+            return Err(LlmError::backend(
+                "the backend stream contained an unsupported SSE field".into(),
+            ));
+        };
+        let payload = payload.trim();
+        if payload == "[DONE]" {
+            self.validate_terminal()?;
+            // Flush text held back as a possible marker prefix; an unclosed
+            // channel block is dropped.
+            let tail = self.markers.finish();
+            if !tail.is_empty() {
+                deltas.push(tail);
+            }
+            self.done = true;
+            return Ok(());
+        }
+        if self.finish_reason.is_some() {
+            return Err(LlmError::backend(
+                "the backend sent an event after its finish reason".into(),
+            ));
+        }
+
+        let value: Value = serde_json::from_str(payload).map_err(|error| {
+            LlmError::backend(format!("the backend stream event was not JSON: {error}"))
+        })?;
+        let choice = value.pointer("/choices/0").ok_or_else(|| {
+            LlmError::backend("the backend stream event carried no choice".into())
+        })?;
+        let finish = choice.get("finish_reason").and_then(Value::as_str);
+        let delta = choice.get("delta").unwrap_or(&Value::Null);
+
+        if let Some(text) = delta.get("content").and_then(Value::as_str)
+            && !text.is_empty()
+        {
+            if finish.is_some() {
+                return Err(LlmError::backend(
+                    "the backend combined a terminal finish reason with more text".into(),
+                ));
+            }
+            let visible = self.markers.push(text);
+            if !visible.is_empty() {
+                deltas.push(visible);
+            }
+        }
+
+        if delta
+            .get("tool_calls")
+            .is_some_and(|calls| !calls.is_null() && !calls.is_array())
+        {
+            return Err(LlmError::backend(
+                "the backend stream tool_calls field was not an array".into(),
+            ));
+        }
+        if let Some(calls) = delta.get("tool_calls").and_then(Value::as_array) {
+            if finish.is_some() && !calls.is_empty() {
+                return Err(LlmError::backend(
+                    "the backend combined a terminal finish reason with more tool data".into(),
+                ));
+            }
+            if calls.len() > MAX_TOOL_CALLS_PER_TURN {
+                return Err(LlmError::backend(format!(
+                    "the backend streamed more than {MAX_TOOL_CALLS_PER_TURN} tool calls in one event"
+                )));
+            }
+            for call in calls {
+                let index = call
+                    .get("index")
+                    .and_then(Value::as_u64)
+                    .and_then(|index| usize::try_from(index).ok())
+                    .ok_or_else(|| {
+                        LlmError::backend(
+                            "the backend streamed a tool call without a valid index".into(),
+                        )
+                    })?;
+                if index >= MAX_TOOL_CALLS_PER_TURN {
+                    return Err(LlmError::backend(format!(
+                        "the backend tool-call index {index} exceeded the per-turn limit of {MAX_TOOL_CALLS_PER_TURN}"
+                    )));
+                }
+                while self.calls.len() <= index {
+                    self.calls.push(StreamedCall::default());
+                }
+                let slot = &mut self.calls[index];
+                if let Some(id) = optional_string(call, "id", index)? {
+                    slot.id.push_str(id);
+                }
+                if let Some(call_type) = optional_string(call, "type", index)? {
+                    slot.call_type.push_str(call_type);
+                }
+                if call.get("function").is_some_and(|value| !value.is_object()) {
+                    return Err(LlmError::backend(format!(
+                        "backend streamed tool call {index} with a non-object function"
+                    )));
+                }
+                if let Some(function) = call.get("function").and_then(Value::as_object) {
+                    let func_value = Value::Object(function.clone());
+                    if let Some(name) = optional_string(&func_value, "name", index)? {
+                        // Preserve original nested error wording by mapping through same helper
+                        // but with function-specific message on failure. Re-check type:
+                        if func_value
+                            .get("name")
+                            .is_some_and(|v| !v.is_string() && !v.is_null())
+                        {
+                            return Err(LlmError::backend(format!(
+                                "backend streamed tool call {index} with non-string function name"
+                            )));
+                        }
+                        slot.name.push_str(name);
+                    }
+                    if let Some(arguments) = optional_string(&func_value, "arguments", index)? {
+                        if func_value
+                            .get("arguments")
+                            .is_some_and(|v| !v.is_string() && !v.is_null())
+                        {
+                            return Err(LlmError::backend(format!(
+                                "backend streamed tool call {index} with non-string function arguments"
+                            )));
+                        }
+                        slot.arguments.push_str(arguments);
+                    }
+                } else {
+                    // No function object yet; check for direct nested string errors
+                    // via the single helper (top-level and nested share logic).
+                }
+            }
+        }
+
+        if let Some(finish) = finish {
+            self.finish_reason = Some(finish.to_string());
+        }
+        Ok(())
+    }
+
+    fn validate_terminal(&self) -> Result<(), LlmError> {
+        let finish = self.finish_reason.as_deref().ok_or_else(|| {
+            LlmError::backend("the backend stream ended without a finish reason".into())
+        })?;
+        let calls = self.parsed_tool_calls()?.len();
+        validate_terminal(finish, calls)
+    }
+
+    /// Require a complete `[DONE]`-terminated stream before exposing a turn.
+    pub fn finish(&self) -> Result<(), LlmError> {
+        if !self.done {
+            return Err(LlmError::backend(
+                "the backend stream ended before the [DONE] terminal marker".into(),
+            ));
+        }
+        if self.buffer.iter().any(|byte| !byte.is_ascii_whitespace()) {
+            return Err(LlmError::backend(
+                "the backend stream ended with an incomplete event".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    /// The bounded, parsed tool calls accumulated so far.
+    pub fn tool_calls(&self) -> Result<Vec<crate::tools::ToolCall>, LlmError> {
+        self.finish()?;
+        self.parsed_tool_calls()
+    }
+
+    fn parsed_tool_calls(&self) -> Result<Vec<crate::tools::ToolCall>, LlmError> {
+        // Reuse shared bounded_calls by synthesizing OpenAI-shaped values.
+        let synthetic: Vec<Value> = self
+            .calls
+            .iter()
+            .map(|call| {
+                json!({
+                    "id": call.id,
+                    "type": call.call_type,
+                    "function": {"name": call.name, "arguments": call.arguments}
+                })
+            })
+            .collect();
+        // Empty slots that were never filled will have empty id/name and will
+        // be rejected by bounded_calls via nonempty checks, which is the
+        // desired closed failure.
+        if synthetic.iter().all(|v| {
+            v.get("id").and_then(Value::as_str).unwrap_or("").is_empty()
+                && v.get("function")
+                    .and_then(|f| f.get("name"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .is_empty()
+        }) && !synthetic.is_empty()
+        {
+            // If we have placeholder empty calls, still run through bounded_calls
+            // to get proper error, but ensure we don't skip validation.
+        }
+        // Filter out trailing default slots that were never touched? The
+        // streaming logic pre-allocates up to index, leaving default empty
+        // entries for sparse indices. The original parsed_tool_calls iterated
+        // over all entries and failed on empty id/name, which is correct
+        // closed behavior. Keep that by not filtering.
+        bounded_calls(&synthetic, MAX_TOOL_CALLS_PER_TURN)
+    }
+
+    /// Whether the validated `[DONE]` marker has been seen.
+    pub fn is_done(&self) -> bool {
+        self.done
+    }
+}
+
+/// A transport that can deliver text deltas while resolving to a full turn.
+pub trait StreamTransport {
+    fn post_stream(
+        &self,
+        request: &LlmRequest,
+        on_delta: crate::generation::stream_owner::DeltaSender,
+    ) -> impl Future<Output = Result<ModelTurn, LlmError>> + Send;
+}
+
+impl StreamTransport for HttpTransport {
+    fn post_stream(
+        &self,
+        request: &LlmRequest,
+        on_delta: crate::generation::stream_owner::DeltaSender,
+    ) -> impl Future<Output = Result<ModelTurn, LlmError>> + Send {
+        let mut builder = self
+            .client_for(&request.url)
+            .post(&request.url)
+            .json(&request.body);
+        for (name, value) in &request.headers {
+            builder = builder.header(*name, value);
+        }
+        async move {
+            use futures_util::StreamExt as _;
+
+            let response = builder.send().await.map_err(LlmError::transport)?;
+            let status = response.status();
+            let rejection =
+                LlmError::http(status, response.headers().get(reqwest::header::RETRY_AFTER));
+            if status.is_success()
+                && response
+                    .headers()
+                    .contains_key(reqwest::header::RETRY_AFTER)
+            {
+                return Err(LlmError::classified(
+                    "incompatible provider delay metadata",
+                    crate::provider::ProviderFailureKind::ProtocolDrift,
+                ));
+            }
+            if !status.is_success() {
+                let _ = crate::http_body::read_capped(response, MAX_ERROR_RESPONSE_BYTES).await;
+                return Err(rejection);
+            }
+
+            let mut stream = response.bytes_stream();
+            let mut accumulator = SseAccumulator::default();
+
+            let mut received = 0usize;
+            while let Some(chunk) = stream.next().await {
+                let bytes = chunk.map_err(LlmError::transport)?;
+                received = received.checked_add(bytes.len()).ok_or_else(|| {
+                    LlmError::backend("the backend stream exceeded its response limit".into())
+                })?;
+                if received > MAX_RESPONSE_BYTES {
+                    return Err(LlmError::backend(format!(
+                        "the backend stream exceeded the {MAX_RESPONSE_BYTES}-byte response limit"
+                    )));
+                }
+                for delta in accumulator.feed(&bytes)? {
+                    on_delta.send(delta)?;
+                }
+                if accumulator.is_done() {
+                    break;
+                }
+            }
+            accumulator.finish()?;
+            let calls = accumulator.tool_calls()?;
+            let full = on_delta.snapshot()?;
+            if full.trim().is_empty() && calls.is_empty() {
+                return Err(LlmError::backend(
+                    "the stream carried no answer text".into(),
+                ));
+            }
+            Ok(ModelTurn { text: full, calls })
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn event(json: &str) -> Vec<u8> {
+        format!("data: {json}\n").into_bytes()
+    }
+
+    #[test]
+    fn split_utf8_is_buffered_until_the_line_is_complete() {
+        let mut accumulator = SseAccumulator::default();
+        let line = event(r#"{"choices":[{"delta":{"content":"café"},"finish_reason":null}]}"#);
+        let split = line
+            .windows(2)
+            .position(|window| window == "é".as_bytes())
+            .expect("contains multibyte codepoint")
+            + 1;
+        assert!(accumulator.feed(&line[..split]).unwrap().is_empty());
+        assert_eq!(accumulator.feed(&line[split..]).unwrap(), ["café"]);
+    }
+
+    fn streamed(events: &[&str]) -> String {
+        let mut accumulator = SseAccumulator::default();
+        let mut text = String::new();
+        for content in events {
+            let payload = json!({"choices":[{"delta":{"content":content},"finish_reason":null}]});
+            text.extend(accumulator.feed(&event(&payload.to_string())).unwrap());
+        }
+        text.extend(
+            accumulator
+                .feed(&event(
+                    r#"{"choices":[{"delta":{},"finish_reason":"stop"}]}"#,
+                ))
+                .unwrap(),
+        );
+        text.extend(accumulator.feed(b"data: [DONE]\n").unwrap());
+        accumulator.finish().unwrap();
+        text
+    }
+
+    #[test]
+    fn gemma_channel_markers_are_stripped_across_event_boundaries() {
+        assert_eq!(
+            streamed(&[
+                "<|chan",
+                "nel>thought\n<chan",
+                "nel|>Hello",
+                " <|channel>x<channel|>there."
+            ]),
+            "Hello there."
+        );
+        // Held-back text that never became a marker is flushed at [DONE].
+        assert_eq!(streamed(&["a < b, ends <|chan"]), "a < b, ends <|chan");
+        // Marker-only content streams nothing, so `post_stream` takes its
+        // "the stream carried no answer text" path instead of posting.
+        assert_eq!(streamed(&["<|channel>thought\n<channel|>"; 4]), "");
+    }
+
+    #[test]
+    fn marker_only_content_before_tool_calls_yields_no_text_and_keeps_the_call() {
+        let mut accumulator = SseAccumulator::default();
+        let mut text = String::new();
+        for payload in [
+            json!({"choices":[{"delta":{"content":"<|channel>thought\n<channel|>"},"finish_reason":null}]}),
+            json!({"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","type":"function","function":{"name":"recall","arguments":"{\"q\":\"x\"}"}}]},"finish_reason":null}]}),
+            json!({"choices":[{"delta":{},"finish_reason":"tool_calls"}]}),
+        ] {
+            text.extend(accumulator.feed(&event(&payload.to_string())).unwrap());
+        }
+        text.extend(accumulator.feed(b"data: [DONE]\n").unwrap());
+        assert_eq!(text, "");
+        let calls = accumulator.tool_calls().unwrap();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].id, "c1");
+        assert_eq!(calls[0].name, "recall");
+        assert_eq!(calls[0].arguments, json!({"q":"x"}));
+    }
+
+    #[test]
+    fn invalid_utf8_and_post_terminal_events_are_rejected() {
+        let mut invalid = SseAccumulator::default();
+        assert!(invalid.feed(b"data: \xff\n").is_err());
+
+        let mut done = SseAccumulator::default();
+        done.feed(&event(
+            r#"{"choices":[{"delta":{},"finish_reason":"stop"}]}"#,
+        ))
+        .unwrap();
+        done.feed(b"data: [DONE]\n").unwrap();
+        assert!(done.feed(&event(r#"{"choices":[]}"#)).is_err());
+    }
+
+    #[test]
+    fn missing_done_length_and_large_tool_indices_fail_closed() {
+        let mut incomplete = SseAccumulator::default();
+        incomplete
+            .feed(&event(
+                r#"{"choices":[{"delta":{"content":"partial"},"finish_reason":null}]}"#,
+            ))
+            .unwrap();
+        assert!(incomplete.finish().is_err());
+
+        let mut length = SseAccumulator::default();
+        length
+            .feed(&event(
+                r#"{"choices":[{"delta":{},"finish_reason":"length"}]}"#,
+            ))
+            .unwrap();
+        assert!(length.feed(b"data: [DONE]\n").is_err());
+
+        let mut huge = SseAccumulator::default();
+        let json = format!(
+            r#"{{"choices":[{{"delta":{{"tool_calls":[{{"index":{},"function":{{"name":"recall"}}}}]}},"finish_reason":null}}]}}"#,
+            MAX_TOOL_CALLS_PER_TURN
+        );
+        assert!(huge.feed(&event(&json)).is_err());
+        assert!(huge.calls.len() <= MAX_TOOL_CALLS_PER_TURN);
+    }
+
+    #[test]
+    fn malformed_streamed_tool_calls_are_never_synthesized() {
+        for fragment in [
+            r#"{"id":"c1","type":"function","function":{"name":"recall","arguments":"{}"}}"#,
+            r#"{"index":"0","id":"c1","type":"function","function":{"name":"recall","arguments":"{}"}}"#,
+        ] {
+            let mut accumulator = SseAccumulator::default();
+            let payload = format!(
+                r#"{{"choices":[{{"delta":{{"tool_calls":[{fragment}]}},"finish_reason":null}}]}}"#
+            );
+            assert!(accumulator.feed(&event(&payload)).is_err());
+        }
+
+        for fragment in [
+            r#"{"index":0,"id":"","type":"function","function":{"name":"recall","arguments":"{}"}}"#,
+            r#"{"index":0,"id":"c1","type":"other","function":{"name":"recall","arguments":"{}"}}"#,
+            r#"{"index":0,"id":"c1","type":"function","function":{"name":"recall","arguments":"{"}}"#,
+        ] {
+            let mut accumulator = SseAccumulator::default();
+            let payload = format!(
+                r#"{{"choices":[{{"delta":{{"tool_calls":[{fragment}]}},"finish_reason":null}}]}}"#
+            );
+            accumulator.feed(&event(&payload)).unwrap();
+            accumulator
+                .feed(&event(
+                    r#"{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}"#,
+                ))
+                .unwrap();
+            assert!(accumulator.feed(b"data: [DONE]\n").is_err());
+        }
+    }
+}

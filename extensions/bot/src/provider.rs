@@ -1,0 +1,366 @@
+//! Provider runtime contracts plus the compatible Foundation Models route.
+//!
+//! Generic provider configuration, discovery, qualification, and routing stay
+//! behind Abbey's existing turn and tool vocabulary. Foundation Models is
+//! never selected merely because `/usr/bin/fm` or a server happens to exist.
+//! The operator must select `system` or `pcc` and separately enable fallback.
+//! The HTTP server and `fm respond` CLI remain separate capabilities: the
+//! server is text-only here and can never inherit CLI tool capability.
+
+use std::path::{Component, PathBuf};
+
+use serde::{Deserialize, Serialize};
+
+use crate::llm::Backend;
+
+mod adapters;
+mod runtime;
+pub(crate) use runtime::{BlockWriter, ConversationSeed};
+pub use runtime::{ConversationEffects, ProviderConversation, ProviderRuntime};
+mod catalog;
+mod circuit;
+mod config;
+#[cfg(test)]
+mod discovery;
+mod domain;
+mod foundation_models;
+mod manifest;
+mod manifest_scores;
+mod qualification;
+mod routing;
+#[cfg(test)]
+mod score_fixtures;
+mod scoring;
+
+pub use catalog::ProviderCatalog;
+pub use circuit::{CircuitPhase, ProviderFailureKind, RetryAfter};
+pub use config::ProviderConfig;
+#[cfg(test)]
+pub(crate) use domain::AdapterRequest;
+pub use domain::{
+    BlockedReason, DetectionState, DiscoveryBoundary, Eligibility, IsolationCapabilities,
+    ProviderClass, ProviderDescriptor, ProviderId, ProviderProvenance, TurnAdapter, TurnFuture,
+};
+pub use foundation_models::FoundationModels;
+pub(crate) use foundation_models::parse_cli_output;
+#[cfg(test)]
+use foundation_models::{
+    CliInvocation, PrivateImageFile, PrivateSchemaFile, decision_schema, filtered_environment,
+    render_transcript,
+};
+pub use manifest::ProviderIdentityHashes;
+#[cfg(test)]
+pub use manifest::{
+    DeclaredCapabilities, PROVIDER_MANIFEST_VERSION, ProviderManifest, QualifiedIsolation,
+};
+#[cfg(all(test, unix))]
+pub use manifest::{ProviderRecord, publish_v2};
+pub use qualification::{
+    CapabilityEvidence, CapabilityEvidenceSet, FIXTURE_VERSION, FmQualificationState, ProbeStatus,
+    ProviderEvidence, ProviderIdentity, QUALIFICATION_VERSION, QualificationReport,
+    QualificationTarget, VerifiedFmCapabilities, fm_identity, fm_manifest_identity,
+    primary_identity, qualify_fm, unix_now, verify_fm_manifest,
+};
+pub use routing::{
+    AdaptiveRouter, ConversationRoute, RouteAdmission, RouteAttempt, RouteUnavailableReason,
+};
+pub use scoring::{ExecutionLocality, RequestClass, ScoreProducerPolicy};
+
+const DEFAULT_FM_CLI: &str = "/usr/bin/fm";
+const DEFAULT_TIMEOUT_SECS: u64 = 300;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FmImageTask {
+    Describe,
+    ExtractText,
+    QualificationShapes,
+    QualificationOcr,
+}
+
+impl FmImageTask {
+    const fn prompt(self) -> &'static str {
+        match self {
+            Self::Describe => {
+                "Describe this image in at most two short sentences. Factual, no preamble."
+            }
+            Self::ExtractText => {
+                "Transcribe all text visible in this image verbatim. Output only the text."
+            }
+            Self::QualificationShapes => {
+                "Identify the two colored shapes from left to right. Output only two lowercase color-and-shape labels separated by a comma and one space."
+            }
+            Self::QualificationOcr => {
+                "Transcribe the image. Output exactly the visible ASCII text and nothing else."
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FmMode {
+    System,
+    Pcc,
+}
+
+impl FmMode {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::System => "system",
+            Self::Pcc => "pcc",
+        }
+    }
+}
+
+/// Where Foundation Models sits in the text route when it is admitted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FmRole {
+    /// After the configured endpoint and local fallback.
+    Fallback,
+    /// Ahead of the configured endpoint: PCC, then system, then the endpoint.
+    Primary,
+}
+
+/// Validated operator configuration for one FM mode. Contains no credentials.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FmConfig {
+    pub mode: FmMode,
+    pub endpoint: Option<String>,
+    pub cli: PathBuf,
+    /// Admitted for text routing (role `fallback` or `primary`).
+    pub fallback: bool,
+    /// Registered ahead of the configured endpoint (role `primary`).
+    pub primary: bool,
+    pub timeout_secs: u64,
+}
+
+impl FmConfig {
+    /// Single-route compatibility constructor: the first instance of the route.
+    pub fn from_values(
+        mode: Option<String>,
+        endpoint: Option<String>,
+        cli: Option<String>,
+        fallback: Option<String>,
+        timeout_secs: Option<String>,
+    ) -> Result<Option<Self>, String> {
+        FmRoute::from_values(mode, endpoint, cli, fallback, None, timeout_secs, None)
+            .map(|route| route.and_then(|route| route.instances.into_iter().next()))
+    }
+}
+
+/// Ordered, deduplicated FM modes; each expands to one single-mode `FmConfig`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FmRoute {
+    pub role: Option<FmRole>,
+    pub instances: Vec<FmConfig>,
+}
+
+impl FmRoute {
+    pub fn from_values(
+        mode: Option<String>,
+        endpoint: Option<String>,
+        cli: Option<String>,
+        fallback: Option<String>,
+        role: Option<String>,
+        timeout_secs: Option<String>,
+        pcc_timeout_secs: Option<String>,
+    ) -> Result<Option<Self>, String> {
+        let value = |raw: Option<String>| {
+            raw.map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty())
+        };
+        let fallback = match value(fallback).as_deref() {
+            None => None,
+            Some("0" | "false" | "off") => Some(false),
+            Some("1" | "true" | "on") => Some(true),
+            Some(_) => return Err("ABBEY_FM_FALLBACK must be 1 or 0".into()),
+        };
+        let explicit_role = match value(role).as_deref() {
+            None => None,
+            Some("fallback") => Some(FmRole::Fallback),
+            Some("primary") => Some(FmRole::Primary),
+            Some(_) => return Err("ABBEY_FM_ROLE must be fallback or primary".into()),
+        };
+        // `ABBEY_FM_FALLBACK=1` is the alias for role `fallback`; primary
+        // implies admission, so only an explicit `0` beside a role conflicts.
+        let role = match (explicit_role, fallback) {
+            (Some(_), Some(false)) => {
+                return Err("ABBEY_FM_ROLE conflicts with ABBEY_FM_FALLBACK=0".into());
+            }
+            (Some(role), _) => Some(role),
+            (None, Some(true)) => Some(FmRole::Fallback),
+            (None, _) => None,
+        };
+        let modes = match value(mode).as_deref() {
+            None | Some("off") => {
+                if fallback == Some(true) {
+                    return Err("ABBEY_FM_FALLBACK=1 requires ABBEY_FM_MODE=system or pcc".into());
+                }
+                if role.is_some() {
+                    return Err("ABBEY_FM_ROLE requires ABBEY_FM_MODE=system or pcc".into());
+                }
+                return Ok(None);
+            }
+            Some(list) => parse_fm_modes(list)?,
+        };
+
+        let endpoint = value(endpoint)
+            .map(|endpoint| validate_fm_endpoint(&endpoint).map(|()| endpoint))
+            .transpose()?;
+        let cli = PathBuf::from(value(cli).unwrap_or_else(|| DEFAULT_FM_CLI.to_string()));
+        if !cli.is_absolute() || cli.components().any(|part| part == Component::ParentDir) {
+            return Err("ABBEY_FM_CLI must be an absolute path without `..`".into());
+        }
+        let positive = |raw: Option<String>, name: &str| match value(raw) {
+            None => Ok(None),
+            Some(raw) => raw
+                .parse::<u64>()
+                .ok()
+                .filter(|seconds| *seconds > 0)
+                .map(Some)
+                .ok_or_else(|| format!("{name} must be a positive integer for FM")),
+        };
+        let timeout_secs =
+            positive(timeout_secs, "ABBEY_BOT_LLM_TIMEOUT_SECS")?.unwrap_or(DEFAULT_TIMEOUT_SECS);
+        let pcc_timeout_secs =
+            positive(pcc_timeout_secs, "ABBEY_FM_PCC_TIMEOUT_SECS")?.unwrap_or(timeout_secs);
+        if endpoint.is_some() && !modes.contains(&FmMode::System) {
+            return Err("ABBEY_FM_ENDPOINT requires system in ABBEY_FM_MODE".into());
+        }
+        let instances = modes
+            .into_iter()
+            .map(|mode| FmConfig {
+                mode,
+                // `fm serve` is the on-device server: it binds to system only.
+                endpoint: if mode == FmMode::System {
+                    endpoint.clone()
+                } else {
+                    None
+                },
+                cli: cli.clone(),
+                fallback: role.is_some(),
+                primary: role == Some(FmRole::Primary),
+                timeout_secs: if mode == FmMode::Pcc {
+                    pcc_timeout_secs
+                } else {
+                    timeout_secs
+                },
+            })
+            .collect();
+        Ok(Some(Self { role, instances }))
+    }
+
+    pub fn from_env() -> Result<Option<Self>, String> {
+        let route = Self::from_values(
+            std::env::var("ABBEY_FM_MODE").ok(),
+            std::env::var("ABBEY_FM_ENDPOINT").ok(),
+            std::env::var("ABBEY_FM_CLI").ok(),
+            std::env::var("ABBEY_FM_FALLBACK").ok(),
+            std::env::var("ABBEY_FM_ROLE").ok(),
+            std::env::var("ABBEY_BOT_LLM_TIMEOUT_SECS").ok(),
+            std::env::var("ABBEY_FM_PCC_TIMEOUT_SECS").ok(),
+        )?;
+        #[cfg(not(target_os = "macos"))]
+        if route.is_some() {
+            return Err(
+                "Apple Foundation Models is supported only on macOS; set ABBEY_FM_MODE=off".into(),
+            );
+        }
+        Ok(route)
+    }
+}
+
+fn parse_fm_modes(list: &str) -> Result<Vec<FmMode>, String> {
+    let mut modes = Vec::new();
+    for item in list.split(',').map(str::trim) {
+        let mode = match item {
+            "system" => FmMode::System,
+            "pcc" => FmMode::Pcc,
+            _ => {
+                return Err(
+                    "ABBEY_FM_MODE must be off, or a comma list of distinct system and pcc".into(),
+                );
+            }
+        };
+        if modes.contains(&mode) {
+            return Err("ABBEY_FM_MODE must not repeat a mode".into());
+        }
+        modes.push(mode);
+    }
+    Ok(modes)
+}
+
+fn validate_fm_endpoint(raw: &str) -> Result<(), String> {
+    crate::llm::validate_remote_endpoint(raw, "ABBEY_FM_ENDPOINT")?;
+    let url = reqwest::Url::parse(raw)
+        .map_err(|_| "ABBEY_FM_ENDPOINT must be a valid absolute URL".to_string())?;
+    if !crate::llm::url_is_loopback(&url) {
+        return Err("ABBEY_FM_ENDPOINT must target loopback".into());
+    }
+    if url.path() != "/" && !url.path().is_empty() {
+        return Err("ABBEY_FM_ENDPOINT must be a server base URL without a path".into());
+    }
+    Ok(())
+}
+
+/// Independently qualified provider behavior.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProviderCapabilities {
+    pub text: bool,
+    pub streaming: bool,
+    pub structured_output: bool,
+    pub tools: bool,
+    pub vision: bool,
+    pub ocr: bool,
+}
+
+impl ProviderCapabilities {
+    #[must_use]
+    pub const fn satisfies(self, required: Self) -> bool {
+        (!required.text || self.text)
+            && (!required.streaming || self.streaming)
+            && (!required.structured_output || self.structured_output)
+            && (!required.tools || self.tools)
+            && (!required.vision || self.vision)
+            && (!required.ocr || self.ocr)
+    }
+
+    #[must_use]
+    pub const fn primary(backend: &Backend, tools: bool) -> Self {
+        Self {
+            text: true,
+            streaming: matches!(backend, Backend::OpenAiCompatible { .. }),
+            structured_output: tools,
+            tools,
+            vision: false,
+            ocr: false,
+        }
+    }
+
+    #[must_use]
+    pub const fn text() -> Self {
+        Self {
+            text: true,
+            streaming: false,
+            structured_output: false,
+            tools: false,
+            vision: false,
+            ocr: false,
+        }
+    }
+
+    #[must_use]
+    pub const fn text_with_tools() -> Self {
+        Self {
+            text: true,
+            streaming: false,
+            structured_output: true,
+            tools: true,
+            vision: false,
+            ocr: false,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests;

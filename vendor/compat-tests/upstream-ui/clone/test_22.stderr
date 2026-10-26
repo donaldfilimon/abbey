@@ -1,0 +1,5 @@
+error: `@default-return` should be after `=>`
+ --> $WORKSPACE/compat-tests/upstream-ui/clone/test_22.rs
+  |
+  | fn main() { use glib::clone; let v = std::rc::Rc::new(1); clone!(@strong v, @default-return lol => move || {println!("foo");}); }
+  |                                                                              ^^^^^^^

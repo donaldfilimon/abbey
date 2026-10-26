@@ -1,0 +1,5 @@
+error: Missing `move` and closure declaration
+ --> $WORKSPACE/compat-tests/upstream-ui/clone/test_21.rs
+  |
+  | fn main() { use glib::clone; let v = std::rc::Rc::new(1); clone!(@strong v => {println!("foo");}); }
+  |                                                                               ^^^^^^^^^^^^^^^^^^

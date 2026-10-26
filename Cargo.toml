@@ -12,6 +12,8 @@
 # other way round, and it brings no authority into the CLI.
 resolver = "3"
 members = ["desktop/codegen", "desktop/src-tauri"]
+# Bot retains its own locked patch cohort until M9.1b qualifies shared deps.
+exclude = ["vendor", "extensions/bot"]
 # Without this, a bare `cargo build` / `cargo test` / `cargo clippy` in a
 # workspace whose root is also a package selects *only* that root package.
 # Naming every member as a default member is what makes the ordinary
@@ -131,3 +133,12 @@ accel = ["dep:abi-gpu", "dep:abi-compute", "abi-model-runtime/metal"]
 lto = true
 codegen-units = 1
 strip = true
+
+# Exact upstream ZIP 9 repair; reviewed source/license receipt lives in
+# docs/verification/2026-10-25-updater-zip9.md.
+[patch.crates-io]
+tauri-plugin-updater = { git = "https://github.com/tauri-apps/plugins-workspace", rev = "ba98bfadc4c868c9a7e1a226c83af528e1f11b89" }
+
+glib = { path = "vendor/glib-0.18.5" }
+glib-macros = { path = "vendor/glib-macros-0.18.5" }
+gtk3-macros = { path = "vendor/gtk3-macros-0.18.2" }

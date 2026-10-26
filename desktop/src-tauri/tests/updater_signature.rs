@@ -1,4 +1,5 @@
-// The desktop client's updater verification path, proven rather than assumed.
+// Signature component and shipped-key checks. The companion
+// updater_cached_verification suite exercises the actual public plugin API.
 //
 // `tauri-plugin-updater` verifies a downloaded artifact like this (updater.rs
 // 2.14.0, `verify_signature`):
