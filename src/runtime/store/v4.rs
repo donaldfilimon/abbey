@@ -68,12 +68,12 @@ impl RuntimeStore {
         Ok(listed)
     }
 
+    /// Search is the escaped title-substring filter of `v4_list_conversations`.
     pub(crate) fn v4_search_conversations(
         &self,
-        _query: &V4ConversationQuery,
+        query: &V4ConversationQuery,
     ) -> Result<V4ConversationPage, StoreError> {
-        // search uses list for now; full in later
-        self.v4_list_conversations(_query)
+        self.v4_list_conversations(query)
     }
 
     pub(crate) fn v4_patch_conversation(
