@@ -1,6 +1,7 @@
 # Abbey dependency-security qualification — 2026-10-26
 
-Status: qualification in progress; existing pins preserved. No dependency or
+Status: local qualification evidence assembled; broader remediation remains
+`in_progress`. Existing pins are preserved. No dependency or
 production source change is justified by the current findings. This report
 supersedes historical candidate status only for checks explicitly rerun below.
 Original failed candidates and receipts remain intact.
@@ -21,7 +22,8 @@ WDBX at `612d3570f9ab0d842519aa4dbc4cb977aa33c9e0`, with unrelated dirty spatial
 and execution/planning work. CI pins are ABI
 `7b9519b6cfb25cc9bc9db2982e0a901318ba039b` and WDBX
 `5182bc3a60300e1dd152611025e774c4b906638b`; local sibling results do not qualify
-those archived revisions. Compiler qualification uses `./tools/cargo.sh` and
+those archived revisions. Sibling receipts capture HEAD/status/tracked diffs,
+not complete untracked or ignored sibling byte inventories. Compiler qualification uses `./tools/cargo.sh` and
 Rust 1.99.1, macOS ARM64.
 
 Exact command arrays, times, exits, output hashes, before/after Git identities,
@@ -32,7 +34,10 @@ application state are used. Original attempts are retained under distinct names.
 
 ## Findings and retained fixes
 
-Advisory database revision: `115e418ee9a2ff542fee41db641128fa84483383`.
+Initial advisory database revision: `115e418ee9a2ff542fee41db641128fa84483383`.
+Final refreshed revision: `a78282a1414d6c28cc228c4eae3570451affb0dc`; the final
+consumer policy/vendor strict scans still pass and the no-ignore consumer scan
+still fails on exactly the two existing maintenance exceptions.
 
 | Finding | Current reviewed cohort | Disposition |
 | --- | --- | --- |
@@ -79,6 +84,14 @@ hashes. Original commands and logs remain under the relative private references.
 | `root-gate-final` | 143 | Interrupted while waiting behind owner follow-up build; not a pass |
 | `root-gate-released` | 101 | Reached Clippy after provenance/25 controls/diagnostics/formatting; owner changed predict.rs during run, exposing private LLM_TIMEOUT access and Duration/RerankBounds mismatch; source inventory changed, locks and sibling identities/diffs stable |
 | `desktop-gate-released` | 143 | 100 Routes assertion tests passed; codegen stage interrupted while owner edits continued; no desktop-gate pass |
+| `root-gate-owner-released` | 0 | All four runtime cohorts, warning-denied Clippy/docs, 272 repository consistency tests, codegen, boundary, installer coexistence and rollback passed; concurrent test-only edit prevents a frozen-source whole-gate claim |
+| `desktop-gate-owner-released` | 0 | 100 Routes assertions, 178 frontend tests, typecheck/build/bundle checks, both edition Rust suites, scratch daemon and linked binary passed; captured source/pins/siblings unchanged |
+| `delta-format` | 0 | Package-scoped formatting check on final test bytes |
+| `delta-clippy-default`, `delta-clippy-wdbx`, `delta-clippy-personal-edition`, `delta-clippy-accel` | 0 | Test targets included; warnings denied in each cohort |
+| `delta-clippy-default-stable` | 0 | Default test-target Clippy rerun after WDBX commit; captured Abbey source/pins and final sibling state unchanged |
+| `delta-tests-default`, `delta-tests-wdbx`, `delta-tests-personal-edition`, `delta-tests-accel` | 0 | Nine prediction-producer tests per cohort, 36 case executions total; final source/pins stable throughout each follow-up |
+| `audit-final`, `vendor-audit-final`, `provenance-complete` | 0 | Refreshed consumer policy scan, no-ignore vendor audit and full final provenance/resolution check |
+| `consumer-strict-audit-final` | 1 | Exactly the two existing bincode/paste maintenance warnings, no ignores |
 | `completion-coverage`, `completion-final` | 0 | Ledger coverage checks only |
 | `provenance-final`, `instructions-final` | 0 | Final full source/resolution verifier and instruction consistency checks |
 | `sibling-pins` | 2 | Unsupported --help probe; usage error, no sibling gate executed; corrected --print-pins probe passed |
@@ -96,17 +109,53 @@ retains historical baseline and candidate failures. Overall remediation remains
 `in_progress`. No distribution-wide license, new secret scan, CI execution or
 pinned-sibling gate is claimed by this packet.
 
-Independent review checked the initial 26 published receipt/output hashes, exits,
-fixture counts, ledger boundaries and publication portability. The final three
-provenance/coverage/instruction receipts also pass and are published separately.
-The review found no reason to change pins and no blocker to retaining incomplete
-qualification evidence. No full security or final gate completion is asserted.
+## Final source boundary and review
 
-Final frozen root/desktop qualification remains pending explicit owner release.
-Process inactivity alone proved insufficient: the owner edited prediction APIs
-between builds, and the original release/settling observations are retained as
-limited observations. The owner subsequently changed prediction_owner.rs to use
-RerankBounds::PRODUCT; that owner change is not this task's fix or a passing gate.
+The user explicitly released the owner after the earlier interruptions. The
+completed root gate ran for 70.1 minutes and exited 0, with unchanged captured production
+sources, dependency pins and captured sibling identities/status/diffs. Its full
+inventory nevertheless changed: `src/tui/tests/prediction_producer.rs` plus two
+generated Python cache files. The root source inventory includes caches, so
+those incidental byte changes remain visible in the unmodified raw receipt.
+
+The prediction test's observed modification time was 13:53:42 UTC, after the
+root default/WDBX/personal library-test artifact times of 13:30:59, 13:40:03 and
+13:47:25 UTC. The accelerator artifact time was 13:54:00 UTC. These filesystem
+observations are retained in private `test-delta-timing.json`; they are not
+immutable build provenance. The passing root command cannot be presented as
+all four whole-gate test artifacts exercising the final test bytes.
+
+Independent review recommended a composed evidence boundary: preserve the root
+exit 0 and separately verify the final test-only delta, without repeating
+unchanged installer checks. Package formatting, Clippy including test targets,
+and nine prediction-producer tests now pass in each of default, WDBX, personal
+and accelerator cohorts. Every follow-up has unchanged captured source/pins;
+the complete desktop gate also passes with unchanged source/pins/sibling state.
+This is composed local qualification evidence, **not a frozen-source whole-gate
+pass**. Original failed/interrupted attempts and all source differences remain.
+
+During `delta-clippy-default`, WDBX advanced from dirty
+`612d3570f9ab0d842519aa4dbc4cb977aa33c9e0` to clean
+`e5fd43bbfa901e7928a7c704dad43afee9a9efc3`. The original before/after state remains
+in its raw receipt. A separate `delta-clippy-default-stable` rerun now passes
+with unchanged final sibling state. The remaining focused cohorts ran against
+the committed sibling. Root/desktop whole-gate execution evidence belongs to
+their earlier captured sibling state; it does not qualify the final WDBX commit
+as independently whole-gate tested. No byte-equivalence proof for all earlier
+untracked sibling inputs or CI-pinned reproduction is asserted.
+
+Abbey HEAD also advanced externally to
+`8fdb4ed5f3a869726354bb89a8925f5e96aeaa00`, a documentation-only commit containing
+the earlier report, published summary and ledger. Its exact three-file diff has
+no production or lock changes. This task made no commit and preserved that
+history; receipts retain the identity transition.
+
+Final independent review verified all 48 published receipt/output hashes and
+exits, fixture counts, source/sibling boundaries, ledger consistency and
+publication portability. It found no blocking or should-fix issue and recommends
+retaining this completed scoped evidence packet with current pins preserved.
+Broader remediation remains `in_progress`: native acceptance, no-ignore consumer
+audit, CI reproduction and frozen-source whole-gate qualification remain open.
 
 ## Platform and promotion limits
 
@@ -122,10 +171,15 @@ packet; PowerShell is unavailable and its runner remains unexecuted. Optional
 built-artifact signature verification is not exercised without an artifact.
 POSIX mode bits, Windows ACLs and same-user temp-directory races retain their
 previous evidence gaps. No platform skip or early-return artifact check counts
-as native acceptance.
+as native acceptance. Both GNU cross-target guards skipped because those targets
+were absent; neither checked the installed Windows MSVC target. Optional desktop
+Routes GUI, packaged-app and menu/icon acceptance flags were not enabled. The
+local installer smoke verifies accelerator edition coexistence and rollback;
+it does not establish a signed/notarized production desktop release.
 
 The mandatory consumer scanner retains exactly its existing bincode
 RUSTSEC-2025-0141 and paste RUSTSEC-2024-0436 exceptions. Vendor strict scanning
-uses no advisory ignores. No new suppression, pin promotion, release publication,
-deployment, checkout switch, commit or sibling source modification is included.
+uses no advisory ignores. No new suppression, pin promotion, release publication, deployment, checkout
+switch, task-authored commit or task-authored sibling source modification is
+included.
 Overall completion/platform claims remain open.

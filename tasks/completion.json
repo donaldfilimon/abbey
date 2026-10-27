@@ -1377,6 +1377,13 @@
             "docs/verification/2026-10-26-dependency-security-qualification.md"
           ]
         },
+        "local_gate_execution": {
+          "status": "passed",
+          "refs": [
+            "docs/verification/2026-10-26-dependency-security-qualification.md",
+            "docs/verification/2026-10-26-dependency-security-qualification/checks-summary.json"
+          ]
+        },
         "historical_dependency_audit": {
           "status": "failed",
           "refs": [
