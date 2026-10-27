@@ -1,6 +1,24 @@
 import { useEffect, useRef, useState } from "react";
-import { SURFACES, type SurfaceId } from "../surfaces";
+import { SURFACES, type Surface, type SurfaceId } from "../surfaces";
 import { Icon } from "./Icon";
+
+/** ⌘K / Ctrl+K, without Alt: the shell's shortcut for opening the palette. */
+export function isPaletteShortcut(event: {
+  key: string;
+  metaKey: boolean;
+  ctrlKey: boolean;
+  altKey: boolean;
+}): boolean {
+  return (event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === "k";
+}
+
+/** The surfaces whose label or blurb contains the typed text, in catalogue order. */
+export function paletteEntries(query: string): Surface[] {
+  const needle = query.toLowerCase();
+  return SURFACES.filter((item) =>
+    `${item.label} ${item.blurb}`.toLowerCase().includes(needle),
+  );
+}
 export function CommandPalette({
   close,
   navigate,
@@ -12,9 +30,7 @@ export function CommandPalette({
   const [selected, setSelected] = useState(0);
   const dialog = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLInputElement>(null);
-  const entries = SURFACES.filter((item) =>
-    `${item.label} ${item.blurb}`.toLowerCase().includes(query.toLowerCase()),
-  );
+  const entries = paletteEntries(query);
   useEffect(() => {
     if (entries[selected])
       document
@@ -130,7 +146,9 @@ export function CommandPalette({
               >
                 <Icon name={entry.id} />
                 <span>{entry.label}</span>
-                <small>Go to page</small>
+                <small>
+                  {entry.unavailable ? "Unavailable — see why" : "Go to page"}
+                </small>
               </div>
             ))
           )}

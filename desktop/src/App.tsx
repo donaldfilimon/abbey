@@ -19,7 +19,7 @@ import { usePreferences, type Appearance } from "./hooks/usePreferences";
 import { ConversationWorkspace } from "./conversations/Workspace";
 import { History } from "./conversations/History";
 import { useConversations } from "./conversations/useConversations";
-import { CommandPalette } from "./components/CommandPalette";
+import { CommandPalette, isPaletteShortcut } from "./components/CommandPalette";
 import { Icon } from "./components/Icon";
 import { PresentationSettings } from "./components/PresentationSettings";
 import { SystemIntegrationPanel } from "./components/SystemIntegration";
@@ -181,11 +181,11 @@ export function App() {
     usePreferences();
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
+      if (isPaletteShortcut(event)) {
+        event.preventDefault();
+        setPalette((open) => !open);
+      }
       if ((event.metaKey || event.ctrlKey) && !event.altKey) {
-        if (event.key.toLowerCase() === "k") {
-          event.preventDefault();
-          setPalette((open) => !open);
-        }
         if (event.key.toLowerCase() === "b") {
           event.preventDefault();
           toggleSidebar();
