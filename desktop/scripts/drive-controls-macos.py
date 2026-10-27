@@ -43,10 +43,13 @@ def env_path(name):
     """The path an environment variable names, or None when it is unset.
 
     An empty variable is unset: `Path("")` is the current directory, which
-    always exists and must never pass for a bundle.
+    always exists and must never pass for a bundle. The path is made
+    absolute against the caller's directory, because the app is launched
+    with its cwd set to a fresh temp directory, where a relative path
+    would no longer name the bundle.
     """
     value = os.environ.get(name, "")
-    return Path(value).expanduser() if value else None
+    return Path(value).expanduser().resolve() if value else None
 
 
 def refuse(required, reason, **detail):

@@ -135,13 +135,15 @@ fi
 # a non-macOS host or a bundle whose own identifier is not the expected
 # edition fails here instead of printing "skipped". The default bundle path
 # follows the edition (release-macos.sh stages "Abbey Personal.app" for the
-# personal edition); ABBEY_DESKTOP_APP overrides it, and the driver still
-# refuses a bundle of the wrong edition.
+# personal edition) and is absolute, because the drivers launch the app from
+# a temp directory; ABBEY_DESKTOP_APP overrides it (a relative override is
+# resolved against desktop/), and the driver still refuses a bundle of the
+# wrong edition.
 AX_EDITION="${ABBEY_DESKTOP_PACKAGED_EDITION:-safe}"
 if [ "$AX_EDITION" = "personal" ]; then
-  AX_DEFAULT_APP="../target/release/bundle/macos/Abbey Personal.app"
+  AX_DEFAULT_APP="$ABBEY_TOOLCHAIN_ROOT/target/release/bundle/macos/Abbey Personal.app"
 else
-  AX_DEFAULT_APP="../target/release/bundle/macos/Abbey.app"
+  AX_DEFAULT_APP="$ABBEY_TOOLCHAIN_ROOT/target/release/bundle/macos/Abbey.app"
 fi
 
 if [ "${ABBEY_DESKTOP_SURFACE_ACCEPTANCE:-0}" = "1" ]; then

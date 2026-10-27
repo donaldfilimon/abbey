@@ -101,6 +101,16 @@ class GateWiring(unittest.TestCase):
     def test_control_driver_runs_when_its_variable_is_set(self):
         self.assert_wired("ABBEY_DESKTOP_CONTROL_ACCEPTANCE", DRIVERS["controls"])
 
+    def test_the_default_bundle_paths_are_absolute(self):
+        # The drivers launch the app with cwd set to a fresh temp directory,
+        # so a relative default would resolve against that directory.
+        text = (DESKTOP / "check.sh").read_text()
+        defaults = re.findall(r'^\s*AX_DEFAULT_APP="([^"]*)"', text, re.M)
+        self.assertEqual(len(defaults), 2, defaults)
+        for default in defaults:
+            with self.subTest(default=default):
+                self.assertTrue(default.startswith("$ABBEY_TOOLCHAIN_ROOT/"), default)
+
 
 class RequiredDrivers(unittest.TestCase):
     """A required driver never reports "skipped" as success."""
@@ -172,6 +182,41 @@ class RequiredDrivers(unittest.TestCase):
                             "ABBEY_DESKTOP_APP": str(app),
                             "ABBEY_DESKTOP_EXPECT_EDITION": "safe",
                         })
+
+    def test_a_relative_bundle_path_launches_an_absolute_executable(self):
+        # Popen runs with cwd set to a temp directory; a relative executable
+        # would resolve against it and fail with FileNotFoundError.
+        class Launched(Exception):
+            pass
+
+        def capture(command, **kwargs):
+            raise Launched(command, kwargs.get("cwd"))
+
+        with tempfile.TemporaryDirectory() as root:
+            bundle(root, "Abbey.app", SAFE_IDENTIFIER)
+            previous = os.getcwd()
+            os.chdir(root)
+            self.addCleanup(os.chdir, previous)
+            for kind, filename in DRIVERS.items():
+                module = load_driver(filename)
+                with self.subTest(driver=kind), \
+                        patch.dict(os.environ, {
+                            "ABBEY_DESKTOP_DRIVER_REQUIRED": "1",
+                            "ABBEY_DESKTOP_APP": "Abbey.app",
+                            "ABBEY_DESKTOP_EXPECT_EDITION": "safe",
+                        }, clear=False), \
+                        patch.object(module.platform, "system", return_value="Darwin"), \
+                        patch.object(module, "build_driver",
+                                     return_value=Path(root) / "driver"), \
+                        patch.object(module.subprocess, "Popen", side_effect=capture), \
+                        contextlib.redirect_stdout(io.StringIO()):
+                    with self.assertRaises(Launched) as launched:
+                        module.main()
+                    command, cwd = launched.exception.args
+                    executable = Path(command[0])
+                    self.assertTrue(executable.is_absolute(), command)
+                    self.assertTrue(executable.is_file(), command)
+                    self.assertNotEqual(Path(cwd).resolve(), Path(root).resolve())
 
     def test_a_required_driver_refuses_an_unknown_identifier(self):
         with tempfile.TemporaryDirectory() as root:
