@@ -3,7 +3,7 @@
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 use thiserror::Error;
 
-pub(super) const CURRENT_SCHEMA_VERSION: i64 = 11;
+pub(super) const CURRENT_SCHEMA_VERSION: i64 = 12;
 
 const CREATE_LEDGER: &str = r#"
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -32,6 +32,8 @@ const MIGRATION_10: &str = include_str!("migration_10_assistant.sql");
 
 const MIGRATION_11: &str = include_str!("migration_11_local_approvals.sql");
 
+const MIGRATION_12: &str = include_str!("migration_12_v4_admin.sql");
+
 const MIGRATIONS: &[(i64, &str)] = &[
     (1, MIGRATION_1),
     (2, MIGRATION_2),
@@ -44,6 +46,7 @@ const MIGRATIONS: &[(i64, &str)] = &[
     (9, MIGRATION_9),
     (10, MIGRATION_10),
     (11, MIGRATION_11),
+    (12, MIGRATION_12),
 ];
 
 #[derive(Debug, Error)]
@@ -326,6 +329,7 @@ mod tests {
     use super::*;
 
     include!("migrations/v6_tests.rs");
+    include!("migrations/v12_tests.rs");
 
     #[test]
     fn repeat_migration_is_idempotent() {
