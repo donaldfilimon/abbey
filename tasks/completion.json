@@ -782,7 +782,6 @@
         "Bump affected v1/v3 schemas, reject old clients before changed claim/model vocabularies, update canonical claim boundaries and generated wire samples"
       ],
       "todos": [
-        "**The protocol v1 and v3 schemas do not cover the claim lifecycle",
         "**The wire schemas do not cover every vocabulary they now carry** (#94"
       ],
       "evidence": {
