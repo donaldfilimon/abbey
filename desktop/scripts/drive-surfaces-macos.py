@@ -104,6 +104,51 @@ def visible_text(payload):
     return " ".join(values + titles)
 
 
+def env_path(name):
+    """The path an environment variable names, or None when it is unset.
+
+    An empty variable is unset: `Path("")` is the current directory, which
+    always exists and must never pass for a bundle. The path is made
+    absolute against the caller's directory, because the app is launched
+    with its cwd set to a fresh temp directory, where a relative path
+    would no longer name the bundle.
+    """
+    value = os.environ.get(name, "")
+    return Path(value).expanduser().resolve() if value else None
+
+
+def refuse(required, reason, **detail):
+    """Report a run that cannot proceed: a failure when the gate requires
+    this driver, the historical skip otherwise."""
+    report = {"status": "failed" if required else "skipped", "reason": reason}
+    report.update(detail)
+    print(json.dumps(report, sort_keys=True))
+    return 1 if required else 0
+
+
+def edition_refusal(app_bundle):
+    """Why a required run must not drive this bundle, or None.
+
+    The bundle's own identifier decides the edition, as in the packaged
+    prover; the path and the `.app` name never do.
+    """
+    import prove_packaged_macos as packaged
+
+    expected = os.environ.get("ABBEY_DESKTOP_EXPECT_EDITION", "")
+    if expected not in set(packaged.EDITIONS_BY_IDENTIFIER.values()):
+        return {"reason": "unknown_expected_edition", "expected": expected}
+    identifier = packaged.bundle_identifier(app_bundle)
+    found = packaged.EDITIONS_BY_IDENTIFIER.get(identifier)
+    if found != expected:
+        return {
+            "reason": "edition_mismatch",
+            "expected": expected,
+            "found": found,
+            "identifier": identifier,
+        }
+    return None
+
+
 def run_surface(driver, pid, surface):
     result = subprocess.run(
         [str(driver), str(pid), surface],
@@ -120,19 +165,26 @@ def run_surface(driver, pid, surface):
 
 
 def main():
+    # `desktop/check.sh` sets this when the driver runs as a gate step: then
+    # every reason not to drive the app is a failure, never a skip.
+    required = os.environ.get("ABBEY_DESKTOP_DRIVER_REQUIRED") == "1"
     if platform.system() != "Darwin":
-        print(json.dumps({"status": "skipped", "reason": "not_macos"}))
-        return 0
+        return refuse(required, "not_macos")
 
-    app_bundle = Path(
-        os.environ.get("ABBEY_DESKTOP_APP", "")
-    ).expanduser()
-    binary = Path(
-        os.environ.get("ABBEY_DESKTOP_BINARY", "")
-    ).expanduser()
-    if not app_bundle.exists() and not binary.exists():
-        print(json.dumps({"status": "skipped", "reason": "no_app_bundle"}))
-        return 0
+    found_bundle = env_path("ABBEY_DESKTOP_APP")
+    app_bundle = found_bundle if found_bundle and found_bundle.is_dir() else None
+    found_binary = env_path("ABBEY_DESKTOP_BINARY")
+    binary = found_binary if found_binary and found_binary.is_file() else None
+    if required:
+        # A bare binary has no Info.plist, so its edition cannot be proved:
+        # a required run drives a bundle or nothing.
+        if app_bundle is None:
+            return refuse(required, "no_app_bundle")
+        refusal = edition_refusal(app_bundle)
+        if refusal is not None:
+            return refuse(required, **refusal)
+    elif app_bundle is None and binary is None:
+        return refuse(required, "no_app_bundle")
 
     driver = build_driver()
     with tempfile.TemporaryDirectory(prefix="abbey-drive-") as scratch:
@@ -143,7 +195,7 @@ def main():
             HOME=str(root / "home"),
         )
         (root / "home").mkdir(parents=True, exist_ok=True)
-        if app_bundle.exists():
+        if app_bundle is not None:
             # The executable inside the bundle carries the crate's binary
             # name, not the product name.
             macos = app_bundle / "Contents" / "MacOS"
