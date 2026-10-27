@@ -71,8 +71,8 @@ Uniqueness required by the plan:
 
 ### Constraints left to the store
 
-- `v4_tasks.current_attempt_id` has no foreign key, because attempts reference
-  their task (a circular dependency).
+- `v4_tasks.current_attempt_id` originally had no foreign key. The review
+  fix below added a deferred one.
 - The cross-table invariants in `V4Task::validate` are left to the store: task
   state against attempt state, and admission time within the task's created and
   updated times.
@@ -83,6 +83,69 @@ Uniqueness required by the plan:
   `MAX_SAFE_INTEGER` upper bound in SQL.
 - Production enforces foreign keys: `src/runtime/store.rs` sets
   `PRAGMA foreign_keys=ON`. The test sets the pragma explicitly.
+
+## Review findings (adversarial review, fixed in place)
+
+An independent review checked migration 12 in `sqlite3 :memory:` with
+`foreign_keys=ON` and found defects. Migration 12 had never been applied
+anywhere, so it was fixed in place in a follow-up commit. Each regression test
+was added to `v12_tests.rs` first. The three defect tests failed against the
+unfixed schema ("statement must be refused"), then passed after the fix.
+
+### Fixed in the schema
+
+- **Profile revisions were blocking.** `v4_profile_revisions` had no triggers,
+  so its revision and revocation epoch could go backwards and rows could be
+  deleted. A regressed epoch would re-validate approvals that a revocation had
+  voided. It now has an advance-only update trigger (same `profile_id`, a higher
+  `revision`, and `revocation_epoch` never lower) and a no-delete trigger.
+  Covered by `migration_12_profile_revisions_only_advance_and_are_never_deleted`.
+- **Automation spec changes were blocking.** The automation trigger only
+  refused a lower revision, so `spec_json` and `enabled` could change silently
+  under the same revision. Now they change only with a new revision, while
+  `cursor_ms` and `next_run_at_ms` may still advance without one. Covered by
+  `migration_12_automation_spec_changes_need_a_new_revision`. The original test
+  now bumps the revision so that it still exercises the spec/column CHECK.
+- **The task's current attempt was unbound.** This could only be added at
+  CREATE time. `v4_task_attempts` gained `UNIQUE (task_id, attempt_id)`, and
+  `v4_tasks` gained a composite foreign key from
+  `(task_id, current_attempt_id)` to it, `DEFERRABLE INITIALLY DEFERRED`. A
+  nonexistent attempt or another task's attempt is refused at COMMIT. The test
+  helper now admits each task and its attempt in one `BEGIN`/`COMMIT`. Covered
+  by `migration_12_task_current_attempt_belongs_to_the_task`.
+
+### New coverage that already passed
+
+- **Attempt lifecycle.** Queued → starting → running → failed with
+  `finished_at_ms` succeeds, and a finished attempt is frozen. A retry
+  succeeds: a new attempt with ordinal 2, the task back to queued, and
+  `current_attempt_id` switched in one transaction. Covered by
+  `migration_12_attempt_lifecycle_allows_finish_and_retry_but_freezes_finished_attempts`.
+- **Append-only records and manual occurrences.** `v4_admin_operations` is
+  append-only. `v4_task_events` has unique sequences, its attempt must belong to
+  its task, and it is append-only. A duplicate manual operation id for the same
+  automation is refused. Covered by
+  `migration_12_append_only_records_and_manual_occurrence_identity`.
+
+### Left store-owned (no schema change)
+
+- **Cross-row state consistency.** The schema doesn't check task state against
+  attempt state, occurrence state against task state, or action state against
+  attempt state.
+- **Terminal regression.** Before an attempt is finished, its state may move
+  between non-terminal values in any order. Once `finished_at_ms` is set, the
+  row is frozen. Tasks, occurrences and actions have no transition graph in the
+  schema, so a terminal task could be moved back to a live state with a new
+  revision. The store must refuse that, except for an explicit retry.
+- **Value types.** There are no `typeof()` CHECKs, so SQLite's type affinity
+  applies. The store binds typed Rust values.
+- **`run_id` has no foreign key to `runs(id)`.** This is deliberate. Whether a
+  v4 attempt creates a migration-1 `runs` row is decided by the task store
+  (Task 3). Until then, `run_id` is bound only to its attempt (unique, 36
+  characters) and, through the composite keys, to its events, actions and
+  occurrences.
+- **One decision per action.** `action_id UNIQUE` on decisions means that
+  re-approving an expired or denied action needs a new action id.
 
 ## Test-driven sequence
 
@@ -123,6 +186,11 @@ the pinned 1.99.1 toolchain via `./tools/cargo.sh`, and `--locked`.
 | `./tools/cargo.sh test --locked -p abbey --lib migration_12` | Before wiring: FAIL, as expected. After: 1 passed |
 | `./tools/cargo.sh test --locked -p abbey --lib runtime::` | 201 passed, 0 failed |
 | `./tools/cargo.sh test --locked -p abbey --lib` | 1323 passed, 0 failed, 0 ignored |
+| Review fix, before: `... --lib migration_12` | 3 passed, 3 failed (the three defect tests, as expected) |
+| Review fix, after: `... --lib migration_12` | 6 passed, 0 failed |
+| Review fix: `./tools/cargo.sh test --locked -p abbey --lib` | 1328 passed, 0 failed, 0 ignored |
+| Review fix: `clippy --locked --all-targets -- -D warnings` | Exit 0, no warnings |
+| Review fix: `fmt --package abbey -- --check`, plus rustfmt on `v12_tests.rs` | OK |
 | `./tools/cargo.sh test --locked -p abbey --test app_core_v4_contract --test daemon_runtime` | 4 passed; 1 passed |
 | `./tools/cargo.sh clippy --locked --all-targets -- -D warnings` | Exit 0, no warnings |
 | `./tools/cargo.sh fmt --package abbey -- --check` | OK. The included `v12_tests.rs` was also checked with rustfmt 1.99.1, edition 2024. |

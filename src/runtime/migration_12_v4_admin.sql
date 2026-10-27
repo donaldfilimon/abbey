@@ -16,6 +16,17 @@ CREATE TABLE v4_profile_revisions (
     revocation_epoch INTEGER NOT NULL CHECK (revocation_epoch >= 0),
     updated_at_ms INTEGER NOT NULL CHECK (updated_at_ms >= 0)
 );
+-- Every change is a new revision, and the revocation epoch never regresses: a
+-- lower epoch would re-validate approvals that a revocation already voided.
+CREATE TRIGGER v4_profile_revisions_advance_only BEFORE UPDATE ON v4_profile_revisions
+WHEN NOT (
+    NEW.profile_id IS OLD.profile_id
+    AND NEW.revision > OLD.revision
+    AND NEW.revocation_epoch >= OLD.revocation_epoch
+)
+BEGIN SELECT RAISE(ABORT, 'immutable profile revision'); END;
+CREATE TRIGGER v4_profile_revisions_no_delete BEFORE DELETE ON v4_profile_revisions
+BEGIN SELECT RAISE(ABORT, 'durable profile revision'); END;
 
 -- One row per admin operation id; replay of an identical request returns the
 -- recorded resource, a different request under the same id is refused.
@@ -33,9 +44,10 @@ BEGIN SELECT RAISE(ABORT, 'append-only admin operation'); END;
 CREATE TRIGGER v4_admin_operations_append_only_delete BEFORE DELETE ON v4_admin_operations
 BEGIN SELECT RAISE(ABORT, 'append-only admin operation'); END;
 
--- V4Task. `current_attempt_id` names V4Task.current_attempt; it carries no
--- foreign key because attempts reference their task (the store keeps the pair
--- consistent and admits both in one transaction).
+-- V4Task. `current_attempt_id` names V4Task.current_attempt. Attempts reference
+-- their task, so this reverse binding is deferred: the store admits a task and
+-- its first attempt (or a retry's new attempt) in one transaction, and the
+-- attempt must belong to this task at COMMIT.
 CREATE TABLE v4_tasks (
     task_id TEXT PRIMARY KEY CHECK (length(task_id) BETWEEN 1 AND 128),
     sequence INTEGER NOT NULL UNIQUE CHECK (sequence >= 1),
@@ -56,7 +68,10 @@ CREATE TABLE v4_tasks (
     ),
     current_attempt_id TEXT NOT NULL CHECK (length(current_attempt_id) BETWEEN 1 AND 128),
     created_at_ms INTEGER NOT NULL CHECK (created_at_ms >= 0),
-    updated_at_ms INTEGER NOT NULL CHECK (updated_at_ms >= created_at_ms)
+    updated_at_ms INTEGER NOT NULL CHECK (updated_at_ms >= created_at_ms),
+    FOREIGN KEY (task_id, current_attempt_id)
+        REFERENCES v4_task_attempts(task_id, attempt_id) ON DELETE RESTRICT
+        DEFERRABLE INITIALLY DEFERRED
 );
 -- The route, profile, budget and goal snapshot taken at creation is immutable.
 CREATE TRIGGER v4_tasks_snapshot_immutable BEFORE UPDATE ON v4_tasks
@@ -93,6 +108,8 @@ CREATE TABLE v4_task_attempts (
         = (finished_at_ms IS NOT NULL)
     ),
     UNIQUE (task_id, ordinal),
+    -- Parent key for v4_tasks.current_attempt_id.
+    UNIQUE (task_id, attempt_id),
     -- Parent key for records that bind a task, attempt and run together.
     UNIQUE (task_id, attempt_id, run_id)
 );
@@ -148,6 +165,10 @@ CREATE TABLE v4_automations (
 CREATE TRIGGER v4_automations_identity_immutable BEFORE UPDATE ON v4_automations
 WHEN OLD.automation_id IS NOT NEW.automation_id OR OLD.sequence IS NOT NEW.sequence
  OR OLD.created_at_ms IS NOT NEW.created_at_ms OR NEW.revision < OLD.revision
+ -- The spec and enabled flag change only with a new revision; the catch-up
+ -- cursor and next run may advance under the same revision.
+ OR (NEW.revision = OLD.revision
+     AND (OLD.spec_json IS NOT NEW.spec_json OR OLD.enabled IS NOT NEW.enabled))
 BEGIN SELECT RAISE(ABORT, 'immutable automation identity'); END;
 CREATE TRIGGER v4_automations_no_delete BEFORE DELETE ON v4_automations
 BEGIN SELECT RAISE(ABORT, 'durable automation'); END;
