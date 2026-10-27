@@ -44,6 +44,8 @@ mod os_control;
 mod output;
 mod parallel;
 mod persona;
+#[cfg(feature = "personal-edition")]
+mod personal_shell;
 mod platform;
 mod please_fix;
 mod prompts;
