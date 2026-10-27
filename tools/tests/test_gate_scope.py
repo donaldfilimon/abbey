@@ -59,6 +59,52 @@ def fmt_invocations() -> list[str]:
     return invocations
 
 
+def cohort_test_build_pairs(text: str) -> list[tuple[str, str | None]]:
+    """Pair each cohort's `cargo test` command with the build that precedes it.
+
+    Comments are not commands. A test run against another manifest (the
+    vendored gtk compatibility crate) is out of scope. The build must sit in
+    the same cohort block: the search stops at the previous `cargo test`, so
+    one cohort's build can never vouch for the next cohort's test.
+    """
+    commands = []
+    for raw in text.splitlines():
+        line = raw.strip()
+        if line and not line.startswith("#"):
+            commands.append(line)
+    pairs: list[tuple[str, str | None]] = []
+    for index, line in enumerate(commands):
+        if not re.match(r"^cargo\s+test\b", line) or "--manifest-path" in line:
+            continue
+        build = None
+        for previous in reversed(commands[:index]):
+            if re.match(r"^cargo\s+test\b", previous):
+                break
+            if re.match(r"^cargo\s+build\b", previous):
+                build = previous
+                break
+        pairs.append((line, build))
+    return pairs
+
+
+def selection(line: str) -> tuple:
+    """The (sorted `-p` packages, `--features` value) a cargo command selects."""
+    packages = sorted(re.findall(r"(?:-p|--package)\s+(\S+)", line))
+    features = re.search(r"--features[\s=](\S+)", line)
+    return (tuple(packages), features.group(1) if features else None)
+
+
+def assert_feature_matched(text: str) -> None:
+    """Fail unless every cohort test is preceded by its own feature-matched bin build."""
+    for test, build in cohort_test_build_pairs(text):
+        if build is None:
+            raise AssertionError(f"no cohort build precedes: {test}")
+        if "--bins" not in build or "--locked" not in build:
+            raise AssertionError(f"cohort build is not a locked bin build: {build}")
+        if selection(build) != selection(test):
+            raise AssertionError(f"build {build!r} does not match test {test!r}")
+
+
 class GateScopeTests(unittest.TestCase):
     def test_the_gate_has_a_rustfmt_step(self) -> None:
         self.assertTrue(fmt_invocations(), "check.sh runs no cargo fmt step")
@@ -93,6 +139,64 @@ class GateScopeTests(unittest.TestCase):
         for invocation in fmt_invocations():
             with self.subTest(invocation=invocation):
                 self.assertIn("--check", invocation)
+
+
+class CohortBinaryBuildTests(unittest.TestCase):
+    """Each feature cohort must build its own binaries before it tests.
+
+    Integration tests spawn the `abbey`/`abbeyd` executables from the target
+    directory. If a cohort tested without first building its bins with the
+    same package and feature selection, it would exercise whatever binary an
+    earlier cohort left behind -- a default-feature binary under a `wdbx` or
+    `accel` test run -- and pass against the wrong artifact.
+    """
+
+    def test_every_cohort_builds_its_own_bins_before_testing(self) -> None:
+        text = CHECK_SH.read_text(encoding="utf-8")
+        pairs = cohort_test_build_pairs(text)
+        self.assertGreaterEqual(len(pairs), 4, "check.sh lost a feature cohort")
+        for test, build in pairs:
+            with self.subTest(test=test):
+                self.assertIsNotNone(build, "cohort tests without building its bins")
+                assert build is not None
+                self.assertIn("--bins", build)
+                self.assertIn("--locked", build)
+                self.assertEqual(selection(build), selection(test))
+        assert_feature_matched(text)
+
+    def test_a_cohort_test_without_its_own_build_is_rejected(self) -> None:
+        script = "\n".join(
+            [
+                "cargo build --locked --bins",
+                "cargo test --locked",
+                "cargo clippy --locked -p abbey --features wdbx --all-targets -- -D warnings",
+                "cargo test --locked -p abbey --features wdbx",
+            ]
+        )
+        with self.assertRaises(AssertionError):
+            assert_feature_matched(script)
+
+    def test_a_build_for_a_different_feature_set_is_rejected(self) -> None:
+        script = "\n".join(
+            [
+                "cargo build --locked -p abbey --features wdbx --bins",
+                "cargo test --locked -p abbey --features accel",
+            ]
+        )
+        with self.assertRaises(AssertionError):
+            assert_feature_matched(script)
+
+    def test_vendor_manifest_tests_are_out_of_scope(self) -> None:
+        script = "\n".join(
+            [
+                "# cargo test --locked -p abbey --features accel",
+                "cargo test --locked --manifest-path vendor/Cargo.toml -p gtk-compat-tests",
+                "cargo build --locked --bins",
+                "cargo test --locked",
+            ]
+        )
+        pairs = cohort_test_build_pairs(script)
+        self.assertEqual(pairs, [("cargo test --locked", "cargo build --locked --bins")])
 
 
 if __name__ == "__main__":
