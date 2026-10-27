@@ -5,16 +5,30 @@ import {
 } from "../presentation/preferences";
 export type { Appearance } from "../presentation/preferences";
 const KEY = "abbey.presentation.v1";
-function read(): PresentationPreferences {
+type PreferenceStorage = Pick<Storage, "getItem" | "setItem">;
+/** Read stored preferences; any storage failure yields the defaults. */
+export function readPreferences(storage: () => PreferenceStorage): PresentationPreferences {
   try {
-    return parsePreferences(localStorage.getItem(KEY));
+    return parsePreferences(storage().getItem(KEY));
   } catch {
     /* Storage can be unavailable in a hardened webview. */
   }
   return { ...DEFAULT_PREFERENCES };
 }
+/** Persist preferences; a storage failure leaves them usable for this session. */
+export function writePreferences(
+  storage: () => PreferenceStorage,
+  preferences: PresentationPreferences,
+): void {
+  try {
+    storage().setItem(KEY, JSON.stringify({ version: 1, ...preferences }));
+  } catch {
+    /* Preferences remain usable for this session. */
+  }
+}
+const browserStorage = () => localStorage;
 export function usePreferences() {
-  const [preferences, setPreferences] = useState(read);
+  const [preferences, setPreferences] = useState(() => readPreferences(browserStorage));
   useEffect(() => {
     const transparency = matchMedia("(prefers-reduced-transparency: reduce)");
     const contrast = matchMedia("(forced-colors: active)");
@@ -38,11 +52,7 @@ export function usePreferences() {
   useEffect(() => {
     document.documentElement.dataset.appearance = preferences.appearance;
     document.documentElement.dataset.density = preferences.density;
-    try {
-      localStorage.setItem(KEY, JSON.stringify({ version: 1, ...preferences }));
-    } catch {
-      /* Preferences remain usable for this session. */
-    }
+    writePreferences(browserStorage, preferences);
   }, [preferences]);
   const setAppearance = useCallback(
     (appearance: Appearance) => setPreferences((p) => ({ ...p, appearance })),
