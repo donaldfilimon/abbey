@@ -259,7 +259,7 @@ class OwnedSession(Session):
         self.output, self.query_offset, self.cursor = bytearray(), 0, (1, 1)
         # The background this terminal reports for the `OSC 11` query.
         self.background_color = "0000/0000/0000"
-        self.closed = False
+        self.closed, self.submitted_rows = False, None
         argv = [str(binary), *(args if args is not None else ["tui"])]
         self.proc = subprocess.Popen(argv, cwd=self.root,
                                      env=fixture.env, stdin=self.slave,
@@ -272,24 +272,70 @@ class OwnedSession(Session):
             self.cleanup()
             raise
 
+    def transcript_rows(self, screen=None):
+        # Rendered rows above the composer's top border: the transcript area.
+        rows = (screen if screen is not None else self.screen()).decode(
+            "utf-8", "replace").split("\n")
+        top = next((i for i, row in enumerate(rows) if row.startswith("╭")), len(rows))
+        return rows[:top]
+
     def submit(self, text):
+        # The transcript as rendered before this submission; a join is only
+        # accepted from a frame whose transcript differs from it.
+        self.submitted_rows = self.transcript_rows()
         self.paste(text)
         self.send(b"\r")
 
+    def joined(self, needle):
+        # Judged on the replayed screen, never on raw bytes: ratatui writes
+        # only changed cells, so an unchanged or partly changed status line
+        # need not be re-emitted as one byte run. The previous turn's exit
+        # status can still be on screen, so a join counts only in a frame
+        # drawn after this submission was handled: the composer is idle and
+        # empty (the TUI clears it as it takes the submission) and the
+        # transcript has changed since the submission was sent (the TUI
+        # records the submitted prompt as it takes it).
+        screen = self.screen()
+        return (needle in screen and
+                "╭ Message ".encode() in screen and
+                "Ask anything…".encode() in screen and
+                self.transcript_rows(screen) != self.submitted_rows)
+
     def wait_join(self, code):
-        # Use rendered/current screen, never historical raw bytes. The previous
-        # turn's exit marker can otherwise let a held turn appear complete.
-        self.wait_output(f"done · exit {code}".encode(), timeout=WAIT)
+        needle = f"done · exit {code}".encode()
+        end = time.monotonic() + WAIT
+        while not self.joined(needle) and time.monotonic() < end:
+            self.read(.02)
+            if self.proc.poll() is not None:
+                break
+        require(self.joined(needle),
+                f"control: no {needle!r} drawn after the last submission; "
+                f"exit={self.proc.poll()}; screen={self.screen()!r}")
+
+    def frame_at_current_size(self):
+        # The composer's bottom border spans the full width, so its closing
+        # corner sits in the last column only in a frame drawn at the current
+        # width: an older, wider frame is clipped to a border segment there,
+        # and an older, narrower frame leaves that column blank. A frame is
+        # drawn top to bottom, so every row above the border is already
+        # complete when the corner arrives.
+        rows = self.screen().decode("utf-8", "replace").split("\n")
+        return any(row.startswith("╰") and row.endswith("╯") for row in rows)
 
     def redraw(self):
-        self.resize(28, 108)
-        end = time.monotonic() + .15
-        while time.monotonic() < end:
-            self.read(.02)
-        self.resize(30, 110)
-        end = time.monotonic() + .15
-        while time.monotonic() < end:
-            self.read(.02)
+        # Wait for the TUI to answer each resize with a complete frame. A fixed
+        # read window can close between the terminal clear and the end of the
+        # new frame, and on a loaded machine that read as lost output.
+        for rows, cols in ((28, 108), (30, 110)):
+            self.resize(rows, cols)
+            end = time.monotonic() + WAIT
+            while not self.frame_at_current_size() and time.monotonic() < end:
+                self.read(.02)
+                if self.proc.poll() is not None:
+                    break
+            require(self.frame_at_current_size(),
+                    f"control: no complete {rows}x{cols} frame after resize; "
+                    f"exit={self.proc.poll()}; screen={self.screen()!r}")
 
     def quit_observed(self):
         self.send(b"\x03")

@@ -112,9 +112,10 @@ abbey subagents run [--lanes ...] [--peers ...] [--synthesize] <prompt...>   # m
 | `argv_budget.rs` | shared 32 KiB argument/64 KiB aggregate limits and UTF-8 prompt truncation; pure helper tests do not qualify native supervision |
 | `host.rs` | portable PATH/PATHEXT lookup, argv clamp, install/state path helpers |
 | `memory/` | `MemoryStore` trait and backend dispatch (`sqlite.rs` default, `wdbx.rs` behind `--features wdbx`); `similarity.rs` is feature-hash **lexical, not learned** similarity, while learned embeddings are the separate opt-in `embedding.rs`/`semantic.rs` path (API key only via `ABBEY_EMBEDDING_API_KEY`/`OPENAI_API_KEY`) whose provider or model change creates a new isolated vector space and never silently falls back; `map.rs` is a deterministic topic × recency × consolidation map, not an embedding space, and `migrate.rs` moves records between backends with a read-back verification that errors rather than reporting a partial copy as whole |
+| `knowledge.rs` / `knowledge/` (`folder.rs`, `live.rs`) | read-only knowledge previews plus separately consented project memory commands; live memory is explicit and never injected into the global agent path |
 | `distill.rs` | `abbey learn distill`/`sft`: local-first teachers (fm `system` → ollama → fm `pcc`, off-device last) answer prompts through `capture::capture_oneshot`; answers become provenance-tagged `train_candidate` rows and export as chat-messages JSONL. Data generation only, no weight updates |
 | `hybrid_loop.rs` | two-stage Gemma→Max run; stages linked by `correlation` in the route log |
-| `ralph.rs` | `abbey ralph`: self-learning Rust Ralph loop (fresh-context single-task iterations, `.ralph/` playbook & failure reflections, Cargo gate, and `ralph-loop-rust` stdio MCP server) |
+| `ralph.rs` / `ralph/` (`run.rs`, `mcp.rs`, `tests.rs`) | `abbey ralph`: self-learning Rust Ralph loop (fresh-context single-task iterations, `.ralph/` playbook & failure reflections, Cargo gate, and `ralph-loop-rust` stdio MCP server) |
 | `wdbx_bridge.rs` | `abbey wdbx` — passthrough to `abi wdbx`, plus in-process `stats`/`checkpoint` |
 | `os_control.rs` | cross-platform OS allowlist policy |
 | `parallel.rs` | multi-lane fan-out (Max/Gemma/Aviva), now a thin alias over `subagents` |
