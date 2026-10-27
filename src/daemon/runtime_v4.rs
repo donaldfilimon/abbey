@@ -225,7 +225,9 @@ const fn internal() -> HandlerFailure {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app_core::{V4ConversationQuery, V4GrantRequest, V4TurnSubmit};
+    use crate::app_core::{
+        V4ConversationQuery, V4GrantRequest, V4PageQuery, V4SearchQuery, V4TurnSubmit,
+    };
     use std::path::{Path, PathBuf};
 
     const NOW: u64 = 1_700_000_000_000;
@@ -363,6 +365,42 @@ mod tests {
         };
         assert_eq!(page.conversations.len(), 1);
         assert!(!serde_json::to_string(&page).unwrap().contains("secret"));
+    }
+
+    #[test]
+    fn search_conversations_dispatch_filters_through_the_daemon() {
+        let (_scratch, store) = store("search");
+        let mut created = Vec::new();
+        for title in ["alpha one", "beta", "alpha_two"] {
+            let V4Event::Conversation(c) =
+                handle(&store, V4Command::CreateConversation(title.into()), NOW).unwrap()
+            else {
+                panic!("expected a conversation");
+            };
+            created.push(c.conversation_id);
+        }
+        let V4Event::Conversations(page) = handle(
+            &store,
+            V4Command::SearchConversations(V4SearchQuery {
+                query: "alpha".into(),
+                page: V4PageQuery {
+                    after: 0,
+                    through: None,
+                    limit: 10,
+                },
+            }),
+            NOW,
+        )
+        .unwrap() else {
+            panic!("expected a page");
+        };
+        let ids: Vec<_> = page
+            .conversations
+            .iter()
+            .map(|c| c.conversation_id.clone())
+            .collect();
+        assert_eq!(ids, vec![created[0].clone(), created[2].clone()]);
+        assert_eq!(page.next_after, None);
     }
 
     #[test]

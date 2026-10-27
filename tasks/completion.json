@@ -782,7 +782,6 @@
         "Bump affected v1/v3 schemas, reject old clients before changed claim/model vocabularies, update canonical claim boundaries and generated wire samples"
       ],
       "todos": [
-        "**The protocol v1 and v3 schemas do not cover the claim lifecycle",
         "**The wire schemas do not cover every vocabulary they now carry** (#94"
       ],
       "evidence": {
@@ -1202,6 +1201,13 @@
             "docs/verification/2026-10-22-completion-review-fixes/inference-red.log",
             "docs/verification/2026-10-22-completion-review-fixes/inference-focused-green.log"
           ]
+        },
+        "automated": {
+          "status": "passed",
+          "refs": [
+            "docs/verification/2026-10-27-integration-gate.md",
+            "docs/verification/2026-10-27-model-request-validation.md"
+          ]
         }
       },
       "required_evidence": [
@@ -1366,6 +1372,25 @@
       "todos": [],
       "evidence": {
         "dependency_audit": {
+          "status": "passed",
+          "refs": [
+            "docs/verification/2026-10-26-dependency-security-qualification.md"
+          ]
+        },
+        "consumer_strict_dependency_audit": {
+          "status": "failed",
+          "refs": [
+            "docs/verification/2026-10-26-dependency-security-qualification.md"
+          ]
+        },
+        "local_gate_execution": {
+          "status": "passed",
+          "refs": [
+            "docs/verification/2026-10-26-dependency-security-qualification.md",
+            "docs/verification/2026-10-26-dependency-security-qualification/checks-summary.json"
+          ]
+        },
+        "historical_dependency_audit": {
           "status": "failed",
           "refs": [
             "docs/verification/2026-10-22-completion-recovery/frozen-2-dependency-scan.log"
@@ -1378,7 +1403,7 @@
             "docs/verification/2026-10-22-completion-recovery.md"
           ]
         },
-        "candidate_dependency_audit": {
+        "historical_candidate_dependency_audit": {
           "status": "failed",
           "refs": [
             "docs/verification/2026-10-22-completion-recovery/security-candidate-dependency-scan.log"

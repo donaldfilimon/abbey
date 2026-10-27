@@ -60,5 +60,44 @@ class Program3BoundaryTest(unittest.TestCase):
             )
 
 
+    def test_live_capture_modules_cannot_import_effect_paths(self):
+        # A future live-capture module is Program 3 code too. The checker
+        # must find it by path and hold it to the same read-only rules, so an
+        # adapter cannot quietly reach a store, a runtime tool, an effect, or
+        # private content before its contract is reviewed and authorised.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            adapter = root / "src/app_core/guild_live_capture/adapter.rs"
+            adapter.parent.mkdir(parents=True)
+            adapter.write_text(
+                "use crate::runtime::RuntimeStore; use crate::daemon::runtime_v3; "
+                "fn send_reply() {} fn persist_snapshot() {} "
+                "struct S { message_content: u8 }",
+                encoding="utf-8",
+            )
+            surfaces = MODULE.live_capture_surfaces(root)
+            self.assertIn(adapter, surfaces)
+            findings = MODULE.scan_paths(surfaces)
+            for label in (
+                "durable store",
+                "runtime tool",
+                "effect operation",
+                "private content",
+            ):
+                self.assertTrue(
+                    any(label in item for item in findings),
+                    f"live capture {label} was not reported: {findings}",
+                )
+
+    def test_checker_scans_live_capture_surfaces_alongside_program_three(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            capture = root / "src/guild_live_capture.rs"
+            capture.parent.mkdir(parents=True)
+            capture.write_text("pub fn read_only() {}", encoding="utf-8")
+            self.assertIn(capture, MODULE.all_surfaces(root))
+        self.assertTrue(set(MODULE.SURFACES) <= set(MODULE.all_surfaces(MODULE.ROOT)))
+
+
 if __name__ == "__main__":
     unittest.main()

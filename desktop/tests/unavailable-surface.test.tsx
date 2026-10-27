@@ -1,7 +1,13 @@
 import { expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
+import { available } from "../src/App";
 import { UnavailableView } from "../src/views/UnavailableView";
 import { SURFACES, surfaceById } from "../src/surfaces";
+import {
+  ALL_APP_CAPABILITIES,
+  DESKTOP_READ_CAPABILITIES,
+} from "../src/ipc/generated.samples";
+import type { RuntimeStatus, V3Capability } from "../src/ipc/generated";
 
 /**
  * The unavailable surface.
@@ -101,4 +107,34 @@ test("an available surface is not renderable as an unavailable one", () => {
       <UnavailableView surface={{ ...doctor, unavailable: undefined }} />,
     ),
   ).toThrow();
+});
+
+test("training and cluster remain unavailable while no training or worker grant is negotiated", () => {
+  // Every status capability and every desktop read grant is held, yet
+  // neither surface may open: there is no `read_training` or `read_workers`
+  // authority behind them. They flip only when that authority is served.
+  const status: RuntimeStatus = {
+    protocol_version: 1,
+    schema_version: 1,
+    edition: "standard",
+    state: "ready",
+    version: "2.6.0",
+    build_git: "0f1e2d3",
+    build_target: "aarch64-apple-darwin",
+    capabilities: { capabilities: [...ALL_APP_CAPABILITIES] },
+  };
+  // The desktop read set mixes v1 and v3 names; the gate only consults the
+  // v3 entries, so the full list stands in for "every negotiated grant".
+  const grants = [...DESKTOP_READ_CAPABILITIES] as readonly string[] as V3Capability[];
+  expect(grants).not.toContain("read_training");
+  expect(grants).not.toContain("read_workers");
+
+  for (const id of ["training", "cluster"]) {
+    const surface = surfaceById(id);
+    expect(surface.requires).toBeNull();
+    expect(surface.unavailable).toBeDefined();
+    expect(available(surface, status, grants)).toBe(false);
+    const html = renderToStaticMarkup(<UnavailableView surface={surface} />);
+    expect(html.match(/<button/g) ?? []).toHaveLength(0);
+  }
 });

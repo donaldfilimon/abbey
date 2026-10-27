@@ -762,7 +762,7 @@ pub const CLAIMS: &[Claim] = &[
         "ci-self-hosted-linux-proof",
         "self-hosted Linux CI execution proof",
         Status::Blocked,
-        "Abbey pins public ABI 7b9519b6cfb25cc9bc9db2982e0a901318ba039b and public WDBX 5182bc3a60300e1dd152611025e774c4b906638b without a checkout secret; exact-head macOS ARM64 self-hosted adjunct runs succeeded (narrow/soft evidence only); fork pull requests get no self-hosted CI job; a guarded Linux ARM64 job is restored in .github/workflows/rust.yml with explicit runner availability and same-repository restrictions, but its host is not provisioned and Windows runtime proof remains open; authored jobs, guard scripts and soft cross-compile checks do not close the external requirement",
+        "Abbey pins public ABI 63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78 and public WDBX 612d3570f9ab0d842519aa4dbc4cb977aa33c9e0 without a checkout secret; exact-head macOS ARM64 self-hosted adjunct runs succeeded (narrow/soft evidence only); fork pull requests get no self-hosted CI job; a guarded Linux ARM64 job is restored in .github/workflows/rust.yml with explicit runner availability and same-repository restrictions, but its host is not provisioned and Windows runtime proof remains open; authored jobs, guard scripts and soft cross-compile checks do not close the external requirement",
         Some("run ./check.sh locally; treat an exact-head macOS success as its own narrower fact; provision/register Linux ARM64 and obtain successful Linux/Windows jobs before claiming cross-platform CI green"),
         impl: [".github/workflows/rust.yml", "check.sh"],
         tests: ["./check.sh", "workflow job steps in .github/workflows/rust.yml"],

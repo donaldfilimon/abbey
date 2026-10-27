@@ -94,6 +94,10 @@ if [ -z "$python" ]; then
 fi
 
 workspace=$(mktemp -d "${TMPDIR:-/tmp}/abbey-pinned-siblings.XXXXXX")
+# macOS's TMPDIR lives under the /var symlink, and Tauri's updater refuses to
+# run a test binary whose path contains a symlink. Resolve only the workspace;
+# the tests keep the caller's shorter TMPDIR so socket paths fit in SUN_LEN.
+workspace=$(cd "$workspace" && pwd -P)
 cleanup() {
     if [ "$keep" -eq 1 ]; then
         echo "pinned-siblings: kept $workspace" >&2
