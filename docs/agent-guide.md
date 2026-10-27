@@ -461,7 +461,7 @@ follows is the architecture you cannot infer from filenames.
   does not merely read them. Use `cargo fmt --package abbey`; the siblings
   have their own gates.
 - **Schema migrations are numbered `.sql` files**, not generated code: they sit
-  beside `src/runtime/migrations.rs` (`migration_1_*.sql` … `migration_10_*.sql`),
+  beside `src/runtime/migrations.rs` (`migration_1_*.sql` … `migration_12_*.sql`),
   each embedded with `include_str!`. A new migration is a new `.sql` file plus
   its constant, an entry in `MIGRATIONS`, and a `CURRENT_SCHEMA_VERSION` bump
   — never inline SQL.
