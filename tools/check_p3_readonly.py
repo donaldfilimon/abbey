@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Fail closed if Program 3 acquires write, transport, store, or content code."""
+"""Fail closed if Program 3 acquires write, transport, store, or content code.
+
+The boundary covers the closed synthetic guild-intelligence surfaces and any
+future live-capture module (`guild_live_capture`), which is held to the same
+rules until its contract (docs/program-3-live-capture-contract.md) has been
+independently reviewed and authorised.
+"""
 
 import re
 import sys
@@ -10,6 +16,18 @@ SURFACES = (
     ROOT / "src/app_core/guild_intelligence.rs",
     ROOT / "src/app_core/guild_intelligence/plan.rs",
     ROOT / "src/app_core/guild_intelligence/validation.rs",
+)
+# Live-capture module paths. There is no live-capture module today; these
+# patterns make the checker cover one the moment it appears. The full RULES
+# apply to them, including the network rule. That is deliberately fail-closed:
+# any network allowance for an approved read-only adapter belongs to the later
+# reviewed adapter task after OB-18 (independent review, manager authorisation,
+# participant consent), not to this checker.
+LIVE_CAPTURE_PATTERNS = (
+    "src/app_core/guild_live_capture.rs",
+    "src/app_core/guild_live_capture/**/*.rs",
+    "src/guild_live_capture.rs",
+    "src/guild_live_capture/**/*.rs",
 )
 RULES = (
     (r"\b(?:reqwest|ureq|hyper|serenity)::", "network client"),
@@ -39,6 +57,22 @@ def _code_only(text: str) -> str:
     return re.sub(r'"(?:\\.|[^"\\])*"', '""', text)
 
 
+def live_capture_surfaces(root=ROOT):
+    root = Path(root)
+    found = set()
+    for pattern in LIVE_CAPTURE_PATTERNS:
+        found.update(path for path in root.glob(pattern) if path.is_file())
+    return sorted(found)
+
+
+def all_surfaces(root=ROOT):
+    root = Path(root)
+    program_three = [root / path.relative_to(ROOT) for path in SURFACES]
+    if root != ROOT:
+        program_three = [path for path in program_three if path.is_file()]
+    return program_three + live_capture_surfaces(root)
+
+
 def scan_paths(paths):
     findings = []
     for path in paths:
@@ -50,7 +84,7 @@ def scan_paths(paths):
 
 
 def main() -> int:
-    findings = scan_paths(SURFACES)
+    findings = scan_paths(all_surfaces())
     if findings:
         print("\n".join(findings), file=sys.stderr)
         return 1
