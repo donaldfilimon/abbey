@@ -371,8 +371,8 @@ class ForkSafety(unittest.TestCase):
         self.assertEqual(self.text.count(f"uses: {TOOLCHAIN_ACTION}"), 2 * len(self.jobs))
         self.assertIn("ABBEY_TOOLCHAIN: 1.99.1", self.text)
         self.assertIn("ABI_TOOLCHAIN: 1.99.1", self.text)
-        self.assertIn("ABI_REVISION: 7b9519b6cfb25cc9bc9db2982e0a901318ba039b", self.text)
-        self.assertIn("WDBX_REVISION: 5182bc3a60300e1dd152611025e774c4b906638b", self.text)
+        self.assertIn("ABI_REVISION: 63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78", self.text)
+        self.assertIn("WDBX_REVISION: 612d3570f9ab0d842519aa4dbc4cb977aa33c9e0", self.text)
         self.assertNotRegex(
             self.text,
             r"(?m)^\s*(?:toolchain:\s*|rustup toolchain install )nightly\s*(?:$|--)",

@@ -27,8 +27,8 @@ env:
   ABBEY_TOOLCHAIN: 1.99.1
   # These must match rust.yml until the immutable integration pins advance.
   ABI_TOOLCHAIN: 1.99.1
-  ABI_REVISION: 7b9519b6cfb25cc9bc9db2982e0a901318ba039b
-  WDBX_REVISION: 5182bc3a60300e1dd152611025e774c4b906638b
+  ABI_REVISION: 63d2bc0a393c3c3837eadab0d18bc2fc1fff5c78
+  WDBX_REVISION: 612d3570f9ab0d842519aa4dbc4cb977aa33c9e0
   # The desktop workspace is a bun project. Pin the exact bun release the
   # gate runs with; a floating "latest bun" would let the lockfile format and
   # the packaged build drift under the gate. The local development bun is
