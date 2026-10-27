@@ -1,33 +1,85 @@
 # Repository Guidelines
 
-## Project Structure & Module Organization
+Abbey — hybrid persona/role CLI/TUI in Rust (v2.6, edition 2024). The Zig rewrite is canceled; `zig/` is retained history. Rust product is `Cargo.toml` + `src/`; `./check.sh` is the gate. Deep rules, traps, and gate detail live in [docs/agent-guide.md](docs/agent-guide.md); execution path and docs map in [docs/architecture.md](docs/architecture.md).
 
-`src/` holds the Rust library, CLI/TUI, and daemon; `tests/` holds process and library contracts. `desktop/` contains the Tauri/React client and code generation. `tools/`, `tasks/`, and `docs/` own checks, ledgers, and evidence. Required sibling checkouts are `../abi` and `../wdbx`.
+## Toolchain and layout
 
-## Build, Test, and Development Commands
+- Rust **1.99.1** pinned in `rust-toolchain.toml`. Use `./tools/cargo.sh …`, not bare `cargo` (Homebrew Rust can shadow rustup; the wrapper also refuses Cargo config/env that substitutes the compiler).
+- Sibling checkouts `../abi` and `../wdbx` are mandatory path dependencies. Keep the three repos adjacent; mixing git and path sources of shared crates breaks crate identity. CI pins `ABI_REVISION`/`WDBX_REVISION` in `.github/workflows/rust.yml`.
+- `desktop/` is a member of the root workspace, not a second one; the root `Cargo.lock` is the only lockfile. `zig/` is not read by any Rust gate — do not extend it.
 
-`./check.sh` is the merge gate. `./tools/cargo.sh build --locked --bins` builds
-the executables; `./tools/cargo.sh test --locked --test cli_surface` focuses
-CLI contracts. `./tools/cargo.sh run --locked --bin abbey -- --help` shows local
-verbs. Use the checkout’s desktop guide for its separate client gate.
+## Commands
 
-## Coding Style & Naming Conventions
+```bash
+./tools/cargo.sh --abbey-qualify-toolchain          # compiler probe only
+./tools/cargo.sh build --locked --bins              # default members
+./tools/cargo.sh check --locked --quiet             # gate's first compile step
+./tools/cargo.sh test --locked                      # default-feature tests
+./tools/cargo.sh test --locked --test cli_surface   # one integration file
+./tools/cargo.sh test --locked --test cli_surface <test_name>
+./tools/cargo.sh test --locked -p abbey --features wdbx
+./tools/cargo.sh fmt --package abbey -- --check     # NEVER `cargo fmt --all`
+./tools/cargo.sh clippy --locked --all-targets -- -D warnings
+./check.sh                                         # production gate
+python3 tools/check_claims_sync.py                 # verify; --write regenerates
+python3 tools/check_instructions.py                # AGENTS/CLAUDE split
+python3 tools/check_p3_readonly.py                 # Program 3 boundary
+cargo run --locked --quiet -p abbey-desktop-codegen -- --check
+(cd desktop && bun run codegen)                    # regenerate IPC types
+desktop/check.sh                                   # client gate
+tools/ci/verify-pinned-siblings.sh                 # gate vs CI-pinned siblings
+```
 
-Use rustfmt for Rust (four-space indentation), `snake_case` modules/functions, and
-`PascalCase` types. Follow local lint settings and preserve public contracts.
-Keep documentation paths relative to the project. Do not reformat unrelated code.
+Feature cohorts are scoped: `wdbx`, `personal-edition` (abbey + desktop), `accel` each get their own clippy/test/rustdoc/doc lines in `check.sh`. A feature added without matching gate lines rots silently.
 
-## Testing Guidelines
+## Architecture (non-obvious)
 
-Rust uses `#[test]` unit tests and package integration suites; retain existing independent oracles and golden fixtures. Name tests after observable behavior and cover affected failure paths.
-Use isolated fixtures rather than live data. Report executed checks and skips;
-compilation alone does not establish runtime or platform qualification.
+- `src/main.rs` pre-Clap SIGPIPE shim → library; must stay under 200 lines.
+- `src/app_core/` is the presentation-neutral contract layer shared by CLI, daemon, desktop. The TUI does **not** import it; it uses `src/effective_model.rs`.
+- `src/bin/abbeyd.rs` is the daemon (second binary). Daemon protocol versions v1–v4 are separate negotiated envelopes over one owner-only Unix socket; never downgrade or replay mutating commands.
+- `src/train/` holds retained legacy verbs; native training is `crates/abbey-learning/` (`abbey train family`).
+- One canonical execution path: `actions::run_agent` → `session::hybrid_run` → `agent::run_resilient`. Do not add a second. Bypasses: `print`, `commit`, `voice ask`, `learn distill` (via `capture.rs`), plus `hybrid_loop`, `External` passthrough, `abbey init --agent`.
 
-## Commit & Pull Request Guidelines
+## Generated code (do not hand-edit)
 
-Recent history uses imperative subjects such as `Expand ABI model lifecycle and desktop model controls`. Use similarly focused, descriptive commits. PRs should describe the behavior and rationale, link relevant issues or
-plans, and list actual checks and remaining platform gaps. Include screenshots
-for visual changes. Preserve unrelated edits and existing generated-file rules.
+- Claims regions in `AGENTS.md`, `CLAUDE.md`, `README.md`, `docs/*.md`, `tasks/*.md` are generated by `tools/check_claims_sync.py`; edit `src/claims/registry.rs`. Only prose outside markers is hand-maintained.
+- Desktop IPC types: regenerate with `(cd desktop && bun run codegen)` after changing `src/app_core/` or `src/effective_model.rs`.
+- Never `cargo fmt --all` — it rewrites `../abi` and `../wdbx` sources in place. Use `cargo fmt --package abbey`.
+- Schema migrations are numbered `migration_N_*.sql` beside `src/runtime/migrations.rs`, embedded via `include_str!`; add a file + constant + `MIGRATIONS` entry + version bump — never inline SQL.
+
+## Traps
+
+- **Toolchain**: use `./tools/cargo.sh`; installed-toolchain updates do not qualify a different compiler.
+- **`CLAUDE.md` is a pointer only.** It may hold only the generated summary, pointer paragraph, command table, module map, and git-policy block. `tools/check_instructions.py` enforces this.
+- **Editor surfaces** (`.cursorrules`, `.cursor/rules`, …) must be ≤8-line pointers to `AGENTS.md`.
+- **Do not branch per-call behaviour on `AgentBackend::from_env()`** — it is cached in a `OnceLock`; thread live `cfg.backend`.
+- **Two backend orders exist** and are not interchangeable: `LOCAL_FIRST_FALLBACK` (auto-select) vs TUI Ctrl-B `cycle_next`.
+- **Ollama never auto-pulls.** Tag must already be in `ollama list`.
+- **`abi wdbx` takes base paths** (parent dir + base name); Abbey opens a directory — `wdbx_bridge` translates. Passing the bare dir reads one level up.
+- **Memory has three openers**: `backend_path` (pure), `open_backend_with_timeout` (interactive), `open_backend_exact` (mutations; rejects substitution). Default build without `wdbx` silently falls back to SQLite.
+- **`src/app_core/v4_types.rs` is orphaned and never compiled** — edits are invisible. `src/automation_schedule.rs` is compiled but has no caller.
+- **Effective model has two authorities** (CLI/TUI local-config vs desktop runtime-route); `EffectiveModel::source` distinguishes them. Resolve the selected route, not first available.
+- **Route log is evidence**: written before the executor runs; a failed write fails the turn.
+- **Conversation identity is canonical-first**; clear never deletes history/transcripts/memory/models/route data.
+- **A distilled pair is not "ready"** (confidence 0.6 vs 0.9 threshold) until human promotion — intended curation, not a bug.
+- **`abbey train` score is training-fidelity**, not held-out quality; the delegated trainer has a 2-char context window.
+- **One gate at a time per checkout** (`tools/gate_lock.sh`); a second build replaces binaries under a running test.
+- **Shared checkout**: working tree, index, and `target/` are shared with other sessions; a growing `git status` or foreign compile error is an environment race until proven otherwise.
+- **Stale worktree**: `.claude/worktrees/…` is a live git worktree with stale sources; exclude `.claude/` and `zig/` from repo-wide searches.
+- **Working tree is dirty on purpose** (in-flight work + untracked receipts). HEAD does not describe the code being edited.
+- **Authored CI is not executed CI**: macOS/Linux jobs are guarded and may be skipped; green local gate ≠ CI evidence. CI checks out pinned siblings, not your local ones.
+- **File size enforced by `check.sh` for `src/**/*.rs` only**: `main.rs` hard-fails >200; others warn >800, hard-fail >1000.
+- **`unsafe_code` denied** in `Cargo.toml`; every use needs `#[allow(unsafe_code)]` + SAFETY comment.
+- **State is runtime data**: `~/.local/state/abbey` is never committed and absent in a fresh checkout.
+- **Learned embeddings are opt-in** via `ABBEY_EMBEDDING_API_KEY`/`OPENAI_API_KEY`; provider/model change creates a new isolated vector space.
+
+## Invariants (do not relax)
+
+- OS execution (`os_control.rs`) never runs without `--confirm` and only against the allowlist, both editions, no shell bypass.
+- `WdbxMemory` holds its `fs4` advisory lock for the handle's whole life.
+- Daemon and `abbeyd` share one owner-only Unix socket and exactly one bearer source (`ABBEYD_SOCKET_PATH`, `ABBEYD_BEARER_TOKEN` xor `ABBEYD_BEARER_TOKEN_FILE`); client failures never fall back to in-process claims.
+- Self-learn's `train_candidate` path requires provenance; no silent deletes.
+- Keep changes small and reviewable; only commit when asked; never force-push `main`; never commit secrets.
 
 ## Maintained Project Instructions
 

@@ -21,7 +21,29 @@ pub(crate) const PREDICT_MODEL: &str = "gemma4:12b-mlx";
 
 const MAX_RESULTS: usize = 8;
 const LLM_TIMEOUT: Duration = Duration::from_millis(1_500);
+const LLM_TERMINATE_GRACE: Duration = Duration::from_millis(100);
 const MAX_LLM_OUTPUT_BYTES: usize = 4 * 1024;
+
+/// Wall-clock bounds of one owned rerank.
+///
+/// `work` is the deadline the model-list probe and the rerank share; when
+/// it passes, the rerank fails closed. `terminate_grace` is how long the
+/// supervisor waits after SIGTERM before it escalates to SIGKILL. The app
+/// uses [`RerankBounds::PRODUCT`]. The bounds are passed per call, never
+/// held globally, so a caller can match them to its own wait.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct RerankBounds {
+    pub(crate) work: Duration,
+    pub(crate) terminate_grace: Duration,
+}
+
+impl RerankBounds {
+    /// The keystroke-prediction bounds the app ships with.
+    pub(crate) const PRODUCT: Self = Self {
+        work: LLM_TIMEOUT,
+        terminate_grace: LLM_TERMINATE_GRACE,
+    };
+}
 
 /// One ranked suggestion.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -300,28 +322,31 @@ pub fn llm_hint(ollama: &Path, model: &str, input: &str) -> Option<&'static str>
         ollama,
         model,
         input,
+        RerankBounds::PRODUCT,
         &crate::runtime::CancellationToken::new(),
     )
     .ok()
     .flatten()
 }
 
-/// Probe and rerank share one work deadline and cancellation owner.
-/// Supervisor termination and observed joins have their own bounded grace.
+/// Probe and rerank share one work deadline (`bounds.work`, measured from
+/// the call) and one cancellation owner. Supervisor termination and
+/// observed joins have their own bounded grace (`bounds.terminate_grace`).
 pub(crate) fn llm_hint_owned(
     ollama: &Path,
     model: &str,
     input: &str,
+    bounds: RerankBounds,
     cancel: &crate::runtime::CancellationToken,
 ) -> anyhow::Result<Option<&'static str>> {
     if input.trim().len() < 4 || cancel.is_cancelled() {
         return Ok(None);
     }
-    let deadline = Instant::now() + LLM_TIMEOUT;
+    let deadline = Instant::now() + bounds.work;
     let probe = ProcessSpec::inherited(ollama.to_path_buf(), vec![OsString::from("list")]);
     let limits = SupervisorLimits {
-        timeout: LLM_TIMEOUT,
-        terminate_grace: Duration::from_millis(100),
+        timeout: bounds.work,
+        terminate_grace: bounds.terminate_grace,
         stdout_bytes: 64 * 1024,
         stderr_bytes: 4096,
         poll_interval: Duration::from_millis(10),
@@ -370,7 +395,7 @@ pub(crate) fn llm_hint_owned(
         timeout: deadline
             .saturating_duration_since(Instant::now())
             .max(Duration::from_nanos(1)),
-        terminate_grace: Duration::from_millis(100),
+        terminate_grace: bounds.terminate_grace,
         stdout_bytes: MAX_LLM_OUTPUT_BYTES,
         stderr_bytes: 1024,
         poll_interval: Duration::from_millis(10),

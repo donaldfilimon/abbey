@@ -6,6 +6,7 @@ use crate::state::AbbeyState;
 use crate::tui::app::{App, Overlay};
 use crate::tui::completion::{Completion, FileIndex};
 use crate::tui::composer::{Composer, History};
+use crate::tui::predict::RerankBounds;
 use crate::tui::theme::{Theme, ThemeId};
 use crate::tui::transcript::Transcript;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
@@ -19,6 +20,9 @@ use std::time::{Duration, Instant, SystemTime};
 
 const DRIVE_LIMIT: Duration = Duration::from_secs(8);
 const ONCE_OBSERVATION: Duration = Duration::from_millis(1_200);
+/// SIGTERM-to-SIGKILL grace the fixture's owned processes get; see the
+/// `prediction` field in `Fixture::new`.
+const FIXTURE_TERMINATE_GRACE: Duration = Duration::from_millis(500);
 
 #[derive(Clone, Copy)]
 enum Mode {
@@ -107,6 +111,18 @@ fn drive_until(app: &mut App, condition: impl Fn(&App) -> bool) -> bool {
         }
     }
     false
+}
+
+/// Drive the app until every prediction worker has finished.
+///
+/// A cancelled worker is detached, and it finishes only once its
+/// supervisor has torn its process group down. Asserting the group is gone
+/// before then would observe a teardown still in progress.
+fn drive_until_idle(app: &mut App) {
+    assert!(
+        drive_until(app, |app| app.prediction.is_idle()),
+        "a cancelled prediction worker never finished its teardown"
+    );
 }
 
 #[derive(Clone, Copy)]
@@ -229,7 +245,25 @@ esac
             completion: None,
             completion_idx: 0,
             completion_basis: None,
-            prediction: crate::tui::prediction_owner::PredictionOwner::default(),
+            // The product rerank bounds are wall-clock limits shorter than
+            // this fixture's own waits. On a loaded host the owned script's
+            // `list` + `run` spawns can outlast the 1.5 s work deadline, so
+            // the rerank fails closed and a test waiting for a hint sees
+            // none; and its SIGTERM trap can miss the 100 ms grace, so the
+            // supervisor's SIGKILL lands before the trap writes the term
+            // receipt. The fixture gives the owner bounds that match the
+            // test's waits instead: a hint assertion then fails only when no
+            // hint arrives within DRIVE_LIMIT, and a missing term receipt
+            // means SIGTERM was not sent, not that the trap was scheduled
+            // late. A held fixture's teardown normally takes about one
+            // FIXTURE_TERMINATE_GRACE (SIGTERM, ignored, then SIGKILL); the
+            // supervisor's ceiling is five (three terminate phases plus a
+            // doubled reader-collection window), 2.5 s, which stays inside
+            // the 3 s SHUTDOWN_JOIN_GRACE.
+            prediction: crate::tui::prediction_owner::PredictionOwner::with_bounds(RerankBounds {
+                work: DRIVE_LIMIT,
+                terminate_grace: FIXTURE_TERMINATE_GRACE,
+            }),
             clipboard: None,
             run: None,
             pending_model_mutation: None,
@@ -572,6 +606,7 @@ fn changing_the_draft_cancels_old_process_and_cannot_apply_its_old_hint() {
     );
     assert_eq!(fixture.app.composer.text, "/mem");
     assert_eq!(fixture.count("run"), 2);
+    drive_until_idle(&mut fixture.app);
     assert_group_gone(old);
     fixture.finish();
 }
@@ -588,6 +623,7 @@ fn changing_the_selected_backend_invalidates_a_held_prediction() {
     drive_for(&mut fixture.app, ONCE_OBSERVATION);
     assert!(!has_hint(&fixture.app, "review"));
     assert_eq!(fixture.count("run"), 1);
+    drive_until_idle(&mut fixture.app);
     assert_group_gone(old);
     fixture.assert_cancellation_started_before_timeout("run", requested);
     fixture.finish();
@@ -605,6 +641,7 @@ fn dismissing_completion_joins_the_held_prediction_and_does_not_rearm() {
     drive_for(&mut fixture.app, ONCE_OBSERVATION);
     assert!(fixture.app.completion.is_none());
     assert_eq!(fixture.count("run"), 1);
+    drive_until_idle(&mut fixture.app);
     assert_group_gone(old);
     fixture.assert_cancellation_started_before_timeout("run", requested);
     fixture.finish();

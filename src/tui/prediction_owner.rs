@@ -56,7 +56,6 @@ impl Worker {
     }
 }
 
-#[derive(Default)]
 pub(crate) struct PredictionOwner {
     observed: Option<Stamp>,
     attempted: Option<Draft>,
@@ -77,9 +76,35 @@ pub(crate) struct PredictionOwner {
     /// terminal in raw mode. The count is reported by the app, so the
     /// user is not shown a quiet success.
     abandoned: usize,
+    /// Wall-clock bounds each rerank worker is given.
+    ///
+    /// The app uses `RerankBounds::PRODUCT`. They are held per owner, not
+    /// globally, so a caller that drives the owner on a loaded host can
+    /// give it bounds that match its own wait.
+    bounds: predict::RerankBounds,
+}
+
+impl Default for PredictionOwner {
+    fn default() -> Self {
+        Self::with_bounds(predict::RerankBounds::PRODUCT)
+    }
 }
 
 impl PredictionOwner {
+    /// An owner whose rerank workers run under `bounds`.
+    pub(crate) fn with_bounds(bounds: predict::RerankBounds) -> Self {
+        Self {
+            observed: None,
+            attempted: None,
+            changed_tick: 0,
+            worker: None,
+            detached: Vec::new(),
+            boost: None,
+            abandoned: 0,
+            bounds,
+        }
+    }
+
     /// Cancel the live worker and let it finish on its own.
     ///
     /// The worker is detached rather than joined: the UI thread cannot
@@ -253,6 +278,7 @@ impl PredictionOwner {
             let token = cancel.clone();
             let (tx, result) = mpsc::channel();
             let draft = stamp.draft.clone();
+            let bounds = self.bounds;
             let thread = std::thread::Builder::new()
                 .name("abbey-tui-predict".into())
                 .spawn(move || {
@@ -260,6 +286,7 @@ impl PredictionOwner {
                         &draft.executable,
                         predict::PREDICT_MODEL,
                         &draft.text,
+                        bounds,
                         &token,
                     );
                     let _ = tx.send(hint);
@@ -272,6 +299,20 @@ impl PredictionOwner {
             });
         }
         Ok(None)
+    }
+
+    /// Whether no worker, live or detached, is still running.
+    ///
+    /// A worker finishes only after its supervisor has torn its process
+    /// group down, so an idle owner owns no live process. The live
+    /// worker's answer is left in its channel for `pump` to apply; only a
+    /// detached worker's stale answer is drained.
+    #[cfg(test)]
+    pub(crate) fn is_idle(&self) -> bool {
+        self.worker
+            .as_ref()
+            .is_none_or(|worker| worker.thread.is_finished())
+            && self.detached.iter().all(Worker::has_finished)
     }
 
     pub(crate) fn boost(&self) -> Option<&'static str> {
