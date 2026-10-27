@@ -130,4 +130,34 @@ if [ "${ABBEY_DESKTOP_MENU_ACCEPTANCE:-0}" = "1" ]; then
   ./scripts/prove-menu-icon-macos.sh --app "../target/release/bundle/macos/Abbey.app" --expect-edition safe
 fi
 
+# The Accessibility surface and control sweeps drive a staged bundle too, with
+# the same permission. Run from the gate they are required: a missing bundle,
+# a non-macOS host or a bundle whose own identifier is not the expected
+# edition fails here instead of printing "skipped". The default bundle path
+# follows the edition (release-macos.sh stages "Abbey Personal.app" for the
+# personal edition); ABBEY_DESKTOP_APP overrides it, and the driver still
+# refuses a bundle of the wrong edition.
+AX_EDITION="${ABBEY_DESKTOP_PACKAGED_EDITION:-safe}"
+if [ "$AX_EDITION" = "personal" ]; then
+  AX_DEFAULT_APP="../target/release/bundle/macos/Abbey Personal.app"
+else
+  AX_DEFAULT_APP="../target/release/bundle/macos/Abbey.app"
+fi
+
+if [ "${ABBEY_DESKTOP_SURFACE_ACCEPTANCE:-0}" = "1" ]; then
+  echo "== macOS Accessibility surface sweep (required, after release-macos.sh) =="
+  ABBEY_DESKTOP_APP="${ABBEY_DESKTOP_APP:-$AX_DEFAULT_APP}" \
+    ABBEY_DESKTOP_DRIVER_REQUIRED=1 \
+    ABBEY_DESKTOP_EXPECT_EDITION="$AX_EDITION" \
+    "$ABBEY_PYTHON" scripts/drive-surfaces-macos.py
+fi
+
+if [ "${ABBEY_DESKTOP_CONTROL_ACCEPTANCE:-0}" = "1" ]; then
+  echo "== macOS Accessibility control sweep (required, after release-macos.sh) =="
+  ABBEY_DESKTOP_APP="${ABBEY_DESKTOP_APP:-$AX_DEFAULT_APP}" \
+    ABBEY_DESKTOP_DRIVER_REQUIRED=1 \
+    ABBEY_DESKTOP_EXPECT_EDITION="$AX_EDITION" \
+    "$ABBEY_PYTHON" scripts/drive-controls-macos.py
+fi
+
 echo "desktop/check.sh: OK"

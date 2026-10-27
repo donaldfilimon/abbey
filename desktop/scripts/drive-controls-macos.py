@@ -39,6 +39,48 @@ CHECKS = [
 ]
 
 
+def env_path(name):
+    """The path an environment variable names, or None when it is unset.
+
+    An empty variable is unset: `Path("")` is the current directory, which
+    always exists and must never pass for a bundle.
+    """
+    value = os.environ.get(name, "")
+    return Path(value).expanduser() if value else None
+
+
+def refuse(required, reason, **detail):
+    """Report a run that cannot proceed: a failure when the gate requires
+    this driver, the historical skip otherwise."""
+    report = {"status": "failed" if required else "skipped", "reason": reason}
+    report.update(detail)
+    print(json.dumps(report, sort_keys=True))
+    return 1 if required else 0
+
+
+def edition_refusal(app_bundle):
+    """Why a required run must not drive this bundle, or None.
+
+    The bundle's own identifier decides the edition, as in the packaged
+    prover; the path and the `.app` name never do.
+    """
+    import prove_packaged_macos as packaged
+
+    expected = os.environ.get("ABBEY_DESKTOP_EXPECT_EDITION", "")
+    if expected not in set(packaged.EDITIONS_BY_IDENTIFIER.values()):
+        return {"reason": "unknown_expected_edition", "expected": expected}
+    identifier = packaged.bundle_identifier(app_bundle)
+    found = packaged.EDITIONS_BY_IDENTIFIER.get(identifier)
+    if found != expected:
+        return {
+            "reason": "edition_mismatch",
+            "expected": expected,
+            "found": found,
+            "identifier": identifier,
+        }
+    return None
+
+
 def build_driver():
     binary = Path(tempfile.mkdtemp(prefix="abbey-ax-")) / "ax"
     result = subprocess.run(
@@ -82,14 +124,19 @@ def run_action(driver, pid, action):
 
 
 def main():
+    # `desktop/check.sh` sets this when the driver runs as a gate step: then
+    # every reason not to drive the app is a failure, never a skip.
+    required = os.environ.get("ABBEY_DESKTOP_DRIVER_REQUIRED") == "1"
     if platform.system() != "Darwin":
-        print(json.dumps({"status": "skipped", "reason": "not_macos"}))
-        return 0
+        return refuse(required, "not_macos")
 
-    app_bundle = Path(os.environ.get("ABBEY_DESKTOP_APP", "")).expanduser()
-    if not app_bundle.exists():
-        print(json.dumps({"status": "skipped", "reason": "no_app_bundle"}))
-        return 0
+    app_bundle = env_path("ABBEY_DESKTOP_APP")
+    if app_bundle is None or not app_bundle.is_dir():
+        return refuse(required, "no_app_bundle")
+    if required:
+        refusal = edition_refusal(app_bundle)
+        if refusal is not None:
+            return refuse(required, **refusal)
 
     driver = build_driver()
     with tempfile.TemporaryDirectory(prefix="abbey-controls-") as scratch:
