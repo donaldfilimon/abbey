@@ -572,3 +572,45 @@ fn v4_message_pages_trim_to_the_byte_ceiling() {
 
 #[path = "v4_content_tests.rs"]
 mod content;
+
+#[test]
+fn search_conversations_filters_by_title_and_keeps_a_fixed_snapshot() {
+    let (_d, store) = scratch_store("search-filter");
+    let alpha_one = prepare(&store, "alpha one");
+    prepare(&store, "beta");
+    let alpha_two = prepare(&store, "alpha_two");
+    let percent = prepare(&store, "100% done");
+    let archived = prepare(&store, "alpha archived");
+    store.v4_archive_conversation(&archived, NOW).unwrap();
+    let search = |term: &str, after: Option<ConversationId>, limit: u16| {
+        store
+            .v4_search_conversations(&V4ConversationQuery {
+                search: Some(term.into()),
+                after,
+                limit,
+                archived: false,
+            })
+            .unwrap()
+    };
+    let ids = |page: &crate::app_core::V4ConversationPage| {
+        page.conversations
+            .iter()
+            .map(|c| c.conversation_id.clone())
+            .collect::<Vec<_>>()
+    };
+
+    let alpha = search("alpha", None, 10);
+    assert_eq!(ids(&alpha), vec![alpha_one.clone(), alpha_two.clone()]);
+    assert_eq!(alpha.next_after, None);
+    // LIKE metacharacters in the query are literal, not wildcards.
+    assert_eq!(ids(&search("_", None, 10)), vec![alpha_two.clone()]);
+    assert_eq!(ids(&search("%", None, 10)), vec![percent]);
+    assert!(search("archived", None, 10).conversations.is_empty());
+
+    let first = search("alpha", None, 1);
+    assert_eq!(ids(&first), vec![alpha_one.clone()]);
+    assert_eq!(first.next_after, Some(alpha_one));
+    let second = search("alpha", first.next_after, 1);
+    assert_eq!(ids(&second), vec![alpha_two]);
+    assert_eq!(second.next_after, None);
+}
