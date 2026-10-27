@@ -113,6 +113,104 @@ fn a_byte_mismatch_degrades_to_diagnostics_and_blocks_every_consequence() {
     }
 }
 
+#[test]
+#[ignore = "corpus-patterns: awaits anchored upstream corpus (index Task 2 a)"]
+fn bundled_corpus_rejects_unanchored_digest_prefixes_and_suffixes() {
+    let corpus_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("contracts/abbey/corpus");
+    let mut schema_files = Vec::new();
+    collect_schema_files(&corpus_root, &mut schema_files);
+    schema_files.sort();
+    assert_eq!(schema_files.len(), 40, "expected every vendored schema");
+
+    let mut pattern_count = 0;
+    let mut unanchored = Vec::new();
+    for path in &schema_files {
+        let bytes = fs::read(path).expect("read schema");
+        let schema: serde_json::Value = serde_json::from_slice(&bytes).expect("parse schema");
+        let mut patterns = Vec::new();
+        collect_patterns(&schema, &mut patterns);
+        pattern_count += patterns.len();
+        let relative = path
+            .strip_prefix(&corpus_root)
+            .expect("schema lies under the corpus root")
+            .display();
+        for pattern in patterns {
+            if !pattern.starts_with('^') || !pattern.ends_with('$') {
+                unanchored.push(format!("{relative}: {pattern}"));
+            }
+        }
+    }
+    assert!(pattern_count > 0, "the walk must find at least one pattern");
+
+    let mut accepted_junk = Vec::new();
+    for version in ["v1", "v2"] {
+        let path = corpus_root.join(format!("{version}/schemas/common/definitions.schema.json"));
+        let definitions: serde_json::Value =
+            serde_json::from_slice(&fs::read(&path).expect("read definitions"))
+                .expect("parse definitions");
+        let pattern = definitions["$defs"]["digest_id"]["pattern"]
+            .as_str()
+            .expect("digest_id declares a string pattern");
+        let validator = jsonschema::options()
+            .with_draft(jsonschema::Draft::Draft202012)
+            .build(&json!({"type": "string", "pattern": pattern}))
+            .expect("digest_id pattern compiles");
+        let digits = "a".repeat(64);
+        assert!(
+            validator.is_valid(&json!(format!("sha256:{digits}"))),
+            "{version} digest_id must accept a well-formed digest"
+        );
+        if validator.is_valid(&json!(format!("junksha256:{digits}suffix"))) {
+            accepted_junk.push(format!(
+                "{version} digest_id accepts junk prefix/suffix: {pattern}"
+            ));
+        }
+    }
+
+    assert!(
+        unanchored.is_empty() && accepted_junk.is_empty(),
+        "{} unanchored schema patterns:\n{}\n{} digest_id patterns accept junk:\n{}",
+        unanchored.len(),
+        unanchored.join("\n"),
+        accepted_junk.len(),
+        accepted_junk.join("\n")
+    );
+}
+
+fn collect_schema_files(directory: &Path, files: &mut Vec<PathBuf>) {
+    for entry in fs::read_dir(directory).expect("read corpus directory") {
+        let path = entry.expect("read corpus entry").path();
+        if path.is_dir() {
+            collect_schema_files(&path, files);
+        } else if path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.ends_with(".schema.json"))
+        {
+            files.push(path);
+        }
+    }
+}
+
+fn collect_patterns(value: &serde_json::Value, patterns: &mut Vec<String>) {
+    match value {
+        serde_json::Value::Object(map) => {
+            for (key, child) in map {
+                match child.as_str() {
+                    Some(pattern) if key == "pattern" => patterns.push(pattern.to_owned()),
+                    _ => collect_patterns(child, patterns),
+                }
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for item in items {
+                collect_patterns(item, patterns);
+            }
+        }
+        _ => {}
+    }
+}
+
 struct ScratchCorpus {
     root: PathBuf,
 }
