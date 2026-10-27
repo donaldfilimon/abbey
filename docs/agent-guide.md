@@ -141,7 +141,7 @@ AI operations and does not inherit the tagline.
   after a source change; `ABBEY_CLAIMS_SYNC_TIMEOUT` (default 900 s) widens the
   budget. `--write` is the only flag — the default mode *is* the check.
 - `python3 tools/check_instructions.py` — enforces the AGENTS.md/CLAUDE.md split.
-- `python3 tools/check_p3_readonly.py` — Program 3 read-only boundary.
+- `python3 tools/check_p3_readonly.py` — Program 3 read-only boundary, including any future `guild_live_capture` module under `src/` or `src/app_core/` (see `docs/program-3-live-capture-contract.md`).
 - `cargo run --locked --quiet -p abbey-desktop-codegen -- --check` — desktop
   IPC codegen drift (the root gate step). Regenerate with
   `(cd desktop && bun run codegen)` after changing `src/app_core/` or
